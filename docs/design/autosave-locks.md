@@ -1,174 +1,82 @@
-# AutoSave ロック設計メモ（v1.3 下書き）
+# AutoSave ロック設計メモ
 
-## 1. 目的とスコープ
-- `src/lib/locks.ts` の Web Lock 優先ロック制御とフォールバック (`project/.lock`) オーケストレーションの振る舞いを定義する。
-- `docs/IMPLEMENTATION-PLAN.md` の「ロックモジュール要件整理」と `docs/AUTOSAVE-DESIGN-IMPL.md` §3 の制約に適合していることを確認する。
-- AutoSave/Collector/Analyzer 連携で必要となるテレメトリ、UIイベント、例外分類、TDD 前提テストを整理する。
+## 1. `src/lib/locks.ts` 状態遷移ドラフト
+AutoSave/精緻マージが `ProjectLockApi` を通じて利用するロックライフサイクルを、Web Locks 優先・ファイルロックをフォールバックとする形で整理する。実装計画と AutoSave 詳細設計に記載されたポリシーへ準拠する。【F:docs/IMPLEMENTATION-PLAN.md†L63-L106】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L27-L79】
 
-## 2. 状態図（Web Lock → フォールバック遷移）
 ```mermaid
 stateDiagram-v2
-    [*] --> ResolveEnv: initAutoSave / withProjectLock
-    ResolveEnv --> AcquireWeb: navigator.locks.available
-    ResolveEnv --> AcquireFallback: !navigator.locks
-
-    AcquireWeb --> Active: exclusive handle
-    AcquireWeb --> AcquireFallback: DOMException (NotSupportedError | AbortError)
-    AcquireWeb --> ReadOnly: retry budget exhausted
-
-    AcquireFallback --> Active: fallback lease obtained
-    AcquireFallback --> ReadOnly: retry budget exhausted | LockConflictError
-
-    Active --> Renewing: lease.expiresAt - 5s timer
-    Renewing --> Active: renew success
-    Renewing --> ReadOnly: 2 consecutive renew failures | ttl elapsed
-
-    Active --> Releasing: caller dispose / finally
-    Renewing --> Releasing: normal shutdown
-
-    Releasing --> [*]: release success (web + fallback)
-    Releasing --> ReadOnly: LockReleaseError (final)
-    ReadOnly --> [*]: user reload / manual recovery
+    [*] --> Idle: ready
+    Idle --> WebLockAcquiring: acquire() called
+    WebLockAcquiring --> WebLockHeld: navigator.locks.request success
+    WebLockAcquiring --> FileLockAcquiring: Web Lock unsupported or denied
+    WebLockAcquiring --> Idle: abort/signal cancelled
+    FileLockAcquiring --> FileLockHeld: `.lock` written (UUID, ttl)
+    FileLockAcquiring --> Readonly: collision detected (mtime fresh)
+    FileLockAcquiring --> Idle: abort/signal cancelled
+    WebLockHeld --> RenewScheduling: schedule heartbeat (10s)
+    FileLockHeld --> RenewScheduling: schedule heartbeat (10s)
+    RenewScheduling --> Renewing: renewProjectLock()
+    Renewing --> WebLockHeld: Web Lock renewed
+    Renewing --> FileLockHeld: `.lock` mtime updated
+    Renewing --> Readonly: retry exhausted / lease stale
+    WebLockHeld --> Releasing: releaseProjectLock()
+    FileLockHeld --> Releasing: releaseProjectLock()
+    Releasing --> Idle: release ok / file removed
+    Releasing --> Readonly: release failure (non-retryable)
+    Readonly --> Idle: manual reset / force release succeeds
 ```
 
-- `ResolveEnv` フェーズでフラグ `autosave.enabled` と `AcquireLockOptions.mode` を評価し、`docs/IMPLEMENTATION-PLAN.md` の Web Lock 優先ポリシーに従う。【F:docs/IMPLEMENTATION-PLAN.md†L34-L70】
-- `AcquireWeb` 失敗時は `DOMException.name` に応じてフォールバックへ遷移し、指数バックオフ（0.5→1→2s、最大3回）で再試行する (`docs/AUTOSAVE-DESIGN-IMPL.md` §3.4)。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L99-L149】
-- `AcquireFallback` では `project/.lock` の TTL 30s、`updatedAt`/`mtime` の二重チェックで競合判定し、`LockConflictError` を非再試行扱いとして閲覧専用モードに遷移する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L164】
+### 状態遷移補足
+- `Readonly` 遷移は AutoSave を閲覧専用モードへ落とし、UI と Collector へ警告を送る。
+- `RenewScheduling` は `LOCK_HEARTBEAT_INTERVAL_MS` に基づく心拍タイマーを表す。`Renewing` が失敗しても `retryable=true` であればバックオフ後に `RenewScheduling` へ戻る。
+- `Renewing` 中に `lease.stale` 判定となった場合、フォールバックファイルを削除して再取得を促す。再取得も失敗した場合は `Readonly` 固定。
 
-### 2.1 要件突き合わせチェックリスト
-| 実装計画要件 | 状態図での対応 | 備考 |
-| --- | --- | --- |
-| Web Lock 優先取得（`navigator.locks.request`） | `ResolveEnv → AcquireWeb` を既定経路に設定 | フラグ評価後に常に Web Lock 先行を試行する。【F:docs/IMPLEMENTATION-PLAN.md†L34-L56】 |
-| TTL 自前更新（25s 以内の心拍） | `Active → Renewing` → `Active` | `expiresAt-5s` タイマーで `renewProjectLock` を強制実行。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L84-L132】 |
-| フォールバック `.lock` 運用（UUID, mtime, TTL=30s） | `AcquireFallback` の遷移条件 | `LockConflictError` で ReadOnly に遷移し、Analyzer へ衝突を通知。【F:docs/IMPLEMENTATION-PLAN.md†L56-L71】 |
-| 閲覧専用モード移行（失敗時） | `AcquireWeb/AcquireFallback/Renewing → ReadOnly` | UI バナー表示と入力無効化をイベントで伝播。【F:docs/IMPLEMENTATION-PLAN.md†L56-L71】 |
+## 2. API 一覧（責務と失敗モード）
+| API | 主な副作用 | 失敗モード (`ProjectLockError.code`) | retryable | 再試行ポリシー | 備考 |
+| --- | --- | --- | --- | --- | --- |
+| `acquireProjectLock(options)` | Web Lock 取得、フォールバック `.lock` 作成 | `web-lock-unsupported`, `acquire-denied`, `acquire-timeout`, `fallback-conflict` | `unsupported`: false, 他: true (timeout は上限回数後 false) | `backoff` (初期 500ms, ×2, `MAX_LOCK_RETRIES` まで) | AbortSignal でキャンセル可。最終失敗時は閲覧専用化。【F:docs/IMPLEMENTATION-PLAN.md†L97-L106】 |
+| `renewProjectLock(lease, options)` | Web Lock 再リクエスト or `.lock` mtime 更新 | `lease-stale`, `renew-failed` | `renew-failed`: true, `lease-stale`: false | 心拍タイマーごとに指数バックオフ、連続失敗で `Readonly` | TTL 超過で lease を破棄し再取得誘導。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L80-L142】 |
+| `releaseProjectLock(lease, options)` | Web Lock 解放、`.lock` 削除 | `release-failed` | true（force 時 false） | `backoff` で最大 3 回。最終失敗は ReadOnly 通知。 | `force=true` の場合はフォールバックファイル削除を試行。 |
+| `withProjectLock(fn, options)` | 上記取得→コールバック→解放 | 取得/更新/解放で発生したコードをそのまま伝播 | 呼び出し元へ伝播 | Acquire のリトライ設定を継承 | `releaseOnError=false` の場合は呼び出し側が明示 release。 |
+| `subscribeLockEvents(listener)` | イベントストリーム購読 | - | - | - | `ProjectLockEvent` により UI・テレメトリへ通知。 |
 
-## 3. API シグネチャ（案）
-```ts
-export interface AcquireLockOptions {
-  readonly ownerHint?: string;
-  readonly signal?: AbortSignal;
-  readonly retry?: { attempts?: number; baseDelayMs?: number };
-  readonly allowFallback?: boolean; // default true
-}
+### イベント利用者
+- `AutoSaveIndicator`：`lock:acquired`/`lock:readonly-entered` を UI 表示に反映。
+- テレメトリ：`autosave.lock.*` 命名で Collector へ JSONL を送信し、Analyzer が SLO を評価する。【F:docs/IMPLEMENTATION-PLAN.md†L163-L204】【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
 
-export interface ProjectLockLease {
-  readonly leaseId: string;
-  readonly origin: string;
-  readonly acquiredAt: number; // epoch ms
-  readonly expiresAt: number;  // epoch ms (<= acquiredAt + 25_000)
-  readonly mode: 'web' | 'fallback';
-  readonly fallbackPath?: string; // when mode === 'fallback'
-}
-
-type LockEventType =
-  | 'lock.acquired'
-  | 'lock.renewed'
-  | 'lock.released'
-  | 'lock.retry'
-  | 'lock.conflict'
-  | 'lock.readonly'
-  | 'lock.error';
-
-export interface ProjectLockEvent {
-  readonly type: LockEventType;
-  readonly lease: ProjectLockLease | null;
-  readonly attempt?: number;
-  readonly retryable?: boolean;
-  readonly reason?: 'conflict' | 'timeout' | 'irrecoverable';
-  readonly cause?: unknown;
-}
-
-export interface LockTelemetryEmitter {
-  record(event: ProjectLockEvent): void;
-}
-
-export type LockEventListener = (event: ProjectLockEvent) => void;
-
-export async function acquireProjectLock(
-  options?: AcquireLockOptions
-): Promise<ProjectLockLease>;
-
-export async function renewProjectLock(
-  lease: ProjectLockLease,
-  options?: Pick<AcquireLockOptions, 'signal'>
-): Promise<ProjectLockLease>;
-
-export async function releaseProjectLock(
-  lease: ProjectLockLease,
-  options?: Pick<AcquireLockOptions, 'signal'>
-): Promise<void>;
-
-export async function withProjectLock<T>(
-  fn: (lease: ProjectLockLease) => Promise<T>,
-  options?: AcquireLockOptions
-): Promise<T>;
-
-export function subscribeLockEvents(
-  listener: LockEventListener
-): () => void;
-
-export function bindTelemetryEmitter(emitter: LockTelemetryEmitter): void;
-```
-
-- `bindTelemetryEmitter` で Collector 連携のフックを外部注入し、Analyzer の JSONL スキーマを侵さない（`Day8/docs/day8/design/03_architecture.md` の Collector→Analyzer パイプラインにおける副作用隔離）。【F:Day8/docs/day8/design/03_architecture.md†L1-L32】
-- `ProjectLockLease.expiresAt` は Web Lock 時 25s（`docs/AUTOSAVE-DESIGN-IMPL.md` §3.1）を標準値とし、フォールバックは `updatedAt + ttlSeconds` を採用する。
-
-### 3.1 Analyzer/Collector 整合性
-- Telemetry Payload は既存 JSONL の `feature=autosave` タグへ統合し、Collector 側がイベントスキーマ変更なしで取り込めるよう `record()` には名前空間済みイベントのみ渡す。
-- Analyzer ではロック取得率/競合率/未解放率を派生メトリクス化し、`workflow-cookbook/` への追加ファイル生成を禁止（Day8 方針）。【F:Day8/docs/day8/design/03_architecture.md†L1-L32】【F:docs/IMPLEMENTATION-PLAN.md†L56-L71】
-
-## 4. テレメトリ & UI イベント列挙
-| Event | 発火タイミング | Payload 例 | Collector チャネル | UI 連携 |
+## 3. 失敗モードとリトライ可否整理
+| フェーズ | 想定エラー | `retryable` | Collector/Analyzer 影響 | テレメトリ試験観点 |
 | --- | --- | --- | --- | --- |
-| `autosave.lock.acquired` | Web Lock / フォールバック取得成功 | `{ leaseId, mode, expiresAt }` | JSONL (`feature=autosave`) | AutoSaveIndicator で点灯 |
-| `autosave.lock.retry` | 再試行時 | `{ attempt, retryable, delayMs }` | JSONL | トースト「再試行中」 |
-| `autosave.lock.conflict` | 競合検出 (`LockConflictError`) | `{ leaseId, ownerHint }` | JSONL（severity=warn） | 閲覧専用バナー |
-| `autosave.lock.readonly` | 再試行上限越え/TTL超過 | `{ reason }` | JSONL（severity=error） | 編集入力を disable |
-| `autosave.lock.renewed` | リース更新成功 | `{ leaseId, mode, expiresAt }` | JSONL | 心拍表示更新 |
-| `autosave.lock.error` | 例外発生（`retryable` true/false） | `{ code, retryable, cause }` | JSONL | エラートースト |
-| `autosave.lock.released` | 解放完了 | `{ leaseId, mode }` | JSONL | Indicator 消灯 |
+| Web Lock 取得 | Web Locks 未対応 (`web-lock-unsupported`) | false | フォールバックへ即切替。Collector 入力は変化なし。 | Web Lock 不在環境で `.lock` 移行イベントが出ること。 |
+| Web Lock 取得 | 権限拒否/タイムアウト (`acquire-denied`/`acquire-timeout`) | true (回数上限後は readonly) | ロック取得遅延により AutoSave が遅延。Analyzer の保存時間指標に影響。 | バックオフログが JSONL に記録されること。 |
+| フォールバック取得 | `.lock` 存在 (`fallback-conflict`) | true（最大 `MAX_LOCK_RETRIES`） | 競合で AutoSave が ReadOnly 化。Collector は `autosave.lock.conflict` を記録。 | 競合再現テストで ReadOnly 遷移・イベント順序を検証。 |
+| 心拍更新 | `.lock` ステール (`lease-stale`) | false | AutoSave 停止で保存データ欠落。Analyzer は欠損期間をカバー不能。 | ステール検知で `lock:readonly-entered` が出ること。 |
+| 心拍更新 | API 例外 (`renew-failed`) | true | 再試行成功すれば Collector へ一時的な警告のみ。 | 指数バックオフで成功したケースのイベント整合性。 |
+| 解放 | 削除失敗 (`release-failed`) | true（force 以降 false） | `.lock` 残骸があると次回取得が遅延。Collector は `lock:release-failed` を記録。 | 解放失敗→再試行→成功のケース。 |
 
-- イベント名は `docs/IMPLEMENTATION-PLAN.md` の命名ポリシー（`autosave.lock.*`）を踏襲する。【F:docs/IMPLEMENTATION-PLAN.md†L124-L138】
-- Collector 側は JSONL の `feature=autosave` タグを既存チャネルに付与し、Analyzer は従来どおりログを走査するだけで新規メトリクス（取得成功率・競合率）を算出できる。
+## 4. Collector / Analyzer 影響分析
+- Collector は `project/autosave/` 外のパスを監視しないため、ロック情報は JSONL イベントのみで伝播する。`.lock` ファイルは Day8 系パイプラインには読み込まれない前提を維持する。【F:docs/IMPLEMENTATION-PLAN.md†L107-L139】【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+- AutoSave 由来イベントは `feature=autosave` タグと `autosave.lock.*` プレフィックスを付与し、Analyzer が保存遅延や ReadOnly 遷移率を計算できるようにする。Collector から Analyzer への ETL 頻度（15 分）内でイベントがロストしないよう、失敗時でも 1 行ログを必ず出力する。 
+- Analyzer はロック失敗を重大度 `warning` として扱い、3 回連続で `lock:readonly-entered` が発生した場合は Reporter の日次サマリに Incident 候補として挙げる。AutoSave の保存履歴 JSON には手を加えず、既存メトリクス生成フローを汚染しない。
 
-## 5. テスト観点と `tests/` 追加案
-| 観点 | テスト種別 | 追加予定ファイル | 概要 |
-| --- | --- | --- | --- |
-| Web Lock 取得成功 | node:test (JSDOM モック) | `tests/locks/acquire.spec.ts` | `navigator.locks.request` が即成功するケースで `lock.acquired` イベントと `expiresAt` 25s を検証。
-| フォールバック取得（Web Lock 非対応） | node:test | `tests/locks/fallback.spec.ts` | `navigator.locks` 未定義時に OPFS スタブ経由で `.lock` JSON を生成し、モード `fallback` を返すことを確認。
-| 競合検出 → 閲覧専用移行 | node:test | `tests/locks/conflict.spec.ts` | `.lock` の `leaseId` 不一致/`mtime` 有効時に `LockConflictError` と `lock.readonly` イベントを検証。
-| リース更新失敗の再試行 | node:test | `tests/locks/renew.spec.ts` | `renewProjectLock` で 2 回失敗→閲覧専用遷移を検証し、`retryable` フラグのハンドリングを確認。
-| 解放失敗のバックグラウンド再試行 | node:test | `tests/locks/release.spec.ts` | `releaseProjectLock` が OPFS remove 失敗を投げた際に `LockReleaseError`（`retryable=true`）を送出し、再試行スケジュールを記録することを確認。
-| UI イベント配信 | node:test | `tests/locks/events.spec.ts` | `subscribeLockEvents` で購読したリスナーへ順序通りイベントが届くことをアサート。
+## 5. テレメトリ観点テストリスト
+1. Web Locks 利用可能環境で `lock:acquired`→`lock:renewed`→`lock:released` のイベントシーケンスが Collector へ JSONL 連携される。
+2. Web Locks 不在環境で `fallback-conflict` まで再現し、`lock:readonly-entered` に `reason='acquire-failed'` が設定される。
+3. 心拍失敗 (`renew-failed`) を 2 回発生させた後、3 回目で成功し `retry` カウントが増加する。
+4. 解放失敗 (`release-failed`) によりバックオフ後の再試行が成功し、`lock:released` が最終的に発生する。
+5. AutoSave 停止後も Collector の JSONL が Analyzer で正しく集計される（`feature=autosave` フィルタで抽出可能）。
 
-- すべて TDD で先行実装し、`node:test` ランナー＋`ts-node` 変換で `strict` 型チェックを通す。
-- `tests/autosave/__mocks__/opfs.ts` を再利用し、フォールバックファイル操作をモック。Collector 連携は `tests/telemetry/__mocks__/collector.ts`（新設）で検証する。
+## 6. レビュー用チェックリスト
+- [ ] Web Lock 取得→フォールバック→閲覧専用遷移のステートが設計と整合している。
+- [ ] `ProjectLockError` の `retryable` 設定が表3の整理と一致する。
+- [ ] イベント名が `autosave.lock.*` プレフィックスで統一されている。
+- [ ] `.lock` ファイルの TTL/UUID が Implementation Plan の要件と合致する。
+- [ ] Collector/Analyzer への副作用が Day8 アーキテクチャの境界を超えない。
 
-## 6. 例外階層と `retryable` ルール
-| 例外名 | `retryable` | 主なトリガー | 対応 | Analyzer/Collector 影響 |
-| --- | --- | --- | --- | --- |
-| `LockAcquisitionError` | true | Web Lock 一時失敗、OPFS 書き込みロック競合 | 指数バックオフで `autosave.lock.retry` 連続送出 | Collector は `retryable=true` を評価し、Analyzer が再試行回数メトリクスを算出。
-| `LockConflictError` | false | `.lock` の他タブ占有、`mtime` 有効 | 即時 `autosave.lock.conflict` → 閲覧専用 | Analyzer は `severity=error` として競合率を SLO に加味。
-| `LockRenewalError` | true | Web Lock 再取得失敗、フォールバック `mtime` 更新失敗 | 2 回連続で `autosave.lock.readonly` | Collector は連続失敗をバッチ集計、Analyzer は TTL 遵守を監視。
-| `LockReleaseError` | true | Web Lock release 例外、`project/.lock` 削除失敗 | バックグラウンド再試行（最大3回） | Analyzer は未解放率を報告、`workflow-cookbook` のパスには触れない（Day8 方針準拠）。
-| `LockIrrecoverableError` | false | OPFS 破損、不整合検知 | 即時停止 + ユーザ通知 | Collector は重大アラート、Analyzer は Postmortem トリガー。
-
-- `retryable` 判定は `docs/AUTOSAVE-DESIGN-IMPL.md` §3.4 の方針を踏襲し、`LockConflictError` のみを非再試行に分類する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L135-L149】
-- Analyzer/Collector は `Day8/docs/day8/design/03_architecture.md` が定義する JSONL パイプラインに従い、ロック関連ログは `workflow-cookbook/` 以下を汚染しない（`project/.lock` のみに限定）。【F:Day8/docs/day8/design/03_architecture.md†L1-L32】【F:docs/IMPLEMENTATION-PLAN.md†L56-L71】
-
-## 7. レビュー観点
-1. Web Lock 非対応ブラウザでのフォールバック取得パスが `project/` 配下に限定され、Day8 アーティファクトを生成しないこと。
-2. `retryable` フラグの付与が UI と Collector 双方で一貫して扱える構造体になっていること。
-3. `subscribeLockEvents` のリスナー解除がメモリリークを起こさない（`() => void` の破棄関数を必ず返す）。
-4. `withProjectLock` が例外時でも `releaseProjectLock` を確実に呼び出し、二重解放を防ぐこと。
-5. 既存 AutoSave API (`initAutoSave`) からの移行が段階的に可能で、Public API 互換性を壊さないこと。
-
-## 8. TDD テストリスト
-- [ ] `acquireProjectLock` が Web Lock 正常取得を返す。
-- [ ] Web Lock 非対応時にフォールバックを生成する。
-- [ ] `.lock` 競合で `LockConflictError` を throw し UI が閲覧専用へ遷移する。
-- [ ] 連続更新失敗で `autosave.lock.readonly` イベントが届く。
-- [ ] `releaseProjectLock` 失敗時に `LockReleaseError.retryable === true` が送出される。
-- [ ] `withProjectLock` が例外時もリソース解放する。
-- [ ] `bindTelemetryEmitter` で Collector へのメトリクスレコードが漏れなく送信される。
+## 7. TDD テスト計画（ロックモジュール）
+1. `acquireProjectLock` が Web Locks 成功時に `strategy='web-lock'` のリースを返し、イベントが順序通り発火する。
+2. Web Locks 未対応モックでフォールバック取得が成功し、`.lock` に UUID/TTL が保存される。
+3. `.lock` 競合時に `ProjectLockError` (`fallback-conflict`) が発生し、`retryable=true` でリトライ後に ReadOnly 遷移イベントが飛ぶ。
+4. 心拍タイマーで `renewProjectLock` が呼ばれ、`renewAttempt` がインクリメントされる。連続失敗後は `retryable=false` で停止。
+5. `releaseProjectLock` が `.lock` を確実に削除し、失敗時に `release-failed` が throw され `retryable` が設定される。
+6. `withProjectLock` が例外発生時でも `releaseOnError=true` ならロック解放を実行する（Collector イベントで確認）。
