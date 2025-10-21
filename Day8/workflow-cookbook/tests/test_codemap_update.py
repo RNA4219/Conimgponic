@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -119,7 +118,7 @@ def _prepare_birdseye(
     index_path = root / "index.json"
     _write_json(
         index_path,
-        {"generated_at": "2024-01-01T00:00:00Z", "nodes": nodes, "edges": edge_pairs},
+        {"generated_at": "00000", "nodes": nodes, "edges": edge_pairs},
     )
     cap_paths = {}
     for cap_id, payload in caps_payloads.items():
@@ -164,7 +163,7 @@ def _prepare_birdseye(
     _write_json(
         hot_path,
         {
-            "generated_at": "2024-01-01T00:00:00Z",
+            "generated_at": "00000",
             **_HOT_HOTLIST_METADATA,
             "nodes": serialized_nodes,
         },
@@ -173,7 +172,7 @@ def _prepare_birdseye(
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_run_update_refreshes_metadata_and_dependencies(tmp_path, monkeypatch, dry_run):
+def test_run_update_refreshes_metadata_and_dependencies(tmp_path, dry_run):
     caps_payloads = {
         "alpha.md": _caps_payload("alpha.md", deps_in=["obsolete"]),
         "beta.md": _caps_payload("beta.md", deps_out=["stale"]),
@@ -185,8 +184,13 @@ def test_run_update_refreshes_metadata_and_dependencies(tmp_path, monkeypatch, d
         hot_entries=_HOT_NODE_IDS,
     )
 
-    frozen_now = datetime(2025, 1, 1, 9, 30, tzinfo=timezone.utc)
-    monkeypatch.setattr(update, "utc_now", lambda: frozen_now)
+    legacy_token = "2024-12-31T23:59:00Z"
+    index_payload = json.loads(index_path.read_text(encoding="utf-8"))
+    index_payload["generated_at"] = legacy_token
+    _write_json(index_path, index_payload)
+    hot_payload = json.loads(hot_path.read_text(encoding="utf-8"))
+    hot_payload["generated_at"] = legacy_token
+    _write_json(hot_path, hot_payload)
 
     snapshots = None
     if dry_run:
@@ -199,8 +203,8 @@ def test_run_update_refreshes_metadata_and_dependencies(tmp_path, monkeypatch, d
         update.UpdateOptions(targets=(root,), emit="index+caps", dry_run=dry_run)
     )
 
-    expected_timestamp = "2025-01-01T09:30:00Z"
-    assert report.generated_at == expected_timestamp
+    expected_token = "00001"
+    assert report.generated_at == expected_token
     assert set(report.planned_writes) == {index_path, hot_path, *cap_paths.values()}
 
     if dry_run:
@@ -213,18 +217,20 @@ def test_run_update_refreshes_metadata_and_dependencies(tmp_path, monkeypatch, d
     assert set(report.performed_writes) == {index_path, hot_path, *cap_paths.values()}
 
     refreshed_index = json.loads(index_path.read_text(encoding="utf-8"))
-    assert refreshed_index["generated_at"] == expected_timestamp
+    assert refreshed_index["generated_at"] == expected_token
 
     refreshed_alpha = json.loads(cap_paths["alpha.md"].read_text(encoding="utf-8"))
     assert refreshed_alpha["deps_out"] == ["beta.md"]
     assert refreshed_alpha["deps_in"] == ["beta.md"]
+    assert refreshed_alpha["generated_at"] == expected_token
 
     refreshed_beta = json.loads(cap_paths["beta.md"].read_text(encoding="utf-8"))
     assert refreshed_beta["deps_out"] == ["alpha.md"]
     assert refreshed_beta["deps_in"] == ["alpha.md"]
+    assert refreshed_beta["generated_at"] == expected_token
 
     refreshed_hot = json.loads(hot_path.read_text(encoding="utf-8"))
-    assert refreshed_hot["generated_at"] == expected_timestamp
+    assert refreshed_hot["generated_at"] == expected_token
     expected_hot_nodes = [dict(node) for node in _HOT_NODES_FIXTURE]
     assert refreshed_hot["index_snapshot"] == _HOT_INDEX_SNAPSHOT
     assert refreshed_hot["refresh_command"] == _HOT_REFRESH_COMMAND
@@ -243,12 +249,12 @@ def test_run_update_refreshes_metadata_and_dependencies(tmp_path, monkeypatch, d
     assert any(node["caps"] is None for node in refreshed_hot["nodes"])
 
 
-def test_run_update_preserves_hot_nodes_structure(tmp_path, monkeypatch):
+def test_run_update_preserves_hot_nodes_structure(tmp_path):
     caps_payloads = {
         "alpha.md": _caps_payload("alpha.md", deps_in=["obsolete"]),
         "beta.md": _caps_payload("beta.md", deps_out=["stale"]),
     }
-    root, _, hot_path, _ = _prepare_birdseye(
+    root, index_path, hot_path, _ = _prepare_birdseye(
         tmp_path,
         edges=[["alpha.md", "beta.md"], ["beta.md", "alpha.md"]],
         caps_payloads=caps_payloads,
@@ -262,18 +268,22 @@ def test_run_update_preserves_hot_nodes_structure(tmp_path, monkeypatch):
     for node in baseline_hot["nodes"]:
         assert node["refresh_command"] == _HOT_REFRESH_COMMAND
 
-    frozen_now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
-    monkeypatch.setattr(update, "utc_now", lambda: frozen_now)
+    baseline_serial = "00009"
+    index_payload = json.loads(index_path.read_text(encoding="utf-8"))
+    index_payload["generated_at"] = baseline_serial
+    _write_json(index_path, index_payload)
+    baseline_hot["generated_at"] = baseline_serial
+    _write_json(hot_path, baseline_hot)
 
     report = update.run_update(
         update.UpdateOptions(targets=(root,), emit="index+caps", dry_run=False)
     )
 
-    expected_timestamp = "2025-01-01T12:00:00Z"
-    assert report.generated_at == expected_timestamp
+    expected_token = "00010"
+    assert report.generated_at == expected_token
 
     refreshed_hot = json.loads(hot_path.read_text(encoding="utf-8"))
-    assert refreshed_hot["generated_at"] == expected_timestamp
+    assert refreshed_hot["generated_at"] == expected_token
     assert refreshed_hot["index_snapshot"] == _HOT_INDEX_SNAPSHOT
     assert refreshed_hot["refresh_command"] == _HOT_REFRESH_COMMAND
     assert refreshed_hot["curation_notes"] == _HOT_CURATION_NOTES
@@ -290,7 +300,7 @@ def test_run_update_preserves_hot_nodes_structure(tmp_path, monkeypatch):
     assert refreshed_hot["nodes"][0]["role"] == baseline_hot["nodes"][0]["role"]
 
 
-def test_run_update_limits_caps_to_two_hop_scope(tmp_path, monkeypatch):
+def test_run_update_limits_caps_to_two_hop_scope(tmp_path):
     caps_payloads = {
         cap_id: _caps_payload(cap_id, deps_out=["stale"], deps_in=["old"])
         for cap_id in ("alpha.md", "beta.md", "gamma.md", "delta.md", "epsilon.md")
@@ -309,9 +319,6 @@ def test_run_update_limits_caps_to_two_hop_scope(tmp_path, monkeypatch):
 
     baseline_hot = json.loads(hot_path.read_text(encoding="utf-8"))
     assert baseline_hot["nodes"] == []
-
-    frozen_now = datetime(2025, 1, 2, tzinfo=timezone.utc)
-    monkeypatch.setattr(update, "utc_now", lambda: frozen_now)
 
     report = update.run_update(
         update.UpdateOptions(targets=(cap_paths["beta.md"],), emit="caps", dry_run=False)
@@ -336,7 +343,7 @@ def test_run_update_limits_caps_to_two_hop_scope(tmp_path, monkeypatch):
         assert refreshed["deps_in"] == deps_in
 
 
-def test_run_update_refreshes_caps_generated_at(tmp_path, monkeypatch):
+def test_run_update_refreshes_caps_generated_at(tmp_path):
     edges = [
         ["alpha.md", "beta.md"],
         ["beta.md", "gamma.md"],
@@ -350,11 +357,11 @@ def test_run_update_refreshes_caps_generated_at(tmp_path, monkeypatch):
         "delta.md": (["epsilon.md"], ["gamma.md"]),
         "epsilon.md": ([], ["delta.md"]),
     }
-    base_timestamp = "2024-12-31T23:59:00Z"
+    base_token = "00007"
     caps_payloads = {}
     for cap_id, (deps_out, deps_in) in expected_deps.items():
         payload = _caps_payload(cap_id, deps_out=deps_out, deps_in=deps_in)
-        payload["generated_at"] = base_timestamp
+        payload["generated_at"] = base_token
         caps_payloads[cap_id] = payload
 
     root, _, hot_path, cap_paths = _prepare_birdseye(
@@ -366,14 +373,11 @@ def test_run_update_refreshes_caps_generated_at(tmp_path, monkeypatch):
 
     assert json.loads(hot_path.read_text(encoding="utf-8"))["nodes"] == []
 
-    frozen_now = datetime(2025, 1, 5, tzinfo=timezone.utc)
-    monkeypatch.setattr(update, "utc_now", lambda: frozen_now)
-
     report = update.run_update(
         update.UpdateOptions(targets=(cap_paths["beta.md"],), emit="caps", dry_run=False)
     )
 
-    expected_timestamp = "2025-01-05T00:00:00Z"
+    expected_token = "00008"
     expected_caps = {
         cap_paths[cap_id]
         for cap_id in ("alpha.md", "beta.md", "gamma.md", "delta.md")
@@ -384,13 +388,13 @@ def test_run_update_refreshes_caps_generated_at(tmp_path, monkeypatch):
 
     for cap_id in ("alpha.md", "beta.md", "gamma.md", "delta.md"):
         refreshed = json.loads(cap_paths[cap_id].read_text(encoding="utf-8"))
-        assert refreshed["generated_at"] == expected_timestamp
+        assert refreshed["generated_at"] == expected_token
         expected_out, expected_in = expected_deps[cap_id]
         assert refreshed["deps_out"] == expected_out
         assert refreshed["deps_in"] == expected_in
 
     untouched = json.loads(cap_paths["epsilon.md"].read_text(encoding="utf-8"))
-    assert untouched["generated_at"] == base_timestamp
+    assert untouched["generated_at"] == base_token
     expected_out, expected_in = expected_deps["epsilon.md"]
     assert untouched["deps_out"] == expected_out
     assert untouched["deps_in"] == expected_in
@@ -415,16 +419,25 @@ def test_run_update_accepts_caps_directory_target(tmp_path, monkeypatch):
         root=root_base,
     )
 
-    monkeypatch.chdir(tmp_path)
+    baseline_token = "00004"
+    index_payload = json.loads(index_path.read_text(encoding="utf-8"))
+    index_payload["generated_at"] = baseline_token
+    _write_json(index_path, index_payload)
+    hot_payload = json.loads(hot_path.read_text(encoding="utf-8"))
+    hot_payload["generated_at"] = baseline_token
+    _write_json(hot_path, hot_payload)
+    for cap_path in cap_paths.values():
+        payload = json.loads(cap_path.read_text(encoding="utf-8"))
+        payload["generated_at"] = baseline_token
+        _write_json(cap_path, payload)
 
-    frozen_now = datetime(2025, 1, 4, tzinfo=timezone.utc)
-    monkeypatch.setattr(update, "utc_now", lambda: frozen_now)
+    monkeypatch.chdir(tmp_path)
 
     report = update.run_update(
         update.UpdateOptions(targets=(Path("docs/birdseye/caps"),), emit="index+caps", dry_run=False)
     )
 
-    expected_timestamp = "2025-01-04T00:00:00Z"
+    expected_token = "00005"
     expected_caps = {
         Path("docs/birdseye/caps") / f"{cap_id}.json"
         for cap_id in ("alpha.md", "beta.md", "gamma.md", "delta.md", "epsilon.md")
@@ -434,15 +447,15 @@ def test_run_update_accepts_caps_directory_target(tmp_path, monkeypatch):
         Path("docs/birdseye/hot.json"),
     }
 
-    assert report.generated_at == expected_timestamp
+    assert report.generated_at == expected_token
     assert set(report.planned_writes) == expected_writes
     assert set(report.performed_writes) == expected_writes
 
     refreshed_index = json.loads(index_path.read_text(encoding="utf-8"))
-    assert refreshed_index["generated_at"] == expected_timestamp
+    assert refreshed_index["generated_at"] == expected_token
 
     refreshed_hot = json.loads(hot_path.read_text(encoding="utf-8"))
-    assert refreshed_hot["generated_at"] == expected_timestamp
+    assert refreshed_hot["generated_at"] == expected_token
     assert len(refreshed_hot["nodes"]) == len(_HOT_NODE_IDS)
 
     expected_deps = {
@@ -484,9 +497,6 @@ def test_parse_args_supports_since_and_limits_scope(tmp_path, monkeypatch):
         hot_entries=_HOT_NODE_IDS,
         root=root_base,
     )
-
-    frozen_now = datetime(2025, 1, 3, tzinfo=timezone.utc)
-    monkeypatch.setattr(update, "utc_now", lambda: frozen_now)
 
     monkeypatch.chdir(tmp_path)
 

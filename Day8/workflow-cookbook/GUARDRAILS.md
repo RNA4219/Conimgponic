@@ -95,9 +95,9 @@ next_review_due: 2025-11-14
    - 役割：**±N hop 抽出**が即できる機械可読データ。
    - **最小スキーマ**：
 
-   ```json
-   {
-     "generated_at": "2025-10-13T10:12:00Z",
+  ```json
+  {
+    "generated_at": "00001",
      "nodes": {
        "frontend/src/App.tsx": {
          "role": "entrypoint",
@@ -107,7 +107,8 @@ next_review_due: 2025-11-14
      },
      "edges": [["frontend/src/App.tsx","frontend/src/hooks/recommendations/loader.ts"]]
    }
-   ```
+  ```
+  - `generated_at` はゼロ埋め 5 桁の連番（例: `00001`）。再生成のたびに +1 し、index / caps / hot を同じ番号で揃える。
 
 3. **Capsules（点読みパケット）**
 
