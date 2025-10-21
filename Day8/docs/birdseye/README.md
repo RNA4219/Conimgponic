@@ -14,7 +14,7 @@ Day8 の Birdseye は、リポジトリ内の主要ドキュメントとガー�
 ### 1. `docs/birdseye/index.json`
 - `nodes`: Birdseye が追跡するファイルと役割の定義。例として `"docs/ROADMAP_AND_SPECS.md"` は `docs/birdseye/caps/docs.ROADMAP_AND_SPECS.md.json` を参照し、Day8 と cookbook 間のクロスリンクを管理します。
 - `edges`: ノード間の参照関係。`README.md → docs/ROADMAP_AND_SPECS.md` のように索引動線を可視化します。
-- `generated_at`: インデックス再生成の日時。`hot.json` と同じ値に揃えることで履歴を同期します。
+- `generated_at`: インデックス再生成の連番（ゼロ埋め 5 桁、例: `00001`）。`hot.json` と同じ値に揃えることで履歴を同期します。
 
 ### 2. `docs/birdseye/caps/`
 - 各ノードの Capsule JSON を格納。要約・保守手順・再生成条件を含みます。
@@ -23,14 +23,15 @@ Day8 の Birdseye は、リポジトリ内の主要ドキュメントとガー�
 
 ### 3. `docs/birdseye/hot.json`
 - 優先参照すべきノードのリスト。`docs/ROADMAP_AND_SPECS.md` や `docs/safety.md` のような判断基準を即座に辿れるようピックアップします。
-- `generated_at` は `index.json` と同じタイムスタンプを設定し、Birdseye 再生成の整合を保証します。
+- `generated_at` は `index.json` と同じ連番を設定し、Birdseye 再生成の整合を保証します。
 
 ## 更新手順
 1. **差分検知** — Guardrails または Day8 ドキュメントに変更が入ったら、影響範囲のノードを `docs/birdseye/index.json` で特定します。
 2. **インデックス更新** — ノード追加・役割変更・エッジ更新を `index.json` に反映し、`mtime` を変更検知時刻へ合わせます。
 3. **Capsule 更新** — 対象ノードの Capsule（例: `docs/birdseye/caps/docs.ROADMAP_AND_SPECS.md.json`）を修正し、要約・refresh 手順を最新化します。
 4. **ホットリスト見直し** — 優先度が変わった場合は `docs/birdseye/hot.json` の対象と `reason` を更新します。
-5. **generated_at 揃え** — `index.json` と `hot.json` の `generated_at` を同一時刻へ更新し、再生成の履歴を同期します。
+5. **generated_at 揃え** — `index.json` と `hot.json` の `generated_at` を同じ連番へ更新し、再生成の履歴を同期します。
+   - 旧形式（ISO8601 タイムスタンプ）が残っていても、再生成時に `00001` からの連番へ自動で置き換わります。
 6. **ツール実行** — 自動再生成が必要な場合は `python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json,workflow-cookbook/docs/birdseye/index.json --emit index+caps` を使用し、必要に応じて `--dry-run` で差分確認後に適用します。`--targets` はカンマ区切りで複数指定でき、空要素は無視されます。`--emit` は `index` / `caps` / `index+caps` のいずれかを選択でき、インデックスを書き換えた場合は同じ階層の `hot.json` の `generated_at` も自動で同期されます。
 
 ## Guardrails 連携
