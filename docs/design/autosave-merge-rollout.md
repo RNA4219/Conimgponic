@@ -1,33 +1,55 @@
 # AutoSave & Diff Merge ロールアウト設計書
 
-## 1. フラグ監視指標
-`docs/IMPLEMENTATION-PLAN.md` に定義された Phase A/B の切替条件とロールバック条件を Collector/Analyzer で監視する。閾値は Reporter 経由で共有し、逸脱時に即時ロールバック可否を判断できるようにする。
+## 0. フラグポリシーと段階導入条件
+`docs/IMPLEMENTATION-PLAN.md` で規定されたフラグ解決順序とフェーズ条件をロールアウトの前提として明文化する。
+
+### 0.1 フラグ解決ポリシー
+| フラグ | 準備フェーズ既定値 | 解決順序 | 目的 | 備考 |
+| --- | --- | --- | --- | --- |
+| `autosave.enabled` | `false` | `import.meta.env` → `localStorage` → `docs/CONFIG_FLAGS.md` | `App.tsx` で AutoSave ランナー起動可否を制御 | `FlagSnapshot.source` を残しつつ後方互換のローカル参照を縮退。【F:docs/IMPLEMENTATION-PLAN.md†L9-L52】 |
+| `merge.precision` | `legacy` | `import.meta.env` → `localStorage` → `docs/CONFIG_FLAGS.md` | `MergeDock.tsx` の Diff Merge タブ精度切替 | `legacy` でタブを隠蔽し、`beta/stable` を段階解放。【F:docs/IMPLEMENTATION-PLAN.md†L15-L52】 |
+
+### 0.2 フェーズ条件の抽出
+| フェーズ | 対象ユーザー | 既定値 (`autosave.enabled` / `merge.precision`) | エントリー条件 | ロールバック条件 | 補足 |
+| --- | --- | --- | --- | --- | --- |
+| Phase A-0 (準備) | 全ユーザー | `false` / `legacy` | 初期状態。保存遅延 P95>2.5s が 1 日 3 回発生するとロールバック審査。【F:docs/IMPLEMENTATION-PLAN.md†L52-L60】 | 即ロールバックで Phase A-0 を維持。【F:docs/IMPLEMENTATION-PLAN.md†L52-L69】 | フラグ OFF 時の回帰試験を継続。【F:docs/IMPLEMENTATION-PLAN.md†L138-L155】 |
+| Phase A-1 (QA Canary) | 開発/QA | `true` / `legacy` | 保存 P95 ≤2.5s **かつ** QA 10 ケース完了。【F:docs/IMPLEMENTATION-PLAN.md†L56-L63】 | 保存 P95>2.5s または 復旧成功率<99.5%。【F:docs/IMPLEMENTATION-PLAN.md†L56-L69】 | `flags:rollback --phase A-0` を Runbook で即時実行。【F:docs/IMPLEMENTATION-PLAN.md†L89-L95】 |
+| Phase A-2 (β) | ベータ招待 | `true` / `legacy` | 復元 QA 12/12 合格、SLO 違反ゼロ。【F:docs/IMPLEMENTATION-PLAN.md†L57-L64】 | 復元失敗率≥0.5% または クラッシュ率 baseline+5%。【F:docs/IMPLEMENTATION-PLAN.md†L57-L69】 | 失敗時は QA Canary から再開。【F:docs/IMPLEMENTATION-PLAN.md†L70-L75】 |
+| Phase B-0 (Merge β) | ベータ招待 | `true` / `beta` | Diff Merge QA 20 ケース完了、自動マージ率≥80%。【F:docs/IMPLEMENTATION-PLAN.md†L58-L66】 | 自動マージ率<80% または 重大バグ>3 件/日。【F:docs/IMPLEMENTATION-PLAN.md†L58-L69】 | Merge 指標は Analyzer が 15m 粒度で算出。【F:docs/IMPLEMENTATION-PLAN.md†L76-L89】 |
+| Phase B-1 (GA) | 全ユーザー | `true` / `stable` | AutoSave/マージ SLO を 5 日連続達成しリリースノート承認。【F:docs/IMPLEMENTATION-PLAN.md†L60-L67】 | 任意 SLO 未達が 24h 継続 または 重大事故報告。【F:docs/IMPLEMENTATION-PLAN.md†L60-L75】 | ロールバック後 1 営業日以内に RCA を共有。【F:docs/IMPLEMENTATION-PLAN.md†L118-L133】 |
+
+## 1. ロールバック判断と監視指標
+Collector/Analyzer が継続的に監視するメトリクスと判断フローを以下に統合する。
 
 ### 1.1 監視項目と閾値
-| フェーズ | 対象フラグ | 監視項目 | 閾値 / 切替条件 | ロールバック条件 |
-| --- | --- | --- | --- | --- |
-| Phase A-0 | `autosave.enabled=false` | 保存遅延 P95 | ≤2.5s | 1 日 3 回以上で保存遅延 >2.5s【F:docs/IMPLEMENTATION-PLAN.md†L52-L60】 |
-| Phase A-1 | `autosave.enabled=true` (QA) | 保存遅延 P95 / 復旧失敗率 | 保存 P95 ≤2.5s **かつ** 復旧失敗率 ≤0.5% | 保存 P95>2.5s または 復旧成功率<99.5%【F:docs/IMPLEMENTATION-PLAN.md†L52-L69】 |
-| Phase A-2 | `autosave.enabled=true` (Beta) | 復元成功率 / クラッシュ率増分 | 復元成功率 ≥99.5%、クラッシュ増分 ≤5% | 復元失敗率 ≥0.5% または クラッシュ増分 >5%【F:docs/IMPLEMENTATION-PLAN.md†L57-L69】 |
-| Phase B-0 | `merge.precision=beta` | 自動マージ率 / 重大バグ報告数 | 自動マージ率 ≥80%、重大バグ報告 ≤3 件/日 | 自動マージ率 <80% または 重大バグ報告 >3 件/日【F:docs/IMPLEMENTATION-PLAN.md†L58-L67】 |
-| Phase B-1 | `merge.precision=stable` | 自動マージ率 (2 日移動平均) | ≥80% を 2 日連続で維持 | 2 日連続で <80% または 任意 SLO 未達が 24h 継続【F:docs/IMPLEMENTATION-PLAN.md†L58-L75】 |
+| フェーズ | 対象フラグ | 監視項目 | 閾値 / 切替条件 | ロールバック条件 | 監視担当 |
+| --- | --- | --- | --- | --- | --- |
+| Phase A-0 | `autosave.enabled=false` | 保存遅延 P95 | ≤2.5s | 1 日 3 回以上で保存遅延 >2.5s。【F:docs/IMPLEMENTATION-PLAN.md†L52-L60】 | Collector: 保存イベント収集 / Analyzer: P95 算出 |
+| Phase A-1 | `autosave.enabled=true` (QA) | 保存遅延 P95, 復旧失敗率 | 保存 P95 ≤2.5s **かつ** 復旧失敗率 ≤0.5%。【F:docs/IMPLEMENTATION-PLAN.md†L56-L69】 | 保存 P95>2.5s または 復旧成功率<99.5%。【F:docs/IMPLEMENTATION-PLAN.md†L56-L69】 | Collector: 保存/復旧イベント JSONL / Analyzer: QA レポート照合 |
+| Phase A-2 | `autosave.enabled=true` (Beta) | 復元成功率, クラッシュ率増分 | 復元成功率 ≥99.5%、クラッシュ増分 ≤5%。【F:docs/IMPLEMENTATION-PLAN.md†L57-L69】 | 復元失敗率 ≥0.5% または クラッシュ増分 >5%。【F:docs/IMPLEMENTATION-PLAN.md†L57-L69】 | Collector: 復元/クラッシュログ / Analyzer: 移動平均 |
+| Phase B-0 | `merge.precision=beta` | 自動マージ率, 重大バグ報告数 | 自動マージ率 ≥80%、重大バグ報告 ≤3 件/日。【F:docs/IMPLEMENTATION-PLAN.md†L58-L69】 | 自動マージ率 <80% または 重大バグ報告 >3 件/日。【F:docs/IMPLEMENTATION-PLAN.md†L58-L69】 | Collector: Merge JSONL / Analyzer: 日次集計 |
+| Phase B-1 | `merge.precision=stable` | 自動マージ率 (2 日移動平均), SLO 遵守 | ≥80% を 2 日連続で維持。【F:docs/IMPLEMENTATION-PLAN.md†L58-L75】 | 2 日連続で <80% または 任意 SLO 未達が 24h 継続。【F:docs/IMPLEMENTATION-PLAN.md†L58-L75】 | Collector: 15m 粒度集計 / Analyzer: ダッシュボード発報 |
 
-### 1.2 ロールバック判断
-- 共通ロールバック: 24 時間以内に SLO を復旧できない場合は直前フェーズのフラグ値へ戻し、Canary から再開する。【F:docs/IMPLEMENTATION-PLAN.md†L72-L75】
-- 監視は `scripts/monitor/collect-metrics.ts` で 15 分粒度のメトリクスを収集し、Analyzer が基準を判定する。【F:docs/IMPLEMENTATION-PLAN.md†L76-L89】
-- ロールバック時は Slack テンプレート `templates/alerts/rollback.md` を利用し、Reporter に決定記録を残す。【F:docs/IMPLEMENTATION-PLAN.md†L86-L95】
+### 1.2 ロールバックフロー
+- `scripts/monitor/collect-metrics.ts` を 15 分間隔で実行し、Analyzer が判定・Reporter が決裁記録を残す。【F:docs/IMPLEMENTATION-PLAN.md†L76-L95】
+- SLO 未復旧が 24 時間継続した場合は `pnpm run flags:rollback --phase <prev>` で直前フェーズに戻し、Canary から再開する。【F:docs/IMPLEMENTATION-PLAN.md†L69-L95】
+- 通知は Slack テンプレート `templates/alerts/rollback.md` を利用し、Reporter がロールバック時刻と原因を記録する。【F:docs/IMPLEMENTATION-PLAN.md†L86-L95】
 
-## 2. テレメトリ TDD テスト (先行定義)
-`Day8/docs/day8/design/03_architecture.md` の Collector→Analyzer→Reporter パイプラインを前提に、AutoSave/Diff Merge のテレメトリ整合性テストを TDD で実装する。テスト詳細は `tests/telemetry/TEST_PLAN.md` に整理し、以下の観点を必須とする。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+## 2. テレメトリ TDD テスト（SLO 先行）
+Collector→Analyzer→Reporter パイプラインを前提に、SLO 監視を最優先で検証するテスト観点を整理する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
 
-1. AutoSave 保存イベントが `Collector` JSONL に `feature="autosave"` 付きで記録され、Analyzer が保存時間 P95 を算出できること。【F:docs/IMPLEMENTATION-PLAN.md†L96-L104】
-2. AutoSave 復旧イベントが保存履歴との突合で 99.5%以上の成功率を算出できること。【F:docs/IMPLEMENTATION-PLAN.md†L52-L69】
-3. Diff Merge 実行イベントが自動確定率を算出できる payload を送出し、Analyzer 集計と Reporter 出力が一致すること。【F:docs/IMPLEMENTATION-PLAN.md†L57-L69】
-4. Lock 例外イベントが `retryable` 属性で Collector 側再試行判定に使われ、Analyzer が再試行率を集計できること。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L146】
-5. SLO 違反アラートイベントが `governance/policy.yaml` の閾値と一致し、Reporter のサマリに通知経路が記録されること。【F:docs/IMPLEMENTATION-PLAN.md†L69-L75】
+| カテゴリ | テスト観点 | 目的 | 参照 |
+| --- | --- | --- | --- |
+| SLO 違反検知 | 保存遅延 P95 が閾値超過した際に `autosave.slo.violation` を出力し、Analyzer が 5 分以内に再計算するかを検証。 | Phase A のロールバック判断を自動化。 | 【F:docs/IMPLEMENTATION-PLAN.md†L52-L95】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L96-L206】 |
+| 復旧成功率 | `restore` イベントから 99.5% 成功率を算出できることをテスト。 | Phase A-1/A-2 の継続監視。 | 【F:docs/IMPLEMENTATION-PLAN.md†L56-L69】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L96-L206】 |
+| 自動マージ率 | `merge.diff.apply` イベントで自動マージ率 ≥80% を計算し、Reporter が一致するか検証。 | Phase B 移行条件とロールバック監視。 | 【F:docs/IMPLEMENTATION-PLAN.md†L58-L69】 |
+| ロック再試行 | `autosave.lock.error` の `retryable` 属性で Collector が指数バックオフを継続し、Analyzer が再試行回数を記録できるか。 | Lock 障害時の通知と再試行手順を TDD 化。 | 【F:docs/AUTOSAVE-DESIGN-IMPL.md†L184-L260】 |
+| 通知連携 | Slack/GitHub 通知イベントが Reporter ログと整合するかを検証。 | ロールバック決裁のトレーサビリティ確保。 | 【F:docs/IMPLEMENTATION-PLAN.md†L69-L95】 |
+
+テスト仕様は `tests/telemetry/TEST_PLAN.md` に集約し、CI で継続検証する。【F:docs/IMPLEMENTATION-PLAN.md†L96-L155】
 
 ## 3. イベントスキーマと Collector/Analyzer 連携
-### 3.1 AutoSave Event Schema
+### 3.1 AutoSave Save Event
 ```json
 {
   "ts": "2024-06-30T12:34:56.789Z",
@@ -42,9 +64,8 @@
   "phase": "A-1"
 }
 ```
-- `Collector`: 既存 JSONL パイプに保存。`feature` タグで AutoSave 指標を分離。【F:docs/IMPLEMENTATION-PLAN.md†L96-L100】【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
-- `Analyzer`: duration の P95 集計と `retryable`/`retry_count` で再試行率算出。
-- `Reporter`: Phase ごとの保存遅延を日次レポートに掲載。
+- Collector: 既存 JSONL パイプへ保存し、`feature` タグで AutoSave 指標を分離。【F:docs/IMPLEMENTATION-PLAN.md†L96-L104】【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+- Analyzer: duration P95 / retry率を算出し Reporter へ出力。
 
 ### 3.2 AutoSave Restore Event
 ```json
@@ -59,7 +80,7 @@
   "phase": "A-2"
 }
 ```
-- Analyzer は成功件数と母数から復旧成功率を算出。
+- Analyzer: 成功率と復旧時間を算出し、Phase A の継続基準に反映。【F:docs/IMPLEMENTATION-PLAN.md†L56-L69】
 
 ### 3.3 Diff Merge Event
 ```json
@@ -75,7 +96,7 @@
   "phase": "B-0"
 }
 ```
-- Analyzer が `auto_accepted` と `auto_accept_ratio` から自動マージ率を計算し、Reporter が SLO を確認。
+- Analyzer: `auto_accept_ratio` から自動マージ率を算出し、Reporter が SLO を確認。【F:docs/IMPLEMENTATION-PLAN.md†L58-L69】
 
 ### 3.4 Lock Exception Event
 ```json
@@ -92,24 +113,36 @@
   "phase": "A-1"
 }
 ```
-- Collector 側で `retryable` を見て指数バックオフを継続。Analyzer は再試行回数を集計し、Reporter が再試行負荷を監視。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L100-L144】
+- Collector: `retryable` に基づき指数バックオフ継続可否を判断。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L184-L260】
+- Analyzer: 再試行回数を集計して Reporter が再試行負荷を報告。
+
+### 3.5 通知要件マトリクス
+| イベント | 通知チャネル | 必須ペイロード | 運用目的 | 参照 |
+| --- | --- | --- | --- | --- |
+| `autosave.slo.violation` | Slack `#launch-autosave`, GitHub Issue Draft | `phase`, `metric`, `threshold`, `actual`, `retryable` | SLO 超過の即時共有と RCA 起票。 | 【F:docs/IMPLEMENTATION-PLAN.md†L69-L95】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L96-L215】 |
+| `autosave.lock.readonly` | UI トースト + Reporter 日次サマリ | `reason`, `last_error`, `lease_id` | 閲覧専用モード移行のユーザ通知。 | 【F:docs/AUTOSAVE-DESIGN-IMPL.md†L184-L260】 |
+| `merge.diff.apply` | Reporter 日次サマリ | `auto_accept_ratio`, `precision`, `phase` | Phase B のマージ品質監視。 | 【F:docs/IMPLEMENTATION-PLAN.md†L58-L69】 |
+| `rollback.executed` | Slack テンプレート `templates/alerts/rollback.md`, Reporter | `phase_from`, `phase_to`, `timestamp`, `trigger_metric` | ロールバック履歴と再開条件のトレーサビリティ。 | 【F:docs/IMPLEMENTATION-PLAN.md†L86-L95】 |
 
 ## 4. SLO 違反時の通知・再試行手順
-`docs/AUTOSAVE-DESIGN-IMPL.md` の例外設計と整合させた運用手順を以下に更新する。
+1. Collector が SLO 閾値逸脱イベントを検知したら Slack Webhook と GitHub Issue Draft を即時送信し、Reporter が決裁ログへ追記する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L96-L215】【F:docs/IMPLEMENTATION-PLAN.md†L69-L95】
+2. Analyzer は 5 分以内に対象フェーズのメトリクスを再計算し、`retryable=true` の場合は指数バックオフ (0.5s→1s→2s→4s) を最大 5 回まで実施する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L170-L215】
+3. 再試行後も SLO 未達なら `flags:rollback --phase <prev>` を実行し、UI へ `autosave.lock.readonly` を通知。Reporter はロールバック理由と次回 Canary スケジュールを Runbook に記録する。【F:docs/IMPLEMENTATION-PLAN.md†L69-L95】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L184-L260】
+4. ロールバック完了後 1 営業日以内に RCA を `reports/rca/` へ格納し、次フェーズ再導入時は QA Canary から再開する。【F:docs/IMPLEMENTATION-PLAN.md†L118-L133】
 
-1. `Collector` が SLO 閾値逸脱イベント (`event="autosave.slo.violation"` など) を検知したら、即時に Slack Webhook と GitHub Issue Draft を送信する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L96-L111】【F:docs/IMPLEMENTATION-PLAN.md†L69-L75】
-2. Analyzer は 5 分以内に対象フェーズのメトリクスを再計算し、`retryable` が true のイベントについては指数バックオフ (0.5s→1s→2s) を 3 回実施する。再試行完了イベントを Collector にフィードバックする。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L141】
-3. 再試行後も SLO 未達の場合は直前フェーズのフラグへロールバックし、`autosave.lock.readonly` を UI へ通知。Reporter はロールバック実施時間と次回 Canary スケジュールを手順書に記載する。【F:docs/IMPLEMENTATION-PLAN.md†L72-L75】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L146】
-4. ロールバック完了後 1 営業日以内に原因分析レポートを共有し、次フェーズ再開時は QA Canary から再導入する。【F:docs/IMPLEMENTATION-PLAN.md†L72-L75】
+## 5. Collector/Analyzer 連携検証
+- Collector は JSONL ログを `workflow-cookbook/logs` へ集約し、Analyzer が `analyze.py` でメトリクスを算出する Day8 パイプラインを前提とする。【F:Day8/docs/day8/design/03_architecture.md†L1-L27】
+- AutoSave/Diff Merge イベントは既存データモデル（duration P95、成功率、自動マージ率）に適合し、Reporter が日次レポートへ反映することを CI テストで保証する。【F:Day8/docs/day8/design/03_architecture.md†L3-L27】【F:docs/IMPLEMENTATION-PLAN.md†L96-L151】
+- ロック関連ログは `project/autosave/` に限定し、Day8 アーティファクト (`workflow-cookbook/`) を汚染しないことをチェックリストで確認する。【F:docs/IMPLEMENTATION-PLAN.md†L61-L75】【F:docs/IMPLEMENTATION-PLAN.md†L143-L151】
 
-## 5. ロールアウト・フォローアップフロー
-- Phase A: AutoSave を段階的に有効化し、保存遅延と復旧成功率を連続監視。
-- Phase B: Diff Merge 精度を beta→stable へ引き上げ、自動マージ率を監視。
-- 各フェーズは Collector→Analyzer→Reporter の既存フローでテレメトリを巡回させ、SLO 違反時は上記手順でロールバックと通知を行う。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】【F:docs/IMPLEMENTATION-PLAN.md†L52-L75】
+## 6. ロールアウト・フォローアップフロー
+- Phase A: AutoSave を段階的に有効化し、保存遅延・復旧成功率を連続監視。SLO 違反発生時はセクション 4 の手順でロールバックする。【F:docs/IMPLEMENTATION-PLAN.md†L52-L95】
+- Phase B: Diff Merge 精度を `beta`→`stable` へ引き上げ、自動マージ率と重大バグ報告数を監視する。【F:docs/IMPLEMENTATION-PLAN.md†L58-L75】
+- いずれも Collector→Analyzer→Reporter の既存フローでテレメトリを巡回させ、Canary/GA の進捗とロールバック履歴を共有する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
 
-## 6. レビュー用チェックリスト
-- [ ] 各フェーズの監視指標と閾値が `Collector` ダッシュボードに設定されている。
-- [ ] AutoSave/Diff Merge イベントが JSONL スキーマ (セクション 3) を満たす。
-- [ ] テレメトリ整合性テスト (セクション 2) が CI に追加済み。
-- [ ] SLO 違反時の通知・再試行手順 (セクション 4) が運用 Runbook に連結されている。
-- [ ] ロールバック手順後の Canary 再開計画が Reporter に記録されている。
+## 7. レビュー用チェックリスト
+- [ ] フラグ解決ポリシー（セクション 0.1）が `src/config/flags.ts` 実装と一致する。
+- [ ] 各フェーズの監視指標と閾値が Collector ダッシュボードに設定済みである。
+- [ ] テレメトリ整合性テスト（セクション 2）が CI に追加されている。
+- [ ] イベントスキーマ（セクション 3）と通知マトリクス（セクション 3.5）が実装と整合する。
+- [ ] SLO 違反手順（セクション 4）と Collector/Analyzer 連携検証（セクション 5）が運用 Runbook とリンクされている。
