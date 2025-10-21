@@ -186,6 +186,8 @@ def test_run_update_refreshes_metadata_and_dependencies(tmp_path, dry_run):
 
     legacy_token = "2024-12-31T23:59:00Z"
     index_payload = json.loads(index_path.read_text(encoding="utf-8"))
+    for node in index_payload["nodes"].values():
+        node["mtime"] = "2024-12-31T23:59:00Z"
     index_payload["generated_at"] = legacy_token
     _write_json(index_path, index_payload)
     hot_payload = json.loads(hot_path.read_text(encoding="utf-8"))
@@ -218,6 +220,7 @@ def test_run_update_refreshes_metadata_and_dependencies(tmp_path, dry_run):
 
     refreshed_index = json.loads(index_path.read_text(encoding="utf-8"))
     assert refreshed_index["generated_at"] == expected_token
+    assert all(node.get("mtime") == expected_token for node in refreshed_index["nodes"].values())
 
     refreshed_alpha = json.loads(cap_paths["alpha.md"].read_text(encoding="utf-8"))
     assert refreshed_alpha["deps_out"] == ["beta.md"]
@@ -271,6 +274,8 @@ def test_run_update_preserves_hot_nodes_structure(tmp_path):
     baseline_serial = "00009"
     index_payload = json.loads(index_path.read_text(encoding="utf-8"))
     index_payload["generated_at"] = baseline_serial
+    index_payload["nodes"]["alpha.md"]["mtime"] = "00012"
+    index_payload["nodes"]["beta.md"]["mtime"] = "00011"
     _write_json(index_path, index_payload)
     baseline_hot["generated_at"] = baseline_serial
     _write_json(hot_path, baseline_hot)
@@ -279,7 +284,7 @@ def test_run_update_preserves_hot_nodes_structure(tmp_path):
         update.UpdateOptions(targets=(root,), emit="index+caps", dry_run=False)
     )
 
-    expected_token = "00010"
+    expected_token = "00013"
     assert report.generated_at == expected_token
 
     refreshed_hot = json.loads(hot_path.read_text(encoding="utf-8"))
@@ -298,6 +303,9 @@ def test_run_update_preserves_hot_nodes_structure(tmp_path):
     assert refreshed_hot["nodes"][0]["edges"] == baseline_hot["nodes"][0]["edges"]
     assert refreshed_hot["nodes"][0]["caps"] == baseline_hot["nodes"][0]["caps"]
     assert refreshed_hot["nodes"][0]["role"] == baseline_hot["nodes"][0]["role"]
+    refreshed_index = json.loads(index_path.read_text(encoding="utf-8"))
+    assert refreshed_index["nodes"]["alpha.md"]["mtime"] == expected_token
+    assert refreshed_index["nodes"]["beta.md"]["mtime"] == expected_token
 
 
 def test_run_update_limits_caps_to_two_hop_scope(tmp_path):
