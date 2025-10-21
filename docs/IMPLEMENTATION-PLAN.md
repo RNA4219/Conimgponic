@@ -266,6 +266,133 @@ pnpm run flags:reset
 - 例外発生時は `Collector` 側で再試行可否を判定（IO エラー=再試行可、ロジックエラー=即通知）し、Slack Webhook への警告と GitHub Issue Draft を自動生成。
 - 監視項目: 保存時間 P95、保存失敗率、自動マージ率、手動ロールバック発生数、Telemetry キュー滞留時間。
 
+### 6.1 監視項目と通知要件（整理）
+| 指標 | しきい値/変化検知 | 検知主体 | 通知チャネル | エスカレーション | 備考 |
+| --- | --- | --- | --- | --- | --- |
+| 保存時間 P95 | Phase ごとの基準超過（例: 2.5s 超）を 2 バッチ連続で検知 | Analyzer | Slack `#launch-autosave`（要 @oncall） | 4 バッチ連続で Incident ハンドオフ（L2） | Collector は遅延ラベル付きで JSONL を出力 |
+| 保存失敗率 | 0.5% 超を単一バッチで検知 | Analyzer | PagerDuty AutoSave サービス | 即時ロールバック判定会議 | Collector は retryable/terminal を `error.retryable` で区別 |
+| 自動マージ率 | 80% 未満が 3 バッチ連続 | Analyzer | Slack `#merge-ops` | Governance weekly review で対策決定 | Reporter が日次レポートへ併記 |
+| 手動ロールバック件数 | 1 日で 1 件以上 | Collector（Webhook） | Slack `#launch-autosave` | 24h 以内に RCA 起案 | Reporter がロールバック履歴を追記 |
+| Telemetry キュー滞留時間 | 15 分超でアラート | Collector | Grafana Alert → Slack `#telemetry` | Analyzer 処理を一時停止しキュー排出 | Collector が `queue.lag_seconds` を送出 |
+
+### 6.2 Telemetry イベントスキーマ案（JSON Schema 下書き）
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://conimgponic.dev/schemas/telemetry/autosave-merge-event.json",
+  "title": "AutosaveMergeTelemetryEvent",
+  "type": "object",
+  "required": [
+    "event_id",
+    "feature",
+    "component",
+    "timestamp",
+    "metrics"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "pattern": "^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$"
+    },
+    "feature": {
+      "type": "string",
+      "enum": ["autosave", "merge"],
+      "description": "監視対象機能名"
+    },
+    "component": {
+      "type": "string",
+      "enum": ["collector", "analyzer", "reporter"],
+      "description": "イベントを送出した Day8 コンポーネント"
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["A-0", "A-1", "A-2", "B-0", "B-1"],
+      "description": "ロールアウトフェーズ"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["window_minutes"],
+      "properties": {
+        "window_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "save_latency_p95_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "save_failure_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "merge_success_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "manual_rollbacks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "queue_lag_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "retryable": {
+          "type": "boolean",
+          "description": "再試行可能性のフラグ"
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["retryable"],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+### 6.3 ロールバック/Incident 通知データ要件と検証
+- 通知イベントには `feature`, `phase`, `error.retryable`, `manual_rollbacks` を必須とし、Slack テンプレート `templates/alerts/rollback.md` と連携させる。
+- Incident 発火時は `reports/rca/` への格納物 ID、対応責任者、再発防止タスク ID を `Reporter` が追記し、Collector が同一イベントへ `incident_ref` として添付する。
+- ロールバック後の再開判定には Analyzer から保存時間/失敗率の最新値を取得し、Reporter 日次サマリと整合することを SRE が確認する。
+
+#### 実装チーム向けチェックリスト
+- [ ] Collector: Telemetry JSONL に JSON Schema v1 を適用し、`feature`/`component`/`phase` を欠損なく出力する。
+- [ ] Analyzer: イベントの `metrics` を集計し、しきい値超過時に通知ペイロードへ `error.retryable` と推奨アクションを付与する。
+- [ ] Reporter: ロールバック/Incident 通知に `incident_ref` と RCA ステータスを追記し、Governance レビューへ添付する。
+- [ ] Ops: Slack/PagerDuty 連携で上記ペイロードの必須フィールドが表示されることを確認する。
+
+#### 検証コマンド案
+```bash
+# JSON Schema バリデーション（Collector 出力サンプル）
+pnpm tsx scripts/monitor/validate-event.ts reports/monitoring/sample.jsonl \
+  --schema schemas/telemetry/autosave-merge-event.schema.json
+
+# Analyzer アラート閾値のドライラン（15 分窓）
+pnpm tsx scripts/monitor/analyzer-dryrun.ts --window 15 --threshold-config configs/telemetry/thresholds.yml
+
+# Reporter 通知テンプレートの整合性チェック
+pnpm tsx scripts/reporter/preview-alert.ts templates/alerts/rollback.md \
+  --incident-ref RCA-2024-042
+```
+
 ## 7) 実装前のコード調査
 - `App.tsx`: 初期化処理（`useEffect` キーバインド、`useState` 初期化）へフラグ連携ポイントを挿入できるか確認。
 - `MergeDock.tsx`: 既存タブ構造と `pref` ステートを分析し、新規 Diff Merge タブ追加時に 200 行以内/差分 1 ファイルで収まるかを検証。
