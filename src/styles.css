@@ -1,0 +1,23 @@
+:root{ --bg:#ffffee; --accent:#c4fcc4; --text:#1b1b1b; --muted:#888; --card:#ffffff; --border:#e5e5e5; }
+*{box-sizing:border-box}
+html,body,#root{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,Arial;}
+.app{display:grid;grid-template-rows:auto 1fr auto; height:100%;}
+.toolbar{display:flex;gap:.5rem;align-items:center;padding:.5rem .75rem;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:5}
+.btn{padding:.4rem .7rem;border:1px solid var(--border);background:#fff;border-radius:.6rem;cursor:pointer}
+.btn.primary{background:var(--accent)}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;padding:.5rem}
+.pane{background:var(--card);border:1px solid var(--border);border-radius:.8rem;display:flex;flex-direction:column}
+.pane header{padding:.4rem .6rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem}
+.pane textarea{flex:1;border:0;padding:.6rem;resize:none;font:14px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.list{padding:.5rem;display:flex;flex-direction:column;gap:.5rem;overflow:auto}
+.card{border:1px solid var(--border);border-radius:.6rem;background:#fff}
+.card header{display:flex;align-items:center;gap:.5rem;padding:.4rem .5rem;border-bottom:1px dashed var(--border)}
+.card .content{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;padding:.4rem}
+.badge{font-size:12px;color:#333;background:#f2f2f2;border-radius:999px;padding:.1rem .5rem;border:1px solid var(--border)}
+.dock{border-top:1px solid var(--border);background:var(--card)}
+.dock .tabs{display:flex;gap:.5rem;padding:.4rem .5rem;border-bottom:1px solid var(--border)}
+.tab{padding:.35rem .6rem;border:1px solid var(--border);background:#fff;border-radius:.6rem;cursor:pointer}
+.tab.active{background:var(--accent)}
+pre{white-space:pre-wrap;word-break:break-word;margin:0;padding:.6rem}
+input,select{border:1px solid var(--border);border-radius:8px;padding:.3rem .45rem}
+h4{margin:.4rem 0}

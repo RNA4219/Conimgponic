@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "case-mini-03",
+      "tags": [
+        "smoke",
+        "compile"
+      ],
+      "cuts": 3,
+      "notes": "最小構成"
+    },
+    {
+      "id": "case-merge-10",
+      "tags": [
+        "merge",
+        "conflict"
+      ],
+      "cuts": 10,
+      "notes": "衝突混在"
+    }
+  ]
+}

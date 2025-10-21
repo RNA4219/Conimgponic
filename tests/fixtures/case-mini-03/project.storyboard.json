@@ -1,0 +1,33 @@
+{
+  "id": "sb-example",
+  "title": "Mini Example",
+  "version": 1,
+  "selection": [],
+  "scenes": [
+    {
+      "id": "c1",
+      "manual": "[主語] 少年\n[動作] 走る\n[場所/時間] 夕暮れの公園\n[カメラ/レンズ] 50mm\n[尺] 5s",
+      "ai": "",
+      "status": "idle",
+      "seed": 123,
+      "tone": "cinematic",
+      "assets": []
+    },
+    {
+      "id": "c2",
+      "manual": "",
+      "ai": "少年は息を切らしながらベンチに腰掛ける。",
+      "status": "idle",
+      "seed": 456,
+      "tone": "noir",
+      "assets": []
+    },
+    {
+      "id": "c3",
+      "manual": "余韻。",
+      "ai": "",
+      "status": "idle",
+      "assets": []
+    }
+  ]
+}

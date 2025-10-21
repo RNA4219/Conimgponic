@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Capabilities",
+  "type": "object",
+  "properties": {
+    "seed": {
+      "type": "boolean"
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    }
+  },
+  "required": [
+    "seed"
+  ]
+}

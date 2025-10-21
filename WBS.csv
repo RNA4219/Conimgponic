@@ -1,0 +1,11 @@
+WBS,Task,Owner,Est(days),DependsOn,Deliverable
+A1,autosave.ts 実装(デバウンス/保存),Dev,0.8,,current.json 保存
+A2,履歴ローテ/容量制御/index.json,Dev,0.5,A1,history + index.json
+A3,ロック(WebLocks/advisory),Dev,0.4,A1,排他制御
+A4,AutoSaveIndicator + 履歴UI,Dev,0.5,"A1,A2",Indicator/Modal
+A5,AutoSave 受入テスト/異常系,QA,0.5,A1–A4,テストレポート
+B1,merge.ts v0（セクション/LCS/スコア）,Dev,1.2,,マージエンジン
+B2,DiffMergeView（衝突UI）,Dev,0.8,B1,UIタブ
+B3,証跡保存（merge.json/meta）,Dev,0.3,B1,runs/<ts>/merge.json
+B4,マージ受入テスト,QA,0.5,B1–B3,テストレポート
+C1,回帰試験（Export/Import/ショートカット）,QA,0.5,"A5,B4",回帰レポート

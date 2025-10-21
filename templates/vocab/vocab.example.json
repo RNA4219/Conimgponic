@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "tokens": {
+    "styles": {
+      "cinematic": "cinematic tone, dynamic camera, subtle color grading",
+      "noir": "film noir tone, high contrast lighting, smoke haze",
+      "anime": "anime storyboard style, vibrant colors, dynamic action lines"
+    },
+    "camera": {
+      "lens": {
+        "wide": "24mm wide",
+        "standard": "50mm",
+        "tele": "85mm telephoto"
+      },
+      "motion": {
+        "static": "locked-off shot",
+        "dolly": "dolly-in",
+        "handheld": "handheld shake"
+      }
+    },
+    "lighting": {
+      "high_key": "high-key lighting",
+      "low_key": "low-key lighting",
+      "rim": "rim light"
+    },
+    "negatives": {
+      "avoid_generic": "avoid generic phrasing, be specific",
+      "avoid_overexposure": "avoid blown highlights"
+    }
+  },
+  "aliases": {
+    "film_noir": "noir"
+  },
+  "locale": "ja-JP",
+  "notes": "例: 出荷時の初期トークンセット"
+}

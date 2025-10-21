@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Merge Evidence",
+  "type": "object",
+  "properties": {
+    "storyboard_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "threshold": {
+      "type": "number"
+    },
+    "granularity": {
+      "type": "string"
+    },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "auto_merged_sections": {
+            "type": "integer"
+          },
+          "conflicts": {
+            "type": "integer"
+          },
+          "avg_similarity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    }
+  },
+  "required": [
+    "threshold",
+    "scenes"
+  ]
+}
