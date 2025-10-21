@@ -1,0 +1,43 @@
+{
+  "deps": [
+    "in::docs/README.md",
+    "in::docs/day8/ops/04_ops.md",
+    "out::workflow-cookbook/RUNBOOK.md",
+    "out::workflow-cookbook/CHECKLISTS.md",
+    "out::workflow-cookbook/scripts/analyze.py"
+  ],
+  "deps_in": [
+    "docs/README.md",
+    "docs/day8/ops/04_ops.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/RUNBOOK.md",
+    "workflow-cookbook/CHECKLISTS.md",
+    "workflow-cookbook/scripts/analyze.py"
+  ],
+  "generated_at": "2025-02-21T00:00:00Z",
+  "id": "docs/addenda/H_Deploy_Guide.md",
+  "maintenance": {
+    "refresh": "デプロイフローや release.yml を更新したら ops/04_ops.md と合わせて本文・Birdseye（index→caps→generated_at）を更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "ローカル検証と CI 手順が乖離するとリリース前後のチェックが形骸化する",
+    "Docker サンプルの依存が古くなるとビルド失敗や脆弱性が検知されにくくなる"
+  ],
+  "role": [
+    "core::deployment-guide",
+    "orbit::release-handoff"
+  ],
+  "summary": [
+    "core::Day8 のデプロイを開発・Docker・GitHub Actions に分けて整理し、Katamari Appendix H を移植した補助資料。",
+    "orbit::workflow-cookbook/scripts/analyze.py を核としたローカル検証と CI の同期手順を提示する。",
+    "orbit::release タグ命名と Docker/Release テンプレートを提供し、リリース判定の抜け漏れを防ぐ。"
+  ],
+  "tests": [
+    "check::analyze.py の実行例が README や ops と整合しているか確認",
+    "check::Release テンプレート内のコマンドが CI フローと一致しているか確認"
+  ]
+}

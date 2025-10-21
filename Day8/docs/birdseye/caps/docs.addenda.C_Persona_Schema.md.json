@@ -1,0 +1,43 @@
+{
+  "deps": [
+    "in::docs/README.md",
+    "in::docs/day8/README.md",
+    "in::docs/day8/spec/02_spec.md",
+    "in::docs/day8/quality/06_quality.md",
+    "out::docs/birdseye/index.json"
+  ],
+  "deps_in": [
+    "docs/README.md",
+    "docs/day8/README.md",
+    "docs/day8/spec/02_spec.md",
+    "docs/day8/quality/06_quality.md"
+  ],
+  "deps_out": [
+    "docs/birdseye/index.json"
+  ],
+  "generated_at": "2025-10-24T09:00:00Z",
+  "id": "docs/addenda/C_Persona_Schema.md",
+  "maintenance": {
+    "refresh": "ロール構成や Task Seed テンプレートを更新した際は Appendix C と spec/quality の整合を確認し、index/caps の generated_at を同期。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "ロール間ハンドオフの定義が古いと運用ログからの洞察が分断され、Birdseye の依存が不整合になる",
+    "Task Seed の評価指標がロール視点とずれると Why-Why/提案の優先順位が誤る"
+  ],
+  "role": [
+    "core::persona-appendix",
+    "orbit::ops-handoff"
+  ],
+  "summary": [
+    "core::Day8 の Collector/Analyzer/Reporter/Proposer/Governance ロールを Katamari 形式のスキーマで定義し、運用ログ連携を標準化する。",
+    "core::Task Seed 起票や評価指標策定時に参照する必須フィールドを整理し、Birdseye ノードの命名規則と同期させる。",
+    "orbit::ハンドオフ条件とエスカレーション先を統合し、運用ログからの再試行判断を明確にする。"
+  ],
+  "tests": [
+    "check::spec/02_spec.md のロール説明と Appendix C のフィールドが矛盾しないか確認",
+    "check::quality/06_quality.md の評価指標と insights_required テンプレートが同期しているか確認"
+  ]
+}

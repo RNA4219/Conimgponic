@@ -1,0 +1,45 @@
+{
+  "deps": [
+    "in::docs/README.md",
+    "in::docs/day8/security/05_security.md",
+    "in::docs/safety.md",
+    "out::workflow-cookbook/SECURITY.md",
+    "out::workflow-cookbook/SAFETY.md",
+    "out::docs/birdseye/hot.json"
+  ],
+  "deps_in": [
+    "docs/README.md",
+    "docs/day8/security/05_security.md",
+    "docs/safety.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/SECURITY.md",
+    "workflow-cookbook/SAFETY.md",
+    "docs/birdseye/hot.json"
+  ],
+  "generated_at": "2025-10-22T09:00:00Z",
+  "id": "docs/addenda/G_Security_Privacy.md",
+  "maintenance": {
+    "refresh": "Secrets/ログ/通信/OAuth の運用ルールが変わったら Appendix G → 05_security.md → SAFETY の順で更新し、index/hot/caps の generated_at を同期。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "キー管理や OAuth 手順が古いままだと緊急時にフェイルセーフへ切り替えられない",
+    "ログ衛生の基準がずれると監査証跡が欠損し Birdseye 上で判断できなくなる"
+  ],
+  "role": [
+    "core::security-appendix",
+    "orbit::safety-handoff"
+  ],
+  "summary": [
+    "core::Katamari Appendix G を Day8 向けに再編し、Secrets・ログ衛生・データ保持・通信保護・OAuth ガードを統合した運用ノート。",
+    "core::workflow-cookbook/SECURITY.md と SAFETY.md のハンドオフ地点を明示し、Birdseye 更新順序を指示する。",
+    "orbit::フェイルセーフ発動時のログ記録と Hot リスト更新を 1 ページで案内する。"
+  ],
+  "tests": [
+    "check::05_security.md のチェックリストと Appendix G の項目が一致しているか確認",
+    "check::Birdseye index/hot の generated_at が本カプセルと揃っているか確認"
+  ]
+}

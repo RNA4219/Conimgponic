@@ -1,0 +1,35 @@
+{
+  "deps": [
+    "in::workflow-cookbook/logs/test.jsonl",
+    "in::workflow-cookbook/reflection.yaml",
+    "out::workflow-cookbook/reports/today.md",
+    "out::workflow-cookbook/reports/issue_suggestions.md"
+  ],
+  "deps_in": [
+    "workflow-cookbook/RUNBOOK.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/scripts/analyze.py",
+  "maintenance": {
+    "refresh": "ログフォーマットや出力パスが変わったら reflection.yaml と併せて更新。",
+    "tooling": [
+      "python workflow-cookbook/scripts/analyze.py"
+    ]
+  },
+  "risks": [
+    "JSONL構造が変わると統計が崩れレポート精度が低下する"
+  ],
+  "role": [
+    "core::observability",
+    "orbit::reflection-pipeline"
+  ],
+  "summary": [
+    "core::logs/test.jsonl を集計しパス率/遅延/失敗ケースを算出するスクリプト。",
+    "orbit::reflection.yaml の設定に従いレポートファイルとIssue提案を生成。",
+    "orbit::CI後の運用判断に必要な最小メトリクスをMarkdownで出力。"
+  ],
+  "tests": [
+    "check::サンプルログでpass/fail件数が期待通りかを手動確認"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "deps": [
+    "in::docs/ROADMAP_AND_SPECS.md",
+    "in::workflow-cookbook/BLUEPRINT.md",
+    "in::workflow-cookbook/GUARDRAILS.md",
+    "in::workflow-cookbook/SAFETY.md",
+    "in::workflow-cookbook/SECURITY.md",
+    "in::workflow-cookbook/tools/codemap/README.md",
+    "in::workflow-cookbook/tools/codemap/update.py",
+    "in::workflow-cookbook/scripts/analyze.py",
+    "in::workflow-cookbook/docs/IN-20250115-001.md",
+    "in::workflow-cookbook/logs/test.jsonl",
+    "in::workflow-cookbook/reports/today.md",
+    "in::workflow-cookbook/reports/issue_suggestions.md",
+    "out::docs/birdseye/index.json",
+    "out::workflow-cookbook/docs/birdseye/index.json",
+    "out::workflow-cookbook/CHECKLISTS.md"
+  ],
+  "deps_in": [
+    "docs/ROADMAP_AND_SPECS.md",
+    "workflow-cookbook/BLUEPRINT.md",
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/HUB.codex.md",
+    "workflow-cookbook/SAFETY.md",
+    "workflow-cookbook/SECURITY.md"
+  ],
+  "deps_out": [
+    "docs/birdseye/index.json",
+    "workflow-cookbook/CHECKLISTS.md",
+    "workflow-cookbook/EVALUATION.md",
+    "workflow-cookbook/docs/IN-20250115-001.md",
+    "workflow-cookbook/docs/birdseye/index.json",
+    "workflow-cookbook/logs/test.jsonl",
+    "workflow-cookbook/reports/issue_suggestions.md",
+    "workflow-cookbook/reports/today.md",
+    "workflow-cookbook/scripts/analyze.py",
+    "workflow-cookbook/tools/codemap/README.md",
+    "workflow-cookbook/tools/codemap/update.py"
+  ],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/RUNBOOK.md",
+  "maintenance": {
+    "refresh": "Preparation/Execution/Verificationの各手順を更新した際は Birdseye index/caps と CHECKLISTS を同時更新。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json,workflow-cookbook/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "手順の齟齬は本番運用事故を誘発"
+  ],
+  "role": [
+    "core::operations",
+    "orbit::incident-response"
+  ],
+  "summary": [
+    "core::Day8ワークフローのPurpose/Roles/Guardrailsを明文化し役割と参照元を即座に把握可能にする。",
+    "core::Preparation→Execution→Verificationの順で環境構築・Birdseye再生成・ログ検証の具体コマンドを提示。",
+    "orbit::CHECKLISTS/インシデント記録/Observability資料との同期ポイントを列挙し運用判断を支援。"
+  ],
+  "tests": [
+    "check::Preparation/Execution/Verification手順が CHECKLISTS と codemap/analyze スクリプトに追従しているか確認"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "deps_in": [
+    "docs/ROADMAP_AND_SPECS.md",
+    "docs/Release_Checklist.md",
+    "docs/addenda/J_Runbook.md",
+    "docs/addenda/G_Security_Privacy.md",
+    "docs/addenda/K_Accessibility_UX.md",
+    "docs/addenda/M_Versioning_Release.md",
+    "docs/addenda/M1_Metrics_Healthz_ADR.md"
+  ],
+  "deps_out": [
+    "docs/day8/spec/02_spec.md",
+    "docs/TASKS.md",
+    "docs/birdseye/index.json",
+    "docs/birdseye/hot.json"
+  ],
+  "generated_at": "2025-11-06T09:00:00Z",
+  "id": "docs/day8/spec/01_requirements.md",
+  "maintenance": {
+    "refresh": "要件の固定事項や受入基準を更新したら README / ROADMAP / Birdseye (index+hot) を同じコミットで再同期する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json docs/birdseye/hot.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "README や ROADMAP と参照整合が崩れるとタスク化・承認フローの起点が分断される",
+    "Appendix G/J/K/M1 とのリンクが失効するとセキュリティ・運用判断の根拠が失われる"
+  ],
+  "role": "requirements",
+  "summary": "Katamari 章立てに沿って Day8 反省パイプラインの固定事項/スコープ/ユースケース/FR/NFR/データモデル/受入基準/マイルストーンを統合した要件リファレンス。",
+  "tests": [
+    "check::docs/README.md の要件リンクが最新か確認",
+    "check::docs/ROADMAP_AND_SPECS.md の要求行が同期されているか確認"
+  ]
+}

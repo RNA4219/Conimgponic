@@ -1,0 +1,32 @@
+{
+  "deps_in": [
+    "README.md"
+  ],
+  "deps_out": [
+    "docs/TASKS.md",
+    "docs/UPSTREAM.md",
+    "docs/addenda/H_Deploy_Guide.md",
+    "docs/Architecture_ASCII.md",
+    "docs/day8/README.md",
+    "docs/safety.md",
+    "docs/adr/README.md",
+    "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
+    "docs/adr/0002-jsonl-event-contract.md",
+    "docs/adr/0003-propose-only-governance.md"
+  ],
+  "generated_at": "2025-11-05T09:00:00Z",
+  "id": "docs/README.md",
+  "maintenance": {
+    "refresh": "索引を更新したら Birdseye カプセルの deps_out を併せて更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "索引と Birdseye のリンクが崩れると適切な資料に辿り着けない"
+  ],
+  "role": "index",
+  "summary": "Day8 ドキュメント配下の索引用ページ。仕様・設計・運用資料への入口を整理する。",
+  "tests": []
+}

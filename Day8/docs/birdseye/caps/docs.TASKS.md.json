@@ -1,0 +1,37 @@
+{
+  "deps": [
+    "in::docs/seeds/README.md",
+    "out::workflow-cookbook/TASK.codex.md",
+    "out::docs/UPSTREAM.md",
+    "out::docs/UPSTREAM_WEEKLY_LOG.md"
+  ],
+  "deps_in": [
+    "docs/README.md"
+  ],
+  "deps_out": [
+    "docs/seeds/README.md"
+  ],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "docs/TASKS.md",
+  "maintenance": {
+    "refresh": "Katamari テンプレート（背景/手順/検証ログ/フォローアップ）の更新や Guardrails 差分を反映したら index/caps/hot を同じコミットで再生成する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "Task Seed の記入順序が古いとガバナンスと検証ログの整合が崩れる"
+  ],
+  "role": [
+    "core::task-seed-policy",
+    "orbit::katamari-template"
+  ],
+  "summary": [
+    "core::Task Seed 作成/更新フローと Katamari テンプレートの要点を定義する運用基準。",
+    "orbit::UPSTREAM ドキュメントと連携しレビュー履歴・差分の参照ハブとなる。"
+  ],
+  "tests": [
+    "check::Katamari 4 セクションが最新テンプレートと一致しているか確認",
+    "check::UPSTREAM 連携リンクが有効か確認"
+  ]
+}

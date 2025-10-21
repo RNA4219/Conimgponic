@@ -1,0 +1,22 @@
+{
+  "deps_in": [
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/SECURITY.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/tools/",
+  "maintenance": {
+    "refresh": "CI や codemap の仕様を変えた際は README/GUARDRAILS と併せて Birdseye を再生成する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "自動生成ツールが古いとドキュメント構造が陳腐化し、支援エージェントの探索精度が落ちる"
+  ],
+  "role": "automation",
+  "summary": "Workflow Cookbook 側の CI チェックと Birdseye 再生成ツールを収める中核ディレクトリ。",
+  "tests": []
+}

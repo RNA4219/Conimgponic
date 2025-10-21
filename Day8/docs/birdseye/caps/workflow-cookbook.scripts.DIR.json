@@ -1,0 +1,22 @@
+{
+  "deps_in": [
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/SECURITY.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/scripts/",
+  "maintenance": {
+    "refresh": "スクリプト仕様を変更したらガードレールと整合させ、Birdseye カプセルを再生成する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "CI 補助スクリプトが更新漏れだと Cookbook の検証フローが破綻する"
+  ],
+  "role": "automation",
+  "summary": "CI テスト実行や解析を行う補助スクリプト。Cookbook の運用フローを CLI から再現する。",
+  "tests": []
+}

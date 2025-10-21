@@ -1,0 +1,36 @@
+{
+  "deps": [
+    "in::workflow-cookbook/tools/codemap/README.md",
+    "in::docs/birdseye/index.json",
+    "in::workflow-cookbook/docs/birdseye/index.json",
+    "out::docs/birdseye/index.json",
+    "out::workflow-cookbook/docs/birdseye/index.json"
+  ],
+  "deps_in": [
+    "workflow-cookbook/RUNBOOK.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/tools/codemap/update.py",
+  "maintenance": {
+    "refresh": "スキーマやフィールドが増減したら update.py の正規化処理と関連Capsを同時更新。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json,workflow-cookbook/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "JSONスキーマ差異を見落とすと生成物が壊れる"
+  ],
+  "role": [
+    "core::birdseye-automation",
+    "orbit::metadata-normalizer"
+  ],
+  "summary": [
+    "core::--targets/--emit/--dry-run でBirdseye indexとcapsを再生成するCLI。",
+    "orbit::generated_at同期と差分検知を行い不要な書き換えを抑制。",
+    "orbit::UpdateErrorでIO/JSON失敗を伝播しCI失敗を早期検知。"
+  ],
+  "tests": [
+    "check::unit-testsでdry-runと書き込みの差分検知がカバーされているか確認"
+  ]
+}

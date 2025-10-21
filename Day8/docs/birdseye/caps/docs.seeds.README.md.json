@@ -1,0 +1,21 @@
+{
+  "deps_in": [
+    "docs/TASKS.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "docs/seeds/README.md",
+  "maintenance": {
+    "refresh": "Seed 配置ガイドを変更した際は Task Seed 運用方針との整合を確認し、Birdseye の依存関係を更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "Seed 保存場所や命名規約が最新化されないと、Task Seed の探索効率が低下する"
+  ],
+  "role": "seeds",
+  "summary": "Task Seed の配置規約と必須セクションを示し、作成者が docs/seeds 配下に適切に保存できるよう支援するガイド。",
+  "tests": []
+}

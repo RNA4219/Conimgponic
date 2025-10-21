@@ -1,0 +1,39 @@
+{
+  "deps_in": [
+    "docs/adr/README.md",
+    "docs/README.md",
+    "docs/ROADMAP_AND_SPECS.md",
+    "docs/day8/design/03_architecture.md",
+    "docs/day8/ops/04_ops.md",
+    "workflow-cookbook/GUARDRAILS.md"
+  ],
+  "deps_out": [
+    "docs/day8/ops/04_ops.md",
+    "workflow-cookbook/GUARDRAILS.md",
+    "governance/policy.yaml",
+    "docs/birdseye/index.json"
+  ],
+  "generated_at": "2025-11-05T09:00:00Z",
+  "id": "docs/adr/0003-propose-only-governance.md",
+  "maintenance": {
+    "refresh": "propose-only 制約に例外が出たら Release チェックリストと policy.yaml を同時に更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "自動化が Git 書き込みを行うと guardrail 違反でリリースフローが停止する"
+  ],
+  "role": [
+    "core::adr",
+    "orbit::governance"
+  ],
+  "summary": [
+    "core::Reporter/Proposer を propose-only に制約し、人間レビューを前提とする。",
+    "orbit::policy.yaml の制約タグと Release チェックリストの確認手順を束ねる。"
+  ],
+  "tests": [
+    "check::workflow-cookbook/GUARDRAILS.md に propose-only のリンクが存在するか確認",
+    "check::docs/day8/ops/04_ops.md が本 ADR を参照しているか確認"
+  ]
+}

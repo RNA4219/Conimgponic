@@ -1,0 +1,385 @@
+name: reflection
+on:
+  workflow_run:
+    workflows: ["test"]
+    types: [completed]
+  schedule:
+    - cron: "0 3 * * *"   # 毎日3:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    working-directory: workflow-cookbook
+jobs:
+  reflect:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve artifact run id
+        id: artifact-meta
+        run: |
+          if [ -n "${RUN_ID}" ]; then
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            if [ -n "${RUN_REPOSITORY}" ]; then
+              echo "run_repository=$RUN_REPOSITORY" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "::notice title=artifact::No linked workflow_run; skip download"
+          fi
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          RUN_REPOSITORY: ${{ github.event.workflow_run.repository.full_name || '' }}
+      - name: Locate test logs artifact
+        if: ${{ steps.artifact-meta.outputs.run_id != '' }}
+        id: artifact-locator
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = Number(process.env.RUN_ID);
+            const repository = process.env.RUN_REPOSITORY ?? '';
+            const current = `${context.repo.owner}/${context.repo.repo}`;
+            if (!Number.isFinite(runId) || runId <= 0) {
+              core.setOutput('artifact-id', '');
+              core.setOutput('found', 'false');
+              return;
+            }
+            if (!repository) {
+              core.notice(`workflow_run repository unavailable; cross-repo artifacts require a PAT with actions:read permissions.`);
+              core.setOutput('artifact-id', '');
+              core.setOutput('found', 'false');
+              return;
+            }
+            if (repository && repository !== current) {
+              core.notice(`run ${runId} belongs to ${repository}; cross-repo artifacts require a PAT with actions:read permissions.`);
+              core.setOutput('artifact-id', '');
+              core.setOutput('found', 'false');
+              return;
+            }
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+              per_page: 100,
+            });
+            const match = data.artifacts?.find(
+              (artifact) => artifact?.name === 'test-logs' && artifact?.expired !== true,
+            );
+            if (!match) {
+              core.notice(`test-logs artifact not found for run ${runId}; skipping download`);
+              core.setOutput('artifact-id', '');
+              core.setOutput('found', 'false');
+              return;
+            }
+            core.setOutput('artifact-id', String(match.id ?? ''));
+            core.setOutput('found', 'true');
+        env:
+          RUN_ID: ${{ steps.artifact-meta.outputs.run_id }}
+          RUN_REPOSITORY: ${{ steps.artifact-meta.outputs.run_repository || '' }}
+      - name: Download test logs
+        if: ${{ steps.artifact-locator.outputs.found == 'true' }}
+        id: download-logs
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: test-logs
+          path: workflow-cookbook
+          run-id: ${{ steps.artifact-meta.outputs.run_id }}
+      - name: Normalize downloaded log directories
+        if: ${{ steps.artifact-locator.outputs.found == 'true' }}
+        working-directory: workflow-cookbook
+        run: |
+          if [ -d "logs" ]; then
+            shopt -s nullglob
+            for path in logs/*; do
+              if [ -d "$path/logs" ]; then
+                for entry in "$path"/logs/*; do
+                  name="$(basename "$entry")"
+                  destination="$path/$name"
+                  if [ -e "$destination" ]; then
+                    base="${name%.*}"
+                    extension=""
+                    if [ "$base" != "$name" ]; then
+                      extension=".${name##*.}"
+                    fi
+                    counter=1
+                    while [ -e "$path/${base}-${counter}${extension}" ]; do
+                      counter=$((counter + 1))
+                    done
+                    destination="$path/${base}-${counter}${extension}"
+                  fi
+                  mv "$entry" "$destination"
+                done
+                rm -rf "$path/logs"
+              fi
+            done
+            shopt -u nullglob
+          fi
+      - name: Merge normalized test logs
+        if: ${{ steps.artifact-locator.outputs.found == 'true' }}
+        run: |
+          if [ -d "logs" ]; then
+            python - <<'PY'
+          from __future__ import annotations
+
+          from pathlib import Path
+
+          logs_dir = Path("logs")
+          target = logs_dir / "test.jsonl"
+          files: list[Path] = []
+          for path in logs_dir.glob("**/*.jsonl"):
+              if not path.is_file() or path == target:
+                  continue
+              files.append(path)
+
+          files.sort(key=lambda path: path.relative_to(logs_dir).as_posix())
+
+          target.parent.mkdir(parents=True, exist_ok=True)
+          content_parts: list[str] = []
+          for file_path in files:
+              text = file_path.read_text(encoding="utf-8")
+              if text and not text.endswith("\n"):
+                  text += "\n"
+              content_parts.append(text)
+
+          target.write_text("".join(content_parts), encoding="utf-8")
+          PY
+          fi
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Analyze logs → report
+        if: ${{ steps.artifact-locator.outputs.found == 'true' }}
+        working-directory: workflow-cookbook
+        run: |
+          python scripts/analyze.py
+      - name: Determine reflection outputs
+        if: ${{ steps.artifact-locator.outputs.found == 'true' }}
+        id: reflection-paths
+        working-directory: workflow-cookbook
+        run: |
+          PYTHON_OUTPUT="$(python - <<'PY'
+          from __future__ import annotations
+
+          from pathlib import Path
+          import sys
+
+          try:
+              import yaml  # type: ignore
+          except ModuleNotFoundError:
+              yaml = None
+
+          try:
+              if str(Path.cwd()) not in sys.path:
+                  sys.path.insert(0, str(Path.cwd()))
+              from scripts import analyze  # type: ignore
+          except ModuleNotFoundError:
+              analyze = None  # type: ignore[assignment]
+
+
+          if analyze is not None:
+              BASE_DIR = analyze.BASE_DIR.resolve()
+          else:
+              BASE_DIR = Path.cwd().resolve()
+          DEFAULT_OUTPUT = Path("reports/today.md")
+          DEFAULT_ISSUE = Path("reports/issue_suggestions.md")
+
+
+          def _strip_inline_comment(value: str) -> str:
+              in_single = False
+              in_double = False
+              escaped = False
+              for index, char in enumerate(value):
+                  if escaped:
+                      escaped = False
+                      continue
+                  if char == "\\" and (in_single or in_double):
+                      escaped = True
+                      continue
+                  if char == "'" and not in_double:
+                      in_single = not in_single
+                      continue
+                  if char == '"' and not in_single:
+                      in_double = not in_double
+                      continue
+                  if char == "#" and not in_single and not in_double:
+                      return value[:index].rstrip()
+              return value.strip()
+
+
+          def _fallback(content: str) -> str:
+              report_indent = None
+              quotes = ("'", '"')
+              for raw_line in content.splitlines():
+                  stripped = raw_line.strip()
+                  if not stripped or stripped.startswith("#"):
+                      continue
+                  indent = len(raw_line) - len(raw_line.lstrip())
+                  cleaned = _strip_inline_comment(stripped)
+                  if not cleaned:
+                      continue
+                  if cleaned.startswith("report:"):
+                      report_indent = indent
+                      continue
+                  if report_indent is not None:
+                      if indent <= report_indent and ":" in cleaned:
+                          report_indent = None
+                      if cleaned.startswith("output:"):
+                          value = cleaned.split(":", 1)[1].strip()
+                          if len(value) >= 2 and value[0] == value[-1] and value[0] in quotes:
+                              value = value[1:-1]
+                          if value:
+                              return value
+              return str(DEFAULT_OUTPUT)
+
+
+          def _normalize_path(path: Path) -> str:
+              normalized_input = path if path.is_absolute() else BASE_DIR / path
+              try:
+                  resolved = normalized_input.resolve(strict=False)
+              except OSError:
+                  resolved = normalized_input
+              try:
+                  relative = resolved.relative_to(BASE_DIR)
+              except ValueError:
+                  return str(resolved)
+              return str(relative)
+
+
+          def _safe_resolve(path: Path) -> Path:
+              try:
+                  return path.resolve(strict=False)
+              except OSError:
+                  return path
+
+
+          def _resolve_issue_output(report_path: Path, analyze_module: object | None) -> Path:
+              issue_candidate = DEFAULT_ISSUE
+              default_report = DEFAULT_OUTPUT
+              base_dir = BASE_DIR
+              if analyze_module is not None:
+                  issue_candidate = getattr(analyze_module, "ISSUE_OUT", issue_candidate)
+                  default_report = getattr(analyze_module, "DEFAULT_REPORT", default_report)
+                  base_dir = getattr(analyze_module, "BASE_DIR", base_dir)
+              if not isinstance(issue_candidate, Path):
+                  issue_candidate = Path(str(issue_candidate))
+              if not isinstance(default_report, Path):
+                  default_report = Path(str(default_report))
+              if not issue_candidate.is_absolute():
+                  issue_candidate = base_dir / issue_candidate
+              if not default_report.is_absolute():
+                  default_report = base_dir / default_report
+              report_parent = _safe_resolve(report_path).parent
+              issue_parent = _safe_resolve(issue_candidate).parent
+              default_parent = _safe_resolve(default_report).parent
+              if issue_parent == default_parent and report_parent != default_parent:
+                  return report_parent / issue_candidate.name
+              return issue_candidate
+
+
+          def _manual_normalize_output(value: str | None) -> str:
+              fallback_absolute = DEFAULT_OUTPUT if DEFAULT_OUTPUT.is_absolute() else BASE_DIR / DEFAULT_OUTPUT
+              try:
+                  fallback_resolved = fallback_absolute.resolve(strict=False)
+              except OSError:
+                  fallback_resolved = fallback_absolute
+              if value:
+                  candidate = Path(value.strip())
+                  candidate_absolute = candidate if candidate.is_absolute() else BASE_DIR / candidate
+                  try:
+                      candidate_resolved = candidate_absolute.resolve(strict=False)
+                  except OSError:
+                      candidate_resolved = candidate_absolute
+                  try:
+                      candidate_resolved.relative_to(BASE_DIR)
+                  except ValueError:
+                      return _normalize_path(fallback_resolved)
+                  return _normalize_path(candidate_resolved)
+              return _normalize_path(fallback_resolved)
+
+
+          def main() -> None:
+              content = Path("reflection.yaml").read_text(encoding="utf-8")
+              manifest_obj = yaml.safe_load(content) if yaml is not None else None
+              manifest_dict = dict(manifest_obj) if isinstance(manifest_obj, dict) else {}
+              if yaml is None:
+                  fallback_output = _fallback(content)
+                  if fallback_output:
+                      report_section = {}
+                      existing = manifest_dict.get("report") if manifest_dict else None
+                      if isinstance(existing, dict):
+                          report_section = dict(existing)
+                      report_section["output"] = fallback_output
+                      manifest_dict["report"] = report_section
+              if analyze is not None:
+                  report_path = analyze.load_report_output_path(
+                      manifest=manifest_dict,
+                      default=DEFAULT_OUTPUT,
+                  )
+              else:
+                  report_section = manifest_dict.get("report")
+                  output_value = None
+                  if isinstance(report_section, dict):
+                      raw_output = report_section.get("output")
+                      if isinstance(raw_output, str) and raw_output.strip():
+                          output_value = raw_output.strip()
+                  if output_value is None:
+                      output_value = _fallback(content)
+                  normalized = _manual_normalize_output(output_value)
+                  report_path = Path(normalized)
+                  if not report_path.is_absolute():
+                      report_path = BASE_DIR / report_path
+              issue_path = _resolve_issue_output(report_path, analyze)
+              normalized_report = _normalize_path(report_path)
+              normalized_issue = _normalize_path(issue_path)
+              sys.stdout.write(f"{normalized_report}\n{normalized_issue}")
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+          )"
+          IFS=$'\n' read -r REPORT_PATH ISSUE_SUGGESTIONS_RELATIVE <<< "$PYTHON_OUTPUT"
+          : "${REPORT_PATH:=reports/today.md}"
+          : "${ISSUE_SUGGESTIONS_RELATIVE:=reports/issue_suggestions.md}"
+          if [[ "$ISSUE_SUGGESTIONS_RELATIVE" = /* ]]; then
+            ISSUE_SUGGESTIONS_CONTENT_PATH="$ISSUE_SUGGESTIONS_RELATIVE"
+            ISSUE_SUGGESTIONS_HASH_PATH="$ISSUE_SUGGESTIONS_RELATIVE"
+          else
+            ISSUE_SUGGESTIONS_CONTENT_PATH="workflow-cookbook/$ISSUE_SUGGESTIONS_RELATIVE"
+            ISSUE_SUGGESTIONS_HASH_PATH="$ISSUE_SUGGESTIONS_CONTENT_PATH"
+          fi
+          echo "REPORT_PATH=$REPORT_PATH" >> "$GITHUB_ENV"
+          echo "ISSUE_SUGGESTIONS_RELATIVE=$ISSUE_SUGGESTIONS_RELATIVE" >> "$GITHUB_ENV"
+          echo "ISSUE_SUGGESTIONS_CONTENT_PATH=$ISSUE_SUGGESTIONS_CONTENT_PATH" >> "$GITHUB_ENV"
+          echo "ISSUE_SUGGESTIONS_HASH_PATH=$ISSUE_SUGGESTIONS_HASH_PATH" >> "$GITHUB_ENV"
+          echo "report-path=$REPORT_PATH" >> "$GITHUB_OUTPUT"
+          echo "issue-relative-path=$ISSUE_SUGGESTIONS_RELATIVE" >> "$GITHUB_OUTPUT"
+          echo "issue-content-path=$ISSUE_SUGGESTIONS_CONTENT_PATH" >> "$GITHUB_OUTPUT"
+          echo "issue-hash-path=$ISSUE_SUGGESTIONS_HASH_PATH" >> "$GITHUB_OUTPUT"
+          git config user.name "reflect-bot"
+          git config user.email "bot@example.com"
+          git add "$REPORT_PATH"
+          git commit -m "chore(report): reflection report [skip ci]" || echo "no changes"
+          git push || true
+      - name: Open issue if needed (draft memo)
+        # Skip issue creation when no suggestions were produced (hashFiles returns '0' when missing).
+        if: ${{ hashFiles(format('{0}', steps.reflection-paths.outputs.issue-hash-path)) != '0' }}
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "反省TODO ${{ github.run_id }}"
+          content-filepath: ${{ steps.reflection-paths.outputs.issue-content-path }}
+          labels: reflection, needs-triage
+      - name: Open draft PR with doc/test tweaks (disabled)
+        if: ${{ false }}  # デチューン：無効化
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "Reflection suggestions (draft)"
+          draft: true
+          labels: reflection

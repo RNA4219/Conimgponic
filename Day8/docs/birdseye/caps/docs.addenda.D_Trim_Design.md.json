@@ -1,0 +1,35 @@
+{
+  "deps_in": [
+    "docs/README.md",
+    "docs/day8/spec/02_spec.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/scripts/analyze.py",
+    "docs/addenda/F_Provider_Matrix.md",
+    "docs/addenda/G_Security_Privacy.md",
+    "docs/addenda/L_Config_Reference.md",
+    "docs/day8/quality/06_quality.md"
+  ],
+  "generated_at": "2025-10-31T12:45:00Z",
+  "id": "docs/addenda/D_Trim_Design.md",
+  "maintenance": {
+    "refresh": "圧縮戦略や保持率 SLO を更新したら Appendix D 本文と Birdseye の edges/caps を同一タイムスタンプで再生成する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "保持率パラメータが古いままだと Analyzer の再現性が下がり、反省レポートの統計が不正確になる",
+    "Birdseye の generated_at が揃わない場合、トリム適用時の監査ログとメタデータ整合性が崩れ運用監査が失敗する"
+  ],
+  "role": "observability",
+  "summary": [
+    "core::Day8 の Sliding Window / Semantic / Memory Hybrid 圧縮戦略を比較し、どのワークフローで起動するかを明示した。",
+    "core::保持率指標と制御パラメータを表形式で整理し、Collector/Analyzer/Governance の判断基準を同期できるようにした。",
+    "orbit::Katamari Appendix D を Day8 ログ基盤に合わせて再構成し、Birdseye メタデータ整合と SLO 監査の手順を補強した。"
+  ],
+  "tests": [
+    "check::docs/day8/spec/02_spec.md の DSL 節が Appendix D の保持率指標を参照していること",
+    "check::workflow-cookbook/scripts/analyze.py の --trim オプションと既定パラメータが Appendix D の表と一致すること"
+  ]
+}

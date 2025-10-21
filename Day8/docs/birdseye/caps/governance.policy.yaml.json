@@ -1,0 +1,23 @@
+{
+  "deps_in": [],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "governance/policy.yaml",
+  "maintenance": {
+    "refresh": "禁止パスや権限ポリシーを更新した際は Guardrails・Evaluation・Checklist と Birdseye index/caps を同時更新。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "forbidden_paths 更新漏れで品質ゲートが崩壊する",
+    "権限ポリシーと実運用が乖離し承認フローが停止する"
+  ],
+  "role": "policy",
+  "summary": [
+    "core::Day8 の権限境界・保護/安全パスと SLO を定義する基準書。",
+    "orbit::受け入れ基準で参照する forbidden_paths を保持し、Guardrails と同期する。"
+  ],
+  "tests": []
+}

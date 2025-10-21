@@ -1,0 +1,24 @@
+{
+  "deps_in": [
+    "docs/Release_Checklist.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/CHECKLISTS.md"
+  ],
+  "generated_at": "2025-02-24T12:00:00Z",
+  "id": "docs/addenda/M_Versioning_Release.md",
+  "maintenance": {
+    "refresh": "semver ラベルやタグ命名が変わった場合は Release Checklist と workflow-cookbook/CHECKLISTS.md を同じ PR で更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "タグ運用が不整合になると release/v* ブランチと GitHub Release の内容が乖離する",
+    "semver ラベルと互換性根拠がズレるとガバナンス承認が遅延する"
+  ],
+  "role": "release",
+  "summary": "Day8 の semver 運用・タグ付け・互換性チェックを整理し、workflow-cookbook の Release チェックと整合させる付録。",
+  "tests": []
+}

@@ -1,0 +1,51 @@
+{
+  "deps": [
+    "in::docs/README.md",
+    "in::docs/day8/ops/04_ops.md",
+    "in::docs/addenda/H_Deploy_Guide.md",
+    "out::docs/day8/spec/02_spec.md",
+    "out::docs/day8/examples/10_examples.md",
+    "out::workflow-cookbook/scripts/analyze.py",
+    "out::tools/ci/check_governance_gate.py",
+    "out::docs/birdseye/index.json",
+    "out::docs/birdseye/hot.json"
+  ],
+  "deps_in": [
+    "docs/README.md",
+    "docs/day8/ops/04_ops.md",
+    "docs/addenda/H_Deploy_Guide.md"
+  ],
+  "deps_out": [
+    "docs/day8/spec/02_spec.md",
+    "docs/day8/examples/10_examples.md",
+    "workflow-cookbook/scripts/analyze.py",
+    "tools/ci/check_governance_gate.py",
+    "docs/birdseye/index.json",
+    "docs/birdseye/hot.json"
+  ],
+  "generated_at": "2025-10-30T12:30:00Z",
+  "id": "docs/addenda/L_Config_Reference.md",
+  "maintenance": {
+    "refresh": "環境変数や設定ファイルが追加・変更されたら Appendix L を更新し、関連する ops/H アップデートと同時に Birdseye (index→caps→hot→generated_at) を再同期する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "設定表の更新漏れがあると ops/CI 前提が分散し、導入時のトラブルシュートが困難になる",
+    "generated_at の同期を怠ると Birdseye 整合チェックで警告が発生する"
+  ],
+  "role": [
+    "core::configuration",
+    "orbit::preflight-check"
+  ],
+  "summary": [
+    "core::Day8 が要求する環境変数・設定ファイル・デバッグフラグを集約し、導入前チェックリストのハブとする。",
+    "orbit::Appendix H と ops 手順を横断し、GitHub Actions 派生変数やガバナンスゲート向け環境を明示する。",
+    "orbit::Birdseye generated_at 同期手順を設定視点で補足し、再生成漏れを防止する。"
+  ],
+  "tests": [
+    "check::docs/addenda/H_Deploy_Guide.md と ops/04_ops.md から参照リンクが張られているか確認",
+    "check::表に掲載した環境変数・設定ファイルが原文の出典と一致しているか照合"
+  ]
+}

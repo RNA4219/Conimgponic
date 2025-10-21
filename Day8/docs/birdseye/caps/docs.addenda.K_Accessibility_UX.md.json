@@ -1,0 +1,46 @@
+{
+  "deps": [
+    "in::docs/README.md",
+    "in::docs/day8/quality/06_quality.md",
+    "in::docs/addenda/I_Test_Cases.md",
+    "out::workflow-cookbook/GUARDRAILS.md",
+    "out::workflow-cookbook/EVALUATION.md",
+    "out::docs/birdseye/index.json"
+  ],
+  "deps_in": [
+    "docs/README.md",
+    "docs/day8/quality/06_quality.md",
+    "docs/addenda/I_Test_Cases.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/EVALUATION.md",
+    "docs/birdseye/index.json"
+  ],
+  "generated_at": "2025-02-24T09:00:00Z",
+  "id": "docs/addenda/K_Accessibility_UX.md",
+  "maintenance": {
+    "refresh": "CLI/レポート/ドキュメントのアクセシビリティ要件を更新したら Appendix K → 06_quality.md → I_Test_Cases.md → Birdseye の順で差分を反映する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "CLI やレポートが色覚依存のままだと QA 検証が抜け、品質メトリクスの判断を誤る",
+    "スクリーンリーダー非対応のまま運用するとレビュー遅延やアクセシビリティ事故につながる"
+  ],
+  "role": [
+    "core::accessibility-appendix",
+    "orbit::ux-guardrail"
+  ],
+  "summary": [
+    "core::Katamari Appendix K を Day8 向けに移植し、CLI/レポート/ドキュメントのアクセシビリティ要件を統一する。",
+    "core::品質ゲートと Birdseye 更新フローにアクセシビリティ観点を組み込み、配色・スクリーンリーダー支援を明示する。",
+    "orbit::テストケース付録や Guardrails から参照し、色覚多様性と入力支援のチェックを抜け漏れなくする。"
+  ],
+  "tests": [
+    "check::docs/day8/quality/06_quality.md から Appendix K への導線が最新化されているか",
+    "check::I_Test_Cases.md にアクセシビリティ観点が反映されているか確認する",
+    "check::Birdseye index.json の generated_at が本カプセルと揃っているか確認"
+  ]
+}

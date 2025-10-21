@@ -1,0 +1,139 @@
+name: Reusable - Logs Harvest
+on:
+  workflow_call:
+    inputs:
+      lookback_runs:
+        type: number
+        required: false
+        default: 20
+      persist_branch:
+        type: string
+        required: false
+        default: ""
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure python deps
+        run: |
+          python -m pip install --upgrade pip requests
+
+      - name: Download workflow logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import datetime
+          import io
+          import json
+          import os
+          import pathlib
+          import zipfile
+
+          import requests
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          base = os.environ.get('GITHUB_API_URL', 'https://api.github.com')
+          token = os.environ['GH_TOKEN']
+          limit = int('${{ inputs.lookback_runs }}')
+
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+          }
+
+          runs = requests.get(
+              f"{base}/repos/{repo}/actions/runs",
+              params={'per_page': limit},
+              headers=headers,
+              timeout=30,
+          ).json().get('workflow_runs', [])
+
+          out_dir = pathlib.Path('.ga/logs')
+          out_dir.mkdir(parents=True, exist_ok=True)
+
+          for run in runs:
+              run_id = run['id']
+              jobs = requests.get(
+                  f"{base}/repos/{repo}/actions/runs/{run_id}/jobs",
+                  headers=headers,
+                  timeout=30,
+              ).json().get('jobs', [])
+              for job in jobs:
+                  job_id = job['id']
+                  content = requests.get(
+                      f"{base}/repos/{repo}/actions/jobs/{job_id}/logs",
+                      headers=headers,
+                      timeout=60,
+                  ).content
+                  with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                      for member in archive.namelist():
+                          target = out_dir / f"run_{run_id}_job_{job_id}_{member.replace('/', '_')}"
+                          target.write_bytes(archive.read(member))
+          PY
+
+      - name: Build observability summary
+        run: |
+          python - <<'PY'
+          import datetime
+          import glob
+          import json
+          import os
+          import re
+
+          patterns = {
+              'error': re.compile(r"\b(error|exception|traceback|fatal)\b", re.I),
+              'warn': re.compile(r"\b(warn(ing)?|deprecated)\b", re.I),
+              'timeout': re.compile(r"\b(timeout|timed out|deadline)\b", re.I),
+              'oom': re.compile(r"\b(OutOfMemory|ENOMEM|OOM)\b", re.I),
+              'ratelimit': re.compile(r"\b(rate limit|HTTP 429)\b", re.I),
+          }
+          ts = datetime.datetime.utcnow().isoformat() + 'Z'
+          rows = []
+          for path in glob.glob('.ga/logs/*'):
+              try:
+                  data = open(path, 'r', errors='ignore').read()
+              except OSError:
+                  continue
+              signals = {name: bool(regex.search(data)) for name, regex in patterns.items()}
+              if any(signals.values()):
+                  rows.append({
+                      'ts': ts,
+                      'file': path,
+                      'signals': signals,
+                      'size': len(data),
+                  })
+          os.makedirs('.ga', exist_ok=True)
+          with open('.ga/observability.jsonl', 'w', encoding='utf-8') as fh:
+              for row in rows:
+                  fh.write(json.dumps(row, ensure_ascii=False) + '\n')
+          print(f'rows={len(rows)}')
+          PY
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ga-logs
+          path: |
+            .ga/logs
+            .ga/observability.jsonl
+
+      - name: Persist observability branch
+        if: ${{ inputs.persist_branch != '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          mkdir -p data/ga
+          cp -f .ga/observability.jsonl data/ga/observability.jsonl
+          git add data/ga/observability.jsonl
+          git commit -m "chore(observability): update" || true
+          git checkout -B "${{ inputs.persist_branch }}"
+          git push origin HEAD:"${{ inputs.persist_branch }}" --force

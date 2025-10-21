@@ -1,0 +1,51 @@
+{
+  "deps": [
+    "in::docs/safety.md",
+    "in::docs/day8/security/05_security.md",
+    "in::workflow-cookbook/GUARDRAILS.md",
+    "in::workflow-cookbook/BLUEPRINT.md",
+    "in::workflow-cookbook/RUNBOOK.md",
+    "in::workflow-cookbook/EVALUATION.md",
+    "in::workflow-cookbook/CHECKLISTS.md",
+    "out::workflow-cookbook/logs/",
+    "out::docs/birdseye/index.json",
+    "out::docs/birdseye/hot.json",
+    "out::workflow-cookbook/CHANGELOG.md"
+  ],
+  "deps_in": [
+    "docs/ROADMAP_AND_SPECS.md",
+    "docs/safety.md",
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/SECURITY.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/BLUEPRINT.md",
+    "workflow-cookbook/CHECKLISTS.md",
+    "workflow-cookbook/EVALUATION.md",
+    "workflow-cookbook/RUNBOOK.md"
+  ],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/SAFETY.md",
+  "maintenance": {
+    "refresh": "月次レビューまたは安全例外/RCA 更新時に本文と Birdseye (index/hot/caps) を再生成し、generated_at を同期する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "安全審査ポリシーが Guardrails や Runbook と乖離すると承認フローが形骸化する"
+  ],
+  "role": [
+    "core::safety-policy",
+    "orbit::day8-operations"
+  ],
+  "summary": [
+    "core::Katamari SAFETY を Day8 プロセスへローカライズし、人間承認と自動化境界を定義する基準書。",
+    "orbit::Guardrails・Runbook・docs/safety.md と整合させ、審査ログと Birdseye 更新を義務化する。",
+    "orbit::重大度 S1/S2 への即時対応と例外手順を明文化し、ホットリスト反映条件を示す。"
+  ],
+  "tests": [
+    "check::docs/birdseye/index.json に SAFETY ノードと Guardrails 系エッジが登録されていること",
+    "check::docs/birdseye/hot.json の generated_at が index と一致し、SAFETY エントリが重複していないこと"
+  ]
+}

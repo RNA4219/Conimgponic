@@ -1,0 +1,57 @@
+{
+  "deps": [
+    "in::README.md",
+    "out::workflow-cookbook/BLUEPRINT.md",
+    "out::workflow-cookbook/GUARDRAILS.md",
+    "out::workflow-cookbook/RUNBOOK.md",
+    "out::workflow-cookbook/EVALUATION.md",
+    "out::workflow-cookbook/CHECKLISTS.md",
+    "out::workflow-cookbook/TASK.codex.md",
+    "out::docs/Architecture_ASCII.md",
+    "out::docs/adr/README.md",
+    "out::docs/adr/0001-collector-analyzer-reporter-pipeline.md",
+    "out::docs/adr/0002-jsonl-event-contract.md",
+    "out::docs/adr/0003-propose-only-governance.md"
+  ],
+  "deps_in": [
+    "README.md"
+  ],
+  "deps_out": [
+    "docs/UPSTREAM.md",
+    "workflow-cookbook/BLUEPRINT.md",
+    "workflow-cookbook/CHECKLISTS.md",
+    "workflow-cookbook/EVALUATION.md",
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/RUNBOOK.md",
+    "workflow-cookbook/SAFETY.md",
+    "workflow-cookbook/TASK.codex.md",
+    "docs/Architecture_ASCII.md",
+    "docs/adr/README.md",
+    "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
+    "docs/adr/0002-jsonl-event-contract.md",
+    "docs/adr/0003-propose-only-governance.md"
+  ],
+  "generated_at": "2025-11-05T09:00:00Z",
+  "id": "docs/ROADMAP_AND_SPECS.md",
+  "maintenance": {
+    "refresh": "Guardrails 承認後にクロスリンクと Birdseye（ノード追加→Capsule更新→hot.json更新→generated_at揃え）を同時更新し、ガバナンス差分と整合させる。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "索引が古いと仕様/運用判断が分断される"
+  ],
+  "role": [
+    "core::roadmap-hub",
+    "orbit::alignment"
+  ],
+  "summary": [
+    "core::Day8側とworkflow-cookbook側の主要資料を横断索引する起点。",
+    "orbit::要求/設計/運用/品質/リリース資料の読み順と対応表を提示。",
+    "orbit::ロードマップStep1に組み込まれたBirdseye反映4ステップを示し、Guardrails連動の更新手順を明文化。"
+  ],
+  "tests": [
+    "check::ロードマップ表のリンクとBirdseyeエッジが一致しているか確認"
+  ]
+}

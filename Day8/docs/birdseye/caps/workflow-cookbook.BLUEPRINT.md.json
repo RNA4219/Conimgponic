@@ -1,0 +1,40 @@
+{
+  "deps": [
+    "in::docs/ROADMAP_AND_SPECS.md",
+    "in::workflow-cookbook/HUB.codex.md",
+    "in::workflow-cookbook/GUARDRAILS.md",
+    "out::workflow-cookbook/RUNBOOK.md"
+  ],
+  "deps_in": [
+    "docs/ROADMAP_AND_SPECS.md",
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/HUB.codex.md",
+    "workflow-cookbook/SAFETY.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/RUNBOOK.md"
+  ],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/BLUEPRINT.md",
+  "maintenance": {
+    "refresh": "課題や制約が変わったら RUNBOOK/EVALUATION の該当節も同時更新。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "課題定義が古いとタスク優先度が誤る"
+  ],
+  "role": [
+    "core::requirements",
+    "orbit::problem-scope"
+  ],
+  "summary": [
+    "core::課題定義とスコープ/制約を整理する最上位方針。",
+    "orbit::I/O契約や最小フローを整備し後続設計へ橋渡し。",
+    "orbit::HUBやロードマップ、ガードレールからの要求トレース先。"
+  ],
+  "tests": [
+    "check::BlueprintのProblem/Scope/Constraintsと関連資料の整合を確認"
+  ]
+}

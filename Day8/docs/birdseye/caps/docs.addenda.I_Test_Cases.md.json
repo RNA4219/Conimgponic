@@ -1,0 +1,21 @@
+{
+  "deps_in": [
+    "docs/addenda/I_Test_Cases.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-02-21T00:00:00Z",
+  "id": "docs/addenda/I_Test_Cases.md",
+  "maintenance": {
+    "refresh": "テスト観点を更新したら Quality ドキュメントと Birdseye エッジを同時に見直す。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "CI・レポート基盤のテスト観点が分散するとチェック漏れが発生する"
+  ],
+  "role": "quality",
+  "summary": "Day8 の CI・レポート基盤向けテスト観点を機能/性能/セキュリティ軸で整理した付録。",
+  "tests": []
+}

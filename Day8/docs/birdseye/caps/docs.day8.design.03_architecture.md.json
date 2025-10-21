@@ -1,0 +1,29 @@
+{
+  "deps_in": [
+    "docs/ROADMAP_AND_SPECS.md",
+    "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
+    "docs/adr/0002-jsonl-event-contract.md",
+    "docs/adr/0003-propose-only-governance.md"
+  ],
+  "deps_out": [
+    "docs/Architecture_ASCII.md",
+    "docs/addenda/B_UI_Mock.md",
+    "docs/adr/README.md"
+  ],
+  "generated_at": "2025-11-05T09:00:00Z",
+  "id": "docs/day8/design/03_architecture.md",
+  "maintenance": {
+    "refresh": "コンポーネント構成が変わったら ADR と Birdseye のリンクを同時に更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "アーキテクチャ図と ADR の差分が発生すると責務境界の理解が崩れる"
+  ],
+  "role": "architecture",
+  "summary": "Collector / Analyzer / Reporter / Proposer / Governance の責務と参照手順を整理したアーキテクチャガイド。",
+  "tests": [
+    "check::docs/adr/0001-0003 のリンクが維持されているか確認"
+  ]
+}

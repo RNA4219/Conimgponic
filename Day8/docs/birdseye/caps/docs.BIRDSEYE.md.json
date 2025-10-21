@@ -1,0 +1,29 @@
+{
+  "deps": [
+    "in::docs/ROADMAP_AND_SPECS.md"
+  ],
+  "deps_in": [],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "docs/BIRDSEYE.md",
+  "maintenance": {
+    "refresh": "Birdseye ノード追加時は index/caps/hot を同時更新し、フォールバック手順を最新化する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "フォールバック手順が古いと Birdseye の整合性確認が遅れ、Guardrails 準拠が崩れる"
+  ],
+  "role": [
+    "core::fallback-guide",
+    "orbit::birdseye-governance"
+  ],
+  "summary": [
+    "core::Birdseye の index/caps/hot が欠落した際に参照するフォールバック手順を集約。",
+    "orbit::Guardrails の Birdseye セクションと ROADMAP を橋渡しし、±1 hop の確認順を指示。"
+  ],
+  "tests": [
+    "check::docs/BIRDSEYE.md が index/hot に登録されているかテストで検証"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "deps_in": [
+    "docs/adr/README.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-11-05T09:00:00Z",
+  "id": "docs/adr/0000-template.md",
+  "maintenance": {
+    "refresh": "テンプレートに変更が入ったら既存 ADR への適用方針を README に追記する。",
+    "tooling": []
+  },
+  "risks": [
+    "テンプレートの未更新で ADR 間の表記揺れが発生する"
+  ],
+  "role": "adr-template",
+  "summary": "Day8 ADR の書式と必須セクションを統一するための雛形。",
+  "tests": []
+}

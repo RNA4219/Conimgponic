@@ -1,0 +1,35 @@
+{
+  "deps": [
+    "in::workflow-cookbook/scripts/analyze.py",
+    "in::workflow-cookbook/logs/test.jsonl",
+    "in::workflow-cookbook/reflection.yaml",
+    "out::workflow-cookbook/reports/issue_suggestions.md"
+  ],
+  "deps_in": [
+    "workflow-cookbook/RUNBOOK.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/reports/today.md",
+  "maintenance": {
+    "refresh": "レポート項目が変わったら analyze.py と CHECKLISTS を更新。",
+    "tooling": [
+      "python workflow-cookbook/scripts/analyze.py"
+    ]
+  },
+  "risks": [
+    "指標が古いままだとリリース判断を誤る"
+  ],
+  "role": [
+    "core::daily-report",
+    "orbit::observability-output"
+  ],
+  "summary": [
+    "core::テスト総数・パス率・p95遅延・失敗一覧をMarkdownで可視化。",
+    "orbit::Why-Why草案を含みインシデントレビューの素地を提供。",
+    "orbit::CHECKLISTSのDaily/Release判定に必要なメトリクスを即時参照。"
+  ],
+  "tests": [
+    "check::最新ログで指標が更新されるかを手動確認"
+  ]
+}

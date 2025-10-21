@@ -1,0 +1,28 @@
+{
+  "deps_in": [
+    "docs/README.md",
+    "docs/ROADMAP_AND_SPECS.md"
+  ],
+  "deps_out": [
+    "docs/adr/0000-template.md",
+    "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
+    "docs/adr/0002-jsonl-event-contract.md",
+    "docs/adr/0003-propose-only-governance.md"
+  ],
+  "generated_at": "2025-11-05T09:00:00Z",
+  "id": "docs/adr/README.md",
+  "maintenance": {
+    "refresh": "ADR を追加・改訂したら目次と Birdseye の参照関係を更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "目次が古いと設計判断の参照経路が分断される"
+  ],
+  "role": "adr-hub",
+  "summary": "Day8 の ADR を一覧化し、Collector/Analyzer/Reporter/Proposer の判断根拠を辿るハブ。",
+  "tests": [
+    "check::docs/README.md と docs/ROADMAP_AND_SPECS.md からのリンクを確認"
+  ]
+}

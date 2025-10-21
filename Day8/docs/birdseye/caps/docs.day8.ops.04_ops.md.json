@@ -1,0 +1,31 @@
+{
+  "deps_in": [
+    "docs/ROADMAP_AND_SPECS.md",
+    "docs/addenda/H_Deploy_Guide.md",
+    "docs/addenda/L_Config_Reference.md",
+    "docs/adr/0002-jsonl-event-contract.md",
+    "docs/adr/0003-propose-only-governance.md"
+  ],
+  "deps_out": [
+    "docs/addenda/H_Deploy_Guide.md",
+    "docs/addenda/L_Config_Reference.md",
+    "docs/adr/0002-jsonl-event-contract.md",
+    "docs/adr/0003-propose-only-governance.md"
+  ],
+  "generated_at": "2025-11-05T09:00:00Z",
+  "id": "docs/day8/ops/04_ops.md",
+  "maintenance": {
+    "refresh": "Ops 手順を更新したら ADR 参照と Birdseye の整合を確認する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "ADR の参照漏れで JSONL 契約や propose-only の監視が抜ける"
+  ],
+  "role": "operations",
+  "summary": "Day8 の導入・監視・ヘルスチェック手順。Collector/Analyzer のログ契約と propose-only ポリシーを運用に反映する。",
+  "tests": [
+    "check::ADR 0002/0003 のリンクが維持されているか確認"
+  ]
+}

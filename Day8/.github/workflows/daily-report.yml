@@ -1,0 +1,64 @@
+name: Daily Activity Report
+
+on:
+  schedule:
+    - cron: '59 14 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: daily-activity
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: windows-latest
+    env:
+      TZ: Asia/Tokyo
+      ROOT_DIR: ${{ github.workspace }}\pull_all
+      GITHUB_TOKEN: ${{ secrets.PAT || github.token }}
+
+    steps:
+      - name: Checkout Day8 (this repo)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure PowerShell 7
+        shell: pwsh
+        run: '$PSVersionTable.PSVersion'
+
+      - name: Prepare directories
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:ROOT_DIR" | Out-Null
+
+      - name: Run daily report (JST yesterday)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference="Stop"
+          Set-Location $env:GITHUB_WORKSPACE
+          .\scripts\daily-report.ps1 -Root $env:ROOT_DIR `
+                                     -ReposFull @(
+                                        'RNA4219/portfolio',
+                                        'RNA4219/planting-planner',
+                                        'RNA4219/llm-generic-bot',
+                                        'RNA4219/deterministic_32',
+                                        'RNA4219/llm_orch',
+                                        'RNA4219/workflow-cookbook',
+                                        'RNA4219/Day8',
+                                        'RNA4219/imgponic',
+                                        'RNA4219/katamari',
+                                        'RNA4219/taskest'
+                                     ) `
+                                     -CommitToRepo:$true
+
+      - name: Upload artifact (logs zip)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-activity-logs
+          path: pull_all/logs/**

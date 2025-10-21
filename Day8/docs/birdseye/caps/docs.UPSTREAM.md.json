@@ -1,0 +1,25 @@
+{
+  "deps_in": [
+    "docs/README.md",
+    "docs/ROADMAP_AND_SPECS.md"
+  ],
+  "deps_out": [
+    "docs/UPSTREAM_WEEKLY_LOG.md"
+  ],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "docs/UPSTREAM.md",
+  "maintenance": {
+    "refresh": "subtree 取り込み後にチェックリストと週次ログの記述を必ず最新化する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "Upstream と Day8 の差分が長期化し、Katamari との同期が破綻する",
+    "Birdseye の参照グラフと文書リンクが不整合となり、索引から到達できなくなる"
+  ],
+  "role": "operations",
+  "summary": "Day8 と Katamari の Upstream 同期を統制するためのリモート定義・subtree 手順・週次チェックリスト。",
+  "tests": []
+}

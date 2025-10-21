@@ -1,0 +1,43 @@
+{
+  "deps_in": [
+    "docs/ROADMAP_AND_SPECS.md",
+    "docs/day8/README.md",
+    "docs/day8/design/03_architecture.md"
+  ],
+  "deps_out": [
+    "docs/addenda/D_Trim_Design.md",
+    "docs/addenda/C_Persona_Schema.md",
+    "docs/addenda/F_Provider_Matrix.md",
+    "docs/addenda/E_Evaluator_Details.md",
+    "docs/addenda/L_Config_Reference.md",
+    "docs/addenda/M1_Metrics_Healthz_ADR.md",
+    "docs/addenda/H_Deploy_Guide.md",
+    "docs/addenda/J_Runbook.md",
+    "docs/addenda/I_Test_Cases.md",
+    "docs/addenda/M_Versioning_Release.md",
+    "docs/day8/ops/04_ops.md",
+    "workflow-cookbook/EVALUATION.md",
+    "workflow-cookbook/CHECKLISTS.md",
+    "workflow-cookbook/RUNBOOK.md",
+    "workflow-cookbook/SAFETY.md",
+    "workflow-cookbook/SECURITY.md"
+  ],
+  "generated_at": "2025-11-06T09:00:00Z",
+  "id": "docs/day8/spec/02_spec.md",
+  "maintenance": {
+    "refresh": "ユースケース・チェーン制御・SLOが変わった場合は関連する Addenda / Ops 文書と同時に更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "仕様と Ops / Checklist の整合が崩れると Priority Score 判断が不正確になる",
+    "Provider マトリクスの更新漏れでフォールバックが失敗する"
+  ],
+  "role": "spec",
+  "summary": "Katamari 仕様に倣った Day8 の主要ユースケース、チェーン制御、エラー処理、Provider 抽象、SLO、デプロイ条件、評価器ロードマップを集約。",
+  "tests": [
+    "check::リンク切れがないか markdownlint で検査",
+    "check::Birdseye index edges が deps_out と同期しているか確認"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "deps_in": [
+    "docs/README.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-21T19:00:00Z",
+  "id": "docs/addenda/A_Glossary.md",
+  "maintenance": {
+    "refresh": "Collector や Reflection DSL の項目を追加・改訂した際は本文と Birdseye カプセルの summary/risks を揃える。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "用語定義が古いままだと Day8 のレビュー判断がぶれる"
+  ],
+  "role": "glossary",
+  "summary": "Day8 の Collector/Analyzer/Proposer と Reflection DSL の主要フィールドを整理した用語集。",
+  "tests": []
+}

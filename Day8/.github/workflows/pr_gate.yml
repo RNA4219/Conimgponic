@@ -1,0 +1,401 @@
+name: pr-gate
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    working-directory: workflow-cookbook
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      "read:org": read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Governance gate (soft)
+        id: governance_gate
+        run: python tools/ci/check_governance_gate.py
+        continue-on-error: true
+      - name: Governance gate failure enforcement
+        if: ${{ steps.governance_gate.outcome == 'failure' }}
+        run: exit 1
+      - name: Require CODEOWNERS approval
+        id: codeowners
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const toHandle = (ownerHandle) => {
+              if (!ownerHandle.startsWith('@')) return `@${ownerHandle}`;
+              return ownerHandle;
+            };
+            const toTeamHandle = (team, defaultOrg) => {
+              if (!team) return null;
+              const slug = team.slug || team.name;
+              const org = (team.organization && team.organization.login) || defaultOrg;
+              if (!slug || !org) return null;
+              return `@${org}/${slug}`;
+            };
+            const blockers = [];
+            let excludedFiles = [];
+            core.setOutput('hasTeamCoverage', 'false');
+            const failWith = (message) => {
+              blockers.push(message);
+              core.setOutput('blockers', JSON.stringify(blockers));
+              core.setOutput('excludedFiles', JSON.stringify(excludedFiles));
+              core.setOutput('hasApproval', 'false');
+              core.setFailed(message);
+            };
+            const toRegex = (pattern) => {
+              let normalized = pattern.trim();
+              if (!normalized) return null;
+              if (normalized.startsWith('/')) normalized = normalized.replace(/^\/+/, '');
+              if (normalized.endsWith('/')) normalized = `${normalized}**`;
+              if (normalized === '*') return /^.*$/;
+              const GLOBSTAR = '__GLOBSTAR__';
+              const STAR = '__STAR__';
+              const QMARK = '__QMARK__';
+              const SINGLE_SEGMENT = '[^/]';
+              const SINGLE_SEGMENT_ANY = `${SINGLE_SEGMENT}*`;
+              let source = normalized
+                .replace(/\*\*/g, GLOBSTAR)
+                .replace(/\*/g, STAR)
+                .replace(/\?/g, QMARK);
+              source = source.replace(/([\\^$+?.()|{}\[\]])/g, '\\$1');
+              if (source.startsWith(`${GLOBSTAR}/`)) {
+                const prefix = `${GLOBSTAR}/`;
+                let remainder = source;
+                while (remainder.startsWith(prefix)) {
+                  remainder = remainder.slice(prefix.length);
+                }
+                source = `(?:[^/]+/)*${remainder}`;
+              }
+              source = source.replace(new RegExp(GLOBSTAR, 'g'), '.*');
+              source = source.replace(new RegExp(STAR, 'g'), SINGLE_SEGMENT_ANY);
+              source = source.replace(new RegExp(QMARK, 'g'), SINGLE_SEGMENT);
+              return new RegExp(`^${source}$`);
+            };
+            const parseCodeowners = (content) => {
+              const entries = [];
+              for (const rawLine of content.split(/\r?\n/)) {
+                const trimmedLine = rawLine.trim();
+                if (!trimmedLine || trimmedLine.startsWith('#')) continue;
+                const commentIndex = trimmedLine.indexOf('#');
+                const effectiveLine = commentIndex === -1
+                  ? trimmedLine
+                  : trimmedLine.slice(0, commentIndex).trimEnd();
+                if (!effectiveLine) continue;
+                const [rawPattern, ...ownerTokens] = effectiveLine.split(/\s+/);
+                if (!rawPattern) continue;
+                let pattern = rawPattern;
+                let negated = false;
+                if (pattern.startsWith('!')) {
+                  negated = true;
+                  pattern = pattern.slice(1);
+                }
+                if (!pattern) continue;
+                const owners = [];
+                for (const token of ownerTokens) {
+                  const normalized = token.trim();
+                  if (!normalized) continue;
+                  if (normalized.startsWith('#')) break;
+                  owners.push(normalized);
+                }
+                if (!negated && owners.length === 0) continue;
+                const regex = toRegex(pattern);
+                if (!regex) continue;
+                entries.push({owners, regex, negated});
+              }
+              return entries;
+            };
+            const collectCodeownersForFiles = (entries, files) => {
+              const codeownerUsers = new Set();
+              const codeownerTeams = new Set();
+              const uncovered = [];
+              const excluded = new Set();
+              let hasBlockingOwners = false;
+              const findOwnersForFile = (filePath) => {
+                let owners = [];
+                let ignored = false;
+                let negatedMatch = false;
+                for (const entry of entries) {
+                  if (!entry.regex.test(filePath)) continue;
+                  if (entry.negated) {
+                    let nextOwners = owners;
+                    if (entry.owners.length > 0) {
+                      const exclusions = new Set(entry.owners);
+                      nextOwners = owners.filter((owner) => !exclusions.has(owner));
+                    } else {
+                      nextOwners = [];
+                    }
+                    if (nextOwners.length === 0) {
+                      owners = [];
+                      ignored = true;
+                      negatedMatch = true;
+                    } else {
+                      owners = nextOwners;
+                      negatedMatch = false;
+                    }
+                    continue;
+                  }
+                  owners = entry.owners;
+                  ignored = false;
+                  negatedMatch = false;
+                }
+                return {owners, ignored, negatedMatch};
+              };
+              for (const file of files) {
+                const filename = file && typeof file.filename === 'string' ? file.filename : null;
+                if (!filename) continue;
+                const {owners, ignored, negatedMatch} = findOwnersForFile(filename);
+                if (negatedMatch && owners.length === 0) {
+                  excluded.add(filename);
+                }
+                if (owners.length === 0) {
+                  if (!ignored) {
+                    uncovered.push(filename);
+                  }
+                  continue;
+                }
+                for (const ownerHandle of owners) {
+                  if (!ownerHandle.startsWith('@')) continue;
+                  const normalized = toHandle(ownerHandle);
+                  if (normalized.includes('/')) codeownerTeams.add(normalized);
+                  else codeownerUsers.add(normalized);
+                  hasBlockingOwners = true;
+                }
+              }
+              return {
+                codeownerUsers,
+                codeownerTeams,
+                uncovered,
+                hasBlockingOwners,
+                excludedFiles: Array.from(excluded),
+              };
+            };
+            const toTeamSlugParts = (teamHandle) => {
+              if (typeof teamHandle !== 'string') return null;
+              const trimmed = teamHandle.trim();
+              if (!trimmed) return null;
+              const normalized = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
+              const [org, slug] = normalized.split('/');
+              if (!org || !slug) return null;
+              return {org, team_slug: slug};
+            };
+            const teamMembersCache = new Map();
+            const fetchTeamMembers = async (teamHandle) => {
+              const slugParts = toTeamSlugParts(teamHandle);
+              if (!slugParts) return null;
+              if (teamMembersCache.has(teamHandle)) return teamMembersCache.get(teamHandle);
+              try {
+                const members = await github.paginate(
+                  github.rest.teams.listMembersInOrg,
+                  {...slugParts, per_page: 100},
+                );
+                const handles = new Set(
+                  members
+                    .map((member) => (member && member.login ? `@${member.login}` : null))
+                    .filter((handle) => typeof handle === 'string'),
+                );
+                teamMembersCache.set(teamHandle, handles);
+                return handles;
+              } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                core.warning(`Unable to fetch members for ${teamHandle}: ${reason}`);
+                teamMembersCache.set(teamHandle, null);
+                return null;
+              }
+            };
+            const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
+            const codeownersRelativePath = '.github/CODEOWNERS';
+            const codeownersPath = path.join(workspace, codeownersRelativePath);
+            let codeownersContent;
+            try {
+              codeownersContent = fs.readFileSync(codeownersPath, 'utf8');
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : String(error);
+              failWith(`Unable to read CODEOWNERS at ${codeownersPath}: ${reason}`);
+              return;
+            }
+            const entries = parseCodeowners(codeownersContent);
+            if (entries.length === 0) {
+              failWith('No CODEOWNERS entries could be parsed.');
+              return;
+            }
+            const {owner, repo} = context.repo;
+            const pr = context.payload.pull_request || {};
+            const requestedUserHandles = new Set(
+              (Array.isArray(pr.requested_reviewers) ? pr.requested_reviewers : [])
+                .map((reviewer) => (reviewer && reviewer.login ? `@${reviewer.login}` : null))
+                .filter((login) => typeof login === 'string'),
+            );
+            const requestedTeamHandles = new Set(
+              (Array.isArray(pr.requested_teams) ? pr.requested_teams : [])
+                .map((team) => toTeamHandle(team, owner))
+                .filter((team) => typeof team === 'string'),
+            );
+            const pull_number = context.payload.pull_request.number;
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              {owner, repo, pull_number, per_page: 100},
+            );
+            const {
+              codeownerUsers,
+              codeownerTeams,
+              uncovered,
+              hasBlockingOwners,
+              excludedFiles: excludedMatches,
+            } = collectCodeownersForFiles(entries, files);
+            excludedFiles = excludedMatches;
+            core.setOutput('excludedFiles', JSON.stringify(excludedFiles));
+            if (!hasBlockingOwners) {
+              core.setOutput('blockers', JSON.stringify(blockers));
+              core.setOutput('hasApproval', 'true');
+              core.setOutput('excludedFiles', JSON.stringify(excludedFiles));
+              core.notice('CODEOWNERS contains no GitHub handles; skipping approval enforcement.');
+              return;
+            }
+            const requestedUsers = Array.from(requestedUserHandles);
+            const requestedTeams = Array.from(requestedTeamHandles);
+            const filteredRequestedUsers = requestedUsers.filter((login) =>
+              codeownerUsers.has(login),
+            );
+            const filteredRequestedTeams = requestedTeams.filter((team) =>
+              codeownerTeams.has(team),
+            );
+            if (uncovered.length > 0) {
+              failWith(`No CODEOWNERS match for: ${uncovered.join(', ')}`);
+              return;
+            }
+            if (filteredRequestedUsers.length > 0 || filteredRequestedTeams.length > 0) {
+              const pending = [
+                ...filteredRequestedUsers.map((login) => `${login} (review requested)`),
+                ...filteredRequestedTeams.map((team) => `${team} (team review requested)`),
+              ];
+              failWith(`Awaiting required review from: ${pending.join(', ')}`);
+              return;
+            }
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              {owner, repo, pull_number, per_page: 100},
+            );
+            const latestStates = new Map();
+            const teamReviewStates = new Map();
+            const requiredHandles = new Set(codeownerUsers);
+            const collaboratorApprovals = new Set();
+            const collaboratorChangeRequesters = new Set();
+            const collaboratorAssociations = new Set(['MEMBER', 'OWNER', 'COLLABORATOR']);
+            for (const review of reviews) {
+              const login = review.user?.login;
+              const state = review.state?.toUpperCase();
+              if (!login || !state) continue;
+              const loginHandle = `@${login}`;
+              if (requiredHandles.has(loginHandle)) {
+                latestStates.set(loginHandle, state);
+              }
+              const association = typeof review.author_association === 'string'
+                ? review.author_association.toUpperCase()
+                : '';
+              if (!collaboratorAssociations.has(association)) continue;
+              if (state === 'APPROVED') collaboratorApprovals.add(loginHandle);
+              if (state === 'CHANGES_REQUESTED') collaboratorChangeRequesters.add(loginHandle);
+              const teamHandle = toTeamHandle(review.team, owner);
+              if (teamHandle) {
+                teamReviewStates.set(teamHandle, state);
+              }
+            }
+            const approvals = new Set();
+            const allChangeRequesters = new Set(
+              Array.from(latestStates.entries())
+                .filter(([, state]) => state === 'CHANGES_REQUESTED')
+                .map(([login]) => login),
+            );
+            for (const [login, state] of latestStates.entries()) {
+              if (state === 'APPROVED') approvals.add(login);
+            }
+            for (const handle of collaboratorChangeRequesters) {
+              allChangeRequesters.add(handle);
+            }
+            if (allChangeRequesters.size > 0) {
+              failWith(`Changes requested by: ${Array.from(allChangeRequesters).join(', ')}`);
+              return;
+            }
+            const requiredUsers = Array.from(new Set([...codeownerUsers, ...filteredRequestedUsers]));
+            const pendingApprovals = requiredUsers.filter((login) => !approvals.has(login));
+            if (pendingApprovals.length > 0) {
+              const messages = pendingApprovals.map((login) => `${login} (awaiting approval)`);
+              failWith(`Awaiting required review from: ${messages.join(', ')}`);
+              return;
+            }
+            const hasIndividualCodeowners = codeownerUsers.size > 0;
+            const teamHandles = Array.from(codeownerTeams);
+            const pendingTeamHandles = [];
+            for (const team of teamHandles) {
+              const reviewState = teamReviewStates.get(team);
+              if (reviewState === 'APPROVED') {
+                continue;
+              }
+              const isTeamRequested = requestedTeamHandles.has(team);
+              const members = await fetchTeamMembers(team);
+              if (members === null) {
+                pendingTeamHandles.push(team);
+                core.setOutput('hasTeamCoverage', 'false');
+                failWith(`Unable to fetch CODEOWNERS team members for: ${team} (team review required)`);
+                return;
+              }
+              let hasMemberApproval = false;
+              if (members && members.size > 0) {
+                for (const handle of collaboratorApprovals) {
+                  if (members.has(handle)) {
+                    hasMemberApproval = true;
+                    break;
+                  }
+                }
+              } else if (collaboratorApprovals.size > 0 && codeownerUsers.size === 0) {
+                hasMemberApproval = true;
+              }
+              if (!isTeamRequested && hasMemberApproval) {
+                continue;
+              }
+              pendingTeamHandles.push(team);
+            }
+            const hasTeamCoverage = teamHandles.length > 0 && pendingTeamHandles.length === 0;
+            core.setOutput('hasTeamCoverage', hasTeamCoverage ? 'true' : 'false');
+            if (pendingTeamHandles.length > 0) {
+              const teamMessages = pendingTeamHandles.map((team) => `${team} (team review required)`);
+              failWith(`Awaiting required review from: ${teamMessages.join(', ')}`);
+              return;
+            }
+              if (hasBlockingOwners && requiredUsers.length === 0 && approvals.size === 0) {
+                if (!hasTeamCoverage) {
+                  failWith('Awaiting CODEOWNERS approval: no approvals recorded yet.');
+                  return;
+                }
+                core.notice('CODEOWNERS team coverage satisfied without individual approvals.');
+              }
+              core.setOutput('blockers', JSON.stringify(blockers));
+              core.setOutput('excludedFiles', JSON.stringify(excludedFiles));
+              core.setOutput('hasApproval', 'true');
+              core.notice('All CODEOWNERS reviews have approved and no changes are requested.');
+      - name: Block auto-merge (informational)
+        run: |
+          echo "Auto merge is disabled by policy"
+          exit 0
+      - name: Fail pending CODEOWNERS approval
+        if: ${{ steps.codeowners.outputs.hasApproval != 'true' }}
+        run: |
+          echo "CODEOWNERS approval pending; marking job as failed"
+          exit 1

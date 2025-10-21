@@ -1,0 +1,39 @@
+{
+  "deps_in": [
+    "docs/adr/README.md",
+    "docs/README.md",
+    "docs/ROADMAP_AND_SPECS.md",
+    "docs/day8/design/03_architecture.md",
+    "docs/day8/ops/04_ops.md"
+  ],
+  "deps_out": [
+    "docs/day8/ops/04_ops.md",
+    "docs/day8/design/03_architecture.md",
+    "docs/addenda/M1_Metrics_Healthz_ADR.md",
+    "docs/birdseye/index.json"
+  ],
+  "generated_at": "2025-11-05T09:00:00Z",
+  "id": "docs/adr/0002-jsonl-event-contract.md",
+  "maintenance": {
+    "refresh": "JSONL スキーマやチェックサム方針を更新したら Collector/Analyzer の実装と共に見直す。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "スキーマ差分を放置すると Analyzer が停止しレポート生成が詰まる",
+    "チェックサム未更新でログ破損を検知できなくなる"
+  ],
+  "role": [
+    "core::adr",
+    "orbit::data-flow"
+  ],
+  "summary": [
+    "core::Collector が出力する JSONL の必須フィールドと互換性ポリシーを定義する。",
+    "orbit::Analyzer が invalid ログを隔離し再処理を要求するフローを明文化する。"
+  ],
+  "tests": [
+    "check::docs/day8/ops/04_ops.md に JSONL 契約の参照があるか確認",
+    "check::ログスキーマ変更時に Birdseye index のエッジが更新されているか確認"
+  ]
+}

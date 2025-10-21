@@ -1,0 +1,46 @@
+{
+  "deps": [
+    "in::README.md",
+    "in::docs/ROADMAP_AND_SPECS.md",
+    "out::workflow-cookbook/BLUEPRINT.md",
+    "out::workflow-cookbook/GUARDRAILS.md",
+    "out::workflow-cookbook/RUNBOOK.md",
+    "out::workflow-cookbook/EVALUATION.md",
+    "out::workflow-cookbook/CHECKLISTS.md",
+    "out::workflow-cookbook/TASK.codex.md"
+  ],
+  "deps_in": [
+    "README.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/BLUEPRINT.md",
+    "workflow-cookbook/CHECKLISTS.md",
+    "workflow-cookbook/EVALUATION.md",
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/RUNBOOK.md",
+    "workflow-cookbook/TASK.codex.md"
+  ],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/HUB.codex.md",
+  "maintenance": {
+    "refresh": "入力分類や優先度ルールが変わったら対応資料の該当節を揃える。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "分類が崩れるとタスク自動分割が誤る"
+  ],
+  "role": [
+    "core::orchestration-hub",
+    "orbit::task-seeding"
+  ],
+  "summary": [
+    "core::cookbook側の仕様・運用MDを集約しタスク分割指針を定義。",
+    "orbit::Blueprint/Runbook/Guardrails/Evaluation/CHECKLISTSを分類して優先度を提示。",
+    "orbit::Birdseye再生成やTask Seed作成の出発点。"
+  ],
+  "tests": [
+    "check::優先度付き分類とエッジ構造が一致しているか点検"
+  ]
+}

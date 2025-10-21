@@ -1,0 +1,35 @@
+{
+  "deps": [
+    "in::workflow-cookbook/RUNBOOK.md",
+    "in::workflow-cookbook/EVALUATION.md",
+    "in::workflow-cookbook/CHECKLISTS.md",
+    "out::docs/ROADMAP_AND_SPECS.md"
+  ],
+  "deps_in": [
+    "workflow-cookbook/RUNBOOK.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/docs/IN-20250115-001.md",
+  "maintenance": {
+    "refresh": "新規インシデント追加時はRUNBOOK/チェックリストとリンク整合を確認。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json,workflow-cookbook/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "再発防止策が反映されないと同種事故が再発する"
+  ],
+  "role": [
+    "core::incident-record",
+    "orbit::postmortem-reference"
+  ],
+  "summary": [
+    "core::Canary停止で露見した設定差分事故の詳細と再発防止策を記録。",
+    "orbit::Blueprint/Evaluation/RUNBOOKの更新項目を明示し横串管理を支援。",
+    "orbit::タイムラインとリンクPRで復旧経路を追跡可能にする。"
+  ],
+  "tests": [
+    "check::RUNBOOKやEVALUATIONの再発防止項目とリンクが同期しているか確認"
+  ]
+}

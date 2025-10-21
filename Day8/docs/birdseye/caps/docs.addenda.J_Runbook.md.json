@@ -1,0 +1,26 @@
+{
+  "deps_in": [
+    "docs/addenda/J_Runbook.md"
+  ],
+  "deps_out": [
+    "docs/day8/ops/04_ops.md",
+    "docs/day8/perf/03_performance.md",
+    "docs/addenda/G_Security_Privacy.md",
+    "workflow-cookbook/RUNBOOK.md"
+  ],
+  "generated_at": "2025-02-22T00:00:00Z",
+  "id": "docs/addenda/J_Runbook.md",
+  "maintenance": {
+    "refresh": "新しい代表事象や初動手順を追加したら、関連する Ops/Perf/Security ドキュメントと Birdseye エッジを同時更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/addenda/J_Runbook.md --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "一次切り分け手順が陳腐化すると復旧が遅れ、Guardrail 違反のリスクが高まる"
+  ],
+  "role": "operations",
+  "summary": "SSE 断・初回遅延・OAuth 認証失敗など Day8 代表事象の検知指標と初動フローをまとめた一次切り分けランブック。",
+  "tests": []
+}

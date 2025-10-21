@@ -1,0 +1,43 @@
+{
+  "deps": [
+    "in::docs/day8/quality/06_quality.md",
+    "in::workflow-cookbook/EVALUATION.md",
+    "in::quality/pipeline/normalize.py",
+    "out::docs/birdseye/hot.json",
+    "out::quality/guardrails/rules.yaml"
+  ],
+  "deps_in": [
+    "docs/day8/quality/06_quality.md",
+    "workflow-cookbook/EVALUATION.md",
+    "quality/pipeline/normalize.py"
+  ],
+  "deps_out": [
+    "docs/birdseye/hot.json",
+    "quality/guardrails/rules.yaml"
+  ],
+  "generated_at": "2025-10-28T09:00:00Z",
+  "id": "docs/addenda/E_Evaluator_Details.md",
+  "maintenance": {
+    "refresh": "BERTScore/ROUGE/ルール判定の閾値やルールセットを更新したら Appendix E・06_quality.md・Birdseye index/hot/caps の generated_at を同期。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "閾値と実装の差異があると自動判定が誤作動し、品質ゲートを通過すべきでない成果物が混入する",
+    "Birdseye のタイムスタンプがずれると評価器ノードの更新履歴を追跡できない"
+  ],
+  "role": [
+    "core::quality-evaluator",
+    "orbit::katamari-alignment"
+  ],
+  "summary": [
+    "core::Katamari Appendix E を Day8 評価ライン向けに再構成し、BERTScore/ROUGE/ルール判定の入力・出力・閾値運用を統合した。",
+    "core::評価パイプラインで利用する正規化処理とルールセットの同期手順を明文化した。",
+    "orbit::Birdseye と Guardrails の差分チェックに必要な generated_at 管理のハンドオフを定義した。"
+  ],
+  "tests": [
+    "check::metrics.json の overall_pass 判定が Appendix E の条件と一致しているか確認",
+    "check::quality/guardrails/rules.yaml 更新時に Birdseye index/caps/hot の generated_at を再生成"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "deps_in": [
+    "README.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "tools/",
+  "maintenance": {
+    "refresh": "CI スクリプトを更新したら対応する Birdseye カプセルを再生成し、ガードレールとの整合を確認する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "CI ツールが最新ポリシーを反映しないとレビューで誤検知が生じる"
+  ],
+  "role": "automation",
+  "summary": "本体リポジトリ側の CI 補助スクリプト群。governance ゲートのチェックなど実務ワークフローの橋渡しを行う。",
+  "tests": []
+}

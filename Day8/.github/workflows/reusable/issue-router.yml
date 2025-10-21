@@ -1,0 +1,118 @@
+name: Reusable - Issue Router (budget & dedupe)
+on:
+  workflow_call:
+    inputs:
+      title:
+        type: string
+        required: true
+      body:
+        type: string
+        required: true
+      labels_csv:
+        type: string
+        required: false
+        default: "ci:improvement"
+      topic_key:
+        type: string
+        required: true
+      daily_budget:
+        type: number
+        required: false
+        default: 3
+      aggregate_title:
+        type: string
+        required: false
+        default: CI Aggregated Issues
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        id: router
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const labels = core.getInput('labels_csv')
+              .split(',')
+              .map((value) => value.trim())
+              .filter(Boolean);
+            const topicKey = core.getInput('topic_key').trim();
+            if (!topicKey) {
+              core.setFailed('topic_key is required');
+              return;
+            }
+            const title = core.getInput('title').trim();
+            const bodyInput = core.getInput('body');
+            const body = `${bodyInput}\n\n<!-- key:${topicKey} -->`;
+
+            const listParams = {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+              labels: labels.join(',') || undefined,
+            };
+            const openIssues = await github.paginate(
+              github.rest.issues.listForRepo,
+              listParams,
+            );
+
+            const duplicate = openIssues.find((issue) =>
+              (issue.body || '').includes(`<!-- key:${topicKey} -->`),
+            );
+            if (duplicate) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: duplicate.number,
+                body,
+              });
+              core.setOutput('action', `append_to_existing_${duplicate.number}`);
+              return;
+            }
+
+            const today = new Date().toISOString().slice(0, 10);
+            const budget = Number(core.getInput('daily_budget') || 3);
+            const createdToday = openIssues.filter((issue) =>
+              (issue.created_at || '').startsWith(today),
+            );
+
+            if (createdToday.length >= budget) {
+              const aggregateTitle = core.getInput('aggregate_title');
+              const aggregate = openIssues.find((issue) => issue.title === aggregateTitle);
+              const aggregateBody = `### ${title}\n\n${body}\n`;
+
+              if (aggregate) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: aggregate.number,
+                  body: aggregateBody,
+                });
+                core.setOutput('action', `append_to_aggregate_${aggregate.number}`);
+                return;
+              }
+
+              const created = await github.rest.issues.create({
+                owner,
+                repo,
+                title: aggregateTitle,
+                body: aggregateBody,
+                labels,
+              });
+              core.setOutput('action', `create_aggregate_${created.data.number}`);
+              return;
+            }
+
+            const created = await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+              labels,
+            });
+            core.setOutput('action', `create_new_${created.data.number}`);

@@ -1,0 +1,46 @@
+{
+  "deps": [
+    "in::docs/ROADMAP_AND_SPECS.md",
+    "in::workflow-cookbook/HUB.codex.md",
+    "in::workflow-cookbook/RUNBOOK.md",
+    "in::workflow-cookbook/EVALUATION.md",
+    "in::workflow-cookbook/GUARDRAILS.md",
+    "out::workflow-cookbook/TASK.codex.md"
+  ],
+  "deps_in": [
+    "docs/ROADMAP_AND_SPECS.md",
+    "workflow-cookbook/EVALUATION.md",
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/HUB.codex.md",
+    "workflow-cookbook/RUNBOOK.md",
+    "workflow-cookbook/SAFETY.md",
+    "workflow-cookbook/SECURITY.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/TASK.codex.md"
+  ],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/CHECKLISTS.md",
+  "maintenance": {
+    "refresh": "チェック項目変更時は Runbook / Task Seed と Katamari docs/Release_Checklist.md を同期。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "チェック抜けでリリース品質が劣化"
+  ],
+  "role": [
+    "core::checklists",
+    "orbit::release-gates"
+  ],
+  "summary": [
+    "core::日次/リリース/衛生チェック項目を網羅。",
+    "core::リリースゲートに LICENSE/NOTICE 同梱・CI 完走・Docker スモーク確認を追加。",
+    "orbit::Priority Scoreや受け入れエビデンス確認をRunbook/Evaluation/Guardrailsと連携。",
+    "orbit::Birdseye更新タスクの完了条件を明示。"
+  ],
+  "tests": [
+    "check::Daily/Release/Hygieneリストが最新運用と一致するか確認"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "deps_in": [
+    "README.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "INSTALL.md",
+  "maintenance": {
+    "refresh": "インストール手順を更新したら Birdseye の対象ノードを同じコミットで再収集する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "導入手順と Birdseye の指し示す依存が乖離すると誤導線が発生する"
+  ],
+  "role": "setup",
+  "summary": "Day8 を他リポジトリへ導入する際の初期配置と CI 設定手順。",
+  "tests": []
+}

@@ -1,0 +1,70 @@
+{
+  "entries": [
+    {
+      "caps": "docs/birdseye/caps/README.md.json",
+      "id": "README.md",
+      "reason": "Day8 全体像と主要ドキュメントへの導線を最速で把握できる起点。"
+    },
+    {
+      "caps": "docs/birdseye/caps/docs.ROADMAP_AND_SPECS.md.json",
+      "id": "docs/ROADMAP_AND_SPECS.md",
+      "reason": "Day8/Workflow-cookbook双方の資料を横断索引し、ロードマップStep1内のBirdseye反映4ステップを明示して HUB への読み順を先導する。"
+    },
+    {
+      "caps": "docs/birdseye/caps/docs.day8.spec.01_requirements.md.json",
+      "id": "docs/day8/spec/01_requirements.md",
+      "reason": "Katamari 章立てへ再構成した Day8 要件を参照し、固定事項/ユースケース/受入基準を即時確認するための起点。"
+    },
+    {
+      "caps": "docs/birdseye/caps/docs.addenda.M1_Metrics_Healthz_ADR.md.json",
+      "id": "docs/addenda/M1_Metrics_Healthz_ADR.md",
+      "reason": "Katamari M1 の `/healthz` と MetricsRegistry 設計を Day8 へ移植する計画とタイムラインを集中管理し、Ops/Release 文書とチェックリスト更新の根拠を示す。"
+    },
+    {
+      "caps": "docs/birdseye/caps/docs.TASKS.md.json",
+      "id": "docs/TASKS.md",
+      "reason": "Task Seed の作成・保守ルールと docs/seeds 配下への導線を示し、タスク運用を立ち上げる際の必読ハブとなる。"
+    },
+    {
+      "caps": "docs/birdseye/caps/docs.addenda.L_Config_Reference.md.json",
+      "id": "docs/addenda/L_Config_Reference.md",
+      "reason": "導入前に環境変数・設定ファイル・デバッグフラグを一度で確認でき、Appendix H や ops との整合チェックを即時に実行できる。"
+    },
+    {
+      "caps": "docs/birdseye/caps/workflow-cookbook.SAFETY.md.json",
+      "id": "workflow-cookbook/SAFETY.md",
+      "reason": "Day8 安全審査の承認経路・例外手順・Birdseye 同期要件を 1 ページで確認し、運用判断に必要なエスカレーション基準を即座に引き出せる中核資料。"
+    },
+    {
+      "caps": "docs/birdseye/caps/workflow-cookbook.GUARDRAILS.md.json",
+      "id": "workflow-cookbook/GUARDRAILS.md",
+      "reason": "設計/運用/品質/タスク種別ごとの禁止事項とゲート順を束ね、着手前に守るべき制約を提示。"
+    },
+    {
+      "caps": "docs/birdseye/caps/workflow-cookbook.SECURITY.md.json",
+      "id": "workflow-cookbook/SECURITY.md",
+      "reason": "Guardrails/Safety 間の責務境界とインシデント初動を統合し、即時対応すべき窓口と手順を把握できる。"
+    },
+    {
+      "caps": "docs/birdseye/caps/docs.addenda.G_Security_Privacy.md.json",
+      "id": "docs/addenda/G_Security_Privacy.md",
+      "reason": "Secrets・ログ衛生・OAuth ガードを Day8 用に整理し、SECURITY/Safety ハンドオフ時の運用メモを即参照できる。"
+    },
+    {
+      "caps": "docs/birdseye/caps/workflow-cookbook.HUB.codex.md.json",
+      "id": "workflow-cookbook/HUB.codex.md",
+      "reason": "Cookbook 側の資料分類とタスク分割ルールを集中管理するオーケストレーション中枢。"
+    },
+    {
+      "caps": "docs/birdseye/caps/workflow-cookbook.RUNBOOK.md.json",
+      "id": "workflow-cookbook/RUNBOOK.md",
+      "reason": "実運用手順・観測点・インシデント連携を定義し、現場で即参照される操作ガイド。"
+    },
+    {
+      "caps": "docs/birdseye/caps/docs.BIRDSEYE.md.json",
+      "id": "docs/BIRDSEYE.md",
+      "reason": "Birdseye index/caps/hot の欠損時に即参照し、Guardrails の最小読込手順をフォールバックで確保するための要点をまとめている。"
+    }
+  ],
+  "generated_at": "2025-11-06T09:00:00Z"
+}

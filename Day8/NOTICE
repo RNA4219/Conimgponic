@@ -1,0 +1,6 @@
+Day8（Eight-Day Starter）
+
+本プロジェクトは Apache License, Version 2.0（LICENSE 参照）の下で提供されます。
+
+サードパーティーコンポーネント:
+- `workflow-cookbook/` 配下のコンテンツは Workflow Cookbook プロジェクト由来であり、同梱の [`workflow-cookbook/LICENSE`](workflow-cookbook/LICENSE) に記載の MIT License が適用されます。

@@ -1,0 +1,60 @@
+{
+  "deps_in": [
+    "workflow-cookbook/GUARDRAILS.md"
+  ],
+  "deps_out": [
+    "workflow-cookbook/CHECKLISTS.md",
+    "workflow-cookbook/EVALUATION.md",
+    "workflow-cookbook/RUNBOOK.md",
+    "workflow-cookbook/SAFETY.md",
+    "workflow-cookbook/TASK.codex.md",
+    "workflow-cookbook/scripts/",
+    "workflow-cookbook/tools/"
+  ],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/SECURITY.md",
+  "katamari": {
+    "dependencies": {
+      "inputs": [
+        "workflow-cookbook/GUARDRAILS.md",
+        "workflow-cookbook/SAFETY.md",
+        "docs/safety.md"
+      ],
+      "mirrors": [],
+      "outputs": [
+        "workflow-cookbook/RUNBOOK.md",
+        "workflow-cookbook/CHECKLISTS.md"
+      ]
+    },
+    "maintenance": {
+      "cadence": "セキュリティ要件変更・インシデント振り返り・Guardrails更新時（目安: 1 リリース以内）。",
+      "steps": [
+        "該当差分を SECURITY.md に反映し、秘密情報を含まないことをレビューする。",
+        "docs/birdseye/index.json / hot.json のノード参照と generated_at を同期する。",
+        "関連チェックリストや Runbook のセキュリティ手順を更新して整合を確認する。"
+      ],
+      "triggers": [
+        "workflow-cookbook/GUARDRAILS.md の例外ポリシー更新",
+        "workflow-cookbook/SAFETY.md のエスカレーション経路更新",
+        "重大インシデント後の事後対応レビュー完了",
+        "Security Review Checklist の項目追加・修正"
+      ]
+    },
+    "purpose": [
+      "core::Day8/Workflow-cookbook 全体で共有するセキュリティ要件・禁止事項・連絡経路を集約する。",
+      "orbit::Guardrails と Safety の間でインシデント対応判断を標準化し、変更審査の境界条件を示す。",
+      "orbit::ツール/スクリプトの利用権限と秘密情報の取り扱い制限を明示する。"
+    ],
+    "validation": [
+      "check::Guardrails・Safety・Runbook のセキュリティ要件と齟齬がないかレビュー",
+      "check::CI/ツールの権限設定と SECURITY.md の記述が一致するか確認"
+    ]
+  },
+  "role": [
+    "core::security-policy",
+    "orbit::guardrail-extension"
+  ],
+  "summary": [
+    "core::Security Review Checklistを追加し、Secrets/CORS/レート制限/OAuthリダイレクト/依存性スキャンの確認項目を明文化。"
+  ]
+}

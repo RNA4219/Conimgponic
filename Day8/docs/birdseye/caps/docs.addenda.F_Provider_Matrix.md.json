@@ -1,0 +1,33 @@
+{
+  "deps_in": [
+    "docs/README.md",
+    "docs/day8/spec/02_spec.md"
+  ],
+  "deps_out": [
+    "docs/day8/spec/02_spec.md",
+    "docs/addenda/G_Security_Privacy.md",
+    "docs/addenda/H_Deploy_Guide.md"
+  ],
+  "generated_at": "2025-10-26T00:00:00Z",
+  "id": "docs/addenda/F_Provider_Matrix.md",
+  "maintenance": {
+    "refresh": "プロバイダー構成やモデル既定値を更新したら本文と Birdseye の summary/risks/edges を再生成する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "プロバイダー情報が古いままだとモデル切替時の審査やフォールバックが失敗し、自動提案の品質が劣化する",
+    "Rate Limit やデータ保持条件の変更を反映しないと、セキュリティポリシー違反やサービス停止を招く"
+  ],
+  "role": "provider",
+  "summary": [
+    "core::Day8 で利用する主要プロバイダーのモデル構成とユースケース、強み、リスクを整理したマトリクス。",
+    "core::Reflection DSL の llm_model 変更やフォールバック設計時に参照するチェックリストと連携資料を収録。",
+    "orbit::Katamari Appendix F を Day8 ガードレールと運用ログ要件に合わせて再調整した。"
+  ],
+  "tests": [
+    "check::docs/day8/spec/02_spec.md の llm_model 参照と整合すること",
+    "check::Appendix G/H の手順と矛盾しないようリンク先を年次レビューで確認する"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "deps_in": [
+    "docs/day8/quality/06_quality.md"
+  ],
+  "deps_out": [
+    "docs/addenda/I_Test_Cases.md",
+    "docs/addenda/K_Accessibility_UX.md"
+  ],
+  "generated_at": "2025-02-24T09:00:00Z",
+  "id": "docs/day8/quality/06_quality.md",
+  "maintenance": {
+    "refresh": "品質メトリクスやテスト導線を更新したら付録および Birdseye index.json を揃える。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "メトリクスと付録の整合が崩れるとレビュー前チェックが形骸化する",
+    "アクセシビリティ導線が欠けると CLI/レポートの品質レビューが形骸化する"
+  ],
+  "role": "quality",
+  "summary": "Day8 品質ガイドのメトリクス節。付録へのテスト観点導線を提供する。アクセシビリティ観点を付録Kと連動させる。",
+  "tests": []
+}

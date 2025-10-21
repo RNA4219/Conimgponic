@@ -1,0 +1,29 @@
+{
+  "deps_in": [
+    "docs/README.md",
+    "docs/UPSTREAM.md",
+    "docs/UPSTREAM_WEEKLY_LOG.md"
+  ],
+  "deps_out": [
+    "docs/birdseye/index.json",
+    "docs/birdseye/hot.json",
+    "docs/Release_Checklist.md",
+    "NOTICE"
+  ],
+  "generated_at": "2025-11-20T09:30:00Z",
+  "id": "docs/FORK_NOTES.md",
+  "maintenance": {
+    "refresh": "Katamari 本家 Fork Notes や Day8 固有依存の更新を取り込んだら、本ページ・Birdseye・ライセンス表記を同時に更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "Day8 固有の依存やライセンス差分を記録し忘れると、フォーク先で Birdseye とドキュメントの整合が崩れる",
+    "Katamari 本家の Fork Notes 更新を追従しないと Day8 特有の追加コンポーネントが最新化されない"
+  ],
+  "role": "guide",
+  "summary": "Katamari Fork Notes を前提に Day8 固有の追加コンポーネント・依存・ライセンス同梱ルールを整理したフォーク運用ノート。",
+  "tests": []
+}

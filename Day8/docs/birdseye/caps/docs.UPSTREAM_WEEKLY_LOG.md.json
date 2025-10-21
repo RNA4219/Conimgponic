@@ -1,0 +1,22 @@
+{
+  "deps_in": [
+    "docs/UPSTREAM.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "docs/UPSTREAM_WEEKLY_LOG.md",
+  "maintenance": {
+    "refresh": "週次レビュー後に最新週の行を追記し、未完了の追加アクションが残っていないか確認する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "週次ログが欠落すると Upstream 同期のトレーサビリティが失われる",
+    "Birdseye のリンクが古い場合に索引から最新ログへ辿れなくなる"
+  ],
+  "role": "log",
+  "summary": "Day8 と Katamari の Upstream 同期履歴を ISO 週次で記録するテンプレート。",
+  "tests": []
+}

@@ -1,0 +1,39 @@
+{
+  "deps": [
+    "in::docs/ROADMAP_AND_SPECS.md",
+    "in::workflow-cookbook/HUB.codex.md",
+    "in::workflow-cookbook/CHECKLISTS.md",
+    "in::workflow-cookbook/GUARDRAILS.md"
+  ],
+  "deps_in": [
+    "docs/ROADMAP_AND_SPECS.md",
+    "workflow-cookbook/CHECKLISTS.md",
+    "workflow-cookbook/GUARDRAILS.md",
+    "workflow-cookbook/HUB.codex.md",
+    "workflow-cookbook/SECURITY.md"
+  ],
+  "deps_out": [],
+  "generated_at": "2025-10-20T20:29:16Z",
+  "id": "workflow-cookbook/TASK.codex.md",
+  "maintenance": {
+    "refresh": "テンプレのゲート条件が変わったら関連チェックリスト/Runbookへ反映。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "テンプレが古いとタスク品質が劣化"
+  ],
+  "role": [
+    "core::task-template",
+    "orbit::execution-bridge"
+  ],
+  "summary": [
+    "core::Task Seedのテンプレートで目的/範囲/要件/コマンドを規定。",
+    "orbit::Lint/Type/TestゲートやPriority Score記法を強制。",
+    "orbit::Runbook/Evaluation/CHECKLISTS/Guardrailsと整合するチェックを列挙。"
+  ],
+  "tests": [
+    "check::テンプレのコマンド群が現行ゲートと一致するか確認"
+  ]
+}

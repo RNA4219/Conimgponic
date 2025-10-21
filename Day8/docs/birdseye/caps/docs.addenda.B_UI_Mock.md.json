@@ -1,0 +1,34 @@
+{
+  "deps_in": [
+    "docs/README.md",
+    "docs/day8/design/03_architecture.md"
+  ],
+  "deps_out": [
+    "docs/Architecture_ASCII.md",
+    "docs/day8/examples/10_examples.md",
+    "workflow-cookbook/scripts/analyze.py",
+    "workflow-cookbook/reports/today.md"
+  ],
+  "generated_at": "2025-10-27T00:00:00Z",
+  "id": "docs/addenda/B_UI_Mock.md",
+  "maintenance": {
+    "refresh": "CLI やレポートのレイアウトを変更したら ASCII モックとリンク先を更新し、Birdseye summary/maintenance/generated_at を揃える。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "モックが現行 CLI と乖離するとレビュー時の想定が食い違い、運用手順や提案内容の誤解を招く",
+    "レポートレイアウトが最新と異なるままだとガバナンス承認や Ops への共有が遅延する"
+  ],
+  "role": "design",
+  "summary": [
+    "core::Day8 Analyzer CLI と日次レポートを ASCII で再現し、画面共有できないレビュー環境でも UI 骨子を把握できるようにした。",
+    "core::Collector→Analyzer→Reporter の観測結果とメトリクスを横断して説明できるフォーマットを提供する。",
+    "orbit::Katamari Appendix B の体裁を踏襲し、Day8 のレポート運用に合わせたレイアウトを提示する。"
+  ],
+  "tests": [
+    "check::docs/day8/design/03_architecture.md の参照リンクと整合していること",
+    "check::docs/day8/examples/10_examples.md のサンプルレポートと主要セクションが一致しているかレビューする"
+  ]
+}

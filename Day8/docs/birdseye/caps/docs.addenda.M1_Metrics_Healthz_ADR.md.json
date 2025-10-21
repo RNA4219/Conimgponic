@@ -1,0 +1,50 @@
+{
+  "deps": [
+    "in::workflow-cookbook/GUARDRAILS.md",
+    "in::docs/day8/ops/04_ops.md",
+    "in::workflow-cookbook/CHECKLISTS.md",
+    "out::docs/day8/ops/04_ops.md",
+    "out::docs/ROADMAP_AND_SPECS.md",
+    "out::workflow-cookbook/CHECKLISTS.md",
+    "out::docs/birdseye/index.json",
+    "out::docs/birdseye/hot.json"
+  ],
+  "deps_in": [
+    "workflow-cookbook/GUARDRAILS.md",
+    "docs/day8/ops/04_ops.md",
+    "workflow-cookbook/CHECKLISTS.md"
+  ],
+  "deps_out": [
+    "docs/day8/ops/04_ops.md",
+    "docs/ROADMAP_AND_SPECS.md",
+    "workflow-cookbook/CHECKLISTS.md",
+    "docs/birdseye/index.json",
+    "docs/birdseye/hot.json"
+  ],
+  "generated_at": "2025-10-31T09:30:00Z",
+  "id": "docs/addenda/M1_Metrics_Healthz_ADR.md",
+  "maintenance": {
+    "refresh": "Katamari 側 M1 ADR の更新や Day8 MetricsRegistry 実装が進んだ際に、本 addendum の計画・タイムラインを見直し、ops/roadmap/checklist 反映と同時に Birdseye を再同期する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "ADR と実装タイムラインが乖離すると `/healthz` や MetricsRegistry の検証手順が誤案内になる",
+    "generated_at の同期を怠ると Day8 Birdseye の差分チェックで失敗する"
+  ],
+  "role": [
+    "core::adr",
+    "orbit::operations",
+    "orbit::observability"
+  ],
+  "summary": [
+    "core::Katamari M1 の `/healthz` / MetricsRegistry 決定を Day8 向けに翻訳し、実装順序と監視動線を共有する。",
+    "orbit::Ops/Release ドキュメントに対してヘルスチェック検証の追加やリリースゲート更新を指示するハブとなる。",
+    "orbit::Birdseye 更新手順と連携し、メトリクス整備のステータスを俯瞰できるようにする。"
+  ],
+  "tests": [
+    "check::docs/day8/ops/04_ops.md と docs/ROADMAP_AND_SPECS.md が本 addendum への参照を持つか確認",
+    "check::workflow-cookbook/CHECKLISTS.md Release セクションに `/healthz` 検証項目が追加されているか確認"
+  ]
+}

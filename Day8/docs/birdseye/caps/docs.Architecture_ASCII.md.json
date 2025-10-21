@@ -1,0 +1,28 @@
+{
+  "deps_in": [
+    "docs/README.md",
+    "docs/ROADMAP_AND_SPECS.md",
+    "docs/day8/design/03_architecture.md"
+  ],
+  "deps_out": [
+    "docs/day8/design/03_architecture.md",
+    "docs/birdseye/index.json",
+    "docs/ROADMAP_AND_SPECS.md"
+  ],
+  "generated_at": "2025-10-25T12:00:00Z",
+  "id": "docs/Architecture_ASCII.md",
+  "maintenance": {
+    "refresh": "アーキテクチャ構成や Birdseye のノードを更新したら ASCII 図とリンクを本 Capsule と同じコミットで揃える。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "public_api": [],
+  "risks": [
+    "Mermaid フローとの差分が放置されるとレビューで誤った責務分担を参照する",
+    "generated_at を更新しないと Birdseye の整合チェックで警告が発生する"
+  ],
+  "role": "architecture",
+  "summary": "Collector/Analyzer/Reporter/Proposer/Governance の関係を ASCII で俯瞰する Day8 用フォールバック図。",
+  "tests": []
+}
