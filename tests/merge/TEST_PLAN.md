@@ -69,3 +69,13 @@ export interface MergeDockExpectation {
 2. `pnpm typecheck`
 3. `pnpm test --filter merge`
 4. `pnpm test -- --runInBand --update-snapshots`（必要時のみ）
+
+## 7. `merge3` 主要 TDD ケース
+| Test ID | precision | シナリオ | 期待結果 | 参考 |
+| --- | --- | --- | --- | --- |
+| MG-U-01 | legacy | `sections` 未指定で段落推定を行い、自動採択と衝突が決定的に算出されるかを純関数として検証。 | `merge3` が `MergeResult` を返し、`stats.avgSim` が 0〜1 内に収まる。 | 【F:src/lib/merge.ts†L19-L63】 |
+| MG-U-02 | beta | 衝突ハンクで `setManual` → `commitManualEdit` の順にコマンド適用し、`MergeHunk.manual` が書き戻し用テキストとして保持されるかを検証。 | 対象ハンクが `decision:'conflict'` から `auto` へ変化し、`manual` フィールドが更新される。 | 【F:src/lib/merge.ts†L27-L56】 |
+| MG-U-03 | stable | `DEFAULT_MERGE_PROFILE.threshold` を上書きし `precision='stable'` で `merge3` を再実行した際に、自動採択/衝突統計が閾値変更へ追従するかを確認。 | `stats.auto` と `stats.conflicts` が調整後の `threshold` に基づき再計算される。 | 【F:src/lib/merge.ts†L1-L48】 |
+| MG-U-04 | any | 無効な入力（空文字列や `sections` 重複）で例外契約 `MergeError` が発生し、`retryable` 属性が false になるか。 | `merge3` が `MergeError` を throw。 | 【F:src/lib/merge.ts†L39-L78】 |
+| MG-I-01 | beta | `queueMergeCommand({ type:'persistTrace' })` 実行後に `MergeTraceError` が再試行判定付きで publish されるか。 | `events.emit` へ `merge:trace:error` が送出され、Collector 側ロジックへ伝搬。 | 【F:src/lib/merge.ts†L28-L78】 |
+| MG-I-02 | stable | `merge:autosave:lock` イベントを購読し、AutoSave ロック獲得/解放が Day8 Collector へ記録されるか統合試験。 | `events` が `merge:autosave:lock` を 2 回（acquired/released）送出。 | 【F:src/lib/merge.ts†L28-L78】【F:Day8/docs/day8/design/03_architecture.md†L3-L27】 |

@@ -11,15 +11,15 @@
 
 ## 1) 保存ポリシー
 
-### 1.1 保存ポリシー要件マッピング
-| 要件 | 既定値 / 閾値 | 実装責務（[実装計画](./IMPLEMENTATION-PLAN.md) §1 対象モジュール） | 補足 / 運用ノート |
-| --- | --- | --- | --- |
-| デバウンス遅延 | 500ms | `src/lib/autosave.ts` (AutoSave ファサード) | 入力検知後 500ms 待機して保存ジョブをキューイングし、UI からのイベントスパイクを抑制する。 |
-| アイドル猶予 | 2000ms | `src/lib/autosave.ts` / `src/components/AutoSaveIndicator.tsx` | 2s のアイドル後にロック取得へ遷移し、Indicator へ状態を伝播する。 |
-| 履歴世代上限 | 20 世代 | `src/lib/autosave.ts` | `history/<ISO>.json` を FIFO 管理し、`index.json` と整合させる。 |
-| 容量上限 | 50MB | `src/lib/autosave.ts` | 50MB 超過時は古い世代から削除し、Collector/Analyzer が参照するメトリクスを変動させない。 |
-| ロック優先順位 | Web Locks → `src/lib/locks.ts` フォールバック | `src/lib/locks.ts` | Web Locks が不可時は `project/.lock` を同一 UUID で保持し、Collector/Analyzer が扱うパスに干渉しない。 |
-| フラグ制御 | `autosave.enabled` (`false` 初期) | `src/lib/autosave.ts` / `App.tsx` | フラグ `false` 時は永続化 API を呼ばず、`phase='disabled'` を維持する。 |
+### 1.1 保存パラメータと API マッピング
+| 保存パラメータ | `AutoSaveOptions` キー | 既定値 (`AUTOSAVE_DEFAULTS`) | 主担当 API/モジュール | 補足 / 運用ノート |
+| --- | --- | --- | --- | --- |
+| デバウンス遅延 | `debounceMs` | `500` | `initAutoSave`（スケジューラ） | 入力検知後 500ms 待機して保存ジョブをキューイング。UI からのイベントスパイクを抑制する。 |
+| アイドル猶予 | `idleMs` | `2000` | `initAutoSave` / `AutoSaveIndicator` | デバウンス完了後 2s アイドルを確認し、ロック要求へ遷移して状態を UI へ伝播する。 |
+| 履歴世代上限 | `maxGenerations` | `20` | `initAutoSave`（履歴 GC） | `history/<ISO>.json` を FIFO 管理し、`index.json` と整合させる。 |
+| 容量上限 | `maxBytes` | `50 * 1024 * 1024` | `initAutoSave`（容量ガード） | 50MB 超過時は古い世代から削除し、Collector/Analyzer が参照するメトリクスを変動させない。 |
+| フィーチャーフラグ | `disabled`（オプション） / `autosave.enabled`（設定値） | `false` / `false` (Phase A 既定) | `initAutoSave` / `App.tsx` | [実装計画](./IMPLEMENTATION-PLAN.md) §0 で規定。いずれかが無効化判定に一致した場合は永続化 API を呼ばず `phase='disabled'` を維持する。 |
+| ロック優先順位 | - | Web Locks → フォールバック | `src/lib/locks.ts` | Web Locks が不可時は `project/.lock` を同一 UUID で保持し、Collector/Analyzer が扱うパスに干渉しない。 |
 
 ### 1.2 ポリシー適用フロー
 - デバウンス 500ms + アイドル 2s で `project/autosave/current.json` を保存。
@@ -66,6 +66,8 @@ sequenceDiagram
 | t0+2.6s | 同 | ロック解放、次回トリガー待機 | Web Locks release |
 
 ## 3) API（型定義と副作用）
+
+### 3.1 公開 API 型シグネチャ
 ```ts
 type StoryboardProvider = () => Storyboard;
 
@@ -83,11 +85,8 @@ interface AutoSaveOptions {
 }
 
 interface AutoSaveInitResult {
-  /** 現在のステータスを取得。UI から監視してメッセージを表示する用途。 */
   readonly snapshot: () => AutoSaveStatusSnapshot;
-  /** `debounce` キューを即時消化し、ロック取得から書き込みまで強制実行。 */
   flushNow: () => Promise<void>;
-  /** イベント購読・タイマーを破棄する。副作用: イベントリスナー解除のみ */
   dispose: () => void;
 }
 
@@ -102,7 +101,6 @@ interface AutoSaveError extends Error {
   readonly code: AutoSaveErrorCode;
   readonly retryable: boolean;
   readonly cause?: Error;
-  /** 書込試行バイト数など、再試行判断に必要な付帯情報。 */
   readonly context?: Record<string, unknown>;
 }
 
@@ -110,26 +108,21 @@ export function initAutoSave(
   getStoryboard: StoryboardProvider,
   options?: AutoSaveOptions
 ): AutoSaveInitResult;
-// 副作用: Web Locks/ファイルロック取得、`current.json`/`index.json` 書き込み。例外: AutoSaveError を throw。
 
 export async function restorePrompt(): Promise<
   | null
   | { ts: string; bytes: number; source: 'current' | 'history'; location: string }
 >;
-// 副作用: OPFS 読み出しのみ。例外: { code: 'data-corrupted' }。
 
 export async function restoreFromCurrent(): Promise<boolean>;
-// 副作用: UI へ storyboard を適用、書き込みなし。例外: { code: 'data-corrupted' }。
 
 export async function restoreFrom(ts: string): Promise<boolean>;
-// 副作用: 指定履歴ファイルをロードし UI へ適用。例外: { code: 'data-corrupted' } | { code: 'lock-unavailable' }。
 
 export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 >;
-// 副作用: `index.json` 読み出しのみ。例外: { code: 'data-corrupted' }。
 ```
-- `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する。`disabled` が `true` または `autosave.enabled=false` の場合、`initAutoSave` は `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。
+- `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する（`src/lib/autosave.ts` の `AUTOSAVE_DEFAULTS` を参照）。`disabled` が `true` または設定フラグ `autosave.enabled=false` の場合、`initAutoSave` は [実装計画](./IMPLEMENTATION-PLAN.md) §0 の no-op 要件を満たすため `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。
 - 例外は `AutoSaveError` を基本とし、`retryable` が true のケース（ロック取得不可・一時的な書込失敗）は指数バックオフで再スケジュールする。`retryable=false` はユーザ通知＋即時停止。`code='disabled'` は再試行禁止の静的ガードとして扱い、ログのみ残して停止する。
 - `flushNow()` は保存可能な状態（`idle` or `debouncing`）であれば 2s アイドル待機をスキップし、ロック取得と書込の完了まで待つ。実行中のフライトがある場合はその完了を待機し、同時実行を避ける。
 - `snapshot()` は内部状態の即時スナップショットを返し UI 側の `isReadOnly` や `lastError` 表示に利用する。内部ステートは後述の状態遷移表に従う。

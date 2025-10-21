@@ -83,6 +83,11 @@ precision フラグの段階適用は下表の通り。`legacy` は既存 5 タ�
 | 統計再取得 (`refreshStats`) | ロック影響なし。AutoSave は書き込み待機中でも読み込みのみ行い、UI バナーで再試行を促す。【F:docs/MERGE-DESIGN-IMPL.md†L190-L193】 | `merge:stats:refreshed` ログが Analyzer のメトリクス算出に利用される。【F:docs/MERGE-DESIGN-IMPL.md†L215-L219】【F:Day8/docs/day8/design/03_architecture.md†L3-L27】 | 再取得失敗は `merge:trace:error` と紐づけて調査用 JSONL に残す。【F:docs/MERGE-DESIGN-IMPL.md†L215-L222】 |
 | 証跡書込 (`persistTrace`) | AutoSave が `Saved` トリガーを出すまで `MergeDock` は保存完了を表示しない。ロック解放後に AutoSave が OPFS 書込完了を通知。【F:docs/MERGE-DESIGN-IMPL.md†L184-L194】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L305-L318】 | `merge:trace:persisted` / `merge:trace:error` が Collector → Analyzer → Reporter で追跡され、Governance 監査へ連携。【F:docs/MERGE-DESIGN-IMPL.md†L215-L222】【F:Day8/docs/day8/design/03_architecture.md†L3-L36】 | AutoSave の JSONL ログ形式に合わせ、Reporter が Why-Why 素材を抽出しやすくする。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L375-L377】 |
 
+### 3.1 Day8 テレメトリ経路の確認
+- Diff Merge UI が発火する `merge:*` / `autosave:*` イベントは Collector の JSONL 収集対象 (`workflow-cookbook/logs`) に書き込まれ、Day8 パイプラインの Collector → Analyzer → Reporter → Governance 連鎖に接続される。【F:Day8/docs/day8/design/03_architecture.md†L3-L27】
+- Analyzer は収集したログから自動マージ率・衝突件数を集計し、Reporter が日次サマリと Issue 提案を生成するため、Diff Merge UI はイベント payload に `sceneId`・`section`・`decision` を必須で含める。【F:docs/MERGE-DESIGN-IMPL.md†L214-L220】【F:Day8/docs/day8/design/03_architecture.md†L3-L27】
+- Governance レイヤーは Reporter 出力を監査の起点として利用するため、Collector へ送信する全イベントに `feature:'diff-merge'` タグを加え、AutoSave の `autosave.lock.*` 系と区別する。【F:docs/IMPLEMENTATION-PLAN.md†L231-L280】【F:Day8/docs/day8/design/03_architecture.md†L3-L27】
+
 ## 4. 画面遷移・データフロー・テスト計画
 
 ### 4.1 画面遷移図（フラグ条件別）
