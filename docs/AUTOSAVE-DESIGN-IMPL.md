@@ -12,14 +12,14 @@
 ## 1) 保存ポリシー
 
 ### 1.1 保存ポリシー要件マッピング
-| 要件 | 既定値 / 閾値 | 実装責務（[実装計画](./IMPLEMENTATION-PLAN.md) §1 対象モジュール） | 補足 / 運用ノート |
-| --- | --- | --- | --- |
-| デバウンス遅延 | 500ms | `src/lib/autosave.ts` (AutoSave ファサード) | 入力検知後 500ms 待機して保存ジョブをキューイングし、UI からのイベントスパイクを抑制する。 |
-| アイドル猶予 | 2000ms | `src/lib/autosave.ts` / `src/components/AutoSaveIndicator.tsx` | 2s のアイドル後にロック取得へ遷移し、Indicator へ状態を伝播する。 |
-| 履歴世代上限 | 20 世代 | `src/lib/autosave.ts` | `history/<ISO>.json` を FIFO 管理し、`index.json` と整合させる。 |
-| 容量上限 | 50MB | `src/lib/autosave.ts` | 50MB 超過時は古い世代から削除し、Collector/Analyzer が参照するメトリクスを変動させない。 |
-| ロック優先順位 | Web Locks → `src/lib/locks.ts` フォールバック | `src/lib/locks.ts` | Web Locks が不可時は `project/.lock` を同一 UUID で保持し、Collector/Analyzer が扱うパスに干渉しない。 |
-| フラグ制御 | `autosave.enabled` (`false` 初期) | `src/lib/autosave.ts` / `App.tsx` | フラグ `false` 時は永続化 API を呼ばず、`phase='disabled'` を維持する。 |
+| ポリシー | 既定値 / 閾値 | `src/lib/autosave.ts` 責務 | `docs/IMPLEMENTATION-PLAN.md` 参照 | 補足 / 運用ノート |
+| --- | --- | --- | --- | --- |
+| デバウンス遅延 | 500ms | 入力検知後 500ms 待機して保存ジョブをスケジュールし、UI からのイベントスパイクを抑制する。 | §1 対象モジュール「AutoSave ファサード」【F:docs/IMPLEMENTATION-PLAN.md†L52-L67】 | 保存スケジューラで 1 キューのみ維持し、重複イベントは合算。 |
+| アイドル猶予 | 2000ms | アイドル検知後にロック取得・書き込みへ遷移し、Indicator へ状態を伝播する。 | §1 対象モジュール + フラグ制御【F:docs/IMPLEMENTATION-PLAN.md†L52-L85】 | `phase='awaiting-lock'` へ遷移させ、UI と Collector ログの整合を確保する。 |
+| 履歴世代上限 | 20 世代 | `history/<ISO>.json` を FIFO 管理し、`index.json` と整合させる。 | フェーズ運用チェックリスト（復旧 SLO）【F:docs/IMPLEMENTATION-PLAN.md†L95-L135】 | 世代番号は単調増加し、削除時は `index.json` を同期更新。 |
+| 容量上限 | 50MB | 履歴総バイト数を監視し、閾値超過時は最古世代から削除する。 | 受入基準（保存時間・復元率）【F:docs/IMPLEMENTATION-PLAN.md†L137-L170】 | Collector が参照するメトリクスを乱さないよう削除ログは 1 行に制限。 |
+| ロック優先順位 | Web Locks → `src/lib/locks.ts` フォールバック | Web Lock で失敗した場合はフォールバックロックを同一 UUID で取得し、排他制御を維持する。 | ロックモジュール要件整理【F:docs/IMPLEMENTATION-PLAN.md†L69-L134】 | フォールバックは `project/.lock` のみに副作用を限定し Day8 パイプラインへ干渉させない。 |
+| フラグ制御 | `autosave.enabled` (`false` 初期) + `options.disabled` | フラグ OFF/disabled では永続化 API を一切呼び出さず、`phase='disabled'` を返す。 | フラグ定義 + 回帰試験計画【F:docs/IMPLEMENTATION-PLAN.md†L7-L34】【F:docs/IMPLEMENTATION-PLAN.md†L171-L207】 | `initAutoSave` 戻り値は no-op `flushNow`/`dispose` を返却し、Collector へログを送出しない。 |
 
 ### 1.2 ポリシー適用フロー
 - デバウンス 500ms + アイドル 2s で `project/autosave/current.json` を保存。
@@ -66,6 +66,8 @@ sequenceDiagram
 | t0+2.6s | 同 | ロック解放、次回トリガー待機 | Web Locks release |
 
 ## 3) API（型定義と副作用）
+
+### 3.1 公開 API 型シグネチャ
 ```ts
 type StoryboardProvider = () => Storyboard;
 
@@ -83,11 +85,8 @@ interface AutoSaveOptions {
 }
 
 interface AutoSaveInitResult {
-  /** 現在のステータスを取得。UI から監視してメッセージを表示する用途。 */
   readonly snapshot: () => AutoSaveStatusSnapshot;
-  /** `debounce` キューを即時消化し、ロック取得から書き込みまで強制実行。 */
   flushNow: () => Promise<void>;
-  /** イベント購読・タイマーを破棄する。副作用: イベントリスナー解除のみ */
   dispose: () => void;
 }
 
@@ -102,7 +101,6 @@ interface AutoSaveError extends Error {
   readonly code: AutoSaveErrorCode;
   readonly retryable: boolean;
   readonly cause?: Error;
-  /** 書込試行バイト数など、再試行判断に必要な付帯情報。 */
   readonly context?: Record<string, unknown>;
 }
 
@@ -110,29 +108,45 @@ export function initAutoSave(
   getStoryboard: StoryboardProvider,
   options?: AutoSaveOptions
 ): AutoSaveInitResult;
-// 副作用: Web Locks/ファイルロック取得、`current.json`/`index.json` 書き込み。例外: AutoSaveError を throw。
 
 export async function restorePrompt(): Promise<
   | null
   | { ts: string; bytes: number; source: 'current' | 'history'; location: string }
 >;
-// 副作用: OPFS 読み出しのみ。例外: { code: 'data-corrupted' }。
 
 export async function restoreFromCurrent(): Promise<boolean>;
-// 副作用: UI へ storyboard を適用、書き込みなし。例外: { code: 'data-corrupted' }。
 
 export async function restoreFrom(ts: string): Promise<boolean>;
-// 副作用: 指定履歴ファイルをロードし UI へ適用。例外: { code: 'data-corrupted' } | { code: 'lock-unavailable' }。
 
 export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 >;
-// 副作用: `index.json` 読み出しのみ。例外: { code: 'data-corrupted' }。
 ```
-- `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する。`disabled` が `true` または `autosave.enabled=false` の場合、`initAutoSave` は `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。
-- 例外は `AutoSaveError` を基本とし、`retryable` が true のケース（ロック取得不可・一時的な書込失敗）は指数バックオフで再スケジュールする。`retryable=false` はユーザ通知＋即時停止。`code='disabled'` は再試行禁止の静的ガードとして扱い、ログのみ残して停止する。
-- `flushNow()` は保存可能な状態（`idle` or `debouncing`）であれば 2s アイドル待機をスキップし、ロック取得と書込の完了まで待つ。実行中のフライトがある場合はその完了を待機し、同時実行を避ける。
-- `snapshot()` は内部状態の即時スナップショットを返し UI 側の `isReadOnly` や `lastError` 表示に利用する。内部ステートは後述の状態遷移表に従う。
+- `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する。`disabled` が `true` または `autosave.enabled=false` の場合、`initAutoSave` は `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。【F:docs/IMPLEMENTATION-PLAN.md†L7-L34】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L23】
+- `flushNow()` は保存可能な状態（`idle` or `debouncing`）であれば 2s アイドル待機をスキップし、ロック取得と書込の完了まで待つ。実行中フライトがある場合はその完了を待機し、同時実行を避ける。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L86-L114】
+- `snapshot()` は内部状態の即時スナップショットを返し UI 側の `isReadOnly` や `lastError` 表示に利用する。内部ステートは後述の状態遷移表に従う。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L118-L141】
+
+### 3.2 エラー分類
+| コード | `retryable` | 発生契機 | Collector 送信方針 |
+| --- | --- | --- | --- |
+| `disabled` | `false` | フラグ OFF/`options.disabled` | ローカル警告のみ。Collector へは送信しない。 |
+| `lock-unavailable` | `true` | Web Lock/フォールバック両方取得失敗 | 1 行のみ Collector へ送信し、指数バックオフ後に再試行。【F:docs/IMPLEMENTATION-PLAN.md†L69-L134】 |
+| `write-failed` | `true` または `false` | OPFS 書込失敗（I/O・Quota） | I/O 系は `retryable=true`、論理不整合は `false`。Collector には `duration_ms` と `feature:'autosave'` を付与。【F:Day8/docs/day8/design/03_architecture.md†L1-L18】 |
+| `data-corrupted` | `false` | `current.json`/`index.json` の不整合・JSON 破損 | Collector へ重大イベントとして通知し、UI は復旧手順を案内。 |
+| `history-overflow` | `false` | 履歴 FIFO/容量制御による削除 | ローカルログのみ（ノイズ抑制）。Collector スキーマから除外。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L141】 |
+
+### 3.3 履歴ローテーション処理
+1. `index.json` の世代配列を更新してから `history/<ISO>.json` を追記し、両ファイルが整合するようトランザクションを構成する。
+2. 上限を超えた場合は FIFO で最古世代を削除し、削除結果を `index.json` へ反映する。
+3. 容量 50MB 超過時は総バイト数を再計算し、しきい値内に収まるまで追加削除を実行する。
+4. ローテーションログは Collector ではなくローカル警告ログへ 1 行だけ出力することで、Day8 パイプラインのノイズを防ぐ。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+
+### 3.4 TDD 観点（フラグ / 復旧シナリオ）
+- フラグ OFF (`autosave.enabled=false` または `options.disabled=true`) で `initAutoSave` が no-op ランナーを返し、`snapshot().phase==='disabled'` を維持するユニットテスト。【F:docs/IMPLEMENTATION-PLAN.md†L171-L207】
+- フラグ ON 時にデバウンス→アイドル→ロック取得→`current.json` 書込→`index.json` 更新→履歴 FIFO の順で完了する保存シーケンスを Fake タイマーで検証するテスト。
+- `lock-unavailable` が一定回数続いた後でもバックオフで復旧するパスと、`retryable=false` で停止するパスを分岐させる再試行テスト。
+- `restorePrompt`/`restoreFrom*` が破損 JSON を検出して `data-corrupted` を投げ、成功時には UI へスナップショットを適用できる復旧シナリオテスト。
+- 履歴ローテーションが世代数・容量しきい値を超えた場合に正しく古いファイルを削除し、`history-overflow` ログが 1 行に留まることを確認するテスト。【F:docs/IMPLEMENTATION-PLAN.md†L95-L170】
 
 ## 4) API 最終仕様と状態遷移
 
