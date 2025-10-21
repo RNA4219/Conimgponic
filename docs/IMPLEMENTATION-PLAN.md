@@ -50,6 +50,62 @@ sequenceDiagram
 - `docs/CONFIG_FLAGS.md` で定義された優先順位（env → localStorage → 既定値）を `src/config/flags.ts` が忠実に再現することをレビュー観点として固定する。【F:docs/CONFIG_FLAGS.md†L57-L90】
 - `FlagSnapshot.source` によって、後方互換のための `localStorage` 直接参照を段階的に排除しながらも既存 UI の動作確認が容易になる前提を保持する。
 
+### 0.3 MergeDock / DiffMergeView タブ棚卸し
+| コンポーネント | 露出タブ / ペイン | 補足 | 出典 |
+| --- | --- | --- | --- |
+| `MergeDock.tsx` | `compiled` / `shot` / `assets` / `import` / `golden` をタブボタンで制御。`pref` セレクタで `manual-first` / `ai-first` / `diff-merge` を保持し、既存書き出し・インポート・Golden Compare を同一レイアウトで提供。 | `legacy` precision 時は 5 タブ構成を維持し、`diff-merge` 選択はプレースホルダー扱い。 | 【F:src/components/MergeDock.tsx†L24-L147】 |
+| `DiffMergeView.tsx`（計画） | `DiffMergeTabs`（タブヘッダ）配下に左 `HunkListPane`・右 `OperationPane`・`EditModal` などの複数ペインを配置し、ハンク操作を `queueMergeCommand` へ集約。 | MergeDock タブと同一階層に追加され、`precision` フラグで露出順を制御。 | 【F:docs/MERGE-DESIGN-IMPL.md†L140-L206】 |
+
+#### 0.3.1 precision=`legacy` の遷移
+```mermaid
+stateDiagram-v2
+    [*] --> Compiled
+    Compiled --> Shot: タブ押下
+    Compiled --> Assets: タブ押下
+    Compiled --> Import: タブ押下
+    Compiled --> Golden: タブ押下
+    Shot --> Compiled
+    Assets --> Compiled
+    Import --> Compiled
+    Golden --> Compiled
+    note right of Compiled: prefは manual-first/ai-first のみ
+```
+
+#### 0.3.2 precision=`beta` の遷移
+```mermaid
+stateDiagram-v2
+    [*] --> Compiled
+    Compiled --> Diff: Diff Merge タブ選択
+    Compiled --> Shot
+    Compiled --> Assets
+    Compiled --> Import
+    Compiled --> Golden
+    Diff --> Compiled: レガシービューへ戻る
+    Diff --> Operation: ハンク選択
+    Operation --> Diff: 決定完了でハンク一覧へ戻る
+    note right of Diff: MergeDock タブ末尾に追加
+    note right of Operation: queueMergeCommand を経由
+```
+
+#### 0.3.3 precision=`stable` の遷移
+```mermaid
+stateDiagram-v2
+    [*] --> Diff
+    Diff --> Operation: ハンク選択
+    Operation --> Edit: 編集モーダル開
+    Edit --> Operation: 保存/キャンセル
+    Operation --> Bulk: 一括操作
+    Bulk --> Operation
+    Diff --> Compiled: レガシービュー確認
+    Compiled --> Diff
+    Compiled --> Shot
+    Compiled --> Assets
+    Compiled --> Import
+    Compiled --> Golden
+    note right of Diff: 初期タブ
+    note right of Compiled: バックアップ表示
+```
+
 ## 1) 対象モジュール追加
 - `src/lib/autosave.ts`（API・イベント・ローテ）
 - `src/lib/locks.ts`（Web Locks + フォールバック）
