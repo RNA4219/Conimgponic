@@ -1,0 +1,76 @@
+name: Require PR labels
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - edited
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-labels:
+    permissions:
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: "検証: type:* と semver:* ラベルの付与"
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const requiredPrefixes = ["type:", "semver:"];
+            const defaultLabelsByPrefix = {
+              "type:": "type:chore",
+              "semver:": "semver:patch",
+            };
+
+            const labels = context.payload.pull_request?.labels?.map((label) => label.name) ?? [];
+            const missing = requiredPrefixes.filter((prefix) => !labels.some((name) => name.startsWith(prefix)));
+
+            if (missing.length === 0) {
+              core.info("必要なラベルがすべて付与されています");
+              return;
+            }
+
+            const autoLabels = missing
+              .map((prefix) => defaultLabelsByPrefix[prefix])
+              .filter((label) => Boolean(label) && !labels.includes(label));
+
+            if (autoLabels.length > 0) {
+              const isSameRepository =
+                context.payload.pull_request?.head?.repo?.full_name ===
+                context.payload.pull_request?.base?.repo?.full_name;
+
+              if (isSameRepository) {
+                try {
+                  await github.rest.issues.addLabels({
+                    ...context.repo,
+                    issue_number: context.payload.pull_request.number,
+                    labels: autoLabels,
+                  });
+                  core.info(`不足ラベルを自動付与しました: ${autoLabels.join(", ")}`);
+                  return;
+                } catch (error) {
+                  if (error?.status === 403) {
+                    core.warning("GITHUB_TOKEN にラベル付与権限がないため自動付与をスキップします");
+                  } else {
+                    throw error;
+                  }
+                }
+              } else {
+                core.info("フォーク由来のPRのため自動付与をスキップします");
+              }
+            }
+
+            const message = `このPRには以下のラベルを付与してください: ${missing.join(", ")}`;
+            core.error(message);
+            core.setFailed(message);
+

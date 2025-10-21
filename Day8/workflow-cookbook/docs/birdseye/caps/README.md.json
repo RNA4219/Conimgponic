@@ -1,0 +1,30 @@
+{
+  "id": "README.md",
+  "role": "overview",
+  "public_api": [],
+  "summary": "リポジトリの目的と導入手順を日本語中心で説明し、各種ガバナンス文書とチェックリストの使い方を案内する。",
+  "deps_out": [
+    "BLUEPRINT.md",
+    "CHANGELOG.md",
+    "CHECKLISTS.md",
+    "EVALUATION.md",
+    "GUARDRAILS.md",
+    "HUB.codex.md",
+    "RUNBOOK.md",
+    "TASK.codex.md",
+    "docs/IN-20250115-001.md",
+    "docs/birdseye/caps/",
+    "docs/birdseye/index.json",
+    "governance/policy.yaml",
+    "governance/prioritization.yaml",
+    "tools/codemap/"
+  ],
+  "deps_in": [
+    "CHANGELOG.md",
+    "GUARDRAILS.md",
+    "governance/prioritization.yaml"
+  ],
+  "risks": [],
+  "tests": [],
+  "generated_at": "2025-10-21T08:51:14Z"
+}

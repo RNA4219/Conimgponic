@@ -1,0 +1,6 @@
+{
+  "requirements": ["REQUIREMENTS.md", "docs/req.md", "docs/requirements.md"],
+  "spec":         ["SPEC.md", "docs/spec.md"],
+  "design":       ["DESIGN.md", "docs/design.md"],
+  "auto_task_by_default": false
+}

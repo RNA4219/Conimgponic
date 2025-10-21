@@ -1,0 +1,27 @@
+{
+  "id": "EVALUATION.md",
+  "role": "quality",
+  "public_api": [],
+  "summary": "受け入れ基準とKPI、テストアウトラインを定義し、policy.yamlの制約順守とインシデント連携を明示する品質基準書。",
+  "deps_out": [
+    "RUNBOOK.md",
+    "docs/IN-20250115-001.md",
+    "governance/policy.yaml",
+    "governance/prioritization.yaml"
+  ],
+  "deps_in": [
+    "CHANGELOG.md",
+    "CHECKLISTS.md",
+    "GUARDRAILS.md",
+    "HUB.codex.md",
+    "README.md",
+    "TASK.codex.md",
+    "docs/IN-20250115-001.md",
+    "governance/prioritization.yaml"
+  ],
+  "risks": [],
+  "tests": [
+    "手動: Acceptance Criteria が最新インシデント要件を満たすかPRレビューで確認"
+  ],
+  "generated_at": "2025-10-21T08:51:14Z"
+}

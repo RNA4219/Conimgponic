@@ -1,0 +1,18 @@
+{
+  "id": "docs/INCIDENT_TEMPLATE.md",
+  "role": "template",
+  "public_api": [],
+  "summary": "標準化したインシデント報告フォーマットで初動対応を平準化する。",
+  "deps_in": [
+    "GUARDRAILS.md",
+    "HUB.codex.md"
+  ],
+  "deps_out": [
+    "CHECKLISTS.md",
+    "RUNBOOK.md",
+    "docs/IN-20250115-001.md"
+  ],
+  "risks": [],
+  "tests": [],
+  "generated_at": "2025-10-21T08:51:14Z"
+}

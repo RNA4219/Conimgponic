@@ -1,0 +1,32 @@
+{
+  "id": "HUB.codex.md",
+  "role": "navigation",
+  "public_api": [],
+  "summary": "エージェント向けのツール利用ポリシーと、自動タスク分割に必要な主要ドキュメント群・分類ルールを整理したハブ。",
+  "deps_out": [
+    "BLUEPRINT.md",
+    "CHANGELOG.md",
+    "CHECKLISTS.md",
+    "EVALUATION.md",
+    "GUARDRAILS.md",
+    "RUNBOOK.md",
+    "SECURITY.md",
+    "TASK.codex.md",
+    "docs/IN-20250115-001.md",
+    "docs/INCIDENT_TEMPLATE.md",
+    "docs/birdseye/caps/",
+    "docs/birdseye/index.json",
+    "governance/policy.yaml",
+    "governance/prioritization.yaml",
+    "tools/codemap/"
+  ],
+  "deps_in": [
+    "GUARDRAILS.md",
+    "README.md"
+  ],
+  "risks": [
+    "Birdseye インデックスと同期が遅れるとタスク分割精度が低下"
+  ],
+  "tests": [],
+  "generated_at": "2025-10-21T08:51:14Z"
+}

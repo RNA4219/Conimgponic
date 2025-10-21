@@ -1,0 +1,39 @@
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+name: Reusable Python CI
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: '3.11'
+
+jobs:
+  ci:
+    name: Python CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - run: pip install -r requirements.txt
+        if: ${{ hashFiles('requirements.txt') != '' }}
+      - run: pip install -r requirements-dev.txt
+        if: ${{ hashFiles('requirements-dev.txt') != '' }}
+      - name: Ruff
+        run: pipx run ruff check .
+      - name: Pytest
+        run: pytest -q

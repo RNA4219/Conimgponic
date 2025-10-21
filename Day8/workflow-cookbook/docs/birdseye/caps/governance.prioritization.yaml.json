@@ -1,0 +1,22 @@
+{
+  "id": "governance/prioritization.yaml",
+  "role": "governance",
+  "public_api": [],
+  "summary": "重大度・影響・リソース制約を組み合わせて施策優先度を決定するための評価指標と審査フローを定義したガバナンス基準。",
+  "deps_out": [
+    "EVALUATION.md",
+    "README.md",
+    "TASK.codex.md"
+  ],
+  "deps_in": [
+    "EVALUATION.md",
+    "HUB.codex.md",
+    "README.md",
+    "TASK.codex.md"
+  ],
+  "risks": [
+    "優先順位更新の遅延が運用上のボトルネックを招く"
+  ],
+  "tests": [],
+  "generated_at": "2025-10-21T08:51:14Z"
+}

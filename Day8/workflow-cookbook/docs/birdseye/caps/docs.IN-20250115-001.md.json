@@ -1,0 +1,26 @@
+{
+  "id": "docs/IN-20250115-001.md",
+  "role": "incident",
+  "public_api": [],
+  "summary": "2025-01-15 に発生した Canary 停止インシデントの影響、原因、復旧・是正アクションを記録した事後ログ。",
+  "deps_in": [
+    "EVALUATION.md",
+    "GUARDRAILS.md",
+    "HUB.codex.md",
+    "README.md",
+    "RUNBOOK.md",
+    "docs/INCIDENT_TEMPLATE.md"
+  ],
+  "deps_out": [
+    "CHANGELOG.md",
+    "EVALUATION.md",
+    "RUNBOOK.md"
+  ],
+  "risks": [
+    "再発防止タスクの完了が遅れると Canary 系の監視ギャップが残存する"
+  ],
+  "tests": [
+    "手動: RUNBOOK/EVALUATION/CHANGELOG の更新内容とインシデント記録の整合を確認"
+  ],
+  "generated_at": "2025-10-21T08:51:14Z"
+}

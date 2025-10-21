@@ -1,0 +1,57 @@
+name: spec-notify
+on:
+  pull_request:
+    types: [opened, synchronize, edited, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check REQUIREMENTS presence
+        id: req
+        shell: bash
+        run: |
+          if [ -f "REQUIREMENTS.md" ] || [ -f "docs/requirements.md" ]; then
+            echo "present=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Annotate (non-blocking)
+        shell: bash
+        run: |
+          if [ "${{ steps.req.outputs.present }}" = "false" ]; then
+            echo "::warning:: Requirements not found (REQUIREMENTS.md or docs/requirements.md)."
+          else
+            echo "::notice:: Requirements found."
+          fi
+        continue-on-error: true
+
+      - name: Comment when missing (optional)
+        if: ${{ steps.req.outputs.present == 'false' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              "⚠️ **Requirements が見つかりません**",
+              "",
+              "- 期待ファイル: `REQUIREMENTS.md` または `docs/requirements.md`",
+              "- 最小テンプレはリポ内 `docs/requirements.template.md`（後述）をご利用ください。",
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+

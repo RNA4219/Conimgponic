@@ -1,0 +1,78 @@
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+name: Reusable Security CI
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: '3.11'
+    secrets:
+      GITLEAKS_LICENSE:
+        required: false
+
+jobs:
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/ci
+
+  bandit:
+    name: Bandit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+      - run: pip install bandit
+      - run: bandit -q -r src -s B404,B603 || true
+
+  dep_audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+      - run: pip install pip-audit safety
+      - run: pip-audit
+      - run: safety check || true
+
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        with:
+          args: "--no-banner detect -v"
+
+  trivy:
+    name: Trivy
+    if: ${{ hashFiles('Dockerfile') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t local/app:ci .
+      - uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: local/app:ci
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH

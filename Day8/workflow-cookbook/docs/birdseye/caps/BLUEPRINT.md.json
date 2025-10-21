@@ -1,0 +1,17 @@
+{
+  "id": "BLUEPRINT.md",
+  "role": "requirements",
+  "public_api": [],
+  "summary": "課題・スコープ・制約・I/O契約・最小フローを1ページに整理し、実装前に期待値を固定するテンプレート。",
+  "deps_out": [],
+  "deps_in": [
+    "GUARDRAILS.md",
+    "HUB.codex.md",
+    "README.md"
+  ],
+  "risks": [],
+  "tests": [
+    "手動: Mermaid フロー図が崩れないことをプレビューで確認"
+  ],
+  "generated_at": "2025-10-21T08:51:14Z"
+}

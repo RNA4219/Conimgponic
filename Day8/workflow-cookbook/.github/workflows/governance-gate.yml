@@ -1,0 +1,62 @@
+name: Governance Gate
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: '3.11'
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governance:
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event.pull_request == null ||
+        !contains(github.event.pull_request.labels.*.name, 'governance:skip'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            docs:
+              - 'docs/**'
+              - '**/*.md'
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+      - name: Setup Python
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ github.event_name == 'workflow_call' && inputs.python-version || '3.11' }}
+      - name: Governance gate
+        if: steps.changes.outputs.code == 'true'
+        env:
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: python tools/ci/check_governance_gate.py
+      - name: Aggregate INT metrics
+        if: steps.changes.outputs.code == 'true'
+        run: python tools/ci/aggregate_int.py
+      - name: Upload INT metrics
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: int-metrics
+          path: tools/ci/int-metrics.json
+          if-no-files-found: error
+      - name: Docs-only change warning
+        if: steps.changes.outputs.code != 'true'
+        run: echo '::warning::Docs-only changes detected. Governance gate checks skipped.'

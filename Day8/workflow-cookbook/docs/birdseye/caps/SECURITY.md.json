@@ -1,0 +1,13 @@
+{
+  "id": "SECURITY.md",
+  "role": "security",
+  "public_api": [],
+  "summary": "脆弱性報告の窓口、対応SLA、公表方針を定め、仕様/ワークフロー改善時の連絡先を共有するセキュリティ方針。",
+  "deps_out": [],
+  "deps_in": [
+    "HUB.codex.md"
+  ],
+  "risks": [],
+  "tests": [],
+  "generated_at": "2025-10-21T08:51:14Z"
+}

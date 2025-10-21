@@ -1,0 +1,23 @@
+{
+  "id": "CHANGELOG.md",
+  "role": "history",
+  "public_api": [],
+  "summary": "リリースバージョンごとの追加内容と既知の制約を記録し、テンプレート更新の履歴を追跡する変更ログ。",
+  "deps_out": [
+    "EVALUATION.md",
+    "README.md",
+    "governance/policy.yaml"
+  ],
+  "deps_in": [
+    "GUARDRAILS.md",
+    "HUB.codex.md",
+    "README.md",
+    "TASK.codex.md",
+    "docs/IN-20250115-001.md"
+  ],
+  "risks": [],
+  "tests": [
+    "手動: 新リリース記載後にREADME/policy.yamlとの整合を確認"
+  ],
+  "generated_at": "2025-10-21T08:51:14Z"
+}

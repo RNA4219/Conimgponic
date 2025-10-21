@@ -1,0 +1,386 @@
+{
+  "generated_at": "2025-10-21T08:51:14Z",
+  "nodes": {
+    "README.md": {
+      "role": "overview",
+      "caps": "docs/birdseye/caps/README.md.json",
+      "mtime": "2025-10-15T20:45:30Z"
+    },
+    "HUB.codex.md": {
+      "role": "navigation",
+      "caps": "docs/birdseye/caps/HUB.codex.md.json",
+      "mtime": "2025-10-14T13:23:56Z"
+    },
+    "GUARDRAILS.md": {
+      "role": "policy",
+      "caps": "docs/birdseye/caps/GUARDRAILS.md.json",
+      "mtime": "2025-10-14T04:25:52Z"
+    },
+    "BLUEPRINT.md": {
+      "role": "requirements",
+      "caps": "docs/birdseye/caps/BLUEPRINT.md.json",
+      "mtime": "2025-10-14T00:00:00Z"
+    },
+    "RUNBOOK.md": {
+      "role": "operations",
+      "caps": "docs/birdseye/caps/RUNBOOK.md.json",
+      "mtime": "2025-10-14T00:00:00Z"
+    },
+    "EVALUATION.md": {
+      "role": "quality",
+      "caps": "docs/birdseye/caps/EVALUATION.md.json",
+      "mtime": "2025-10-14T00:00:00Z"
+    },
+    "TASK.codex.md": {
+      "role": "template",
+      "caps": "docs/birdseye/caps/TASK.codex.md.json",
+      "mtime": "2025-10-14T00:00:00Z"
+    },
+    "CHECKLISTS.md": {
+      "role": "checklist",
+      "caps": "docs/birdseye/caps/CHECKLISTS.md.json",
+      "mtime": "2025-10-14T00:00:00Z"
+    },
+    "CHANGELOG.md": {
+      "role": "history",
+      "caps": "docs/birdseye/caps/CHANGELOG.md.json",
+      "mtime": "2025-10-14T00:00:00Z"
+    },
+    "docs/IN-20250115-001.md": {
+      "role": "incident",
+      "caps": "docs/birdseye/caps/docs.IN-20250115-001.md.json",
+      "mtime": "2025-01-15T04:12:00Z"
+    },
+    "SECURITY.md": {
+      "role": "security",
+      "caps": "docs/birdseye/caps/SECURITY.md.json",
+      "mtime": "2025-10-14T00:00:00Z"
+    },
+    "governance/policy.yaml": {
+      "role": "governance",
+      "caps": "docs/birdseye/caps/governance.policy.yaml.json",
+      "mtime": "2025-10-14T00:00:00Z"
+    },
+    "governance/prioritization.yaml": {
+      "role": "governance",
+      "caps": "docs/birdseye/caps/governance.prioritization.yaml.json",
+      "mtime": "2025-10-16T12:30:00Z"
+    },
+    "docs/birdseye/index.json": {
+      "role": "index",
+      "caps": "docs/birdseye/caps/docs.birdseye.index.json.json",
+      "mtime": "2025-10-14T00:00:00Z"
+    },
+    "docs/birdseye/caps/": {
+      "role": "collection",
+      "caps": "docs/birdseye/caps/docs.birdseye.caps.json",
+      "mtime": "2025-10-16T10:47:48Z"
+    },
+    "tools/codemap/": {
+      "role": "tooling",
+      "caps": "docs/birdseye/caps/tools.codemap.json",
+      "mtime": "2025-10-16T10:47:48Z"
+    },
+    "tools/codemap/README.md": {
+      "role": "guide",
+      "caps": "docs/birdseye/caps/tools.codemap.README.md.json",
+      "mtime": "2025-10-16T10:47:48Z"
+    },
+    "tools/codemap/update.py": {
+      "role": "script",
+      "caps": "docs/birdseye/caps/tools.codemap.update.py.json",
+      "mtime": "2025-10-16T10:47:48Z"
+    },
+    "docs/INCIDENT_TEMPLATE.md": {
+      "role": "template",
+      "caps": "docs/birdseye/caps/docs.INCIDENT_TEMPLATE.md.json",
+      "mtime": "2025-10-16T12:00:00Z"
+    }
+  },
+  "edges": [
+    [
+      "HUB.codex.md",
+      "GUARDRAILS.md"
+    ],
+    [
+      "README.md",
+      "GUARDRAILS.md"
+    ],
+    [
+      "README.md",
+      "HUB.codex.md"
+    ],
+    [
+      "README.md",
+      "BLUEPRINT.md"
+    ],
+    [
+      "README.md",
+      "RUNBOOK.md"
+    ],
+    [
+      "README.md",
+      "EVALUATION.md"
+    ],
+    [
+      "README.md",
+      "TASK.codex.md"
+    ],
+    [
+      "README.md",
+      "CHECKLISTS.md"
+    ],
+    [
+      "README.md",
+      "CHANGELOG.md"
+    ],
+    [
+      "README.md",
+      "docs/IN-20250115-001.md"
+    ],
+    [
+      "README.md",
+      "governance/policy.yaml"
+    ],
+    [
+      "HUB.codex.md",
+      "BLUEPRINT.md"
+    ],
+    [
+      "HUB.codex.md",
+      "RUNBOOK.md"
+    ],
+    [
+      "HUB.codex.md",
+      "EVALUATION.md"
+    ],
+    [
+      "HUB.codex.md",
+      "TASK.codex.md"
+    ],
+    [
+      "HUB.codex.md",
+      "CHECKLISTS.md"
+    ],
+    [
+      "HUB.codex.md",
+      "CHANGELOG.md"
+    ],
+    [
+      "HUB.codex.md",
+      "SECURITY.md"
+    ],
+    [
+      "HUB.codex.md",
+      "docs/IN-20250115-001.md"
+    ],
+    [
+      "HUB.codex.md",
+      "governance/policy.yaml"
+    ],
+    [
+      "GUARDRAILS.md",
+      "BLUEPRINT.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "EVALUATION.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "RUNBOOK.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "TASK.codex.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "CHANGELOG.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "CHECKLISTS.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "docs/IN-20250115-001.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "README.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "HUB.codex.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "docs/INCIDENT_TEMPLATE.md"
+    ],
+    [
+      "GUARDRAILS.md",
+      "docs/birdseye/index.json"
+    ],
+    [
+      "GUARDRAILS.md",
+      "docs/birdseye/caps/"
+    ],
+    [
+      "HUB.codex.md",
+      "docs/birdseye/index.json"
+    ],
+    [
+      "HUB.codex.md",
+      "docs/birdseye/caps/"
+    ],
+    [
+      "README.md",
+      "docs/birdseye/index.json"
+    ],
+    [
+      "README.md",
+      "docs/birdseye/caps/"
+    ],
+    [
+      "docs/birdseye/index.json",
+      "docs/birdseye/caps/"
+    ],
+    [
+      "EVALUATION.md",
+      "governance/policy.yaml"
+    ],
+    [
+      "RUNBOOK.md",
+      "docs/IN-20250115-001.md"
+    ],
+    [
+      "EVALUATION.md",
+      "RUNBOOK.md"
+    ],
+    [
+      "EVALUATION.md",
+      "docs/IN-20250115-001.md"
+    ],
+    [
+      "TASK.codex.md",
+      "EVALUATION.md"
+    ],
+    [
+      "TASK.codex.md",
+      "CHANGELOG.md"
+    ],
+    [
+      "CHECKLISTS.md",
+      "EVALUATION.md"
+    ],
+    [
+      "CHANGELOG.md",
+      "README.md"
+    ],
+    [
+      "CHANGELOG.md",
+      "EVALUATION.md"
+    ],
+    [
+      "CHANGELOG.md",
+      "governance/policy.yaml"
+    ],
+    [
+      "docs/IN-20250115-001.md",
+      "RUNBOOK.md"
+    ],
+    [
+      "docs/IN-20250115-001.md",
+      "EVALUATION.md"
+    ],
+    [
+      "docs/IN-20250115-001.md",
+      "CHANGELOG.md"
+    ],
+    [
+      "README.md",
+      "tools/codemap/"
+    ],
+    [
+      "HUB.codex.md",
+      "tools/codemap/"
+    ],
+    [
+      "HUB.codex.md",
+      "governance/prioritization.yaml"
+    ],
+    [
+      "GUARDRAILS.md",
+      "tools/codemap/"
+    ],
+    [
+      "tools/codemap/",
+      "docs/birdseye/index.json"
+    ],
+    [
+      "tools/codemap/",
+      "docs/birdseye/caps/"
+    ],
+    [
+      "tools/codemap/update.py",
+      "docs/birdseye/index.json"
+    ],
+    [
+      "tools/codemap/update.py",
+      "docs/birdseye/caps/"
+    ],
+    [
+      "tools/codemap/README.md",
+      "tools/codemap/update.py"
+    ],
+    [
+      "tools/codemap/README.md",
+      "docs/birdseye/index.json"
+    ],
+    [
+      "tools/codemap/README.md",
+      "docs/birdseye/caps/"
+    ],
+    [
+      "HUB.codex.md",
+      "docs/INCIDENT_TEMPLATE.md"
+    ],
+    [
+      "docs/INCIDENT_TEMPLATE.md",
+      "RUNBOOK.md"
+    ],
+    [
+      "docs/INCIDENT_TEMPLATE.md",
+      "CHECKLISTS.md"
+    ],
+    [
+      "docs/INCIDENT_TEMPLATE.md",
+      "docs/IN-20250115-001.md"
+    ],
+    [
+      "README.md",
+      "governance/prioritization.yaml"
+    ],
+    [
+      "EVALUATION.md",
+      "governance/prioritization.yaml"
+    ],
+    [
+      "TASK.codex.md",
+      "governance/prioritization.yaml"
+    ],
+    [
+      "governance/prioritization.yaml",
+      "README.md"
+    ],
+    [
+      "governance/prioritization.yaml",
+      "EVALUATION.md"
+    ],
+    [
+      "governance/prioritization.yaml",
+      "TASK.codex.md"
+    ]
+  ]
+}

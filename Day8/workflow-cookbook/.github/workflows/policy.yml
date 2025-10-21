@@ -1,0 +1,27 @@
+name: policy
+on: [pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  forbidden_paths:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block changes touching forbidden paths
+        env:
+          FORBIDDEN_REGEX: '^core/schema/|^auth/|^governance/'
+          BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
+        run: |
+          set -euo pipefail
+          git fetch --depth=50 origin "$BASE_REF"
+          git diff --name-only "origin/$BASE_REF"... | grep -E "$FORBIDDEN_REGEX" && \
+            { echo "::error::Touched forbidden path by policy.yaml"; exit 1; } || true
+
+  codeowners_soft_gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: CODEOWNERS gate (soft)
+        run: echo "::warning title=CODEOWNERS::Approval pending (non-blocking)"
+        continue-on-error: true

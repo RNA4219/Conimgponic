@@ -1,0 +1,6 @@
+# 可観測性の指標定義は ADR-021 を参照: docs/ADR/ADR-021-metrics-observability.md
+review_latency: 平均レビュー完了時間(h)
+reopen_rate: 再修正率(%)
+spec_completeness: 要件/仕様/設計が揃ったPR比率(%)
+compress_ratio: 圧縮後サイズ/元サイズの比率(%), tools/perf/collect_metrics.py の圧縮統計出力
+semantic_retention: 圧縮後レビューコメントの意味保持率(%), tools/perf/collect_metrics.py のレビューログ解析出力

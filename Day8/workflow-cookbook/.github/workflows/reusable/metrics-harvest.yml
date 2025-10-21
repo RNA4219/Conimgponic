@@ -1,0 +1,100 @@
+name: Reusable - Metrics Harvest
+
+on:
+  workflow_call:
+    inputs:
+      lookback_days:
+        type: number
+        default: 7
+      top_n:
+        type: number
+        default: 5
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect workflow runs (last N days)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DAYS: ${{ inputs.lookback_days }}
+        run: |
+          SINCE=$(date -u -d "$DAYS days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || gdate -d "$DAYS days ago" +%Y-%m-%dT%H:%M:%SZ)
+          gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/actions/runs?per_page=100&created=>=${SINCE}" > runs.json
+          python - <<'PY'
+          import glob, json
+          from pathlib import Path
+          from statistics import mean
+
+          runs = json.loads(Path("runs.json").read_text("utf-8")).get("workflow_runs", [])
+          grouped = {}
+          for run in runs:
+              name = run.get("name") or "<unknown>"
+              grouped.setdefault(name, []).append(
+                  (
+                      int(run.get("run_duration_ms") or 0),
+                      (run.get("conclusion") or "") != "success",
+                      int(run.get("run_attempt") or 1),
+                  )
+              )
+
+          rows = []
+          for name, entries in grouped.items():
+              durations = sorted(d for d, *_ in entries if d > 0)
+              p95, avg = ((durations[int(0.95 * (len(durations) - 1))], int(mean(durations))) if durations else (0, 0))
+              failures = sum(1 for _, failed, _ in entries if failed)
+              retries = sum(1 for _, _, attempt in entries if attempt > 1)
+              rows.append({"name": name, "count": len(entries), "failures": failures, "retries": retries, "p95_ms": p95, "avg_ms": avg})
+
+          rows.sort(key=lambda item: (item["failures"], item["retries"], item["p95_ms"]), reverse=True)
+          for contract in glob.glob(".ga/qa-metrics.json"):
+              rows.append({"name": "contract:qa-metrics", "extra": json.loads(Path(contract).read_text("utf-8"))})
+
+          Path("harvest.json").write_text(json.dumps(rows, indent=2), "utf-8")
+          PY
+
+      - name: Create or update weekly improvement issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOPN: ${{ inputs.top_n }}
+        run: |
+          TITLE="Weekly CI Improvement Report ($(date -u +%Y-%m-%d))"
+          BODY=$(python - <<'PY'
+          import json, os
+
+          def to_duration(ms: int) -> str:
+              seconds = ms // 1000
+              minutes, rest = divmod(seconds, 60)
+              return f"{minutes}m{rest}s" if ms else "-"
+
+          rows = json.load(open("harvest.json", "r", encoding="utf-8"))
+          top = rows[: int(os.getenv("TOPN", "5"))]
+          lines = ["### Top offenders (fail→retry→p95)", "", ""]
+          for row in top:
+              lines.append(
+                  "- **{name}**: fails={failures}, retries={retries}, p95={p95}, runs={count}".format(
+                      name=row.get("name", "<unknown>"),
+                      failures=row.get("failures", 0),
+                      retries=row.get("retries", 0),
+                      p95=to_duration(int(row.get("p95_ms", 0) or 0)),
+                      count=row.get("count", 0),
+                  )
+              )
+
+          print("\n".join(lines))
+          PY
+          )
+          ISSUE=$(gh issue list --search "$TITLE" --state open --json number --jq '.[0].number')
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label "ci:improvement"
+          fi

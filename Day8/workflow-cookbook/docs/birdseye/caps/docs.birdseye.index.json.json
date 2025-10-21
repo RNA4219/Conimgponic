@@ -1,0 +1,22 @@
+{
+  "id": "docs/birdseye/index.json",
+  "role": "index",
+  "public_api": [],
+  "summary": "Birdseyeノードとエッジの一覧を提供し、LLMが必要なカプセルを最小ホップで特定できるようにする。",
+  "deps_out": [
+    "docs/birdseye/caps/"
+  ],
+  "deps_in": [
+    "GUARDRAILS.md",
+    "HUB.codex.md",
+    "README.md",
+    "tools/codemap/",
+    "tools/codemap/README.md",
+    "tools/codemap/update.py"
+  ],
+  "risks": [
+    "生成が古いとBirdseye探索の経路が誤る"
+  ],
+  "tests": [],
+  "generated_at": "2025-10-21T08:51:14Z"
+}
