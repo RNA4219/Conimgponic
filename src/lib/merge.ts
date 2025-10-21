@@ -1,54 +1,124 @@
+/**
+ * 精緻マージ API 仕様定義。
+ *
+ * `docs/MERGE-DESIGN-IMPL.md` の性能要件と決定プロセスに基づく。
+ */
+
 export type MergeTokenizer = 'char' | 'word' | 'morpheme';
+
 export type MergeGranularity = 'section' | 'line';
-export type MergePrefer = 'manual' | 'ai' | 'none';
-export type MergePrecision = 'legacy' | 'beta' | 'stable';
 
-export interface MergeProfile { readonly tokenizer: MergeTokenizer; readonly granularity: MergeGranularity; readonly threshold: number; readonly prefer: MergePrefer; }
+export type MergePreference = 'manual' | 'ai' | 'none';
 
-export const DEFAULT_MERGE_PROFILE: Readonly<MergeProfile> = Object.freeze({ tokenizer: 'char', granularity: 'section', threshold: 0.75, prefer: 'none' });
+export interface MergeProfile {
+  readonly tokenizer: MergeTokenizer;
+  readonly granularity: MergeGranularity;
+  readonly threshold: number;
+  readonly prefer: MergePreference;
+  readonly seed?: string;
+}
 
-export interface MergeInput { readonly base: string; readonly ours: string; readonly theirs: string; readonly sections?: readonly string[]; }
+export interface ResolvedMergeProfile extends MergeProfile {
+  readonly minAutoThreshold: number;
+  readonly maxProcessingMillis: number;
+}
 
-export type MergeHunkDecision = 'auto' | 'conflict';
+export interface MergeInput {
+  readonly base: string;
+  readonly ours: string;
+  readonly theirs: string;
+  readonly sections?: readonly string[];
+  readonly locks?: ReadonlyMap<string, MergePreference>;
+}
 
-export interface MergeHunk { readonly section: string | null; readonly decision: MergeHunkDecision; readonly similarity?: number; readonly merged?: string; readonly manual?: string; readonly ai?: string; }
+export type MergeDecision = 'auto' | 'conflict';
 
-export interface MergeStats { readonly auto: number; readonly conflicts: number; readonly avgSim: number; }
+export interface MergeHunk {
+  readonly id: string;
+  readonly section: string | null;
+  readonly decision: MergeDecision;
+  readonly similarity: number;
+  readonly merged: string;
+  readonly manual: string;
+  readonly ai: string;
+  readonly base: string;
+  readonly prefer: MergePreference;
+}
 
-export interface MergeResult { readonly hunks: readonly MergeHunk[]; readonly mergedText: string; readonly stats: MergeStats; }
+export interface MergeStats {
+  readonly autoDecisions: number;
+  readonly conflictDecisions: number;
+  readonly averageSimilarity: number;
+  readonly processingMillis: number;
+}
 
-export type MergeCommand =
-  | { readonly type: 'setManual'; readonly hunkId: string }
-  | { readonly type: 'setAI'; readonly hunkId: string }
-  | { readonly type: 'commitManualEdit'; readonly hunkId: string; readonly text: string }
-  | { readonly type: 'resetDecision'; readonly hunkId: string }
-  | { readonly type: 'refreshStats' }
-  | { readonly type: 'persistTrace'; readonly hunkIds?: readonly string[] };
+export interface MergeResult {
+  readonly hunks: readonly MergeHunk[];
+  readonly mergedText: string;
+  readonly stats: MergeStats;
+}
 
-export type MergeEvent =
-  | { readonly type: 'merge:hunk:decision'; readonly hunkId: string; readonly decision: MergeHunkDecision }
-  | { readonly type: 'merge:stats:refreshed'; readonly stats: MergeStats }
-  | { readonly type: 'merge:trace:persisted'; readonly path: string }
-  | { readonly type: 'merge:trace:error'; readonly error: MergeTraceError }
-  | { readonly type: 'merge:autosave:lock'; readonly state: 'acquired' | 'released'; readonly leaseId: string };
+export interface MergeScoringInput {
+  readonly baseTokens: readonly string[];
+  readonly manualTokens: readonly string[];
+  readonly aiTokens: readonly string[];
+}
 
-export type MergeEventListener = (event: MergeEvent) => void;
+export interface MergeScoringMetrics {
+  readonly jaccard: number;
+  readonly cosine: number;
+  readonly blended: number;
+}
 
-export interface MergeEventBus { subscribe(listener: MergeEventListener): () => void; emit(event: MergeEvent): void; }
+export type MergeScoringStrategy = (
+  input: MergeScoringInput,
+  profile: ResolvedMergeProfile,
+) => MergeScoringMetrics;
 
-export type MergeErrorCode =
-  | 'invalid-input'
-  | 'tokenizer-failed'
-  | 'profile-unsupported'
-  | 'stats-divergence'
-  | 'trace-write-failed';
+export interface MergeTelemetryEvent {
+  readonly type: 'merge:start' | 'merge:finish' | 'merge:hunk-decision';
+  readonly sceneId: string;
+  readonly profile: ResolvedMergeProfile;
+  readonly stats?: MergeStats;
+  readonly hunk?: MergeHunk;
+}
+
+export type MergeTelemetrySink = (event: MergeTelemetryEvent) => void;
+
+export interface MergeDecisionEvent {
+  readonly type: 'merge:auto-applied' | 'merge:conflict-detected';
+  readonly hunk: MergeHunk;
+  readonly sceneId: string;
+  readonly retryable: boolean;
+}
+
+export type MergeDecisionListener = (event: MergeDecisionEvent) => void;
+
+export interface MergeEventHub {
+  readonly publish: (event: MergeDecisionEvent) => void;
+  readonly subscribe: (listener: MergeDecisionListener) => () => void;
+}
+
+export interface MergeEngineOptions {
+  readonly profile?: Partial<MergeProfile>;
+  readonly scoring?: MergeScoringStrategy;
+  readonly telemetry?: MergeTelemetrySink;
+  readonly events?: MergeEventHub;
+  readonly abortSignal?: AbortSignal;
+}
+
+export interface MergeEngine {
+  readonly merge3: (input: MergeInput, options?: MergeEngineOptions) => MergeResult;
+  readonly resolveProfile: (overrides?: Partial<MergeProfile>) => ResolvedMergeProfile;
+  readonly score: MergeScoringStrategy;
+}
 
 export class MergeError extends Error {
-  readonly code: MergeErrorCode;
+  readonly code: 'timeout' | 'aborted';
   readonly retryable: boolean;
   readonly cause?: unknown;
 
-  constructor(code: MergeErrorCode, message: string, options: { retryable: boolean; cause?: unknown }) {
+  constructor(code: 'timeout' | 'aborted', message: string, options: { retryable: boolean; cause?: unknown }) {
     super(message);
     this.code = code;
     this.retryable = options.retryable;
@@ -57,22 +127,24 @@ export class MergeError extends Error {
   }
 }
 
-export class MergeTraceError extends MergeError {
-  readonly tracePath?: string;
-
-  constructor(message: string, options: { retryable: boolean; cause?: unknown; tracePath?: string }) {
-    super('trace-write-failed', message, options);
-    this.tracePath = options.tracePath;
-    this.name = 'MergeTraceError';
-  }
-}
-
-export type MergeExecutor = (input: MergeInput, profile?: Partial<MergeProfile>) => MergeResult;
-
-export const merge3: MergeExecutor = (input, profile) => {
-  void input;
-  void profile;
-  throw new MergeError('invalid-input', 'merge3 is not implemented yet', { retryable: false });
+export const DEFAULT_MERGE_PROFILE: ResolvedMergeProfile = {
+  tokenizer: 'char',
+  granularity: 'section',
+  threshold: 0.75,
+  prefer: 'none',
+  seed: undefined,
+  minAutoThreshold: 0.7,
+  maxProcessingMillis: 5_000,
 };
 
-export type MergeCommandQueue = (command: MergeCommand) => Promise<void>;
+export const DEFAULT_SCORING_STRATEGY: MergeScoringStrategy = () => {
+  throw new MergeError('aborted', 'Merge scoring is not implemented.', { retryable: false });
+};
+
+export const DEFAULT_MERGE_ENGINE: MergeEngine = {
+  merge3: () => {
+    throw new MergeError('aborted', 'Merge engine is not implemented.', { retryable: false });
+  },
+  resolveProfile: () => DEFAULT_MERGE_PROFILE,
+  score: DEFAULT_SCORING_STRATEGY,
+};
