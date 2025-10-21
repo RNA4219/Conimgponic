@@ -23,6 +23,33 @@
 | `MergeDock.tsx` | `src/config/flags.ts` から `merge.precision` を取得 | `localStorage`（既存 `dockOpen` と並列運用） | 既定 `legacy` で Diff Merge タブを隠蔽し、Phase B 以降に `beta/stable` で解放 |
 | 共通 | `src/config/index.ts`（`OLLAMA_BASE` など既存値） | - | `App.tsx` では現行の `OLLAMA_BASE` 読み込みフローを保持し、副作用を隔離 |
 
+#### 0.2.1 フラグ解決シーケンス
+```mermaid
+sequenceDiagram
+    participant App as App.tsx
+    participant Flags as resolveFlags()
+    participant Env as import.meta.env
+    participant Storage as localStorage
+    participant Defaults as DEFAULT_FLAGS
+
+    App->>Flags: 初期化時にフラグ読み込み
+    Flags->>Env: VITE_AUTOSAVE_ENABLED / VITE_MERGE_PRECISION を取得
+    alt Env が有効値
+        Env-->>Flags: 正規化済み値
+    else Env 未設定
+        Flags->>Storage: autosave.enabled / merge.precision を参照
+        alt Storage が有効値
+            Storage-->>Flags: 文字列値
+        else Storage 無効値
+            Flags->>Defaults: JSON 既定値を読込
+            Defaults-->>Flags: 既定値スナップショット
+        end
+    end
+    Flags-->>App: FlagSnapshot (source 情報付き)
+```
+- `docs/CONFIG_FLAGS.md` で定義された優先順位（env → localStorage → 既定値）を `src/config/flags.ts` が忠実に再現することをレビュー観点として固定する。【F:docs/CONFIG_FLAGS.md†L57-L90】
+- `FlagSnapshot.source` によって、後方互換のための `localStorage` 直接参照を段階的に排除しながらも既存 UI の動作確認が容易になる前提を保持する。
+
 ## 1) 対象モジュール追加
 - `src/lib/autosave.ts`（API・イベント・ローテ）
 - `src/lib/locks.ts`（Web Locks + フォールバック）
