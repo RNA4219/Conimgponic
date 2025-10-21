@@ -10,6 +10,18 @@
 - 例外が発生した場合でも既存 UI・Collector/Analyzer へ不要な副作用（意図しないログ出力、無制限 I/O）を与えない。ログは後述の制約に従って 1 エラーにつき 1 行、警告レベルで記録する。
 
 ## 1) 保存ポリシー
+
+### 1.1 保存ポリシー要件マッピング
+| 要件 | 既定値 / 閾値 | 実装責務（[実装計画](./IMPLEMENTATION-PLAN.md) §1 対象モジュール） | 補足 / 運用ノート |
+| --- | --- | --- | --- |
+| デバウンス遅延 | 500ms | `src/lib/autosave.ts` (AutoSave ファサード) | 入力検知後 500ms 待機して保存ジョブをキューイングし、UI からのイベントスパイクを抑制する。 |
+| アイドル猶予 | 2000ms | `src/lib/autosave.ts` / `src/components/AutoSaveIndicator.tsx` | 2s のアイドル後にロック取得へ遷移し、Indicator へ状態を伝播する。 |
+| 履歴世代上限 | 20 世代 | `src/lib/autosave.ts` | `history/<ISO>.json` を FIFO 管理し、`index.json` と整合させる。 |
+| 容量上限 | 50MB | `src/lib/autosave.ts` | 50MB 超過時は古い世代から削除し、Collector/Analyzer が参照するメトリクスを変動させない。 |
+| ロック優先順位 | Web Locks → `src/lib/locks.ts` フォールバック | `src/lib/locks.ts` | Web Locks が不可時は `project/.lock` を同一 UUID で保持し、Collector/Analyzer が扱うパスに干渉しない。 |
+| フラグ制御 | `autosave.enabled` (`false` 初期) | `src/lib/autosave.ts` / `App.tsx` | フラグ `false` 時は永続化 API を呼ばず、`phase='disabled'` を維持する。 |
+
+### 1.2 ポリシー適用フロー
 - デバウンス 500ms + アイドル 2s で `project/autosave/current.json` を保存。
 - `history/<ISO>.json` を最大 N=20 世代保持し、`index.json` で参照。
 - 容量上限 50MB を超過した場合は古い世代から FIFO で削除。

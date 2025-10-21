@@ -43,6 +43,14 @@ Collector は CI ログを JSONL 形式で蓄積し Analyzer がメトリクス�
 - `retryable=false` の致命エラーでは UI 通知と同時に Collector へ重要度高イベントを送信し、Analyzer が根本原因分析に利用できるよう `cause` 要約を含める。JSONL 破壊を防ぐため、改行は含めず安全なサマリへ整形する。
 - `history-overflow` は情報レベルで Collector 連携対象外とし、ローカルログのみ（1 行）へ出力することでノイズを抑制する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L141】
 
+### 3.1 Collector / Analyzer 連携条件チェックリスト
+| 条件 | 参照元 | AutoSave 側仕様 | 想定テスト |
+| --- | --- | --- | --- |
+| JSONL 1 行 1 イベント | Day8 アーキテクチャ【F:Day8/docs/day8/design/03_architecture.md†L1-L18】 | `AutoSaveError` は `AUTOSAVE_FAILURE_PLAN` の `summary` に沿って Collector 送信を単一行に制限 | `AUTOSAVE_ERROR_TEST_MATRIX` の `lock-unavailable` ケースでログ件数を検証 |
+| Analyzer が扱うディレクトリを汚染しない | Day8 アーキテクチャ【F:Day8/docs/day8/design/03_architecture.md†L1-L31】 | ロックフォールバックは `project/.lock` のみに書き込み、`workflow-cookbook/logs` など Day8 パスへ書き込まない | 保存フロー E2E テストで `.lock` 以外のファイル生成を禁止するアサーション |
+| メトリクス算出用フィールド維持 | Day8 アーキテクチャ【F:Day8/docs/day8/design/03_architecture.md†L1-L31】 | 保存成功/失敗イベントに `feature: 'autosave'` と `duration_ms` を付帯し既存スキーマを再利用 | `AUTOSAVE_FLAG_TEST_MATRIX` のフラグ ON ケースで Collector へ送信されるフィールドを検証 |
+| フェーズ遷移情報を Analyzer へ共有 | AutoSave 設計詳細【F:docs/AUTOSAVE-DESIGN-IMPL.md†L72-L93】 | `snapshot()` が `phase`, `lastSuccessAt`, `retryCount` を公開し、Analyzer は必要に応じて Pull する | `tests/autosave/scheduler.spec.ts` で状態遷移と Collector メトリクスの整合を確認 |
+
 ## 4. TDD 手順と受入条件
 ### 4.1 TDD 手順
 1. `tests/autosave/init.spec.ts` にフラグ OFF/ON 初期化シナリオを追加し、`disabled` 時の no-op を先に赤で書く。
