@@ -8,7 +8,7 @@
 ```
 MergeDock
 └─ Tabs: Compiled | Shotlist | Assets | Import | Golden | (Diff Merge)
-      └─ Diff Merge (flag:on)
+      └─ Diff Merge (precision ∈ {beta, stable})
          ├─ DiffMergeView
          │   ├─ Header
          │   │   ├─ scene selector (dropdown)
@@ -25,7 +25,7 @@ MergeDock
 
 ## コンポーネント責務
 ### DiffMergeView.tsx
-- `merge.precision` が true のときのみマウントされ、scene毎の差分統合に特化。
+- `merge.precision` が `beta` / `stable` のときのみマウントされ、scene毎の差分統合に特化。
 - `ThreePaneDiff` と `MergeStatusSidebar` を編成し、表示状態・イベント配信のハブとなる。
 - 入力props:
   - `sceneId: string` 選択シーンID。
@@ -36,12 +36,12 @@ MergeDock
   - `onApply(profileId: string, hunkIds?: string[]): void` 差分適用通知。
   - `onReset(sceneId: string, target: 'manual' | 'ai' | 'auto'): void` 状態復旧。
   - `onCopy(sceneId: string, source: 'manual' | 'ai' | 'merged'): void` クリップボード転送要求。
-  - `mergePrecision: 'off' | 'on' | 'strict'` UI表示条件制御。
+  - `mergePrecision: 'legacy' | 'beta' | 'stable'` UI表示条件制御。
 - 内部stateは表示モード (`'merged'|'manual'|'ai'`) とハイライト対象のみ保持。
 
 ### MergeDock.tsx
 - 既存タブ配列に `Diff Merge` を追加。
-- `merge.precision` が `'off'` の場合はタブを非表示、 `'on'|'strict'` の場合のみ解放。
+- `merge.precision==='legacy'` の場合はタブを非表示、`'beta'|'stable'` の場合のみ解放。
 - 既存 `pref` セレクタの `'diff-merge'` 選択時もタブが無効なら警告トーストを出す。
 - `DiffMergeView` を遅延ロードし、propsを `merge3` ランタイム結果から構成。
 
@@ -61,20 +61,20 @@ MergeDock
 | `onApply` | `(profileId: string, hunkIds?: string[]) => void` | マージ確定操作 | `hunkIds` 未指定は全適用 |
 | `onReset` | `(sceneId: string, target: 'manual'|'ai'|'auto') => void` | リセットボタン押下 | 既存lock挙動と合わせる |
 | `onCopy` | `(sceneId: string, source: 'manual'|'ai'|'merged') => void` | コピー操作 | クリップボード実装はDock側 |
-| `mergePrecision` | `'off'|'on'|'strict'` | 設定変更時 | `'strict'` でDiff Mergeタブをデフォルト選択 |
+| `mergePrecision` | `'legacy'|'beta'|'stable'` | 設定変更時 | `'stable'` でDiff Mergeタブをデフォルト選択 |
 
 ## 後方互換制御
-- `merge.precision==='off'` 時: MergeDockのタブ構成・prefロジックは現行通り、DiffMergeViewはレンダリングしない。
-- `merge.precision!=='off'` 時: タブ追加、`pref==='diff-merge'` の場合に Diff Merge タブへフォーカス。
-- `merge.precision==='strict'` 時: Compiledタブのpref初期値を `'diff-merge'` に設定し、DiffMergeViewタブを先頭表示。
+- `merge.precision==='legacy'` 時: MergeDockのタブ構成・prefロジックは現行通り、DiffMergeViewはレンダリングしない。
+- `merge.precision!=='legacy'` 時: タブ追加、`pref==='diff-merge'` の場合に Diff Merge タブへフォーカス。
+- `merge.precision==='stable'` 時: Compiledタブのpref初期値を `'diff-merge'` に設定し、DiffMergeViewタブを先頭表示。
 
 ## テスト観点表
 | 観点ID | シナリオ | 期待結果 |
 | --- | --- | --- |
-| T1 | `merge.precision='off'` で起動 | Diff Mergeタブ非表示、既存pref動作不変 |
-| T2 | `merge.precision='on'` で起動しDiffタブ選択 | `DiffMergeView` が `scenes`,`profile`,`hunks` を受け取り表示 |
+| T1 | `merge.precision='legacy'` で起動 | Diff Mergeタブ非表示、既存pref動作不変 |
+| T2 | `merge.precision='beta'` で起動しDiffタブ選択 | `DiffMergeView` が `scenes`,`profile`,`hunks` を受け取り表示 |
 | T3 | Diffタブで `onApply` 実行 | MergeDockがハンドラを受信し `applyHunks` を呼ぶ |
 | T4 | Diffタブで `onReset('manual')` | 対象シーンのmanualテキストが初期化 |
-| T5 | `merge.precision='strict'` で起動 | Diff Mergeタブがデフォルト選択、Compiledタブprefは `diff-merge` |
+| T5 | `merge.precision='stable'` で起動 | Diff Mergeタブがデフォルト選択、Compiledタブprefは `diff-merge` |
 | T6 | `computeMergeProfile` 失敗時 | DiffMergeViewにエラーバナー表示、既存タブへフォールバック |
 | T7 | ハイライト行選択 → `MergeStatusSidebar` | 対応hunkがスクロールフォーカスされる |
