@@ -135,14 +135,36 @@ stateDiagram-v2
 
 ## 2) ロールアウトと運用統制
 
-### 2.1 フェーズ基準表
-| フェーズ | 想定期間 | `autosave.enabled` 既定 | `merge.precision` 既定 | 対象ユーザー | エントリー判定 (SLO + QA 成果物) | ロールバック条件 |
-| --- | --- | --- | --- | --- | --- | --- |
-| Phase A-0 (準備) | Week 0 | `false` | `legacy` | 全ユーザー | - | AutoSave 起動で保存遅延 P95>2.5s が 3 回/日 以上 |
-| Phase A-1 (QA Canary) | Week 1 | `true` (QA スコープのみ) | `legacy` | 開発チーム/QA | AutoSave 保存時間 P95 ≤2.5s **かつ** QA レポート: Canary 10 ケース完了 | 保存 P95>2.5s または 復旧成功率<99.5% |
-| Phase A-2 (β導入) | Week 2 | `true` | `legacy` | ベータ招待 | 復元 QA シナリオ 12/12 合格 **かつ** SLO 違反ゼロ | 復元失敗率≥0.5% or クラッシュ率 baseline+5% |
-| Phase B-0 (Merge β) | Week 3 | `true` | `beta` | ベータ招待 | Diff Merge QA 20 ケース完了 **かつ** 自動マージ率≥80% (1 日平均) | 自動マージ率<80% or 重大バグ報告>3 件/日 |
-| Phase B-1 (GA) | Week 4 | `true` | `stable` | 全ユーザー | AutoSave/マージ SLO 連続 5 日達成 **かつ** リリースノート承認 | 任意 SLO 未達 24h 継続 または 重大事故報告 |
+### 2.1 フェーズ基準と運用フロー
+
+#### 2.1.1 フェーズゲート一覧
+| フェーズ | 想定期間 | 既定フラグ (`autosave.enabled` / `merge.precision`) | 対象ユーザー | エントリー判定 (SLO + QA 成果物) | ロールバック条件 |
+| --- | --- | --- | --- | --- | --- |
+| Phase A-0 (準備) | Week 0 | `false` / `legacy` | 全ユーザー | - | AutoSave 保存遅延 P95>2.5s が 1 日 3 回超過 |
+| Phase A-1 (QA Canary) | Week 1 | `true` (QA スコープのみ) / `legacy` | 開発チーム・QA | AutoSave 保存時間 P95 ≤2.5s **かつ** QA レポート: Canary 10 ケース完了 | 保存 P95>2.5s または 復旧成功率<99.5% |
+| Phase A-2 (β導入) | Week 2 | `true` / `legacy` | ベータ招待 | 復元 QA シナリオ 12/12 合格 **かつ** SLO 違反ゼロ | 復元失敗率≥0.5% または クラッシュ率 baseline+5% |
+| Phase B-0 (Merge β) | Week 3 | `true` / `beta` | ベータ招待 | Diff Merge QA 20 ケース完了 **かつ** 自動マージ率≥80% (1 日平均) | 自動マージ率<80% または 重大バグ報告>3 件/日 |
+| Phase B-1 (GA) | Week 4 | `true` / `stable` | 全ユーザー | AutoSave/マージ SLO 連続 5 日達成 **かつ** リリースノート承認 | 任意 SLO 未達が 24h 継続 または 重大事故報告 |
+
+#### 2.1.2 運用フロー（監視→通知→ロールバック）
+```mermaid
+flowchart TD
+    Start[フラグ配布・フェーズ開始] --> Collect[Collector: JSONL イベント収集<br/>15 分サイクル]
+    Collect --> Analyze[Analyzer: SLO 算出<br/>autosave_p95 / restore_success / merge_auto_rate]
+    Analyze --> Gate{フェーズ基準を満たすか?}
+    Gate -- はい --> Continue[継続運用 / 次フェーズ判定]
+    Gate -- いいえ --> Breach{重大閾値か?}
+    Breach -- いいえ --> Warn[Slack #launch-autosave へ警告通知<br/>Runbook 手順 4 に従い 2h 以内再測定]
+    Breach -- はい --> Rollback[pnpm run flags:rollback --phase <prev><br/>Collector 停止通知]
+    Rollback --> Notify[Incident-001: PagerDuty on-call / Slack #incident]
+    Notify --> RCA[reports/rca/ に RCA ドキュメント作成]
+    Warn --> Collect
+    Continue --> End[次フェーズ移行判断]
+```
+
+- 監視指標は Analyzer が出力する `autosave_p95`（保存遅延 P95）、`restore_success_rate`、`merge_auto_success_rate` を基準とし、Collector → Analyzer → Reporter の 15 分 ETL で検知する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+- Slack 通知経路: 警告は `#launch-autosave`、重大ロールバックは PagerDuty の on-call と `#incident` へ同報。通知テンプレートは `templates/alerts/rollback.md` を利用する。
+- ロールバック実行後は Phase を 1 段階戻し、Canary から再開する。RCA は 1 営業日以内に `reports/rca/` へ格納する。
 
 ### 2.2 Canary / ローカル切替 Runbook
 1. **Flag 既定値確認**: `docs/CONFIG_FLAGS.md` を最新に反映させ、QA 用 `.env.qa` に `VITE_AUTOSAVE_ENABLED=true`, `VITE_MERGE_PRECISION=beta` を記載。
@@ -214,6 +236,31 @@ pnpm run flags:reset
 > 詳細な観点とモック定義: [tests/autosave/TEST_PLAN.md](../tests/autosave/TEST_PLAN.md) ／ [tests/merge/TEST_PLAN.md](../tests/merge/TEST_PLAN.md) ／ [tests/cli/TEST_PLAN.md](../tests/cli/TEST_PLAN.md)
 
 ## 6) Telemetry / ログ監視とエラー通知
+
+### 6.1 イベントスキーマ（AutoSave / 精緻マージ）
+| イベント名 | 発火タイミング | 必須フィールド | 任意フィールド | 例外ポリシー連動 |
+| --- | --- | --- | --- | --- |
+| `autosave.schedule.requested` | デバウンス完了後、ロック取得前 | `ts`, `build_sha`, `phase`, `pending_bytes`, `retry_count` | `flag_source` (`env`/`localStorage`/`default`) | `disabled` 例外時は送信しない（`AutoSaveError.code='disabled'` は静的ガード）【F:docs/AUTOSAVE-DESIGN-IMPL.md†L89-L147】 |
+| `autosave.write.completed` | `current.json` と `index.json` の更新成功時 | `ts`, `duration_ms`, `bytes_written`, `history_size`, `lease_uuid` | `gc_evicted`（削除数） | `write-failed` 例外発生時は代わりに `autosave.write.failed` を送信し `retryable` 値を boolean で付与 |
+| `autosave.write.failed` | 書き込み失敗検知時 | `ts`, `duration_ms`, `error_code`, `retryable`, `cause`（シリアライズされたクラス名） | `context`（容量超過・権限情報） | `retryable=false` なら Analyzer で重大度 High にマッピング |
+| `merge.precision.suggested` | 精緻マージ結果が提示された時 | `ts`, `build_sha`, `phase`, `scenario_id`, `auto_applied` | `confidence_score`, `conflict_count` | `auto_applied=false` かつ `retryable=false` の例外時は `merge.precision.blocked` を併送 |
+| `merge.precision.blocked` | 精緻マージが停止した時 | `ts`, `error_code`, `retryable`, `conflict_count` | `cause`, `ui_surface` | `retryable=true` の場合は Collector 側で再開アラートを抑制 |
+
+- `phase` は §2.1 のフェーズ名（`A-0` / `A-1` ...）を記録し、SLO 違反の再現性を向上させる。
+- `lease_uuid` は `src/lib/locks.ts` のロック ID と一致させ、Collector で二重書き込みを集計可能にする。
+
+### 6.2 Collector / Analyzer 連携
+- Collector は `project/autosave/telemetry/*.jsonl` を 15 分周期で集約し、Day8 `workflow-cookbook/logs/autosave/*.jsonl` へ転送する。既存パイプライン（Collector → Analyzer → Reporter）に組み込み、Day8 設計書の責務分離を遵守する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+- Analyzer では下記派生メトリクスを計算し、Phase ゲート判定に用いる。
+  - `autosave_p95`: `autosave.write.completed.duration_ms` の P95。
+  - `restore_success_rate`: `autosave.write.completed` 件数に対する `restore` 成功イベント（`src/lib/autosave.ts` 既存ログ）比。
+  - `merge_auto_success_rate`: `merge.precision.suggested` のうち `auto_applied=true` の比率。
+- Reporter は上記メトリクスを `reports/monitoring/autosave-merge.md` へ出力し、Slack 通知テンプレートで共有する。
+
+### 6.3 例外ポリシーとの整合
+- `docs/AUTOSAVE-DESIGN-IMPL.md` §4.5 の例外コードと `retryable` 属性をテレメトリの `error_code` / `retryable` に直結させ、Analyzer 側で再試行可否を分類する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L181-L214】
+- `retryable=true` のイベントは Collector 側で自動ローテーションし、Analyzer が 3 回連続で検出した場合にのみ警告し、PagerDuty のノイズを防ぐ。
+- `retryable=false` かつ `error_code='data-corrupted'` の場合は AutoSave を停止する例外（再開は手動）であるため、Reporter で即時に Incident トラッキング番号を付番し、§2.1 のロールバックフローに入る。
 - AutoSave/Diff Merge のイベントは既存 Collector JSONL チャネルに `feature` タグを付与し、Analyzer が SLO を算出できるよう拡張する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
 - 保存遅延・マージ失敗は `Reporter` の日次サマリに集約し、Governance が方針判断できるようにする。
 - 例外発生時は `Collector` 側で再試行可否を判定（IO エラー=再試行可、ロジックエラー=即通知）し、Slack Webhook への警告と GitHub Issue Draft を自動生成。
