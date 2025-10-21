@@ -1,49 +1,59 @@
 # AutoSave ファサード設計サマリ
 
-## 1. 想定機能と保存ポリシー
-`src/lib/autosave.ts` は AutoSave ファサードとして OPFS 上の `project/autosave` ツリーを管理し、最新スナップショット更新と履歴復元 API を提供する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L18】保存フローは Web Locks を優先し、`current.json`/`index.json` の整合性維持とロールバックに責務を持つ。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L12-L23】
+## 1. 公開 API と保存ポリシーの整理
+`src/lib/autosave.ts` は OPFS の `project/autosave` ツリーを管理し、最新スナップショット更新と履歴復元 API を提供する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L18】保存フローは Web Locks を優先し `current.json`/`index.json` を常に整合させる責務を持つ。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L12-L23】
 
-### 保存ポリシー・履歴ローテーション要約
-| 管理項目 | 既定値 / 上限 | 根拠 | 運用メモ |
+### 1.1 保存ポリシー・履歴ローテーション表
+| パラメータ | 既定値 / 制約 | 主な参照元 | 運用・実装ノート |
 | --- | --- | --- | --- |
-| デバウンス遅延 | 500ms | 実装詳細 1) 保存ポリシー | 入力検知後 500ms 待機して保存ジョブ登録。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L20-L29】 |
-| アイドル猶予 | 2s | 実装詳細 1) 保存ポリシー | デバウンス満了後 2s アイドルを待ち OPFS 書き込み。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L20-L29】 |
-| 最大履歴世代数 | 20 世代 | 実装詳細 1) 保存ポリシー | `history/<ISO>.json` を FIFO でローテーション。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L20-L33】 |
-| 容量上限 | 50MB | 実装詳細 1) 保存ポリシー | 超過時は古い世代から削除。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L20-L33】 |
-| 履歴命名規則 | ISO8601 (単調増加) | 0) モジュール責務 | `index.json` と不整合な項目は掃除/再構築対象。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L13-L18】 |
-| フィーチャーフラグ | `autosave.enabled` | 0) モジュール責務 | false 時は永続化を一切行わない。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L8-L11】 |
+| デバウンス遅延 | 500ms | 実装詳細 1) 保存ポリシー | 入力検知後 500ms 待機して保存ジョブをキューイング。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L20-L29】 |
+| アイドル猶予 | 2000ms | 実装詳細 1) 保存ポリシー | デバウンス終了後 2s アイドルを待ち、ロック取得→書き込みへ遷移。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L20-L29】 |
+| 最大履歴世代数 | 20 世代 | 実装詳細 1) 保存ポリシー | `history/<ISO>.json` を FIFO で保持し、溢れた分は即削除。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L20-L33】 |
+| 容量上限 | 50MB | 実装詳細 1) 保存ポリシー | 超過時は古い履歴から削除し、合計サイズが閾値内になるまで継続。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L20-L33】 |
+| 履歴命名規則 | ISO8601（単調増加） | 0) モジュール責務 | `index.json` に存在しないファイルは掃除対象、逆はロールバックで再構築。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L13-L18】 |
+| フィーチャーフラグ | `autosave.enabled` / `options.disabled` | 0) モジュール責務 | false/true 時は永続化副作用を発生させない。`phase='disabled'` を維持。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L8-L11】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L47-L53】 |
 
-## 2. 公開 API シグネチャと副作用
-`AutoSaveOptions` は保存ポリシー値をデフォルトに持ち、`disabled` が `true` もしくはフラグ OFF の場合、`initAutoSave` は副作用を発生させずに `dispose` のみを返す。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L35-L63】
+### 1.2 公開 API シグネチャと副作用
+`AutoSaveOptions` は上記ポリシー値をデフォルトとして露出し、例外は `AutoSaveError` に正規化する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L35-L70】
 
-| 関数 | 型シグネチャ | 主な副作用 | 例外 | 備考 |
+| 関数 | 型シグネチャ | 主な副作用 | 想定エラーコード | 備考 |
 | --- | --- | --- | --- | --- |
-| `initAutoSave(getStoryboard, options?)` | `StoryboardProvider -> AutoSaveInitResult` | Web Lock/ファイルロック取得、`current.json`/`index.json` 書き込み、履歴ローテーション | `AutoSaveError` (`lock-unavailable`, `write-failed`, `data-corrupted`) | `dispose()` はイベント解除のみの副作用。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L37-L53】 |
-| `restorePrompt()` | `Promise<null | { ts, bytes, source, location }>` | OPFS 読み出し | `data-corrupted` | 復元候補を UI に提示。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L54-L60】 |
-| `restoreFromCurrent()` | `Promise<boolean>` | storyboard 適用（UI 更新） | `data-corrupted` | 書き込みなし。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L60-L63】 |
-| `restoreFrom(ts)` | `Promise<boolean>` | 指定履歴をロードし UI へ適用 | `data-corrupted`, `lock-unavailable` | ロック競合時は再試行対象。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L63-L66】 |
-| `listHistory()` | `Promise<{ ts, bytes, location, retained }[]>` | `index.json` 読み出し | `data-corrupted` | UI 履歴リスト更新用。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L66-L70】 |
+| `initAutoSave(getStoryboard, options?)` | `(StoryboardProvider, AutoSaveOptions?) -> AutoSaveInitResult` | Web Lock/ファイルロック取得、`current.json`/`index.json` 書き込み、履歴 FIFO/容量制御 | `disabled`, `lock-unavailable`, `write-failed`, `history-overflow`, `data-corrupted` | `disabled` 判定時は no-op スケジューラとし `dispose` のみ副作用。`flushNow` は進行中フライト待機。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L37-L53】 |
+| `restorePrompt()` | `() -> Promise<null | { ts, bytes, source, location }>` | `current.json`/`index.json` 読み出し | `data-corrupted` | UI への復元候補提示用。履歴メタキャッシュを返却。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L54-L60】 |
+| `restoreFromCurrent()` | `() -> Promise<boolean>` | storyboard 反映（UI 状態書き換えのみ） | `data-corrupted` | 書き込み副作用は持たない。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L60-L63】 |
+| `restoreFrom(ts)` | `(string) -> Promise<boolean>` | 履歴ファイル読込→UI 適用、必要に応じてロック取得 | `data-corrupted`, `lock-unavailable` | ロック取得失敗時は指数バックオフで再試行。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L63-L66】 |
+| `listHistory()` | `() -> Promise<{ ts, bytes, location: 'history'; retained: boolean }[]>` | `index.json` 読み出し | `data-corrupted` | GC 後の整合性確認にも再利用。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L66-L70】 |
 
-## 3. TDD で先行準備するユニットテスト観点
-- **フラグ OFF シナリオ**: `autosave.enabled=false` または `options.disabled=true` の場合に永続化呼び出しやロック要求が発生しないこと。`dispose` の副作用がイベント解除のみであることを検証する。
-- **フラグ ON 正常系**: デフォルトポリシーでデバウンス→アイドル→ロック取得→`current.json`/`index.json` 書き込み→履歴 FIFO 処理が順序通り呼ばれること。容量超過時の FIFO 削除も含む。
-- **復元 API**: `restorePrompt` が最新/履歴を識別し、`restoreFromCurrent`・`restoreFrom(ts)` が storyboard 適用を実行すること。ロック要求が必要なケース（履歴読み込み）では取得失敗時のリトライや `lock-unavailable` エラー露出を検証する。
-- **失敗ケース**: 書き込み失敗 (`write-failed`)、データ破損 (`data-corrupted`)、ロック取得不可 (`lock-unavailable`) をモックし、`retryable` フラグに応じた再スケジュールや停止判定を確認する。指数バックオフ初期値（0.5s）と最大試行（3 回）もチェック対象。
-- **ガーベジコレクション**: 世代超過および 50MB 超過時の古い履歴削除順序と `index.json` 再構築処理を検証する。
+## 2. 先行テスト観点と `tests/` 配置計画
+`node:test` を前提に、Fake タイマー・OPFS スタブ・ロックモックを活用した TDD を進める。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L87-L123】
 
-## 4. 例外ハンドリングと Collector 連携上の制約
-AutoSave は Collector/Analyzer パイプラインへ不要な副作用を与えず、1 エラーにつき 1 行の警告ログに抑制する設計である。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L18-L19】Collector は CI ログを JSONL で収集し Analyzer がメトリクス計算に利用するため、ログスパムや非構造化出力は避ける必要がある。【F:Day8/docs/day8/design/03_architecture.md†L1-L18】
+| テーマ | 想定テストケース | 対象ファイル（案） |
+| --- | --- | --- |
+| フラグ OFF | `autosave.enabled=false` / `options.disabled=true` 時に `flushNow`/`dispose` が副作用なし、スナップショット `phase='disabled'` を維持 | `tests/autosave/init.spec.ts` |
+| 正常保存フロー | デフォルトポリシーでデバウンス→アイドル→ロック取得→`current.json`/`index.json` 更新、`flushNow` でアイドル待機スキップ | `tests/autosave/scheduler.spec.ts` |
+| 履歴ローテーション | 世代 21 到達・容量 50MB 超過時に FIFO/容量制御が実行され `history-overflow` ログが 1 行で済む | `tests/autosave/history.spec.ts` |
+| 復元 API | `restorePrompt` の候補提示、`restoreFromCurrent`/`restoreFrom(ts)` の UI 反映とエラー露出 (`data-corrupted`, `lock-unavailable`) | `tests/autosave/restore.spec.ts` |
+| 失敗再試行 | `lock-unavailable` 連続 4 回で指数バックオフ後 5 回目失敗時に `phase='error'` 遷移、`write-failed` の retryable/非 retryable 分岐 | `tests/autosave/scheduler.spec.ts` |
 
-### テレメトリ出力方針
-- ログ出力は警告レベルで 1 行に限定し、Collector の JSONL 形式へ影響しないよう構造化（`code`, `retryable`, `bytesAttempted?` など）を維持する。
-- `retryable=true` の例外は指数バックオフで再スケジュールしつつ、Collector には単一イベントのみ送信する。連続失敗時でもログ行数を抑制する。
-- `retryable=false` の例外では UI 通知と同時に Collector へ重要度の高いイベントを送出し、Analyzer が Why-Why 分析の入力として扱えるよう `code` と `cause` サマリを添付する。
+## 3. Collector/テレメトリ制約を踏まえた例外設計
+Collector は CI ログを JSONL 形式で蓄積し Analyzer がメトリクス算出に用いるため、AutoSave の例外ログは 1 行・構造化・最小限に抑える必要がある。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L18-L19】【F:Day8/docs/day8/design/03_architecture.md†L1-L18】
 
-## 5. テスト計画（レビュー前共有用）
-1. `AutoSaveScheduler`（仮モジュール）に対するユニットテストを `node:test` で追加し、デバウンス・アイドル遷移をタイマー Fake で検証する。
-2. ロック管理層のモック（Web Lock / ファイルロック）を作成し、`lock-unavailable` の再試行とフォールバックを検証する。
-3. OPFS ラッパー（`src/lib/opfs.ts` 予定）をスタブ化し、原子的な `current.json`/`index.json` 書き換えおよび履歴 FIFO/容量超過処理をテーブル駆動で確認する。
-4. 復元 API 各種の正常系・異常系を分離し、`data-corrupted` と `lock-unavailable` の挙動をカバレッジ対象にする。
-5. Collector 連携について、ログエミッタのモックを介して 1 例外 1 行の制約と `retryable` 分岐のメトリクス送信抑制を検証する。
+- `AutoSaveError` は `code`, `retryable`, `context` を必須で構造化し、Collector 側のパーサが追加変換なく ingest できる JSONL を出力する。
+- `retryable=true` のイベントは同一バックオフサイクルで再送しない。失敗回数は UI ステート (`snapshot().retryCount`) にのみ反映させ、Collector には 1 行だけ通知する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L98-L117】
+- `retryable=false` の致命エラーでは UI 通知と同時に Collector へ重要度高イベントを送信し、Analyzer が根本原因分析に利用できるよう `cause` 要約を含める。JSONL 破壊を防ぐため、改行は含めず安全なサマリへ整形する。
+- `history-overflow` は情報レベルで Collector 連携対象外とし、ローカルログのみ（1 行）へ出力することでノイズを抑制する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L141】
 
-これらテストを先行で整備し、実装時は TDD 方針でケースを満たす最小実装を段階的に追加する。
+## 4. TDD 手順と受入条件
+### 4.1 TDD 手順
+1. `tests/autosave/init.spec.ts` にフラグ OFF/ON 初期化シナリオを追加し、`disabled` 時の no-op を先に赤で書く。
+2. `tests/autosave/scheduler.spec.ts` に Fake タイマーを用いたデバウンス・アイドル・`flushNow` の期待シーケンスを記述。
+3. `tests/autosave/history.spec.ts` で履歴 FIFO・容量制約をテーブル駆動でカバーし、OPFS スタブを共通ユーティリティ化。
+4. `tests/autosave/restore.spec.ts` で `restorePrompt`/`restoreFrom*` の正常/異常系を記述し、`AutoSaveError` の `retryable` 判定を検証。
+5. ロックモック・テレメトリモックを導入し、Collector へのイベント数・内容を検証するテストを追加後、実装を開始する。
+
+### 4.2 受入条件
+- すべての公開 API が上記テーブルのシグネチャ・副作用・例外仕様を満たし、保存ポリシー既定値を逸脱しないこと。
+- フラグ OFF 時に永続化 I/O・ロック要求を一切発生させず、`snapshot().phase` が `disabled` のままであること。
+- 保存成功時に `current.json`/`index.json` が常に整合し、履歴/容量制約が FIFO で強制されること。
+- Collector 連携において 1 エラー 1 行の構造化ログを維持し、Analyzer パイプラインへ余計な出力を送らないこと。
+- 上記テスト計画に列挙したケースがすべて `node:test` で緑化し、TDD で段階的に実装されること。
