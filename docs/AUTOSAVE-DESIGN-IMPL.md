@@ -183,20 +183,61 @@ async function renewFallbackLock(path: string) {
 - 時計ずれが大きい環境では `updatedAt` の ISO を `Date.parse` して差分確認し、`ttlSeconds` を超えた場合は強制取得前に UI 警告を表示する。
 - 削除失敗時（OPFS remove エラー）は `releaseProjectLock` 内で `LockReleaseError` を投げ、バックグラウンド再試行タスクをスケジュール。ユーザーには閲覧専用モード維持と再試行結果のトースト通知を行う。
 
-### 3.4 例外・リトライ戦略とイベント伝播
-- 例外階層（再試行可否を `retryable` プロパティで区別）:
-  - `LockAcquisitionError`（`retryable=true`）: Web Lock/フォールバック取得の一時失敗。
-  - `LockConflictError`（`retryable=false`）: UUID 不一致の競合。
-  - `LockRenewalError`（`retryable=true`）: リース更新失敗。連続 2 回で閲覧専用モードへ。
-  - `LockReleaseError`（`retryable=true`）: 解放または削除失敗。バックグラウンドで追加再試行。
-  - `LockIrrecoverableError`（`retryable=false`）: OPFS 破損など復旧不能な例外。
-- リトライ戦略: Acquire/renew/release すべて指数バックオフ（0.5s→1s→2s、最大 3 回）。`retryable=false` の例外は即座に閲覧専用モードへ遷移し、UI へエラーイベントを送る。
-- AutoSave UI へのイベント/コールバック:
-  - `autosave.lock.stateChanged` (payload: `{ state: 'acquired' | 'renewed' | 'released' }`)
-  - `autosave.lock.retry` (payload: `{ attempt: number, maxAttempts: number, retryable: boolean }`)
-  - `autosave.lock.error` (payload: `{ error: string, retryable: boolean, leaseId?: string }`)
-  - `autosave.lock.readonly` (payload: `{ reason: 'conflict' | 'timeout' | 'irrecoverable' }`)
-- イベントは `subscribeLockEvents` 経由で購読し、AutoSaveIndicator は再試行状況をトースト表示・Collector/Analyzer 向けログに残さない。
+### 3.4 Lock State Machine（詳細）
+```mermaid
+stateDiagram-v2
+    [*] --> Acquire: request Web Lock (0.5s backoff)
+    Acquire --> Active: Web Lock lease (TTL 25s)
+    Acquire --> FallbackAcquire: navigator.locks missing / denied
+    FallbackAcquire --> Active: project/.lock written (TTL 30s)
+    Acquire --> ReadOnly: retries exhausted (3 attempts)
+    FallbackAcquire --> ReadOnly: retries exhausted (3 attempts)
+    Active --> Renewing: schedule heartbeat at expiresAt-5s
+    Renewing --> Active: lease renewed, renewAttempt++
+    Renewing --> ReadOnly: two consecutive failures
+    Active --> Releasing: dispose()/tab close
+    Releasing --> [*]: release success (Web Lock + file cleanup)
+    Releasing --> ReadOnly: release fails after 3 retries
+    ReadOnly --> [*]: manual reload / capability restored
+```
+
+### 3.5 イベント伝播マトリクス
+| イベント `type` | 発火契機 | Payload フィールド | 主な購読者 |
+| --- | --- | --- | --- |
+| `lock:attempt` | Acquire/FallbackAcquire でロック要求 | `strategy`, `retry` | Telemetry（Collector 非対象）、UI 状態管理 |
+| `lock:acquired` | ロック獲得直後 | `lease` | AutoSave Scheduler、履歴ローテータ |
+| `lock:renew-scheduled` | `expiresAt-5s` で心拍スケジュール | `lease`, `nextHeartbeatInMs` | Heartbeat タイマー |
+| `lock:renewed` | Web Lock もしくは `.lock` 更新成功 | `lease` | AutoSave Scheduler |
+| `lock:release-requested` | dispose / `withProjectLock` scope 終了 | `lease` | クリーンアップタスク |
+| `lock:released` | Web Lock release + `.lock` 削除完了 | `leaseId` | UI 通知、監視解除 |
+| `lock:readonly-entered` | Acquire/Renew/Release のリトライ失敗 | `reason`, `lastError` | UI（閲覧専用モード）、AutoSave 再スケジュール |
+
+### 3.6 例外・リトライ設計
+| Error `code` | retryable | 想定原因 | リカバリ | バックオフ |
+| --- | --- | --- | --- | --- |
+| `web-lock-unsupported` | false | navigator.locks 未実装 | 即座にフォールバック戦略へ切替 | N/A |
+| `acquire-denied` | true | 競合タブによる拒否 | 最大 3 回指数（0.5s→1s→2s）、失敗で閲覧専用 | Acquire |
+| `acquire-timeout` | true | Web Lock 応答なし / `.lock` stale 判定 | Acquire 再試行、フォールバック切替 | Acquire |
+| `fallback-conflict` | true | `.lock` が有効リースで占有 | stale 判定後に強制回収（再試行 3 回） | Acquire |
+| `lease-stale` | true | `expiresAt` 経過、復帰可能 | Renew 優先、失敗で Acquire やり直し | Renew |
+| `renew-failed` | true | Heartbeat 中に権限喪失 | 2 連続失敗で閲覧専用 | Renew |
+| `release-failed` | true | `.lock` 削除不可・Web Lock release エラー | 3 回再試行、失敗で readonly 通知 | Release |
+
+### 3.7 フォールバック競合テスト計画
+1. **シナリオ**: タブ A が Web Lock を取得、タブ B が即時にフォールバック `.lock` へ降格。
+   - **準備**: Web Locks API をモックし、B では常に `NotSupportedError` を投げる。
+   - **検証**: B の 3 回リトライ後に `lock:readonly-entered` が発火し、`ProjectLockError`(`fallback-conflict`, retryable=true) を添付。
+2. **シナリオ**: タブ A 異常終了で `.lock` が stale (`updatedAt` > TTL)。
+   - **準備**: `.lock` を 31s 過去に書き換え。
+   - **検証**: タブ B が stale と判定して `acquire` 成功、イベント `lock:acquired` が `strategy='file-lock'` で配信。
+3. **シナリオ**: Renew 2 回連続失敗による閲覧専用遷移。
+   - **準備**: Heartbeat フックで 2 回 `renew` を失敗させる。
+   - **検証**: `lock:readonly-entered` が `reason='renew-failed'` で発火、`onReadonly` コールバックが呼ばれる。
+4. **シナリオ**: Release 失敗後の再試行。
+   - **準備**: Web Lock release の 2 回失敗をモック。
+   - **検証**: 3 回目成功で `lock:released` が発火し、`.lock` ファイルが削除される。
+
+> **API シグネチャ草案**: `src/lib/locks.ts` に `ProjectLockLease`・`ProjectLockApi`・リトライポリシー型・イベント定義を公開し、AutoSave 側は `withProjectLock` を唯一の高水準 API として利用する。
 ## 4) ロック
 - `navigator.locks.request('imgponic:project', { mode: 'exclusive' })` を優先利用。
 - 失敗時は閲覧専用モード（保存 UI 無効化）にフォールバック。
