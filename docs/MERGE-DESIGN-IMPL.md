@@ -9,17 +9,23 @@
 - `MergeProfile` はトークナイザ・粒度・しきい値・優先度を制御し、部分指定を許容する。
 
 ### 性能・受入基準
-- 100カット想定で 5 秒以内に完了すること（char トークン、セクション提供時）。
-- ラベル付きケースで自動マージ率 80%以上を達成すること。
-- 再実行時に決定的な結果が得られ、lock/優先度設定が尊重されること。
+- `docs/IMPLEMENTATION-PLAN.md` の Phase B 要件に基づき、100 カット（事前セクション提供あり）で 5 秒以内に完了する。自動マージ率はラベル付きケースで 80%以上、再実行時に決定的な結果を返す。【F:docs/IMPLEMENTATION-PLAN.md†L141-L174】
+
+### スコアリング手順概要
+1. プロファイル解決で `threshold` と `prefer`、および `merge.precision` に起因する最小自動採択閾値を取得する。
+2. セクションごとにトークナイズ（`tokenizer`）→ LCS 差分を実行し、Jaccard・Cosine 類似度を算出する。
+3. 類似度の調和平均（`blended`）を計算し、`threshold` を下回る場合は競合として出力する。
+4. `prefer` と lock 情報を優先適用したうえで決定を確定し、決定イベントを UI/Telemetry へ通知する。
+5. 全処理で 5 秒 SLA を超過しそうな場合は早期中断（`MergeError`）とし、リトライ判定に備える。
 
 ### `src/lib/merge.ts` 公開エクスポート一覧
 | 名称 | 種別 | シグネチャ / 型 | 備考 |
 | --- | --- | --- | --- |
-| `MergeProfile` | Type | `{ tokenizer: 'char'|'word'|'morpheme'; granularity: 'section'|'line'; threshold: number; prefer: 'manual'|'ai'|'none' }` | 既定: `{ tokenizer: 'char', granularity: 'section', threshold: 0.75, prefer: 'none' }` |
-| `MergeInput` | Type | `{ base: string; ours: string; theirs: string; sections?: string[] }` | 事前分割セクションは任意 |
-| `MergeHunk` | Type | `{ section: string | null; decision: 'auto'|'conflict'; similarity?: number; merged?: string; manual?: string; ai?: string }` | 類似度は 0〜1 |
-| `merge3` | Function | `(input: MergeInput, profile?: Partial<MergeProfile>) => { hunks: MergeHunk[]; mergedText: string; stats: { auto: number; conflicts: number; avgSim: number } }` | 決定的なマージと統計を返却 |
+| `MergeProfile` | Type | `{ tokenizer: 'char'|'word'|'morpheme'; granularity: 'section'|'line'; threshold: number; prefer: 'manual'|'ai'|'none'; seed?: string }` | 既定: `{ tokenizer: 'char', granularity: 'section', threshold: 0.75, prefer: 'none' }` |
+| `MergeInput` | Type | `{ base: string; ours: string; theirs: string; sections?: string[]; locks?: ReadonlyMap<string, MergePreference> }` | lock で manual/ai を強制指定 |
+| `MergeHunk` | Type | `{ id: string; section: string | null; decision: 'auto'|'conflict'; similarity: number; merged: string; manual: string; ai: string; base: string; prefer: MergePreference }` | 類似度は 0〜1 |
+| `MergeResult` | Type | `{ hunks: MergeHunk[]; mergedText: string; stats: MergeStats }` | `stats.processingMillis` を含む |
+| `merge3` | Function | `(input: MergeInput, profile?: Partial<MergeProfile>) => MergeResult` | 決定的なマージと統計を返却 |
 
 > **Note**: `src/lib/merge.ts` は現在未実装。上記は本ドキュメントに基づく公開 API 設計である。
 
@@ -49,17 +55,43 @@ type MergeProfile = {
 
 ## 3) インタフェース
 ```ts
-export type MergeInput = { base: string; ours: string; theirs: string; sections?: string[] }
+export type MergeInput = {
+  base: string;
+  ours: string;
+  theirs: string;
+  sections?: string[];
+  locks?: ReadonlyMap<string, MergePreference>;
+};
+
 export type MergeHunk = {
-  section: string | null,
-  decision: 'auto'|'conflict',
-  similarity?: number,
-  merged?: string,
-  manual?: string,
-  ai?: string
+  id: string;
+  section: string | null;
+  decision: 'auto' | 'conflict';
+  similarity: number;
+  merged: string;
+  manual: string;
+  ai: string;
+  base: string;
+  prefer: MergePreference;
+};
+
+export interface MergeStats {
+  autoDecisions: number;
+  conflictDecisions: number;
+  averageSimilarity: number;
+  processingMillis: number;
 }
-export function merge3(input: MergeInput, profile?: Partial<MergeProfile>): { hunks: MergeHunk[], mergedText: string, stats: { auto: number, conflicts: number, avgSim: number } }
+
+export function merge3(
+  input: MergeInput,
+  profile?: Partial<MergeProfile>,
+): { hunks: MergeHunk[]; mergedText: string; stats: MergeStats }
 ```
+
+### UI 通知インターフェース
+- `MergeDecisionEvent`: `merge:auto-applied`（自動確定）／`merge:conflict-detected`（競合提示）を publish。
+- `MergeEventHub.subscribe(listener)` で UI が購読し、`DiffMergeView` がハンクごとのバッジとトーストを同期する。
+- `retryable=true` の競合は UI 上で再試行ボタンを表示し、`queueMergeCommand` から再評価を依頼する。
 
 ## 4) アルゴリズム
 1) セクション分割 → ラベル（`[主語]...`）の行を優先。無ければ空行で段落化
@@ -67,6 +99,15 @@ export function merge3(input: MergeInput, profile?: Partial<MergeProfile>): { hu
 3) `similarity ≥ threshold` → **auto**。`lock`/`prefer` を反映
 4) 未満 → **conflict** として両案を保持
 5) 連続autoは連結。出力は決定的（乱数・時刻不使用）
+
+### 4.1 スコアリング手順
+| 手順 | 入力 | 出力 | SLA 対応 |
+| --- | --- | --- | --- |
+| 1. `resolveProfile` | `MergeProfile` + グローバル precision | `ResolvedMergeProfile` (`minAutoThreshold` = max(profile.threshold, precision.min)) | precision=beta/stable で最低 0.75 を担保 |
+| 2. `tokenizeSection` | セクションテキスト | `MergeScoringInput` | トークンキャッシュで 100 カット処理を 5s 以内に維持 |
+| 3. `score` | `MergeScoringInput`, `ResolvedMergeProfile` | `MergeScoringMetrics`（Jaccard, Cosine, blended） | `AbortSignal` 監視で SLA 超過前に打ち切り |
+| 4. `decide` | `MergeScoringMetrics`, lock/prefer | `MergeDecision`, `similarity` | `similarity<minAutoThreshold` を必ず競合へフォールバック |
+| 5. `emitDecision` | `MergeDecision`, `MergeHunk` | UI/Telemetry へのイベント | `merge:auto-applied`/`merge:conflict-detected` を 1 ハンク ≤1ms で送信 |
 
 ## 5) UI / インタラクション
 ### Algorithm Details
@@ -219,6 +260,21 @@ Day8 アーキテクチャの Reporter → Governance 流れに従い、マー�
 3. `merge:hunk:ai:requested` / `merge:hunk:ai:fulfilled` — AI 再実行の開始/完了。Reporter は AI 成果を草案ログへ追加。
 4. `merge:trace:persisted` — 証跡書き込み完了。失敗時は `merge:trace:error` にエラーコード。
 5. `merge:autosave:lock` — AutoSave ロック獲得/解放を Governance 監査に通知。
+
+## 6) 決定プロセスと通知
+1. `merge3` 開始時に `telemetry('merge:start')` を送信し、`sceneId` と `ResolvedMergeProfile` を Collector に記録。
+2. 各ハンク決定後に `MergeEventHub.publish` を実行し、UI へ `merge:auto-applied` または `merge:conflict-detected` を通知。競合は `retryable` フラグで再評価可否を示す。
+3. 競合が再評価でも解消しない場合はバックオフを 3 段階で適用し、UI はステータスバナーを表示する。
+4. 全ハンクが処理されたら `telemetry('merge:finish')` を送信し、`MergeStats`（auto/conflict 件数、平均類似度、処理時間）を証跡へ残す。
+
+## 7) アルゴリズム最適化と Telemetry/TDD
+- **最適化方針**: セクション分割キャッシュとトークン再利用で O(n) に近いスループットを確保。100 カットの 5 秒 SLA を守るため、LCS の計測対象をセクション長 2,048 トークン以下に制限し、超過時はサブセクション化する。
+- **テレメトリ計測ポイント**: `merge:start`（入力件数, precision）、`merge:hunk-decision`（ハンクID, similarity, decision, latency）、`merge:finish`（総処理時間, 自動採択率）。Collector へは `merge.*` JSONL チャネルで送信し、Analyzer が SLO 指標を算出する。【F:docs/IMPLEMENTATION-PLAN.md†L160-L164】
+- **TDD ケース**:
+  - `merge.precision='legacy'` で Diff Merge タブが隠れる UI 判定。【F:docs/IMPLEMENTATION-PLAN.md†L153-L156】
+  - `merge.precision='beta'|'stable'` で自動マージ率が 0.8 を下回る場合に競合へフォールバックする統計検証。
+  - 競合イベントが UI に伝搬し、`retryable=true` で再評価が可能であること。
+  - Telemetry が `merge:start` → `merge:hunk-decision` → `merge:finish` の順に送信され、Collector スキーマ互換を保つ。
 6. すべてのログに `sceneId`, `section`, `ts`, `userId` を含め、Reporter 側の propose-only 原則に従って Git への自動書き込みは行わない。
 
 ### 5.7 `merge.ts` I/O パターン整理
@@ -241,7 +297,7 @@ Day8 アーキテクチャの Reporter → Governance 流れに従い、マー�
 2. **コマンド適用と AutoSave 協調**: `queueMergeCommand` → `store.ts` 更新 → AutoSave `flushNow` → `persistMergeTrace` の順序が保証され、`AutoSaveError.retryable` ケースで再試行イベントが同期する。【F:docs/MERGE-DESIGN-IMPL.md†L170-L222】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L61-L209】
 3. **Collector 連携**: `persistMergeTrace` 成功時に `merge:trace:persisted` が JSONL 出力され、失敗時は `merge:trace:error` で `retryable` フラグを明示し Day8 パイプラインへ通知する。【F:docs/MERGE-DESIGN-IMPL.md†L205-L222】【F:Day8/docs/day8/design/03_architecture.md†L3-L27】
 
-## 6) 証跡
+## 8) 証跡
 - `runs/<ts>/merge.json` に hunkごとの `{section, similarity, decision}` を記録
 - `meta.json` に `merge_profile` を追記
 
@@ -336,16 +392,16 @@ Day8 アーキテクチャの Reporter → Governance 流れに従い、マー�
 - Collector は `stats.auto`, `stats.conflicts`, `stats.avgSim` を抽出し、Day8 Analyzer のメトリクス `pass_rate` に相当する `auto_rate` を計算するよう拡張が必要。
 - 既存の JSONL 契約には影響せず、Reporter は `meta.json` の `merge_profile` を参照して結果コメントに反映する。
 
-## 7) 性能目標
+## 9) 性能目標
 - 100カットで ≤5秒（セクションあり、charトークン）
 - 必要に応じ **Web Worker** 化（後段）
 
-## 8) 受入
+## 10) 受入
 - ラベル付きで自動マージ率 ≥80%
 - 再実行で同一結果（決定性）
 - lock=manual/ai の優先が反映される
 
-## 9) エッジケースと Test Matrix
+## 11) エッジケースと Test Matrix
 ### エッジケース
 - **セクション欠如**: 入力にセクションラベルが無い場合、空行で段落抽出し `section` を連番付与。
 - **文字コード差**: Base/Ours/Theirs のエンコーディングが混在する場合は UTF-8 へ正規化し、不可視差分を正規化（NFC）。
@@ -365,7 +421,7 @@ Day8 アーキテクチャの Reporter → Governance 流れに従い、マー�
 | T7 | 空入力（theirs 空） | ours を auto 採択 | node:test で空文字処理 | スコアリングを 0 返却にモック |
 | T8 | 文字コード差（NFD/NFC） | 正規化後に同一判定 | node:test で normalization | `normalizeText` をモックし呼び出し検証 |
 
-## 10) Analyzer/Reporter 連携チェックリスト
+## 12) Analyzer/Reporter 連携チェックリスト
 - [ ] Collector が `runs/<ts>/merge.json` を検知し、`auto_rate = auto / (auto + conflicts)` を算出できる。
 - [ ] Analyzer が `avgSim` を `metrics.duration_p95` と同列に扱えるよう型を拡張済み。
 - [ ] Reporter の Why-Why 草案が `merge_profile.prefer` を参照し、意図した判断理由を記述できる。
