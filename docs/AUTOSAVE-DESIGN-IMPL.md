@@ -71,14 +71,28 @@ interface AutoSaveOptions {
 }
 
 interface AutoSaveInitResult {
+  /** 現在のステータスを取得。UI から監視してメッセージを表示する用途。 */
+  readonly snapshot: () => AutoSaveStatusSnapshot;
+  /** `debounce` キューを即時消化し、ロック取得から書き込みまで強制実行。 */
+  flushNow: () => Promise<void>;
   /** イベント購読・タイマーを破棄する。副作用: イベントリスナー解除のみ */
   dispose: () => void;
 }
 
-type AutoSaveError =
-  | { code: 'lock-unavailable'; retryable: true; cause?: Error }
-  | { code: 'write-failed'; retryable: boolean; bytesAttempted: number; cause: Error }
-  | { code: 'data-corrupted'; retryable: false; cause: Error };
+type AutoSaveErrorCode =
+  | 'lock-unavailable'
+  | 'write-failed'
+  | 'data-corrupted'
+  | 'history-overflow'
+  | 'disabled';
+
+interface AutoSaveError extends Error {
+  readonly code: AutoSaveErrorCode;
+  readonly retryable: boolean;
+  readonly cause?: Error;
+  /** 書込試行バイト数など、再試行判断に必要な付帯情報。 */
+  readonly context?: Record<string, unknown>;
+}
 
 export function initAutoSave(
   getStoryboard: StoryboardProvider,
@@ -103,8 +117,104 @@ export async function listHistory(): Promise<
 >;
 // 副作用: `index.json` 読み出しのみ。例外: { code: 'data-corrupted' }。
 ```
-- `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する。`disabled` が `true` または `autosave.enabled=false` の場合、`initAutoSave` は `dispose` だけを返し永続化を一切行わない。
-- 例外は `AutoSaveError` を基本とし、`retryable` が true のケース（ロック取得不可・一時的な書込失敗）は指数バックオフで再スケジュールする。`retryable=false` はユーザ通知＋即時停止。
+- `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する。`disabled` が `true` または `autosave.enabled=false` の場合、`initAutoSave` は `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。
+- 例外は `AutoSaveError` を基本とし、`retryable` が true のケース（ロック取得不可・一時的な書込失敗）は指数バックオフで再スケジュールする。`retryable=false` はユーザ通知＋即時停止。`code='disabled'` は再試行禁止の静的ガードとして扱い、ログのみ残して停止する。
+- `flushNow()` は保存可能な状態（`idle` or `debouncing`）であれば 2s アイドル待機をスキップし、ロック取得と書込の完了まで待つ。実行中のフライトがある場合はその完了を待機し、同時実行を避ける。
+- `snapshot()` は内部状態の即時スナップショットを返し UI 側の `isReadOnly` や `lastError` 表示に利用する。内部ステートは後述の状態遷移表に従う。
+
+## 4) API 最終仕様と状態遷移
+
+### 4.1 ステータススナップショット
+```ts
+type AutoSavePhase =
+  | 'disabled'
+  | 'idle'
+  | 'debouncing'
+  | 'awaiting-lock'
+  | 'writing-current'
+  | 'updating-index'
+  | 'gc'
+  | 'error';
+
+interface AutoSaveStatusSnapshot {
+  phase: AutoSavePhase;
+  lastSuccessAt?: string; // ISO8601
+  pendingBytes?: number;
+  lastError?: AutoSaveError;
+  retryCount: number;
+  queuedGeneration?: number; // index.json 上の世代番号
+}
+```
+
+### 4.2 オートセーブ状態遷移図
+```mermaid
+stateDiagram-v2
+    [*] --> Disabled: flag off
+    Disabled --> Idle: initAutoSave
+    Idle --> Debouncing: change event
+    Debouncing --> Idle: change flushed before 500ms
+    Debouncing --> AwaitingLock: debounce>=500ms & idle>=2000ms
+    AwaitingLock --> WritingCurrent: lock acquired
+    AwaitingLock --> Debouncing: lock retry (backoff)
+    WritingCurrent --> UpdatingIndex: atomic rename OK
+    UpdatingIndex --> GC: index committed
+    GC --> Idle: retention enforced
+    WritingCurrent --> Error: write failure
+    UpdatingIndex --> Error: index failure
+    AwaitingLock --> Error: retry exhausted
+    Error --> Idle: auto retry (retryable)
+    Error --> Disabled: dispose or fatal error
+    Idle --> [*]: dispose()
+```
+
+### 4.3 起動/停止フロー
+1. `initAutoSave` 呼び出し時に `disabled` 判定 → true の場合はスケジューラを作成せず `phase='disabled'` のスナップショットのみ返却。
+2. 有効な場合は以下を逐次実行。
+   1. Debounce タイマーと Idle タイマーを初期化し、UI の変更イベントを `listenToStoryboardChanges()` で購読。
+   2. 既存 `current.json` が存在する場合は `restorePrompt()` が利用できるようメタデータをキャッシュ。
+   3. `dispose()` はイベント購読解除 → タイマー停止 → 進行中フライトを待機 → ロック開放 → `phase='disabled'` に遷移。
+3. 例外がスローされた場合は `lastError` を更新し、`retryable=true` なら指数バックオフ（0.5s, 1s, 2s, 上限 4s）で `AwaitingLock` へ復帰。`retryable=false` は `phase='error'` のまま `flushNow` を no-op にして UI 通知後に `dispose()` を促す。
+
+### 4.4 履歴保持ポリシーの詳細
+- `index.json` には `{ ts, bytes, location }` を降順で保持し、`maxGenerations` 超過時は末尾を削除。
+- `maxBytes` を超える場合は `sum(bytes)` を再計算しつつ古いレコードから削除し、対応する `history/<ts>.json` を削除。
+- GC 後に削除されたファイルは `history-overflow` エラーとしてログするが、ユーザ通知は行わない（情報レベル）。
+- `history` ディレクトリに孤児ファイルがある場合は削除し、`index.json` にのみ存在するエントリは `current.json` から再構築する。
+
+### 4.5 再試行・停止条件
+| フェーズ | エラーコード | retryable | 再試行条件 | 停止条件 |
+| --- | --- | --- | --- | --- |
+| AwaitingLock | lock-unavailable | true | バックオフ 0.5→1→2→4s（最大 4s） | 連続 5 回失敗で `phase='error'` → UI に ReadOnly 通知 |
+| WritingCurrent | write-failed | true/false | `cause` が `DOMException` で `NotAllowedError` 以外なら true | 再試行失敗 or `NotAllowedError` で停止 |
+| UpdatingIndex | write-failed | true | 同上 | 同上 |
+| GC | history-overflow | false | - | ログのみ。`phase` は Idle 維持 |
+| Restore | data-corrupted | false | - | UI に通知後、`restorePrompt` で null を返す |
+
+## 5) テスト戦略
+- **OPFS Stub**: `tests/autosave/__mocks__/opfs.ts` に `InMemoryOpfs` を実装。`writeAtomic`, `readJSON`, `rename`, `stat` を Promise ベースで再現し、容量計測をメモリ上で管理。`maxBytes` などの制約を検証可能とする。
+- **Scheduler モック**: Fake タイマー (`@sinonjs/fake-timers`) を利用して `debounceMs`/`idleMs` の挙動を deterministic に検証。`flushNow()` を呼んだ際に即時書込が実行されることを確認。
+- **ロックモック**: `navigator.locks` のモック実装とファイルロックスタブを用意し、取得成功/失敗/再試行を制御。連続失敗で `phase='error'` になることをテスト。
+- **テストケース一覧**:
+  1. フラグ無効時に `flushNow`/`dispose` が副作用なしで完了する。
+  2. 単一変更で 500ms デバウンス + 2s アイドル後に `current.json` が原子的に更新される。
+  3. `flushNow()` によりアイドル待機をスキップし、既存フライトと競合しない。
+  4. ロック取得失敗が 4 回発生した後にバックオフで再試行し、5 回目で `phase='error'` になる。
+  5. 履歴が 21 世代に達した際に FIFO で削除され、`maxBytes` 超過時も容量内に収束する。
+  6. `write-failed`（再試行可）から復帰後に `lastSuccessAt` が更新される。
+  7. `data-corrupted` 発生時に `restorePrompt` が null を返し、`snapshot().lastError` に反映される。
+  8. `dispose()` が進行中フライトの完了を待機し、ロックが解放される。
+- **テスト構成**: `tests/autosave/init.spec.ts`（起動/停止・フラグ判定）、`tests/autosave/scheduler.spec.ts`（デバウンス/アイドル/flush）、`tests/autosave/history.spec.ts`（GC・容量制限）、`tests/autosave/restore.spec.ts`（復元系）で段階的に実装。Fake タイマーと OPFS Stub を共有ユーティリティとして `tests/autosave/test-utils.ts` に切り出す。
+
+## 6) エラーハンドリングテーブル
+| コード | 発生源 | retryable | UI 通知 | ログレベル | 備考 |
+| --- | --- | --- | --- | --- | --- |
+| disabled | initAutoSave | false | 不要 | info | flag off 時のみ。 |
+| lock-unavailable | scheduler | true | Snackbar（自動再試行中） | warn | 5 回連続で `phase='error'`。 |
+| write-failed | writer/index | cause による | dialog（書込失敗） | error | `context.bytesAttempted` を付与。 |
+| data-corrupted | restore/list | false | dialog（破損通知） | error | リストア系 API 共通。 |
+| history-overflow | GC | false | 不要 | info | FIFO/Eviction 実行時に 1 行ログ。 |
+
+これらの仕様により、`Collector`/`Analyzer` など Day8 アーキテクチャの他コンポーネントへ不要な副作用を与えず、AutoSave 機構の一貫性と復元性を確保する。
 
 ## 3) ロック
 
