@@ -66,6 +66,8 @@ sequenceDiagram
 | t0+2.6s | 同 | ロック解放、次回トリガー待機 | Web Locks release |
 
 ## 3) API（型定義と副作用）
+
+### 3.1 公開 API 型シグネチャ
 ```ts
 type StoryboardProvider = () => Storyboard;
 
@@ -83,11 +85,8 @@ interface AutoSaveOptions {
 }
 
 interface AutoSaveInitResult {
-  /** 現在のステータスを取得。UI から監視してメッセージを表示する用途。 */
   readonly snapshot: () => AutoSaveStatusSnapshot;
-  /** `debounce` キューを即時消化し、ロック取得から書き込みまで強制実行。 */
   flushNow: () => Promise<void>;
-  /** イベント購読・タイマーを破棄する。副作用: イベントリスナー解除のみ */
   dispose: () => void;
 }
 
@@ -102,7 +101,6 @@ interface AutoSaveError extends Error {
   readonly code: AutoSaveErrorCode;
   readonly retryable: boolean;
   readonly cause?: Error;
-  /** 書込試行バイト数など、再試行判断に必要な付帯情報。 */
   readonly context?: Record<string, unknown>;
 }
 
@@ -110,24 +108,19 @@ export function initAutoSave(
   getStoryboard: StoryboardProvider,
   options?: AutoSaveOptions
 ): AutoSaveInitResult;
-// 副作用: Web Locks/ファイルロック取得、`current.json`/`index.json` 書き込み。例外: AutoSaveError を throw。
 
 export async function restorePrompt(): Promise<
   | null
   | { ts: string; bytes: number; source: 'current' | 'history'; location: string }
 >;
-// 副作用: OPFS 読み出しのみ。例外: { code: 'data-corrupted' }。
 
 export async function restoreFromCurrent(): Promise<boolean>;
-// 副作用: UI へ storyboard を適用、書き込みなし。例外: { code: 'data-corrupted' }。
 
 export async function restoreFrom(ts: string): Promise<boolean>;
-// 副作用: 指定履歴ファイルをロードし UI へ適用。例外: { code: 'data-corrupted' } | { code: 'lock-unavailable' }。
 
 export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 >;
-// 副作用: `index.json` 読み出しのみ。例外: { code: 'data-corrupted' }。
 ```
 - `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する（`src/lib/autosave.ts` の `AUTOSAVE_DEFAULTS` を参照）。`disabled` が `true` または設定フラグ `autosave.enabled=false` の場合、`initAutoSave` は [実装計画](./IMPLEMENTATION-PLAN.md) §0 の no-op 要件を満たすため `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。
 - 例外は `AutoSaveError` を基本とし、`retryable` が true のケース（ロック取得不可・一時的な書込失敗）は指数バックオフで再スケジュールする。`retryable=false` はユーザ通知＋即時停止。`code='disabled'` は再試行禁止の静的ガードとして扱い、ログのみ残して停止する。
