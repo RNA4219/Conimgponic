@@ -21,6 +21,7 @@ graph TD
 ```
 - `FlagSnapshot` は各フラグ値と決定ソース (`'env' | 'localStorage' | 'default'`) を保持し、後方互換のため `localStorage` 直接参照と同値比較できるようにする。
 - `Bus` は Phase B でのホットリロード検討に備え、`subscribeFlags` 経由で差分通知（`prev`/`next`）を送出する。
+- `docs/IMPLEMENTATION-PLAN.md` §0.2 の優先順位（env → localStorage → 既定値）と `FlagSnapshot.source.*` を 1 対 1 に対応させ、`App.tsx`・`MergeDock.tsx` が段階的に後方互換参照を除去できるようマッピングを固定する。【F:docs/IMPLEMENTATION-PLAN.md†L19-L46】
 
 ## 3. API 仕様案 (`src/config/flags.ts`)
 ```ts
@@ -33,6 +34,7 @@ export interface FlagSnapshot {
     readonly autosaveEnabled: FlagSource;
     readonly mergePrecision: FlagSource;
   };
+  readonly resolvedAt: number; // Date.now()。UI 側でメトリクス相関を取る
 }
 
 export interface FlagResolveOptions {
@@ -58,6 +60,7 @@ export function subscribeFlags(listener: FlagSubscriber): () => void; // 解除�
 export function resolveFeatureFlag(name: 'autosave.enabled' | 'merge.precision', options?: FlagResolveOptions): {
   readonly value: boolean | 'legacy' | 'beta' | 'stable';
   readonly source: FlagSource;
+  readonly resolvedAt: number;
 };
 ```
 - `DEFAULT_FLAGS` は `docs/CONFIG_FLAGS.md` に定義された JSON を `as const` で埋め込み、CI の snapshot で乖離検知する（別タスク）。
@@ -88,11 +91,19 @@ export function resolveFeatureFlag(name: 'autosave.enabled' | 'merge.precision',
 - `useFlagSnapshot()` で初回スナップショットを取得し、`autosave.enabled` が `true` のときのみ AutoSave ブートストラップ (`bootstrapAutoSave(flags.autosave)`) を非同期実行する。
 - Flag 変更時（`subscribeFlags`）に AutoSave ワーカーへ `lease` 状態を伝播し、`enabled=false` へ戻った場合はワーカー終了と UI インジケータ停止を保証する。
 - 既存キーバインド・手動保存フローを不変とし、Flag が `false` のときは副作用（`setInterval`、ロック取得）を作らない。【F:src/App.tsx†L1-L79】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L37】
+- 依存ポイント: `App.tsx` は `localStorage.dockOpen` をブート時に同期し、`setDockOpen` トグル時に書き戻している。Flag 運用開始時は `resolveFlags()` から得た `source.autosaveEnabled` をログへ出力するだけに留め、`localStorage` 直読みは Phase B まで維持する。【F:src/App.tsx†L26-L65】
 
 ### 6.2 `MergeDock.tsx`
 - `const { merge } = useFlagSnapshot(); const showDiff = merge.precision !== 'legacy';` を起点に Diff Merge タブ表示可否を制御する。
 - `beta`/`stable` 時は Diff Merge タブを追加し、既存タブ順序とアクセシビリティラベルを維持する。`legacy` 時は現在の 5 タブ構成を保つ。【F:docs/IMPLEMENTATION-PLAN.md†L23-L31】
 - Flag 変更時は開いているタブが非表示になる場合に `Golden` タブへフォールバックし、テレメトリへ `merge.precision` のソース情報を付与する。
+- 依存ポイント: 現状は `pref` state と `useMemo` のみで `localStorage` に依存しないため、Flag 導入後も UI の表示制御のみを `FlagSnapshot` に委譲する。`localStorage` から `pref` を復元する将来要件が発生した場合は `flags.ts` を経由する。
+
+### 6.3 `localStorage` 後方互換撤廃ステップ
+1. Phase A（現状）: `App.tsx` は `localStorage` の `dockOpen` を読み書きしつつ、`resolveFlags()` から得た `source` 情報をテレメトリに転送する。`MergeDock.tsx` は現行ロジック維持。
+2. Phase A-2: `src/config/flags.ts` に `getLegacyStorageItem(key)` を追加し、`App.tsx` の初期読取を `flags.ts` へ委譲。`setDockOpen` は互換性のために書き戻し継続。
+3. Phase B-0: `dockOpen` の保存先を `flag:dock.open`（仮）へ移行し、`App.tsx` の直接 `localStorage` 書込を `flags.ts` のヘルパにリダイレクトする。旧キーを読み取った場合はヘルパが新キーへ移行し、UI からの直接参照を削除。
+4. Phase B-1: QA 完了後に `App.tsx` の `localStorage` 呼び出しを全面削除し、`FlagSnapshot` ベースの状態同期に統合。`MergeDock.tsx` については `flag:merge.precision` が安定するまで現状維持。
 
 ### 6.3 Day8 依存構造との整合
 - Flag 変更イベントは `Collector → Analyzer → Reporter` の ETL に影響しないよう JSONL スキーマを不変で維持し、ソース情報は追加フィールドとして伝搬する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
@@ -115,6 +126,7 @@ export function resolveFeatureFlag(name: 'autosave.enabled' | 'merge.precision',
 
 - 各テストは **先に失敗テストを実装 → 実装 → リファクタ** の順で TDD を徹底する。
 - テストデータは `docs/CONFIG_FLAGS.md` の既定値 JSON を fixture 化し、後方互換検証を容易にする。
+- フラグ ON/OFF・既定値フォールバックの検証を優先するため、`tests/config/flags.resolve-default.test.ts`（`resolveFlags` のデフォルト経路）、`tests/config/flags.source-order.test.ts`（env/storage/default の優先順位）を追加し、CI で Phase A から監視する。
 
 ## 8. 回帰リスクと緩和策
 - AutoSave 起動フロー: フラグ OFF 時に余計なロック取得・setInterval が走ると OPFS 競合や Day8 Collector の監視対象外ログ増加リスクがあるため、`autosave.enabled=false` ケースのユニットテスト（A1）でブート抑止を検証する。【F:docs/IMPLEMENTATION-PLAN.md†L10-L18】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L37】
