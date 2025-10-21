@@ -26,6 +26,23 @@ sequenceDiagram
   WC->>GH: create issue (draft memo, optional)
 ```
 
+## Collector/Analyzer/Reporter データ連携シーケンス
+```mermaid
+sequenceDiagram
+  participant Src as Scripts/Runtime
+  participant Col as Collector
+  participant Ana as Analyzer
+  participant Rep as Reporter
+  participant Gov as Governance
+  Src->>Col: JSONL append (autosave/merge telemetry)
+  Col->>Ana: Batch upload (15m window)
+  Ana->>Ana: 指標算出 (P95, failure rate, merge success)
+  Ana->>Rep: 通知判定結果 + incident_ref
+  Rep->>Rep: 日次サマリ生成 & rollback/incident テンプレート適用
+  Rep->>Gov: reports/today.md + issue_suggestions.md
+  Rep-->>Col: フィードバック (しきい値更新要求)
+```
+
 ## ASCII フォールバック
 - Mermaid が利用できないレビュー環境では [docs/Architecture_ASCII.md](../../Architecture_ASCII.md) を参照し、Collector→Analyzer→Reporter→Proposer→Governance の責務と戻りフローを確認する。
 - UI 骨子や CLI/レポートの画面構成をオフラインで確認する際は [Appendix B: UI モック](../../addenda/B_UI_Mock.md) を併用し、Analyzer/Reporter の入出力イメージを擦り合わせる。
