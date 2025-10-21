@@ -11,7 +11,6 @@ import subprocess
 import sys
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -101,12 +100,17 @@ def ensure_python_version() -> None:
         raise SystemExit(1)
 
 
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+_SERIAL_WIDTH = 5
 
 
-def _format_timestamp(moment: datetime) -> str:
-    return moment.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+def _parse_serial_token(value: object) -> int:
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return 0
+
+
+def _format_serial_token(counter: int) -> str:
+    return f"{counter:0{_SERIAL_WIDTH}d}"
 
 
 def _resolve_root(target: Path) -> Path:
@@ -160,13 +164,12 @@ def run_update(options: UpdateOptions) -> UpdateReport:
     emit_caps = options.emit in {"caps", "index+caps"}
     planned: set[Path] = set()
     performed: set[Path] = set()
-    timestamp = _format_timestamp(utc_now())
-
     grouped: dict[Path, list[Path]] = {}
     for target in options.targets:
         root = _resolve_root(target)
         grouped.setdefault(root, []).append(target)
 
+    serial_token = _format_serial_token(0)
     for root, root_targets in grouped.items():
         index_path = root / "index.json"
         caps_dir = root / "caps"
@@ -214,32 +217,16 @@ def run_update(options: UpdateOptions) -> UpdateReport:
                 caps_state[cap_id] = (cap_path, cap_data, cap_original)
                 cap_path_lookup[cap_path.resolve()] = cap_id
 
-        if emit_index:
-            if index_data.get("generated_at") != timestamp:
-                index_data["generated_at"] = timestamp
-            _maybe_write(
-                index_path,
-                index_data,
-                index_original,
-                planned=planned,
-                performed=performed,
-                dry_run=options.dry_run,
-            )
+        serial_base = _parse_serial_token(index_data.get("generated_at"))
 
-            if hot_path.exists():
-                hot_data, hot_original = _load_json(hot_path)
-                if isinstance(hot_data, dict):
-                    if hot_data.get("generated_at") != timestamp:
-                        hot_data["generated_at"] = timestamp
-                    _maybe_write(
-                        hot_path,
-                        hot_data,
-                        hot_original,
-                        planned=planned,
-                        performed=performed,
-                        dry_run=options.dry_run,
-                    )
+        hot_payload: tuple[dict[str, Any], str] | None = None
+        if emit_index and hot_path.exists():
+            hot_data, hot_original = _load_json(hot_path)
+            if isinstance(hot_data, dict):
+                serial_base = max(serial_base, _parse_serial_token(hot_data.get("generated_at")))
+                hot_payload = (hot_data, hot_original)
 
+        nodes_to_refresh: list[str] = []
         if emit_caps and caps_state:
             focus_nodes: set[str] = set()
             root_resolved = root.resolve()
@@ -278,6 +265,38 @@ def run_update(options: UpdateOptions) -> UpdateReport:
                         queue.append((neighbour, distance + 1))
             nodes_to_refresh = sorted(node for node in seen if node in caps_state)
             for cap_id in nodes_to_refresh:
+                cap_data = caps_state[cap_id][1]
+                serial_base = max(serial_base, _parse_serial_token(cap_data.get("generated_at")))
+
+        serial_token = _format_serial_token(serial_base + 1)
+
+        if emit_index:
+            if index_data.get("generated_at") != serial_token:
+                index_data["generated_at"] = serial_token
+            _maybe_write(
+                index_path,
+                index_data,
+                index_original,
+                planned=planned,
+                performed=performed,
+                dry_run=options.dry_run,
+            )
+
+            if hot_payload is not None:
+                hot_data, hot_original = hot_payload
+                if hot_data.get("generated_at") != serial_token:
+                    hot_data["generated_at"] = serial_token
+                _maybe_write(
+                    hot_path,
+                    hot_data,
+                    hot_original,
+                    planned=planned,
+                    performed=performed,
+                    dry_run=options.dry_run,
+                )
+
+        if emit_caps and nodes_to_refresh:
+            for cap_id in nodes_to_refresh:
                 cap_path, cap_data, cap_original = caps_state[cap_id]
                 expected_out = _sorted_unique(graph_out.get(cap_id, []))
                 expected_in = _sorted_unique(graph_in.get(cap_id, []))
@@ -288,8 +307,8 @@ def run_update(options: UpdateOptions) -> UpdateReport:
                 if cap_data.get("deps_in") != expected_in:
                     cap_data["deps_in"] = expected_in
                     updated = True
-                if cap_data.get("generated_at") != timestamp:
-                    cap_data["generated_at"] = timestamp
+                if cap_data.get("generated_at") != serial_token:
+                    cap_data["generated_at"] = serial_token
                     updated = True
                 if updated:
                     _maybe_write(
@@ -302,7 +321,7 @@ def run_update(options: UpdateOptions) -> UpdateReport:
                     )
 
     return UpdateReport(
-        generated_at=timestamp,
+        generated_at=serial_token,
         planned_writes=_finalise(planned),
         performed_writes=_finalise(performed),
     )
