@@ -81,3 +81,7 @@
 - `MergeDock.tsx`: 既存タブ構造と `pref` ステートを分析し、新規 Diff Merge タブ追加時に 200 行以内/差分 1 ファイルで収まるかを検証。
 - `src/config.ts` と予定する `src/config/flags.ts`: env/localStorage/既定値の優先順位と後方互換性の影響を確認。
 - 上記調査で差分が `App.tsx`・`MergeDock.tsx` の 2 ファイル以内に収まる見込みなら実装続行。スコープ超過が判明した場合はタスク分割を別途起票。
+## 5) 精緻マージ 要約
+- 対象API: `merge3(MergeInput, MergeProfile)` が hunk と統計を返却し、`MergeHunk` でセクション単位の決定を提供する。
+- 性能: 100カット（セクション有り）で 5 秒以内の処理時間を達成する。
+- 受入: lock と `prefer` を尊重した上で自動マージ率 80%以上、再実行で同一結果になること。
