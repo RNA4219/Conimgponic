@@ -1,5 +1,14 @@
 export type FlagSource = 'env' | 'localStorage' | 'default'
 
+export interface FlagSnapshot {
+  readonly autosave: { readonly enabled: boolean }
+  readonly merge: { readonly precision: 'legacy' | 'beta' | 'stable' }
+  readonly source: {
+    readonly autosaveEnabled: FlagSource
+    readonly mergePrecision: FlagSource
+  }
+}
+
 export interface FlagDefinition<T> {
   name: string
   envKey: string
@@ -26,25 +35,20 @@ function coerceValue<T>(raw: string, def: FlagDefinition<T>): T {
 }
 
 /**
- * env → localStorage → default の優先順位でフラグ値を解決する。
+ * env → localStorage → docs/CONFIG_FLAGS.md 既定値の優先順位でフラグ値を解決する。
+ * `docs/IMPLEMENTATION-PLAN.md` §0.2 の設定ソースマッピングを反映し、解決済みの
+ * 値は `FlagSnapshot` として `App.tsx` / `MergeDock.tsx` へ伝達する。
  * ```mermaid
- * sequenceDiagram
- *   participant R as FlagResolver
- *   participant E as Env
- *   participant L as localStorage
- *   participant D as Default
- *   R->>E: lookup(envKey)
- *   alt env hit
- *     E-->>R: raw
- *   else env miss
- *     R->>L: getItem(storageKey)
- *     alt local hit
- *       L-->>R: raw
- *     else local miss
- *       R->>D: use defaultValue
- *       D-->>R: fallback
- *     end
- *   end
+ * graph TD
+ *   App[App.tsx bootstrap] -->|useFlagSnapshot| Resolver
+ *   Merge[MergeDock.tsx bootstrap] -->|useFlagSnapshot| Resolver
+ *   Resolver -->|envKey| Env(import.meta.env)
+ *   Resolver -->|storageKey| Storage(localStorage)
+ *   Resolver -->|defaults| Defaults(DEFAULT_FLAGS)
+ *   Defaults -.->|docs/CONFIG_FLAGS.md| Spec
+ *   Resolver --> Snapshot(FlagSnapshot with source metadata)
+ *   Snapshot -->|autosave.enabled| AutoSaveRunner
+ *   Snapshot -->|merge.precision| DiffMergeTab
  * ```
  */
 export function resolveFlag<T>(
