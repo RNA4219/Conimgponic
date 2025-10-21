@@ -48,29 +48,60 @@
 
 > **備考**: API のオプション型・イベント型は `strict`/`mypy` 相当の型安全を維持し、再試行可否を識別するフラグを含める。
 
-## 2) ロールアウト
-- **Phase A**: AutoSave（既定OFF→内テスト→既定ON）
-- **Phase B**: 精緻マージ（beta→stable）。従来の manual-first/ai-first を残す。
-## 2) ロールアウトロードマップ
+## 2) ロールアウトと運用統制
 
-### 2.1 フェーズ表
-| フェーズ | 期間 (想定) | `autosave.enabled` | `merge.precision` | 対象ユーザー | エントリー条件 | ロールバック条件 |
+### 2.1 フェーズ基準表
+| フェーズ | 想定期間 | `autosave.enabled` 既定 | `merge.precision` 既定 | 対象ユーザー | エントリー判定 (SLO + QA 成果物) | ロールバック条件 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Phase A-0 | Week 0 | `false` | `legacy` | 全ユーザー | 既存機能安定を確認 | AutoSave 起動時に保存遅延 >2.5s が 3 回/日 以上 |
-| Phase A-1 | Week 1 (内テスト) | `true` (QA のみ) | `legacy` | 開発チーム/QA | テレメトリで保存時間 P95 ≤2.5s | P95>2.5s または復旧失敗率>1% |
-| Phase A-2 | Week 2 (段階ON) | `true` | `legacy` | ベータ招待 | QA 完了＋復元テスト合格 | 復元失敗>0.5% or クラッシュ頻度増>5% |
-| Phase B-0 | Week 3 | `true` | `beta` | ベータ招待 | AutoSave 安定化＋Diff Merge β準備完了 | 自動マージ率<80% or 重大バグ報告>3件 |
-| Phase B-1 | Week 4 (beta→stable 切替) | `true` | `stable` | 全ユーザー | マージ SLO 達成（下記参照） | 自動マージ率<80% が 2 日継続 or SLO 未達 |
+| Phase A-0 (準備) | Week 0 | `false` | `legacy` | 全ユーザー | - | AutoSave 起動で保存遅延 P95>2.5s が 3 回/日 以上 |
+| Phase A-1 (QA Canary) | Week 1 | `true` (QA スコープのみ) | `legacy` | 開発チーム/QA | AutoSave 保存時間 P95 ≤2.5s **かつ** QA レポート: Canary 10 ケース完了 | 保存 P95>2.5s または 復旧成功率<99.5% |
+| Phase A-2 (β導入) | Week 2 | `true` | `legacy` | ベータ招待 | 復元 QA シナリオ 12/12 合格 **かつ** SLO 違反ゼロ | 復元失敗率≥0.5% or クラッシュ率 baseline+5% |
+| Phase B-0 (Merge β) | Week 3 | `true` | `beta` | ベータ招待 | Diff Merge QA 20 ケース完了 **かつ** 自動マージ率≥80% (1 日平均) | 自動マージ率<80% or 重大バグ報告>3 件/日 |
+| Phase B-1 (GA) | Week 4 | `true` | `stable` | 全ユーザー | AutoSave/マージ SLO 連続 5 日達成 **かつ** リリースノート承認 | 任意 SLO 未達 24h 継続 または 重大事故報告 |
 
-### 2.2 SLO とメトリクス
-- 保存時間: AutoSave 保存完了まで P95 ≤2.5s。
-- 復旧性能: 強制終了後の復元成功率 ≥99.5%、復旧まで ≤5s。
-- 自動マージ率: Diff Merge 適用ケースで自動確定率 ≥80%。
-- モニタリング: `Collector`→`Analyzer`→`Reporter` パイプラインで保存時間/マージ率/SLO 違反を集計し、`governance/policy.yaml` のしきい値でアラートを発報。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+### 2.2 Canary / ローカル切替 Runbook
+1. **Flag 既定値確認**: `docs/CONFIG_FLAGS.md` を最新に反映させ、QA 用 `.env.qa` に `VITE_AUTOSAVE_ENABLED=true`, `VITE_MERGE_PRECISION=beta` を記載。
+2. **Canary 対象登録**: `ops/canary/phase-A1.csv`（スプレッドシート連携）へ QA アカウントを追記し、Slack `#launch-autosave` に通知。
+3. **配布コマンド**: QA/開発は `pnpm run flags:pull` → `pnpm run flags:push --env qa` で `localStorage` を同期。ローカル確認用: `pnpm run flags:set autosave.enabled true`。
+4. **観測**: Canary 期間中は `scripts/monitor/collect-metrics.ts --window=15m` を 2h 間隔で実行し、`reports/canary/phase-A1/*.jsonl` を Analyzer に投入。
+5. **判定**: 上記メトリクスが表の基準を満たすことを QA リードが確認し、`RUNBOOK.md` の承認欄へサイン。
+6. **ロールバック即応**: 条件発生時は `pnpm run flags:rollback --phase A-0` を実行し、Slack 通知テンプレート `templates/alerts/rollback.md` を送信。再開は Phase A-1 からリトライ。
 
-### 2.3 ロールバックポリシー
-- いずれかの SLO を 24h 以内に復旧できない場合、前フェーズのフラグ値へ即時ロールバック。
-- ロールバック後は原因分析（Collector 集計→Analyzer レポート）を 1 営業日以内に共有し、再開時は Canary（QA のみ）から再スタート。
+#### ローカル切替手順書（I/O Contract）
+```bash
+# 1) 現状確認
+pnpm run flags:status
+
+# 2) AutoSave を個別検証する場合
+pnpm run flags:set autosave.enabled true
+
+# 3) 精緻マージ β を検証する場合
+pnpm run flags:set merge.precision beta
+
+# 4) 既定値へ戻す
+pnpm run flags:reset
+```
+
+### 2.3 モニタリング・チェックリスト
+- [ ] `Collector` → `Analyzer` → `Reporter` の ETL が 15m 間隔で動作し、保存時間/復元成功率/自動マージ率を集計。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+- [ ] `scripts/monitor/collect-metrics.ts` 実行ログを `reports/monitoring/` へ保存し、SLO ダッシュボードと整合を確認。
+- [ ] QA 成果物（テストケース表、リグレッションレポート）が `shared/qa/phase-*/` にアップロード済みであることをリリース前にレビュー。
+- [ ] `governance/policy.yaml` の SLO 閾値変更が必要な場合、リリース会議で承認を得る。
+
+### 2.4 ロールバック意思決定ツリー（Runbook 抜粋）
+```
+監視アラート発報?
+ └─いいえ → 継続モニタリング
+ └─はい
+     ├─SLO 違反検知? → はい
+     │   ├─24h 内に復旧可能な対処案あり? → いいえ → `flags:rollback --phase <prev>` 実行
+     │   │                                               └─ロールバック後 QA 再確認 → Phase 再開
+     │   └─はい → 対処案実行 + 2h 以内に再測定
+     └─QA 欠落/未承認? → はい → リリース凍結＋QA 補完
+         └─いいえ → インシデント対応プロトコル（Incident-001）
+```
+
+ロールバック後は 1 営業日以内に根本原因分析（RCA）を `reports/rca/` へ格納し、Phase 再開時は Canary（QA のみ）からやり直す。
 
 ## 3) 工数（概算）
 - AutoSave 実装 1.5–2.0 人日 + UI 0.5

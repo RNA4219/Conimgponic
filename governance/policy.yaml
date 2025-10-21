@@ -1,0 +1,27 @@
+# AutoSave & Precision Merge rollout policy
+slo:
+  autosave:
+    p95_latency_ms: 2500
+    recovery_success_rate: 0.995
+    crash_regression_pct: 5
+  merge:
+    auto_merge_rate: 0.8
+    incident_threshold_per_day: 3
+rollout:
+  phase_gate:
+    require_qa_artifacts: true
+    qa_artifacts:
+      - shared/qa/phase-A1/canary-report.md
+      - shared/qa/phase-A2/recovery-report.md
+      - shared/qa/phase-B0/diff-merge-report.md
+    slo_breach_window_hours: 24
+  rollback:
+    command: "pnpm run flags:rollback --phase <prev>"
+    notify:
+      slack_channel: "#launch-autosave"
+      template: templates/alerts/rollback.md
+monitoring:
+  collectors:
+    - scripts/monitor/collect-metrics.ts
+  report_sink: reports/monitoring/
+  decision_tree_ref: docs/IMPLEMENTATION-PLAN.md#24-ロールバック意思決定ツリーrunbook-抜粋
