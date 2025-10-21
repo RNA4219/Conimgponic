@@ -221,6 +221,26 @@ Day8 アーキテクチャの Reporter → Governance 流れに従い、マー�
 5. `merge:autosave:lock` — AutoSave ロック獲得/解放を Governance 監査に通知。
 6. すべてのログに `sceneId`, `section`, `ts`, `userId` を含め、Reporter 側の propose-only 原則に従って Git への自動書き込みは行わない。
 
+### 5.7 `merge.ts` I/O パターン整理
+
+#### 5.7.1 API・入出力一覧
+| API | 主入力 | 主出力 | 副作用 | 参考 | 備考 |
+| --- | --- | --- | --- | --- | --- |
+| `merge3(input, profile?)` | `MergeInput` (`base`/`ours`/`theirs`/`sections?`) | `{ hunks, mergedText, stats }` | なし（純関数） | 【F:docs/MERGE-DESIGN-IMPL.md†L16-L110】 | フラグ `merge.precision` に応じた閾値適用を前提。 |
+| `queueMergeCommand(cmd)` | `MergeCommand`（`setManual`/`setAI`/`commitManualEdit` など） | `Promise<void>` | `store.ts` 経由で `Scene.manual` 更新、`merge:trace:*` ログ発火 | 【F:docs/MERGE-DESIGN-IMPL.md†L170-L205】 | AutoSave ロックとの協調が必須。 |
+| `subscribeMergeEvents(listener)` | `listener(event)` | `unsubscribe()` | コマンド適用結果・統計更新を publish | 【F:docs/MERGE-DESIGN-IMPL.md†L170-L205】 | DiffMergeView がハンク再描画に利用。 |
+| `persistMergeTrace(hunks, stats)` | ハンク配列・統計 | `Promise<TraceMeta>` | `runs/<ts>/merge.json` へ書込、Collector へ `merge:trace:*` | 【F:docs/MERGE-DESIGN-IMPL.md†L205-L222】 | AutoSave と同じ OPFS 安全策を適用。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L3-L132】 |
+
+#### 5.7.2 AutoSave API との整合ポイント
+- AutoSave の `initAutoSave` は `snapshot` / `flushNow` / `dispose` を提供するため、`queueMergeCommand` 適用後に `flushNow` を遅延トリガし `current.json` / `index.json` の整合を維持する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L3-L132】
+- `AutoSaveError.retryable` 判定と Merge コマンドの再試行を整合させ、ロック未取得（`lock-unavailable`）は AutoSave の指数バックオフに合わせて再送する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L61-L180】
+- AutoSave が `saved` を発火する前に `persistMergeTrace` が完了すると Collector 側の JSONL 整合が崩れるため、`subscribeMergeEvents` で AutoSave `saved` を待ってから `merge:trace:persisted` を出力する順序を固定する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L186-L318】【F:docs/MERGE-DESIGN-IMPL.md†L205-L222】
+
+#### 5.7.3 主要テスト観点（事前リスト）
+1. **純粋マージ結果**: `merge3` が `sections` 有無にかかわらず determinism を維持し、`stats.avgSim` が算出される。`prefer` 強制時の結果もスナップショット化する。【F:docs/MERGE-DESIGN-IMPL.md†L16-L110】
+2. **コマンド適用と AutoSave 協調**: `queueMergeCommand` → `store.ts` 更新 → AutoSave `flushNow` → `persistMergeTrace` の順序が保証され、`AutoSaveError.retryable` ケースで再試行イベントが同期する。【F:docs/MERGE-DESIGN-IMPL.md†L170-L222】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L61-L209】
+3. **Collector 連携**: `persistMergeTrace` 成功時に `merge:trace:persisted` が JSONL 出力され、失敗時は `merge:trace:error` で `retryable` フラグを明示し Day8 パイプラインへ通知する。【F:docs/MERGE-DESIGN-IMPL.md†L205-L222】【F:Day8/docs/day8/design/03_architecture.md†L3-L27】
+
 ## 6) 証跡
 - `runs/<ts>/merge.json` に hunkごとの `{section, similarity, decision}` を記録
 - `meta.json` に `merge_profile` を追記
