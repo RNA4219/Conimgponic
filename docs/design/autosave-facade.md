@@ -43,7 +43,18 @@ Collector は CI ログを JSONL 形式で蓄積し Analyzer がメトリクス�
 - `retryable=false` の致命エラーでは UI 通知と同時に Collector へ重要度高イベントを送信し、Analyzer が根本原因分析に利用できるよう `cause` 要約を含める。JSONL 破壊を防ぐため、改行は含めず安全なサマリへ整形する。
 - `history-overflow` は情報レベルで Collector 連携対象外とし、ローカルログのみ（1 行）へ出力することでノイズを抑制する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L141】
 
-### 3.1 Collector / Analyzer 連携条件チェックリスト
+### 3.1 再試行・通知ポリシー表
+`src/lib/autosave.ts` の `AUTOSAVE_FAILURE_PLAN` を基準に、Collector/Analyzer 連携と再試行制御を下表へ集約する。【F:src/lib/autosave.ts†L21-L74】
+
+| エラーコード | `retryable` | 再試行ポリシー | Collector 通知 | Analyzer 取り込み | 備考 |
+| --- | --- | --- | --- | --- | --- |
+| `disabled` | false | スケジューラ起動前に停止（no-op） | ログ送信なし。UI は `phase='disabled'` を維持。 | 影響なし。 | フラグ OFF 時の no-op 要件を保証。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L47-L55】 |
+| `lock-unavailable` | true | 指数バックオフで最大リース時間以内に再試行。 | 1 サイクルにつき 1 行の警告を Collector へ送信。 | Analyzer はバックオフ回数と `retryCount` でフェーズ遷移を追跡。 | ロック取得が継続失敗した場合のみ UI へ警告。 |
+| `write-failed` | true | IO エラーは指数バックオフ、復旧後は直近失敗回数をリセット。 | 1 行の警告ログ。`context` に書込バイト数を含める。 | Analyzer が保存遅延を計測する入力とする。 | 連続失敗で `phase='error'` 遷移。 |
+| `data-corrupted` | false | 即時停止、ユーザ通知。 | Collector へ高優先度エラーを 1 行送信。 | Analyzer は復元失敗率指標に計上。 | ログには `cause` 要約を含める。 |
+| `history-overflow` | false | FIFO GC 実行後に停止（保存継続はしない）。 | Collector 対象外、ローカル情報ログのみ。 | Analyzer へは影響なし。 | 容量超過時は GC 後に UI を保持。 |
+
+### 3.2 Collector / Analyzer 連携条件チェックリスト
 | 条件 | 参照元 | AutoSave 側仕様 | 想定テスト |
 | --- | --- | --- | --- |
 | JSONL 1 行 1 イベント | Day8 アーキテクチャ【F:Day8/docs/day8/design/03_architecture.md†L1-L18】 | `AutoSaveError` は `AUTOSAVE_FAILURE_PLAN` の `summary` に沿って Collector 送信を単一行に制限 | `AUTOSAVE_ERROR_TEST_MATRIX` の `lock-unavailable` ケースでログ件数を検証 |

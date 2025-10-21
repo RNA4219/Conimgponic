@@ -10,6 +10,9 @@ export interface AutoSaveOptions {
   disabled?: boolean
 }
 
+/**
+ * 保存ポリシー既定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 の表と同期する必要がある。
+ */
 export const AUTOSAVE_DEFAULTS: Required<AutoSaveOptions> = Object.freeze({
   debounceMs: 500,
   idleMs: 2000,
@@ -163,6 +166,13 @@ export const AUTOSAVE_ERROR_TEST_MATRIX: readonly AutoSaveErrorScenario[] = Obje
   }
 ])
 
+/**
+ * AutoSave スケジューラを初期化する。
+ *
+ * 副作用: Web Locks/フォールバックロックの取得、`current.json`/`index.json` への書き込み、履歴 GC/容量制限の適用。
+ * 例外: `AutoSaveError` を throw。`disabled` 判定時は `code='disabled'` を使用し、Collector への通知は行わない。
+ * フラグ `autosave.enabled=false` または `options.disabled=true` の場合は永続化を一切行わず、`phase='disabled'` のスナップショットと no-op な `flushNow` を返す。
+ */
 export function initAutoSave(
   getStoryboard: StoryboardProvider,
   options?: AutoSaveOptions
@@ -170,6 +180,12 @@ export function initAutoSave(
   throw new Error('initAutoSave not implemented yet')
 }
 
+/**
+ * 復元候補を提示するためのメタデータを取得する。
+ *
+ * 副作用: OPFS 読み出しのみ。
+ * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
+ */
 export async function restorePrompt(): Promise<
   | null
   | { ts: string; bytes: number; source: 'current' | 'history'; location: string }
@@ -177,14 +193,32 @@ export async function restorePrompt(): Promise<
   throw new Error('restorePrompt not implemented yet')
 }
 
+/**
+ * `current.json` から storyboard を復元し UI へ適用する。
+ *
+ * 副作用: UI ステート更新のみ（永続化書き込みなし）。
+ * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
+ */
 export async function restoreFromCurrent(): Promise<boolean> {
   throw new Error('restoreFromCurrent not implemented yet')
 }
 
+/**
+ * 指定した履歴タイムスタンプから storyboard を復元する。
+ *
+ * 副作用: 履歴ファイル読み込み、必要に応じたロック取得、UI ステート更新。
+ * 例外: `code='data-corrupted'` または `code='lock-unavailable'` の `AutoSaveError` を throw。
+ */
 export async function restoreFrom(ts: string): Promise<boolean> {
   throw new Error('restoreFrom not implemented yet')
 }
 
+/**
+ * `index.json` の履歴一覧を返す。
+ *
+ * 副作用: OPFS 読み出しのみ。
+ * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
+ */
 export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 > {
