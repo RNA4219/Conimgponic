@@ -31,9 +31,17 @@ stateDiagram-v2
     ReadOnly --> [*]: user reload / manual recovery
 ```
 
-- `ResolveEnv` フェーズでフラグ `autosave.enabled` と `AcquireLockOptions.mode` を評価し、`docs/IMPLEMENTATION-PLAN.md` の Web Lock 優先ポリシーに従う。【F:docs/IMPLEMENTATION-PLAN.md†L32-L56】
+- `ResolveEnv` フェーズでフラグ `autosave.enabled` と `AcquireLockOptions.mode` を評価し、`docs/IMPLEMENTATION-PLAN.md` の Web Lock 優先ポリシーに従う。【F:docs/IMPLEMENTATION-PLAN.md†L34-L70】
 - `AcquireWeb` 失敗時は `DOMException.name` に応じてフォールバックへ遷移し、指数バックオフ（0.5→1→2s、最大3回）で再試行する (`docs/AUTOSAVE-DESIGN-IMPL.md` §3.4)。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L99-L149】
 - `AcquireFallback` では `project/.lock` の TTL 30s、`updatedAt`/`mtime` の二重チェックで競合判定し、`LockConflictError` を非再試行扱いとして閲覧専用モードに遷移する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L164】
+
+### 2.1 要件突き合わせチェックリスト
+| 実装計画要件 | 状態図での対応 | 備考 |
+| --- | --- | --- |
+| Web Lock 優先取得（`navigator.locks.request`） | `ResolveEnv → AcquireWeb` を既定経路に設定 | フラグ評価後に常に Web Lock 先行を試行する。【F:docs/IMPLEMENTATION-PLAN.md†L34-L56】 |
+| TTL 自前更新（25s 以内の心拍） | `Active → Renewing` → `Active` | `expiresAt-5s` タイマーで `renewProjectLock` を強制実行。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L84-L132】 |
+| フォールバック `.lock` 運用（UUID, mtime, TTL=30s） | `AcquireFallback` の遷移条件 | `LockConflictError` で ReadOnly に遷移し、Analyzer へ衝突を通知。【F:docs/IMPLEMENTATION-PLAN.md†L56-L71】 |
+| 閲覧専用モード移行（失敗時） | `AcquireWeb/AcquireFallback/Renewing → ReadOnly` | UI バナー表示と入力無効化をイベントで伝播。【F:docs/IMPLEMENTATION-PLAN.md†L56-L71】 |
 
 ## 3. API シグネチャ（案）
 ```ts
@@ -106,6 +114,10 @@ export function bindTelemetryEmitter(emitter: LockTelemetryEmitter): void;
 - `bindTelemetryEmitter` で Collector 連携のフックを外部注入し、Analyzer の JSONL スキーマを侵さない（`Day8/docs/day8/design/03_architecture.md` の Collector→Analyzer パイプラインにおける副作用隔離）。【F:Day8/docs/day8/design/03_architecture.md†L1-L32】
 - `ProjectLockLease.expiresAt` は Web Lock 時 25s（`docs/AUTOSAVE-DESIGN-IMPL.md` §3.1）を標準値とし、フォールバックは `updatedAt + ttlSeconds` を採用する。
 
+### 3.1 Analyzer/Collector 整合性
+- Telemetry Payload は既存 JSONL の `feature=autosave` タグへ統合し、Collector 側がイベントスキーマ変更なしで取り込めるよう `record()` には名前空間済みイベントのみ渡す。
+- Analyzer ではロック取得率/競合率/未解放率を派生メトリクス化し、`workflow-cookbook/` への追加ファイル生成を禁止（Day8 方針）。【F:Day8/docs/day8/design/03_architecture.md†L1-L32】【F:docs/IMPLEMENTATION-PLAN.md†L56-L71】
+
 ## 4. テレメトリ & UI イベント列挙
 | Event | 発火タイミング | Payload 例 | Collector チャネル | UI 連携 |
 | --- | --- | --- | --- | --- |
@@ -131,6 +143,7 @@ export function bindTelemetryEmitter(emitter: LockTelemetryEmitter): void;
 | UI イベント配信 | node:test | `tests/locks/events.spec.ts` | `subscribeLockEvents` で購読したリスナーへ順序通りイベントが届くことをアサート。
 
 - すべて TDD で先行実装し、`node:test` ランナー＋`ts-node` 変換で `strict` 型チェックを通す。
+- `tests/autosave/__mocks__/opfs.ts` を再利用し、フォールバックファイル操作をモック。Collector 連携は `tests/telemetry/__mocks__/collector.ts`（新設）で検証する。
 
 ## 6. 例外階層と `retryable` ルール
 | 例外名 | `retryable` | 主なトリガー | 対応 | Analyzer/Collector 影響 |
