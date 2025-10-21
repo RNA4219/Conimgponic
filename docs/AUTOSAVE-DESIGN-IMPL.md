@@ -11,15 +11,15 @@
 
 ## 1) 保存ポリシー
 
-### 1.1 保存ポリシー要件マッピング
-| ポリシー | 既定値 / 閾値 | `src/lib/autosave.ts` 責務 | `docs/IMPLEMENTATION-PLAN.md` 参照 | 補足 / 運用ノート |
+### 1.1 保存パラメータと API マッピング
+| 保存パラメータ | `AutoSaveOptions` キー | 既定値 (`AUTOSAVE_DEFAULTS`) | 主担当 API/モジュール | 補足 / 運用ノート |
 | --- | --- | --- | --- | --- |
-| デバウンス遅延 | 500ms | 入力検知後 500ms 待機して保存ジョブをスケジュールし、UI からのイベントスパイクを抑制する。 | §1 対象モジュール「AutoSave ファサード」【F:docs/IMPLEMENTATION-PLAN.md†L52-L67】 | 保存スケジューラで 1 キューのみ維持し、重複イベントは合算。 |
-| アイドル猶予 | 2000ms | アイドル検知後にロック取得・書き込みへ遷移し、Indicator へ状態を伝播する。 | §1 対象モジュール + フラグ制御【F:docs/IMPLEMENTATION-PLAN.md†L52-L85】 | `phase='awaiting-lock'` へ遷移させ、UI と Collector ログの整合を確保する。 |
-| 履歴世代上限 | 20 世代 | `history/<ISO>.json` を FIFO 管理し、`index.json` と整合させる。 | フェーズ運用チェックリスト（復旧 SLO）【F:docs/IMPLEMENTATION-PLAN.md†L95-L135】 | 世代番号は単調増加し、削除時は `index.json` を同期更新。 |
-| 容量上限 | 50MB | 履歴総バイト数を監視し、閾値超過時は最古世代から削除する。 | 受入基準（保存時間・復元率）【F:docs/IMPLEMENTATION-PLAN.md†L137-L170】 | Collector が参照するメトリクスを乱さないよう削除ログは 1 行に制限。 |
-| ロック優先順位 | Web Locks → `src/lib/locks.ts` フォールバック | Web Lock で失敗した場合はフォールバックロックを同一 UUID で取得し、排他制御を維持する。 | ロックモジュール要件整理【F:docs/IMPLEMENTATION-PLAN.md†L69-L134】 | フォールバックは `project/.lock` のみに副作用を限定し Day8 パイプラインへ干渉させない。 |
-| フラグ制御 | `autosave.enabled` (`false` 初期) + `options.disabled` | フラグ OFF/disabled では永続化 API を一切呼び出さず、`phase='disabled'` を返す。 | フラグ定義 + 回帰試験計画【F:docs/IMPLEMENTATION-PLAN.md†L7-L34】【F:docs/IMPLEMENTATION-PLAN.md†L171-L207】 | `initAutoSave` 戻り値は no-op `flushNow`/`dispose` を返却し、Collector へログを送出しない。 |
+| デバウンス遅延 | `debounceMs` | `500` | `initAutoSave`（スケジューラ） | 入力検知後 500ms 待機して保存ジョブをキューイング。UI からのイベントスパイクを抑制する。 |
+| アイドル猶予 | `idleMs` | `2000` | `initAutoSave` / `AutoSaveIndicator` | デバウンス完了後 2s アイドルを確認し、ロック要求へ遷移して状態を UI へ伝播する。 |
+| 履歴世代上限 | `maxGenerations` | `20` | `initAutoSave`（履歴 GC） | `history/<ISO>.json` を FIFO 管理し、`index.json` と整合させる。 |
+| 容量上限 | `maxBytes` | `50 * 1024 * 1024` | `initAutoSave`（容量ガード） | 50MB 超過時は古い世代から削除し、Collector/Analyzer が参照するメトリクスを変動させない。 |
+| フィーチャーフラグ | `disabled`（オプション） / `autosave.enabled`（設定値） | `false` / `false` (Phase A 既定) | `initAutoSave` / `App.tsx` | [実装計画](./IMPLEMENTATION-PLAN.md) §0 で規定。いずれかが無効化判定に一致した場合は永続化 API を呼ばず `phase='disabled'` を維持する。 |
+| ロック優先順位 | - | Web Locks → フォールバック | `src/lib/locks.ts` | Web Locks が不可時は `project/.lock` を同一 UUID で保持し、Collector/Analyzer が扱うパスに干渉しない。 |
 
 ### 1.2 ポリシー適用フロー
 - デバウンス 500ms + アイドル 2s で `project/autosave/current.json` を保存。
@@ -122,31 +122,10 @@ export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 >;
 ```
-- `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する。`disabled` が `true` または `autosave.enabled=false` の場合、`initAutoSave` は `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。【F:docs/IMPLEMENTATION-PLAN.md†L7-L34】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L23】
-- `flushNow()` は保存可能な状態（`idle` or `debouncing`）であれば 2s アイドル待機をスキップし、ロック取得と書込の完了まで待つ。実行中フライトがある場合はその完了を待機し、同時実行を避ける。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L86-L114】
-- `snapshot()` は内部状態の即時スナップショットを返し UI 側の `isReadOnly` や `lastError` 表示に利用する。内部ステートは後述の状態遷移表に従う。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L118-L141】
-
-### 3.2 エラー分類
-| コード | `retryable` | 発生契機 | Collector 送信方針 |
-| --- | --- | --- | --- |
-| `disabled` | `false` | フラグ OFF/`options.disabled` | ローカル警告のみ。Collector へは送信しない。 |
-| `lock-unavailable` | `true` | Web Lock/フォールバック両方取得失敗 | 1 行のみ Collector へ送信し、指数バックオフ後に再試行。【F:docs/IMPLEMENTATION-PLAN.md†L69-L134】 |
-| `write-failed` | `true` または `false` | OPFS 書込失敗（I/O・Quota） | I/O 系は `retryable=true`、論理不整合は `false`。Collector には `duration_ms` と `feature:'autosave'` を付与。【F:Day8/docs/day8/design/03_architecture.md†L1-L18】 |
-| `data-corrupted` | `false` | `current.json`/`index.json` の不整合・JSON 破損 | Collector へ重大イベントとして通知し、UI は復旧手順を案内。 |
-| `history-overflow` | `false` | 履歴 FIFO/容量制御による削除 | ローカルログのみ（ノイズ抑制）。Collector スキーマから除外。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L120-L141】 |
-
-### 3.3 履歴ローテーション処理
-1. `index.json` の世代配列を更新してから `history/<ISO>.json` を追記し、両ファイルが整合するようトランザクションを構成する。
-2. 上限を超えた場合は FIFO で最古世代を削除し、削除結果を `index.json` へ反映する。
-3. 容量 50MB 超過時は総バイト数を再計算し、しきい値内に収まるまで追加削除を実行する。
-4. ローテーションログは Collector ではなくローカル警告ログへ 1 行だけ出力することで、Day8 パイプラインのノイズを防ぐ。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
-
-### 3.4 TDD 観点（フラグ / 復旧シナリオ）
-- フラグ OFF (`autosave.enabled=false` または `options.disabled=true`) で `initAutoSave` が no-op ランナーを返し、`snapshot().phase==='disabled'` を維持するユニットテスト。【F:docs/IMPLEMENTATION-PLAN.md†L171-L207】
-- フラグ ON 時にデバウンス→アイドル→ロック取得→`current.json` 書込→`index.json` 更新→履歴 FIFO の順で完了する保存シーケンスを Fake タイマーで検証するテスト。
-- `lock-unavailable` が一定回数続いた後でもバックオフで復旧するパスと、`retryable=false` で停止するパスを分岐させる再試行テスト。
-- `restorePrompt`/`restoreFrom*` が破損 JSON を検出して `data-corrupted` を投げ、成功時には UI へスナップショットを適用できる復旧シナリオテスト。
-- 履歴ローテーションが世代数・容量しきい値を超えた場合に正しく古いファイルを削除し、`history-overflow` ログが 1 行に留まることを確認するテスト。【F:docs/IMPLEMENTATION-PLAN.md†L95-L170】
+- `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する（`src/lib/autosave.ts` の `AUTOSAVE_DEFAULTS` を参照）。`disabled` が `true` または設定フラグ `autosave.enabled=false` の場合、`initAutoSave` は [実装計画](./IMPLEMENTATION-PLAN.md) §0 の no-op 要件を満たすため `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。
+- 例外は `AutoSaveError` を基本とし、`retryable` が true のケース（ロック取得不可・一時的な書込失敗）は指数バックオフで再スケジュールする。`retryable=false` はユーザ通知＋即時停止。`code='disabled'` は再試行禁止の静的ガードとして扱い、ログのみ残して停止する。
+- `flushNow()` は保存可能な状態（`idle` or `debouncing`）であれば 2s アイドル待機をスキップし、ロック取得と書込の完了まで待つ。実行中のフライトがある場合はその完了を待機し、同時実行を避ける。
+- `snapshot()` は内部状態の即時スナップショットを返し UI 側の `isReadOnly` や `lastError` 表示に利用する。内部ステートは後述の状態遷移表に従う。
 
 ## 4) API 最終仕様と状態遷移
 
