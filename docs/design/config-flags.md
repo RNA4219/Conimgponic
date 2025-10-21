@@ -1,93 +1,116 @@
 # Config Flags 設計メモ
 
-## 1. 目的
-- AutoSave / Diff Merge を段階的に公開するため、フラグ値の解決と伝播を一箇所に集約する。
-- `docs/CONFIG_FLAGS.md` に定義された優先順位と既定値をコードへ同期し、誤差が生じた際はレビューで検出できるようにする。【F:docs/CONFIG_FLAGS.md†L1-L90】
-- AutoSave モジュールの不変条件や保存ポリシー、UI 表示要件との整合を担保する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L37】
-- Day8 パイプラインへ出力する CLI/Telemetry の JSON 互換を維持し、Collector→Analyzer→Reporter への影響を遮断する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+## 1. 背景と目的
+- `docs/IMPLEMENTATION-PLAN.md` §0.2 の設定ソースマッピングに従い、`src/config/flags.ts` で `env → localStorage → docs/CONFIG_FLAGS.md` の優先順位を集約する。【F:docs/IMPLEMENTATION-PLAN.md†L10-L46】
+- AutoSave (`App.tsx`) と Diff Merge (`MergeDock.tsx`) の公開を段階導入し、既存 UI 動線・CLI/JSON 出力を後方互換で維持する。【F:docs/IMPLEMENTATION-PLAN.md†L5-L18】【F:docs/CONFIG_FLAGS.md†L24-L90】
+- Flag 変更イベントをテレメトリへ伝搬し、Day8 パイプライン（Collector→Analyzer→Reporter）の JSONL 契約を維持する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
 
-## 2. モジュール構成
+## 2. データフロー
+```mermaid
+graph TD
+  App[App.tsx 初期化] -->|useFlagSnapshot()| Flags(resolveFlags)
+  Merge[MergeDock.tsx 初期化] -->|useFlagSnapshot()| Flags
+  Flags -->|lookup| Env(import.meta.env)
+  Flags -->|fallback| Storage(localStorage)
+  Flags -->|default| Defaults(DEFAULT_FLAGS from docs/CONFIG_FLAGS.md)
+  Flags --> Snapshot(FlagSnapshot with source metadata)
+  Snapshot -->|autosave.enabled| AutoSaveRunner(AutoSave bootstrap)
+  Snapshot -->|merge.precision| MergeUI(Diff Merge visibility)
+  Snapshot -->|emit| Bus(FlagSubscriberBus)
 ```
-src/config/
-  ├─ index.ts          # 既存 env / localStorage ラッパー（OLLAMA_BASE など）
-  ├─ flags.ts          # 新規: resolveFlags() / useFlags()
-  └─ __tests__/...     # resolveFlags のユニットテスト
-```
-- 既存の `src/config/flags.ts`（boolean 型のみ）は廃止予定。新設モジュールの導入段階で、旧 API の `resolveFeatureFlag` 互換関数を一時的に残しつつ deprecate メッセージを付与する。
-- `flags.ts` は `DEFAULT_FLAGS` を内包し、`docs/CONFIG_FLAGS.md` と同一 JSON をエクスポートするチェックを CI に追加する（別タスク）。
+- `FlagSnapshot` は各フラグ値と決定ソース (`'env' | 'storage' | 'default'`) を保持し、後方互換のため `localStorage` 直接参照と同値比較できるようにする。
+- `Bus` は Phase B でのホットリロード検討に備え、`subscribeFlags` 経由で差分通知（`prev`/`next`）を送出する。
 
-## 3. 公開 API（案）
+## 3. API 仕様案 (`src/config/flags.ts`)
 ```ts
+export type FlagSource = 'env' | 'storage' | 'default';
+
 export interface FlagSnapshot {
-  autosave: { enabled: boolean; phase: 'phase-a' | 'phase-b' | 'disabled' };
-  merge: { precision: 'legacy' | 'beta' | 'stable' };
-  source: {
-    autosaveEnabled: 'env' | 'storage' | 'default';
-    mergePrecision: 'env' | 'storage' | 'default';
+  readonly autosave: { readonly enabled: boolean };
+  readonly merge: { readonly precision: 'legacy' | 'beta' | 'stable' };
+  readonly source: {
+    readonly autosaveEnabled: FlagSource;
+    readonly mergePrecision: FlagSource;
   };
 }
 
-export interface FlagInputs {
-  env?: Partial<Record<'VITE_AUTOSAVE_ENABLED' | 'VITE_MERGE_PRECISION', string | undefined>>;
-  storage?: Pick<Storage, 'getItem'>;
-  defaults?: typeof DEFAULT_FLAGS;
-  mode?: 'browser' | 'cli';
+export interface FlagResolveOptions {
+  readonly env?: Partial<Record<'VITE_AUTOSAVE_ENABLED' | 'VITE_MERGE_PRECISION', unknown>>;
+  readonly storage?: Pick<Storage, 'getItem'> | null;
+  readonly defaults?: typeof DEFAULT_FLAGS;
+  readonly mode?: 'browser' | 'cli';
 }
 
-export function resolveFlags(inputs?: FlagInputs): FlagSnapshot;
-export function getFlagSnapshot(): FlagSnapshot; // memoized, throws before init
-export function useFlagSnapshot(): FlagSnapshot; // React hook (App.tsx)
-export function subscribeFlags(listener: (next: FlagSnapshot) => void): () => void;
+export interface FlagSubscriber {
+  (next: FlagSnapshot, diff: { readonly autosaveChanged: boolean; readonly mergeChanged: boolean }): void;
+}
+
+export declare const DEFAULT_FLAGS: {
+  readonly autosave: { readonly enabled: false };
+  readonly merge: { readonly precision: 'legacy' };
+};
+
+export function resolveFlags(options?: FlagResolveOptions): FlagSnapshot;
+export function getFlagSnapshot(): FlagSnapshot; // 初回呼出し前は FlagResolutionError を送出
+export function useFlagSnapshot(): FlagSnapshot; // React hook, strict mode 二重呼出し対応
+export function subscribeFlags(listener: FlagSubscriber): () => void; // 解除関数を返却
+export function resolveFeatureFlag(name: 'autosave.enabled' | 'merge.precision', options?: FlagResolveOptions): {
+  readonly value: boolean | 'legacy' | 'beta' | 'stable';
+  readonly source: FlagSource;
+};
 ```
-- `resolveFlags` は `env → localStorage → defaults` の順に評価し、`FlagSnapshot.source` に決定経路を残す。`mode='cli'` のときは storage をスキップする。
-- `subscribeFlags` は Phase B のホットリロードを見据えた API。初期実装では storage 変更検知を持たないが、差分検出イベントを注入することで後方互換を保つ。
+- `DEFAULT_FLAGS` は `docs/CONFIG_FLAGS.md` に定義された JSON を `as const` で埋め込み、CI の snapshot で乖離検知する（別タスク）。
+  - 初期値: `autosave.enabled=false`, `merge.precision='legacy'`。
+  - `localStorage` キーは `autosave.enabled` / `merge.precision` を継承し、Phase B で `flag:` プレフィックスへ移行する。
+- `mode='cli'` の場合は `storage` を強制無視し、Node 実行（`pnpm run flags:*`）との互換性を確保する。
+- 旧 `resolveFeatureFlag` API はラッパーとして残し、Phase B-1 までに削除通知を出す。
 
-## 4. `src/config/index.ts` との依存性
-- `getFlagSnapshot()` 初期化時に `src/config/index.ts` の副作用（`localStorage` 参照、`import.meta.env` 参照）を横取りしない。`index.ts` の現状は `OLLAMA_BASE` などを即時評価する軽量関数であり、後方互換のため呼び出し順序を維持する。【F:src/config.ts†L1-L8】
-- `src/config/index.ts` からは `export { DEFAULT_FLAGS }` のみを再エクスポートしない。責務分離のため `flags.ts` 単体で import する。
-- 将来的に `src/config/index.ts` へ `FlagSnapshot` を透過させる場合も、既存の `OLLAMA_BASE` API 形状（同期的関数）を崩さない。
+## 4. `FlagResolutionError` と例外設計
+- 不正値（例: `VITE_MERGE_PRECISION=unknown`）や JSON 既定値の欠損時は `FlagResolutionError` を送出し、`code` と `retryable` を明示する。
+  ```ts
+  export type FlagResolutionErrorCode = 'invalid-value' | 'defaults-missing';
+  export class FlagResolutionError extends Error {
+    readonly code: FlagResolutionErrorCode;
+    readonly retryable: boolean; // retryable=false なら UI でフェイルクローズ
+  }
+  ```
+- `retryable=true` のケース（`localStorage` 読取失敗など）は UI で再試行（例: `subscribeFlags` 再呼出し）を可能にする。`retryable=false` はフェイルセーフ（AutoSave 非起動 / Diff Merge 非表示）。
+- 既存 `ProjectLockError` と同様に `name` を固定し、`cause` を保持することで Day8 テレメトリへシリアライズ可能にする。【F:src/lib/locks.ts†L63-L87】
 
-## 5. コンシューマ API 形状
-### App.tsx
-```ts
-const flags = useFlagSnapshot();
-useEffect(() => {
-  if (!flags.autosave.enabled) return;
-  bootstrapAutoSave(flags.autosave, {/* options */});
-}, [flags.autosave]);
-```
-- AutoSave の起動条件と保存ポリシーは `docs/AUTOSAVE-DESIGN-IMPL.md` に基づき、`enabled=false` 時は一切の副作用を発生させない。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L37】
-- 既存の手動保存ショートカットや `setOllamaBase` は変更せず、`useFlagSnapshot()` で得たフェーズ情報をテレメトリへ送出するのみ。【F:src/App.tsx†L1-L79】
+## 5. `src/config.ts`（旧 `index.ts` 相当）との互換性
+- `OLLAMA_BASE` など既存同期 API の初期化順序を変更しない。`flags.ts` はデフォルト輸出せず、利用側は明示的に import する。【F:src/config.ts†L1-L8】
+- `flags.ts` で `localStorage` をアクセスする際は lazy 評価（呼出し時）に限定し、`App.tsx` 既存ロジックと衝突しないよう `try/catch` で囲う。
+- `setOllamaBase` など既存セッターに副作用を追加しない。Flag 値を `localStorage` に書き込む CLI/Runbook は別途 `scripts/flags/*.ts` が担う。
 
-### MergeDock.tsx
-```ts
-const { merge } = useFlagSnapshot();
-const showDiffTab = merge.precision !== 'legacy';
-```
-- `precision='legacy'` の場合は現行タブ構成（Compiled/Shot/Assets/Import/Golden）を保持する。`beta`/`stable` の場合のみ Diff Merge タブと `pref='diff-merge'` を有効化する。【F:src/components/MergeDock.tsx†L1-L89】【F:docs/CONFIG_FLAGS.md†L24-L47】
-- タブ表示切替時にはアクセシビリティラベルと順序を保持し、テレメトリ（Collector）へは既存スキーマで通知する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+## 6. コンシューマ設計
+### 6.1 `App.tsx`
+- `useFlagSnapshot()` を呼び、`flags.autosave.enabled` が `true` のときのみ AutoSave ブートストラップ (`bootstrapAutoSave(flags.autosave)`) を非同期実行する。
+- Flag 変更時（`subscribeFlags`）に AutoSave ワーカーへ `lease` 状態を伝播し、`enabled=false` へ戻った場合はワーカー終了と UI インジケータ停止を保証する。
+- 既存キーバインド・手動保存フローを不変とし、Flag が `false` のときは副作用（`setInterval`、ロック取得）を作らない。【F:src/App.tsx†L1-L79】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L37】
 
-## 6. 後方互換性
-- 旧 `localStorage` キー（`autosave.enabled`, `merge.precision`, `dockOpen`）はそのまま読み取る。未設定時に限り `flag:` プレフィックスへ移行する。
-- `resolveFeatureFlag`（旧 API）は `resolveFlags` のラッパーとして残し、deprecated JSDoc を追加する。削除時期は Phase B-1 のリリースノートで告知。
-- CLI/JSON 出力は Day8 の Collector が期待するキー名を維持し、`source` 情報はメタデータとして別フィールドに出力する。
+### 6.2 `MergeDock.tsx`
+- `const { merge } = useFlagSnapshot(); const showDiff = merge.precision !== 'legacy';` を起点に Diff Merge タブ表示可否を制御する。
+- `beta`/`stable` 時は Diff Merge タブを追加し、既存タブ順序とアクセシビリティラベルを維持する。`legacy` 時は現在の 5 タブ構成を保つ。【F:docs/IMPLEMENTATION-PLAN.md†L23-L31】
+- Flag 変更時は開いているタブが非表示になる場合に `Golden` タブへフォールバックし、テレメトリへ `merge.precision` のソース情報を付与する。
 
-## 7. レビュー用チェックリスト
-- [ ] `DEFAULT_FLAGS` が `docs/CONFIG_FLAGS.md` と byte-to-byte で一致している。
-- [ ] `resolveFlags()` のユニットテストが env/storage/default の三経路と CLI モードを網羅している。
-- [ ] AutoSave 初期化テストで `enabled=false` の際に副作用が起きていない。
-- [ ] MergeDock のタブ構成スナップショットが `legacy` のまま安定している。
-- [ ] Telemetry/CLI 出力が既存 JSONL 契約と互換である（Day8 ドキュメント参照）。
+## 7. フラグ変化テスト観点（TDD ケース）
+| ID | シナリオ | 期待挙動 | テスト種別 |
+| --- | --- | --- | --- |
+| A1 | `autosave.enabled=false`（既定値）で初期化 | AutoSave ワーカー未起動、ロック取得なし、UI インジケータ非表示 | Node unit (`tests/autosave/flags.disabled.test.ts`) |
+| A2 | Env `VITE_AUTOSAVE_ENABLED=true` → Flag 解決 | AutoSave ブート起動、`source.autosaveEnabled='env'` | Node unit + React hook (`tests/autosave/flags.enabled-env.test.ts`) |
+| A3 | Storage 切替 (`localStorage.autosave.enabled` トグル) | `subscribeFlags` で差分検知し、AutoSave ワーカー開始/停止を即時反映 | Integration (`tests/autosave/flags.toggle.test.ts`) |
+| A4 | 無効値（`VITE_AUTOSAVE_ENABLED=foo`） | `FlagResolutionError{code:'invalid-value', retryable=false}`、AutoSave 未起動 | Unit |
+| M1 | `merge.precision=legacy` | Diff Merge タブ非表示、既存タブ順序 Snapshot 一致 | React UI snapshot (`tests/merge/flags.legacy.test.ts`) |
+| M2 | Env `VITE_MERGE_PRECISION=beta` | Diff Merge タブ表示、アクセシビリティラベル保持、`source.mergePrecision='env'` | React UI + accessibility |
+| M3 | Storage 値 `stable` へ更新 | `subscribeFlags` 経由でタブ表示更新、既存タブ state を `Golden` へフォールバック | Integration |
+| M4 | 無効値（`localStorage.merge.precision='ga'`） | `FlagResolutionError{code:'invalid-value', retryable=true}` → 再試行待ち、Diff Merge 非表示 | Unit |
+| C1 | CLI モード (`mode='cli'`) | Storage を読まず既定値採用、`source.*` が `'default'` になる | Node unit |
+| C2 | Flag Snapshot 連続取得 | メモ化が働き、再解決が発生しないことを `Symbol.for('nodejs.util.inspect.custom')` 等で検証 | Unit |
 
-## 8. ゲートコマンド
-```bash
-# フラグ解決ユニットテスト
-pnpm exec node --test tests/config/flags.resolve.test.ts
+- 各テストは **先に失敗テストを実装 → 実装 → リファクタ** の順で TDD を徹底する。
+- テストデータは `docs/CONFIG_FLAGS.md` の既定値 JSON を fixture 化し、後方互換検証を容易にする。
 
-# AutoSave 連携統合テスト
-pnpm exec node --test tests/autosave/flags.integration.test.ts
-
-# MergeDock 表示スナップショット
-pnpm exec node --test tests/merge/flags.ui.test.ts
-```
-- 将来的に `pnpm` スクリプトへ昇格させる場合も、各コマンドは Node.js 標準テストランナーを利用する方針を維持する（ESM 構成を共有するため）。
+## 8. 移行・運用メモ
+- 既存 `localStorage` キー（`autosave.enabled`, `merge.precision`, `dockOpen`）を読み取った後、新規 `flag:` プレフィックスへ書き戻す移行処理は追跡タスクで別実装とする。
+- `pnpm run flags:status` など運用スクリプトは `resolveFlags({ mode: 'cli' })` を利用し、ブラウザ依存を排除する。【F:docs/IMPLEMENTATION-PLAN.md†L66-L83】
+- テレメトリは `autosave.flag.source` / `merge.flag.source` を追加フィールドとして送信し、既存 JSONL スキーマを変更しない。
