@@ -3,15 +3,24 @@
 
 ## 0) モジュール責務と不変条件
 
-| 観点 | 要件 | 依存/備考 |
-| --- | --- | --- |
-| 責務 | `src/lib/autosave.ts` が AutoSave の**中核ファサード**として、スナップショット保存・履歴取得・復元 API を提供する。 | [IMPLEMENTATION-PLAN](./IMPLEMENTATION-PLAN.md) §1 と連携し、`locks.ts`・UI 層とは疎結合。 |
-| 永続化 | `project/autosave/current.json` と `index.json` をアトミック更新し整合を維持する。 | 片方のみ更新された場合はロールバックし、`AutoSaveError('write-failed', retryable=true)` を発行。 |
-| ロック | Web Locks を優先し、獲得前に OPFS へ書き込まない。同一 UUID によるフォールバック `.lock` で再入を禁止。 | `src/lib/locks.ts` の契約に従い、取得失敗は指数バックオフで再試行。 |
-| 履歴 | `history/<ISO>.json` を ISO8601 で単調増加させ、`index.json` と相互整合を保つ。 | 乖離検知時は GC が再構築し、欠落は `AutoSaveError('history-overflow', retryable=false)`。 |
-| エラーポリシー | UI・Collector/Analyzer へ副作用を与えず、`warn` ログ 1 行で終了。`retryable` により再試行可否を明示。 | 例外階層は §3.1.1 を参照。 |
+### 0.1 不変条件サマリ
+- `src/lib/autosave.ts` は保存・復元・履歴 API を一括公開する中核ファサードとして振る舞い、UI とは `snapshot()` 越しの読み取りのみで結合する。
+- `project/autosave/current.json` と `index.json` は常に同一コミット境界で更新し、片方の書込が失敗した場合は即座にロールバックする。
+- Web Locks を第一優先とし、未取得のまま永続化 I/O を行わない。フォールバックの `.lock` も同一 UUID で再入禁止を保証する。
+- `history/<ISO>.json` は ISO8601 タイムスタンプで単調増加させ、`index.json` と整合しない場合は GC が再構築を担う。
+- 例外は `AutoSaveError` 階層で統一し、`retryable` 属性で再試行可否を区別した上で UI/Collector には副作用を与えず `warn` ログのみを出力する。
 
 Phase A では保存パラメータ（デバウンス 500ms、アイドル 2s、履歴 20 世代、容量 50MB）を固定し、`AutoSaveOptions.disabled` と設定フラグ `autosave.enabled` の二重ガードで有効/無効のみを制御する。
+
+### 0.2 責務と依存関係
+
+| 観点 | 要件 | 依存/備考 |
+| --- | --- | --- |
+| ファサード | `initAutoSave` がスナップショット提供 (`snapshot`)、保存 (`flushNow`)、解放 (`dispose`) を統一インターフェースで公開する。 | [IMPLEMENTATION-PLAN](./IMPLEMENTATION-PLAN.md) §1 と連携し、`locks.ts`・UI 層とは疎結合。 |
+| 永続化 | `project/autosave/current.json` / `index.json` のアトミック更新で整合性を維持する。 | 片方のみ更新された場合はロールバックし、`AutoSaveError('write-failed', retryable=true)` を発行。 |
+| ロック制御 | Web Locks → `.lock` の順に獲得し、成功しない限り永続化へ進まない。 | `src/lib/locks.ts` の契約に従い、取得失敗は指数バックオフで再試行。 |
+| 履歴保全 | `history/<ISO>.json` の FIFO 回転で 20 世代と 50MB を上限管理する。 | 乖離検知時は GC が再構築し、欠落は `AutoSaveError('history-overflow', retryable=false)`。 |
+| エラーポリシー | `AutoSaveError` 階層で UI/Collector へ `warn` ログのみ通知し、復旧可否を `retryable` で判別可能にする。 | 詳細は §3.2 を参照。 |
 
 ## 1) 保存ポリシー
 
@@ -34,6 +43,8 @@ Phase B 以降で可変化する場合は `AutoSaveOptions` を拡張し、`norm
 
 ### 1.3 Phase A ガードの設計リスクとロールバック条件
 
+固定ポリシー値と二重ガードは Phase A の安全弁として動作するが、誤判定時の影響が大きいため、下記の検知・ロールバック条件で速やかに復旧する。
+
 | ガード | 想定リスク | ロールバック条件 | 備考 |
 | --- | --- | --- | --- |
 | `AutoSaveOptions.disabled` | UI からの誤設定で常時無効化され、復元データが欠落する。 | 連続 3 回の `snapshot().phase==='disabled'` かつ `autosave.enabled=true` を検出した場合、ガードを強制無効化してローカル通知を出す。 | 将来の可変ポリシー導入時は `normalizeOptions()` でワーニングを返す。 |
@@ -44,11 +55,15 @@ Phase B 以降で可変化する場合は `AutoSaveOptions` を拡張し、`norm
 
 ### 2.1 `initAutoSave` I/O / 状態遷移 / 例外
 
-| I/O | 説明 |
+#### I/O サマリ
+
+| 種別 | 内容 |
 | --- | --- |
 | Input | `getStoryboard: () => Storyboard`, `options?: AutoSaveOptions`, feature flag `autosave.enabled`. |
 | Output | `AutoSaveInitResult`（`snapshot`, `flushNow`, `dispose`）。`snapshot` は状態を同期取得し、`flushNow` は保存完了で解決する。 |
 | 副作用 | Web Locks / `.lock` 取得、OPFS への書込、`history/` のローテーション、`warn` ログ発行。 |
+
+#### シーケンス図
 
 ```mermaid
 sequenceDiagram
@@ -85,6 +100,8 @@ sequenceDiagram
   end
 ```
 
+#### 状態遷移
+
 ```mermaid
 stateDiagram-v2
     [*] --> Disabled: flag=false or options.disabled
@@ -107,11 +124,15 @@ stateDiagram-v2
 
 ### 2.2 `restorePrompt` / `restoreFrom*` I/O / 例外
 
+#### I/O サマリ
+
 | 関数 | Input | Output | 主な例外 |
 | --- | --- | --- | --- |
 | `restorePrompt()` | なし | `null` or `{ts, bytes, source, location}` | `AutoSaveError('data-corrupted', retryable=false)` when `index.json` parse fails. |
 | `restoreFromCurrent()` | なし | `Promise<boolean>` | `AutoSaveError('data-corrupted', retryable=false)` / `'write-failed'`（UI 反映不可）。 |
 | `restoreFrom(ts)` | `ts: string` | `Promise<boolean>` | `AutoSaveError('data-corrupted', retryable=false)` / `'history-overflow'`（履歴欠落）。 |
+
+#### シーケンス図（メタデータ提示）
 
 ```mermaid
 sequenceDiagram
@@ -129,6 +150,8 @@ sequenceDiagram
   end
   Note over Restore: parse failure => AutoSaveError('data-corrupted', retryable=false)
 ```
+
+#### シーケンス図（コンテンツ復元）
 
 ```mermaid
 sequenceDiagram
@@ -151,9 +174,13 @@ sequenceDiagram
 
 ### 2.3 `listHistory` I/O / シーケンス
 
+#### I/O サマリ
+
 | Input | Output | 例外 |
 | --- | --- | --- |
 | なし | `{ ts, bytes, location: 'history', retained }[]` | `AutoSaveError('data-corrupted', retryable=false)` when index parse fails. |
+
+#### シーケンス図
 
 ```mermaid
 sequenceDiagram
@@ -333,14 +360,19 @@ UI 層は `lock:readonly-entered` を契機にバナー表示・保存停止へ�
 
 ### 3.4 TDD 計画（`tests/autosave/*.spec.ts`）
 
-| フェーズ | モジュール | 優先度 | テスト観点 |
-| --- | --- | --- | --- |
-| Phase A | `initAutoSave.debounce.spec.ts` | P0 | 500ms デバウンス、2s アイドル判定、`flushNow()` の即時コミット。 |
-| Phase A | `initAutoSave.gc.spec.ts` | P0 | 履歴 20 世代維持、50MB 超過時の FIFO 削除、孤児ファイル再構築。 |
-| Phase A | `initAutoSave.error-recovery.spec.ts` | P1 | lock 失敗時の指数バックオフ、`write-failed` からのロールバック、`history-overflow` で停止。 |
-| Phase A | `restore.flow.spec.ts` | P1 | `restorePrompt` の空/正常/破損ケース、`restoreFrom*` の history 欠落。 |
-| Phase A | `list-history.spec.ts` | P2 | `retained=false` マーク付与とメタデータ整合、並び順保証。 |
-| Phase B | `options-matrix.spec.ts` | P2 | 将来の動的オプション有効化、`disabled` ガード優先順位。 |
+#### Phase A（P0: 最優先クリティカル）
+1. `initAutoSave.debounce.spec.ts` — 500ms デバウンス、2s アイドル判定、`flushNow()` の即時コミット。
+2. `initAutoSave.gc.spec.ts` — 履歴 20 世代維持、50MB 超過時の FIFO 削除、孤児ファイル再構築。
+
+#### Phase A（P1: エラー復帰と復元）
+3. `initAutoSave.error-recovery.spec.ts` — lock 失敗時の指数バックオフ、`write-failed` からのロールバック、`history-overflow` で停止。
+4. `restore.flow.spec.ts` — `restorePrompt` の空/正常/破損ケース、`restoreFrom*` の history 欠落。
+
+#### Phase A（P2: 周辺機能）
+5. `list-history.spec.ts` — `retained=false` マーク付与とメタデータ整合、並び順保証。
+
+#### Phase B（P2: 将来拡張）
+6. `options-matrix.spec.ts` — 将来の動的オプション有効化、`disabled` ガード優先順位。
 
 優先度は Phase A のクリティカル挙動（デバウンス・GC・エラー復帰）を P0/P1 とし、拡張ケースを P2 に後ろ倒しする。
 
