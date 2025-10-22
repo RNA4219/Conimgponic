@@ -42,6 +42,12 @@ stateDiagram-v2
 ```
 - `precision` の変更は `useEffect` で `activeTab` を再初期化し、`legacy` へ降格した場合は Diff Merge 関連ステートを破棄する。【F:docs/IMPLEMENTATION-PLAN.md†L38-L83】
 
+### 2.3 下位ペイン構造と責務
+- **HunkListPane**: `merge.ts` から受け取った `hunks` コレクションを統計ヘッダ（採用済み/未処理件数）、フィルタ操作（`state=idle/manual/ai/conflict`）と共にバーチャルリストで提示。行クリックのみを担い、決定操作はすべて `OperationPane` へ委譲する。リストは `selectedHunkId` を props で受け取り、AutoSave 由来の再レンダリングでもスクロール位置を保持する。【F:docs/IMPLEMENTATION-PLAN.md†L53-L107】
+- **OperationPane**: アクティブハンクのメタ情報（ファイルパス、信頼度スコア）、`DiffViewer`、`DecisionDeck`（Manual/AI/Bulkボタン）を縦積みする。決定ボタン押下時に `queueMergeCommand` を発火する唯一の場所であり、失敗ステータスの表示とフォーカス制御までを担保する。
+- **BulkBar**: 選択済み複数ハンクに対する一括操作の確認・進行状況トーストを提供。`OperationPane` からトリガーされ、内部で `queueMergeCommand({ type:'queueBulk', ... })` を呼ぶ。完了時は `subscribeMergeEvents` を介して HunkListPane へ反映。
+- **Modal 群 (`EditModal`, `ApplyDecisionModal`)**: `OperationPane` からの明示的なリクエストで `DiffMergeView` が開閉制御。モーダル内部は編集内容のバリデーションのみ行い、確定操作は `queueMergeCommand` へ委譲する。
+
 ### 2.4 MergeDock 連携
 - `MergeDock.tsx` は `merge.precision` フラグを解決し、`pref` セレクタに `diff-merge` オプションを差し込む。`legacy` フェーズではタブを隠し、`beta/stable` で `DiffMergeView` を遅延ロードする。【F:docs/IMPLEMENTATION-PLAN.md†L38-L83】【F:src/components/MergeDock.tsx†L24-L147】
 - `DiffMergeView` は `mergePrecision`, `activeTab`, `scenes`, `mergeProfile`, `queueMergeCommand` を props で受信し、`activeTab==='diff-merge'` のときのみペインを描画する。タブ離脱時は内部ステートを `snapshot()` しておき、戻った際に復元することで既存タブとの衝突を防ぐ。
@@ -104,6 +110,10 @@ stateDiagram-v2
 - `queueMergeCommand` 失敗時は `Error` へ遷移し、`retryable` なら再度 `queueMergeCommand` を呼び出す。非 retryable はバナー表示＋ Collector 送信。
 
 ### 3.3 `queueMergeCommand` 連携と責務境界
+`queueMergeCommand` は Merge エンジン（`src/lib/merge.ts`）への唯一のゲートとして扱い、UI 層とバックエンド層の責務を以下のように切り分ける。
+- **UI (DiffMergeView)**: 入力検証（ハンク選択、編集内容の必須チェック）、AutoSave ロック制御、操作ログ（`merge:ui:*`）の送出、エラーバナー表示/フォーカス復帰を担当。非同期結果の `retryable` 判定に従って再試行 UI を出し分ける。
+- **queueMergeCommand**: コマンドの直列化、OPFS/merge スナップショット更新、Collector/Analyzer 連携イベントの publish（`merge:engine:*`）、`MergeCommandResult` の `retryable`/`fatal` 判定付与を行う。UI へは Promise 解決時に最終結果だけを返し、中間状態は `subscribeMergeEvents` で通知する。
+
 | Command | 発火元 | Payload | `queueMergeCommand` 側責務 | UI リアクション |
 | --- | --- | --- | --- | --- |
 | `setManual` | ManualApplying | `{ hunkId, source: 'manual', actor }` | ハンク決定を永続キューへ投入。競合検知時は `retryable`=`true` で再試行を指示。 | ハンク行に `manual` バッジ付与。 |
@@ -125,6 +135,12 @@ stateDiagram-v2
 3. `beta` 遷移: `activeTab` を保持。`pref='diff-merge'` が選択されていた場合のみ `diff-merge` タブを表示。`selectedHunkId` は保持。
 4. `stable` 遷移: `activeTab` を強制的に `diff-merge` に設定。初回表示で `selectedHunkId` を最初の衝突ハンクに設定し、操作ペインを表示。
 5. いずれの遷移でも `DiffMergeTabs` がタブリストを再構成し、`HunkListPane` のスクロール位置は `selectedHunkId` に応じて復元。
+
+### 4.1 MergeDock 操作フロー
+1. `MergeDock.tsx` が `merge.precision` と `pref` を読み出し、`DiffMergeTabs` の並びと初期選択を決定する。`beta` では `DiffMerge` を末尾追加、`stable` では先頭表示に切り替え、いずれも既存タブの DOM 構造は再利用する。【F:docs/IMPLEMENTATION-PLAN.md†L53-L107】
+2. タブ遷移時に `DiffMergeView` へ `activeTab`/`mergePrecision` を props で渡し、`activeTab==='diff-merge'` のときだけ下位ペインをマウント。非アクティブ時はステートスナップショットを保持して再描画コストを最小化する。
+3. `queueMergeCommand` から返却された結果と `subscribeMergeEvents` のストリームは `MergeDock` レベルの Telemetry Hub へ中継され、Day8 Collector が JSONL を収集する。失敗イベントは `MergeDock` 側で `merge:ui:error` と `merge:engine:error` を突合し、ロールバック判定を行う。【F:Day8/docs/day8/design/03_architecture.md†L1-L63】
+4. AutoSave ロック状態 (`autosaveLock`) は `MergeDock` のグローバル状態に publish し、他タブの保存ボタン・ステータスに反映する。`DiffMergeView` でロック獲得に失敗した場合も `queueMergeCommand` の `retryable=true` 結果に従って再試行を促す。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L135】
 
 ## 5. モーダル連携
 - `OperationPane` から `openEditModal(hunkId)` を dispatch → `modalState={type:'edit',hunkId}` → `EditModal` をポータル描画。
