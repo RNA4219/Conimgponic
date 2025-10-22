@@ -35,6 +35,10 @@ export interface FlagValidationError extends FlagValidationIssue {
 
 export interface FlagValueSnapshot<T> {
   readonly value: T
+  /**
+   * env → localStorage → default のどの層で確定したかを示し、
+   * docs/CONFIG_FLAGS.md の状態遷移表と Collector テレメトリで参照する。
+   */
   readonly source: FlagSource
   readonly errors: readonly FlagValidationError[]
 }
@@ -47,6 +51,10 @@ export type MergePrecisionFlagSnapshot = FlagValueSnapshot<MergePrecision> & {
   readonly precision: MergePrecision
 }
 
+/**
+ * resolveFlags() が返却するスナップショット。
+ * updatedAt は ResolveOptions.clock() 起因の ISO8601 で、Phase 検証時に使用する。
+ */
 export interface FlagSnapshot {
   readonly autosave: AutosaveFlagSnapshot
   readonly merge: MergePrecisionFlagSnapshot
