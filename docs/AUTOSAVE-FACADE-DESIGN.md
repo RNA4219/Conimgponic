@@ -12,6 +12,11 @@
 - 保存ポリシー（デバウンス 500ms、アイドル 2s、履歴 20 世代、容量 50MB）は `AUTOSAVE_DEFAULTS` で公開する。
 - `autosave.enabled=false` または `AutoSaveOptions.disabled=true` の場合は永続化副作用を一切発生させない。
 
+### 2.1 保存ポリシーとランタイムシーケンスの差異
+- **保存ポリシー**: `AutoSaveOptions` で露出する閾値群。`debounceMs`/`idleMs` は入力頻度制御、`maxGenerations`/`maxBytes` は履歴管理の上限、`disabled` は機能全体を抑止する静的条件。値は `docs/AUTOSAVE-DESIGN-IMPL.md` の §1 を正とし、外部 UI からの変更はこのインターフェース経由に限定する。
+- **ランタイムシーケンス**: スケジューラがイベントを受けて実行するフェーズ遷移。ポリシー値を参照するが、状態は `phase` とタイマー/ロック/書込 I/O の進行度で決定される。シーケンスは同ドキュメント §2 と整合させ、Collector/Analyzer への副作用を隔離する。
+- **整合要件**: ポリシー変更（例: `debounceMs` 短縮）はシーケンス内のタイマー初期化ロジックに限定して影響させ、履歴 GC や UI 通知の契約は不変。これにより Day8 アーキテクチャ図の責務境界を保持する。
+
 ## 3. API 設計
 ### 3.1 initAutoSave
 ```ts
@@ -60,6 +65,15 @@ export function initAutoSave(
 
 `phase` 遷移は §4 を参照。
 
+### 3.4 例外契約
+| コード | トリガー条件 | retryable | 呼び出し側への伝達 | 後続アクション |
+| --- | --- | --- | --- | --- |
+| `disabled` | `autosave.enabled=false` または `options.disabled=true` | false | `initAutoSave` が no-op ハンドラを返し、例外はスローしない | `snapshot().phase='disabled'` を維持 |
+| `lock-unavailable` | Web Lock/Fallback いずれも取得不可 | true | `AutoSaveError` を `lastError` に保持し UI へ通知 | バックオフ 0.5→1→2→4s、5 回連続で `phase='error'` |
+| `write-failed` | `current.json` 書込/リネーム失敗または `index.json` 更新失敗 | cause が `NotAllowedError` 以外なら true | 呼び出し元へ例外、UI Snackbar | `.tmp` 巻き戻し後にリトライ、非再試行なら `phase='error'` |
+| `data-corrupted` | `current.json`/`history/*.json`/`index.json` の JSON 解析失敗 | false | 復元 API が null/false を返し UI ダイアログを促す | `snapshot().phase` は変えず `lastError` 更新 |
+| `history-overflow` | GC で容量/世代上限を超過し削除実施 | false | 例外送出なし。ログのみ | `lastSuccessAt` 更新し `phase='idle'` |
+
 ## 4. 状態遷移図
 ```mermaid
 stateDiagram-v2
@@ -79,6 +93,18 @@ stateDiagram-v2
     Error --> Idle: retryable error recovered
     Idle --> Disabled: dispose()
 ```
+
+### 4.1 フェーズ別ガードと副作用
+| フェーズ | 遷移条件 | 副作用 | UI スナップショット |
+| --- | --- | --- | --- |
+| `disabled` | init 時に機能無効／dispose 後 | 永続化処理を実行せず、`flushNow`/`dispose` は no-op | `phase='disabled'`, `retryCount=0` |
+| `idle` | 保存完了/起動直後 | タイマー待機のみ。`lastSuccessAt` 更新済 | `lastError` クリア、`pendingBytes` 未設定 |
+| `debouncing` | 入力イベント受信 | デバウンスタイマー登録 | `pendingBytes` に暫定サイズを設定 |
+| `awaiting-lock` | タイマー満了後 | ロック取得試行、`retryCount` 増分 | UI はローディング表示（Indicator） |
+| `writing-current` | ロック取得成功 | `current.json.tmp` 書き込み、失敗時ロールバック | UI は "saving" バナー |
+| `updating-index` | カレント書込完了 | `index.json.tmp` 更新、`queuedGeneration` インクリメント | UI は保存中継続 |
+| `gc` | index 更新後 | 世代/容量 GC。削除内容をログ | UI は保存完了待機 |
+| `error` | 再試行上限 or 非再試行エラー | `flushNow` を no-op。`lastError` を保持 | UI は ReadOnly 表示 |
 
 ## 5. エラーハンドリング
 | フェーズ | 例外コード | retryable | バックオフ | ハンドラ |
@@ -128,16 +154,31 @@ sequenceDiagram
 | T8 | `data-corrupted` 復元 | 例外送出、`restorePrompt` は null | ユニット | OPFS スタブ |
 | T9 | `dispose()` 中の進行中フライト | フライト完了待機後ロック解放 | ユニット | Lock モック |
 
+### 7.1 優先テストケース（実装着手順）
+1. **T1**: フラグ無効パスの no-op（保存ポリシー遵守の基礎）。
+2. **T2**: デバウンス + アイドル後の保存（標準シーケンス整合）。
+3. **T3**: `flushNow` バイパス（UI 手動保存との契約）。
+4. **T4**: ロック再試行上限（再試行/停止条件の境界）。
+5. **T7**: 書込失敗からの復帰（例外契約の確認）。
+6. **T5/T6**: GC 関連（容量・世代制御）。
+7. **T8**: 復元失敗ハンドリング（`data-corrupted` 伝搬）。
+8. **T9**: Dispose 待機（ロック解放保証）。
+
 ### 受入テスト観点
 - `flushNow` パス
 - 履歴上限 20 世代維持
 - 容量 50MB 超過時の削除
 
-## 8. ログ・メトリクス
+## 8. 状態スナップショットと UI 連携
+- `snapshot()` は UI の AutoSaveIndicator が 250ms 間隔でポーリングし、`phase` と `lastError` を描画に利用する。`phase='error'` の場合は Day8 アーキテクチャで定義された ReadOnly モードへ遷移し、Collector へのログを 1 行送信する。
+- `phase` が `awaiting-lock` 以上のとき、UI はボタンを `aria-busy` 状態にし、`pendingBytes` が存在すればプログレスバーを表示する。`retryCount` が 1 以上のときは ToolTip にバックオフ秒数を提示する。
+- `dispose()` 完了後は `phase='disabled'` となり、Indicator は非表示。UI 側は `autosave.enabled` の設定を読み込み、再度 `initAutoSave` を実行するまでイベントを購読しない。
+
+## 9. ログ・メトリクス
 - 1 エラー 1 行の JSONL ログ（Collector 互換）。`context` へ `phase`/`retryCount` を添付。
 - GC による削除は情報ログのみ。Analyzer の閾値に影響させない。
 
-## 9. 今後の実装指針
+## 10. 今後の実装指針
 1. テストダブル整備 (`tests/autosave/test-utils.ts` に FakeTimer/OPFS/Lock)。
 2. T1/T2/T3 を満たす単体テストを先に実装（TDD）。
 3. スケジューラ実装後に GC/復元の統合テスト (T5/T6/T8)。
