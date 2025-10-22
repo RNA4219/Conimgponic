@@ -39,6 +39,64 @@ export interface AutoSavePhaseViewConfig {
   readonly history: AutoSavePhaseHistoryRequirement
 }
 
+export type AutoSaveRunnerEvent =
+  | {
+      readonly type: 'autosave:success'
+      readonly snapshot: AutoSaveStatusSnapshot
+      readonly committedGeneration: number
+      readonly completedAt: string
+    }
+  | {
+      readonly type: 'autosave:failure'
+      readonly snapshot: AutoSaveStatusSnapshot
+      readonly error: { readonly code: AutoSaveErrorCode; readonly message: string; readonly retryable: boolean }
+      readonly failedAt: string
+    }
+  | {
+      readonly type: 'autosave:progress'
+      readonly snapshot: AutoSaveStatusSnapshot
+      readonly phase: AutoSavePhase
+      readonly retryCount: number
+      readonly emittedAt: string
+    }
+
+export interface AutoSaveIndicatorMessageSpecEntry {
+  readonly when: string
+  readonly banner?: AutoSaveIndicatorBanner
+  readonly toast?: AutoSaveIndicatorToast
+  readonly historyAccess?: AutoSavePhaseHistoryRequirement['access']
+  readonly notes: readonly string[]
+}
+
+export const AUTOSAVE_INDICATOR_MESSAGE_SPEC = Object.freeze({
+  success: {
+    when: '`autosave:success` 受領直後または `snapshot.phase === "idle"` へ遷移した直後',
+    notes: ['バナー/トーストは表示せず、履歴アクセスは `available` を維持']
+  },
+  retryableFailure: {
+    when:
+      '`autosave:failure` かつ `error.retryable === true`。`awaiting-lock` 再試行を含む連続失敗時',
+    toast: { variant: 'warning' as const, message: '自動保存の再試行に失敗しました（{{error.message}}）' },
+    historyAccess: 'available',
+    notes: ['履歴からの手動復元を案内しつつ自動再試行を継続']
+  },
+  fatalFailure: {
+    when: '`snapshot.phase === "error"` かつ `lastError.retryable === false`',
+    banner: { variant: 'error' as const, message: '自動保存を停止しました: {{lastError.message}}' },
+    historyAccess: 'available',
+    notes: ['再試行不可のため履歴経由の復元導線を強調']
+  },
+  readonlyEntered: {
+    when: '`lock:readonly-entered` を受領、または `lockState.mode === "readonly"` へ遷移した直後',
+    banner: {
+      variant: 'warning' as const,
+      message: '閲覧専用モードに切り替わりました（{{reasonLabel}}）'
+    },
+    historyAccess: 'disabled',
+    notes: ['排他ロックが解除されるまで履歴操作ボタンを非活性化']
+  }
+} satisfies Record<'success' | 'retryableFailure' | 'fatalFailure' | 'readonlyEntered', AutoSaveIndicatorMessageSpecEntry>)
+
 export const AUTOSAVE_PHASE_STATE_MAP = Object.freeze({
   disabled: {
     label: 'AutoSave 無効',
