@@ -167,7 +167,7 @@ export function resolveFeatureFlag<Name extends FeatureFlagName>(
 - `DEFAULT_FLAGS` は冒頭 JSON と同じ構造を `as const` で保持し、`defaultValue` 更新時の後方互換を担保する。
 - `FlagValueSnapshot.source` に `'env' | 'localStorage' | 'default'` を格納し、App/Merge UI からのテレメトリ一致を保証する。
 - `updatedAt` は `clock()`（既定: `() => new Date()`）で決定し、テストではフェイククロックで固定する。
-- 2025-01-18 時点で `src/config/flags.ts` と本節の定義に差異は存在しない。
+- 2025-01-18 設計更新: 本節と `src/config/flags.ts` の定義差分はゼロ（`import.meta.env` / `process.env` マージ、`FlagSnapshot.updatedAt` の仕様を確認済み）。
 
 ## フェーズ遷移とロールバック
 
@@ -194,6 +194,12 @@ stateDiagram-v2
 | T03 | 既定値採用 | env 未設定, `localStorage.merge.precision="invalid"` | `merge.value='legacy'`, `merge.precision='legacy'`, `merge.source='default'`, 検証エラー1件 |
 
 上記 TDD 草案を満たしたうえで、下表の全体テスト計画に合流する。
+
+### 差分適用前のリスク評価
+
+1. **env 未設定**: `import.meta.env` / `process.env` の両方にキーが無い場合は `localStorage` → 既定値へフォールバック。初期リリースは `DEFAULT_FLAGS` が Phase A を表すため UX 変化はない。
+2. **localStorage 不正値**: 既存 UI が文字列以外を書き込んだ場合でも `coerce` が失敗し、エラーを `FlagSnapshot.errors` に残したうえで既定値採用。Day8/docs/day8/design/03_architecture.md のテレメトリ要件と整合。
+3. **既定値読み込み**: `docs/AUTOSAVE-DESIGN-IMPL.md` の保存ポリシーは `autosave.enabled=false` を前提に設計されているため、既定値へのフォールバック時も保存動作は従来通り。パフォーマンス影響 ±5% 以内。
 
 ## 想定テストケース
 
