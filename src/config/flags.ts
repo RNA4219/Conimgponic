@@ -2,7 +2,24 @@ export type FlagSource = 'env' | 'localStorage' | 'default'
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 export type AutoSavePhase = 'disabled' | 'phase-a' | 'phase-b'
 
-export type MergePrecision = 'legacy' | 'beta' | 'stable'
+export const DEFAULT_FLAGS = {
+  autosave: {
+    enabled: false,
+    debounceMs: 500,
+    idleMs: 2000,
+    maxGenerations: 20,
+    maxBytes: 50 * 1024 * 1024
+  },
+  merge: {
+    precision: 'legacy' as const,
+    profile: {
+      tokenizer: 'char' as const,
+      granularity: 'section' as const,
+      threshold: 0.75,
+      prefer: 'none' as const
+    }
+  }
+} as const
 
 export interface FlagValidationIssue {
   readonly code: 'invalid-boolean' | 'invalid-precision'
@@ -187,7 +204,7 @@ export const FEATURE_FLAG_DEFINITIONS = {
     envKey: 'VITE_AUTOSAVE_ENABLED',
     storageKey: 'autosave.enabled',
     legacyStorageKeys: ['flag:autoSave.enabled'],
-    defaultValue: false,
+    defaultValue: DEFAULT_FLAGS.autosave.enabled,
     coerce: coerceBoolean('autosave.enabled')
   },
   'merge.precision': {
@@ -195,7 +212,7 @@ export const FEATURE_FLAG_DEFINITIONS = {
     envKey: 'VITE_MERGE_PRECISION',
     storageKey: 'merge.precision',
     legacyStorageKeys: ['flag:merge.precision'],
-    defaultValue: 'legacy' as const,
+    defaultValue: DEFAULT_FLAGS.merge.precision,
     coerce: coerceMergePrecision('merge.precision')
   }
 } as const satisfies {
@@ -219,8 +236,16 @@ export function resolveFeatureFlag<Name extends FeatureFlagName>(
 }
 
 export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
-  autosave: { enabled: false, source: 'default', errors: [] },
-  merge: { precision: 'legacy', source: 'default', errors: [] },
+  autosave: {
+    enabled: DEFAULT_FLAGS.autosave.enabled,
+    source: 'default',
+    errors: []
+  },
+  merge: {
+    precision: DEFAULT_FLAGS.merge.precision,
+    source: 'default',
+    errors: []
+  },
   updatedAt: new Date(0).toISOString()
 }
 

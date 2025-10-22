@@ -64,44 +64,80 @@
 ## `src/config/flags.ts` 設計
 
 ```ts
-export type MergePrecision = 'legacy' | 'beta' | 'stable';
-export type AutoSavePhase = 'disabled' | 'phase-a' | 'phase-b';
+export type FlagSource = 'env' | 'localStorage' | 'default'
+
+export interface FlagValidationIssue {
+  readonly code: 'invalid-boolean' | 'invalid-precision'
+  readonly flag: string
+  readonly raw: string
+  readonly message: string
+  readonly retryable: false
+}
+
+export interface FlagValidationError extends FlagValidationIssue {
+  readonly source: FlagSource
+}
+
+export interface FlagValueSnapshot<T> {
+  readonly value: T
+  readonly source: FlagSource
+  readonly errors: readonly FlagValidationError[]
+}
 
 export interface FlagSnapshot {
+  readonly autosave: FlagValueSnapshot<boolean>
+  readonly merge: FlagValueSnapshot<'legacy' | 'beta' | 'stable'>
+  readonly updatedAt: string
+}
+
+export interface FlagResolveOptions {
+  readonly env?: Record<string, unknown>
+  readonly storage?: Pick<Storage, 'getItem'> | null
+  readonly clock?: () => Date
+}
+
+export type FeatureFlagName = 'autosave.enabled' | 'merge.precision'
+
+export type FeatureFlagValue<Name extends FeatureFlagName> = Name extends 'autosave.enabled'
+  ? boolean
+  : 'legacy' | 'beta' | 'stable'
+
+export const DEFAULT_FLAGS = {
   autosave: {
-    enabled: boolean;
-    phase: AutoSavePhase;
-  };
+    enabled: false,
+    debounceMs: 500,
+    idleMs: 2000,
+    maxGenerations: 20,
+    maxBytes: 50 * 1024 * 1024
+  },
   merge: {
-    precision: MergePrecision;
-  };
-  source: {
-    autosaveEnabled: 'env' | 'storage' | 'default';
-    mergePrecision: 'env' | 'storage' | 'default';
-  };
-}
+    precision: 'legacy' as const,
+    profile: {
+      tokenizer: 'char' as const,
+      granularity: 'section' as const,
+      threshold: 0.75,
+      prefer: 'none' as const
+    }
+  }
+} as const
 
-export interface FlagInputs {
-  env?: Partial<Record<'VITE_AUTOSAVE_ENABLED' | 'VITE_MERGE_PRECISION', string | undefined>>;
-  storage?: Pick<Storage, 'getItem'>;
-  defaults?: typeof DEFAULT_FLAGS;
-  mode?: 'browser' | 'cli';
-}
-
-export function resolveFlags(inputs?: FlagInputs): FlagSnapshot;
+export function resolveFlags(options?: FlagResolveOptions): FlagSnapshot
+export function resolveFeatureFlag<Name extends FeatureFlagName>(
+  name: Name,
+  options?: FlagResolveOptions
+): FlagValueSnapshot<FeatureFlagValue<Name>>
 ```
 
-- `AutoSavePhase` は `enabled` と `merge.precision` の組み合わせで導出する（下記フェーズ遷移図を参照）。
-- `mode='cli'` の場合は `storage` を無視し、`env`→`defaults` の優先順位に固定。
-- `storage` 読取時に例外が発生した場合は既存ロガーへ `warn` を送りつつサプレッションし、後方互換で `default` を返す。
-- `FlagSnapshot.source` で最終値の由来を保持し、デバッグ UI とテレメトリでの確認を容易にする。
+- `DEFAULT_FLAGS` は冒頭 JSON と同じ構造を `as const` で保持し、`defaultValue` 更新時の後方互換を担保する。
+- `FlagValueSnapshot.source` に `'env' | 'localStorage' | 'default'` を格納し、App/Merge UI からのテレメトリ一致を保証する。
+- `updatedAt` は `clock()`（既定: `() => new Date()`）で決定し、テストではフェイククロックで固定する。
 
 ## フェーズ遷移とロールバック
 
 ```mermaid
 stateDiagram-v2
     [*] --> PhaseA: autosave.enabled=false / merge.precision=legacy
-    PhaseA --> PhaseB0: env|storage: autosave.enabled=true + merge.precision=beta
+    PhaseA --> PhaseB0: env|localStorage: autosave.enabled=true + merge.precision=beta
     PhaseB0 --> PhaseB1: merge.precision=stable
     PhaseB0 --> PhaseA: beta フィードバックで障害発生
     PhaseB1 --> PhaseA: 安定版でクリティカル障害（即時ロールバック）
@@ -117,16 +153,18 @@ stateDiagram-v2
 | ID | 観点 | 入力 | 期待値 |
 | --- | --- | --- | --- |
 | F01 | env 優先 | `VITE_AUTOSAVE_ENABLED="true"`, `localStorage.autosave.enabled="false"` | `enabled=true`, source=`env` |
-| F02 | storage 上書き | env 未設定, `localStorage.merge.precision="beta"` | `precision='beta'`, source=`storage` |
+| F02 | storage 上書き | env 未設定, `localStorage.merge.precision="beta"` | `precision='beta'`, source=`localStorage` |
 | F03 | 無効値除外 | env 未設定, `localStorage.merge.precision="invalid"` | `precision='legacy'`, source=`default` |
 | F04 | CLI 互換 | `resolveFlags({ mode: 'cli' })` で `localStorage` 供給なし | `precision` は env→default のみで決定 |
-| F05 | Phase 判定 | `autosave.enabled=true`, `merge.precision='stable'` | `phase='phase-b'` |
-| F06 | ロールバック | PhaseB0 で障害検知 → env を `legacy` へ変更 | 次回ロードで PhaseA に戻る |
+| F05 | App.tsx 初期化 | `autosave.enabled=true` | AutoSave ブートストラップが `FlagSnapshot.autosave.value` を参照し、ソースをテレメトリへ出力 |
+| F06 | MergeDock 表示制御 | `merge.precision='beta'` | Diff Merge タブが表示され、`FlagSnapshot.merge.source` が UI ログへ残る |
+
+- App.tsx / MergeDock からの利用シナリオを含む詳細テスト計画は `tests/config/FLAGS_TEST_PLAN.md` を参照。
 
 ## 段階導入チェックリスト
 
 1. `DEFAULT_FLAGS` を `docs/CONFIG_FLAGS.md` と同期し、`git diff` で乖離がないことを確認。
-2. Staging ビルドで `VITE_AUTOSAVE_ENABLED=true` を指定し、`resolveFlags()` の `source.autosaveEnabled` が `env` になることをログで確認。
+2. Staging ビルドで `VITE_AUTOSAVE_ENABLED=true` を指定し、`resolveFlags().autosave.source` が `env` になることをログで確認。
 3. QA アカウントで `localStorage.merge.precision='beta'` を設定し、MergeDock に Diff Merge タブが表示されることを目視確認。
 4. 本番ロールアウト前に `resolveFlags({ mode: 'cli' })` を用いた設定ダンプが後方互換 JSON（キー名・値型）を維持していることを CI で検証。
 5. ロールバック訓練として `localStorage.clear()` 後に `beta`→`legacy` へ戻るまでの UI/ログを記録し、運用 Runbook に追記。
