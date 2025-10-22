@@ -3,7 +3,7 @@
 
 ## 0) モジュール責務と不変条件
 - `src/lib/autosave.ts` は AutoSave 機能の**中核ファサード**として、OPFS 上の `project/autosave` ツリーへ最新スナップショットを保存し、履歴一覧・復元 API を提供する。対象モジュールは [実装計画](./IMPLEMENTATION-PLAN.md) の「1) 対象モジュール追加」に列挙された `locks.ts`・UI コンポーネント群と疎結合である必要がある。
-- 保存ポリシーのパラメータ（デバウンス 500ms、アイドル 2s、履歴 20 世代、容量 50MB）をデフォルトとして露出し、`AutoSaveOptions` でのみ調整可能とする。フラグ `autosave.enabled` が false の場合はどの永続化 API も副作用を発生させてはならない。
+- 保存ポリシーのパラメータ（デバウンス 500ms、アイドル 2s、履歴 20 世代、容量 50MB）は Phase A では固定値とし、`AutoSaveOptions.disabled` と設定フラグ `autosave.enabled` のみで有効/無効を制御する。フラグ `autosave.enabled` が false の場合はどの永続化 API も副作用を発生させてはならない。
 - 生成物は常に `current.json`（最新）と `index.json`（履歴メタデータ）で整合していなければならない。片方だけが更新される状態は例外扱いとし、リカバリ時にはロールバックで整合性を取り戻す。
 - Web Locks を優先し、排他獲得前には OPFS へ書き込まない。フォールバックのファイルロックも同じ UUID を保持し、再入（同一タブ二重保存）を禁止する。
 - `history/<ISO>.json` は ISO8601 時刻で単調増加する命名とし、`index.json` に存在しないファイルは掃除対象、逆に `index.json` にのみ存在する項目はゴースト扱いで再構築する。
@@ -11,15 +11,17 @@
 
 ## 1) 保存ポリシー
 
-### 1.1 保存パラメータと API マッピング
-| 保存パラメータ | `AutoSaveOptions` キー | 既定値 (`AUTOSAVE_DEFAULTS`) | 主担当 API/モジュール | 補足 / 運用ノート |
-| --- | --- | --- | --- | --- |
-| デバウンス遅延 | `debounceMs` | `500` | `initAutoSave`（スケジューラ） | 入力検知後 500ms 待機して保存ジョブをキューイング。UI からのイベントスパイクを抑制する。 |
-| アイドル猶予 | `idleMs` | `2000` | `initAutoSave` / `AutoSaveIndicator` | デバウンス完了後 2s アイドルを確認し、ロック要求へ遷移して状態を UI へ伝播する。 |
-| 履歴世代上限 | `maxGenerations` | `20` | `initAutoSave`（履歴 GC） | `history/<ISO>.json` を FIFO 管理し、`index.json` と整合させる。 |
-| 容量上限 | `maxBytes` | `50 * 1024 * 1024` | `initAutoSave`（容量ガード） | 50MB 超過時は古い世代から削除し、Collector/Analyzer が参照するメトリクスを変動させない。 |
-| フィーチャーフラグ | `disabled`（オプション） / `autosave.enabled`（設定値） | `false` / `false` (Phase A 既定) | `initAutoSave` / `App.tsx` | [実装計画](./IMPLEMENTATION-PLAN.md) §0 で規定。いずれかが無効化判定に一致した場合は永続化 API を呼ばず `phase='disabled'` を維持する。 |
-| ロック優先順位 | - | Web Locks → フォールバック | `src/lib/locks.ts` | Web Locks が不可時は `project/.lock` を同一 UUID で保持し、Collector/Analyzer が扱うパスに干渉しない。 |
+### 1.1 保存パラメータと適用ポリシー
+| 保存パラメータ | 既定値 (`AUTOSAVE_DEFAULTS`) | Phase A の上書き可否 | 入力ソース | 主担当 API/モジュール | 補足 / 運用ノート |
+| --- | --- | --- | --- | --- | --- |
+| デバウンス遅延 | `500` | 不可（固定値） | - | `initAutoSave`（スケジューラ） | 入力検知後 500ms 待機して保存ジョブをキューイング。UI からのイベントスパイクを抑制する。 |
+| アイドル猶予 | `2000` | 不可（固定値） | - | `initAutoSave` / `AutoSaveIndicator` | デバウンス完了後 2s アイドルを確認し、ロック要求へ遷移して状態を UI へ伝播する。 |
+| 履歴世代上限 | `20` | 不可（固定値） | - | `initAutoSave`（履歴 GC） | `history/<ISO>.json` を FIFO 管理し、`index.json` と整合させる。 |
+| 容量上限 | `50 * 1024 * 1024` | 不可（固定値） | - | `initAutoSave`（容量ガード） | 50MB 超過時は古い世代から削除し、Collector/Analyzer が参照するメトリクスを変動させない。 |
+| フィーチャーフラグ | `false` (既定) | 可（設定値で制御） | `autosave.enabled` / `AutoSaveOptions.disabled` | `initAutoSave` / `App.tsx` | [実装計画](./IMPLEMENTATION-PLAN.md) §0 で規定。いずれかが無効化判定に一致した場合は永続化 API を呼ばず `phase='disabled'` を維持する。 |
+| ロック優先順位 | Web Locks → フォールバック | - | - | `src/lib/locks.ts` | Web Locks が不可時は `project/.lock` を同一 UUID で保持し、Collector/Analyzer が扱うパスに干渉しない。 |
+
+Phase B 以降で可変化する場合は `AutoSaveOptions` を拡張し、`normalizeOptions()` を通じて `AUTOSAVE_POLICY` と整合させる（現在は `disabled` のみ受理）。
 
 ### 1.2 ポリシー適用フロー
 - デバウンス 500ms + アイドル 2s で `project/autosave/current.json` を保存。
@@ -54,6 +56,44 @@ sequenceDiagram
   Note over Scheduler: エラー時はロールバック → 再スケジュール（指数バックオフ）
 ```
 
+### 2.1 復元フロー
+```mermaid
+sequenceDiagram
+  participant UI as App
+  participant Restore as restorePrompt/restoreFrom*
+  participant Index as index.json
+  participant Current as current.json
+  participant History as history/<ts>.json
+
+  UI->>Restore: restorePrompt()
+  Restore->>Index: read index.json
+  alt index missing or empty
+    Restore-->>UI: null
+  else 有効な履歴あり
+    Index-->>Restore: {ts, bytes, source}
+    Restore-->>UI: 最終世代メタデータ
+  end
+  UI->>Restore: restoreFromCurrent()/restoreFrom(ts)
+  Restore->>Current: read current.json
+  alt 要求が history
+    Restore->>History: read history/<ts>.json
+  end
+  Restore-->>UI: Storyboard payload
+  UI->>UI: applyStoryboard()
+  Note over Restore: JSON parse 失敗時は AutoSaveError(code='data-corrupted') を throw
+```
+
+### 2.2 GC フロー
+```mermaid
+stateDiagram-v2
+    [*] --> EnforceGenerations: index.json commit
+    EnforceGenerations --> EnforceBytes: exceed maxGenerations?
+    EnforceGenerations --> PruneOrphans: orphan files detected
+    EnforceBytes --> PruneOrphans: 超過世代の削除完了
+    PruneOrphans --> Finalize: GC 結果を index.json に反映
+    Finalize --> [*]: lastSuccessAt 更新 / pendingBytes=0
+```
+
 ### 時系列表
 | 時刻 | スレッド/コンテキスト | 動作 | 同期メカニズム |
 | --- | --- | --- | --- |
@@ -72,15 +112,7 @@ sequenceDiagram
 type StoryboardProvider = () => Storyboard;
 
 interface AutoSaveOptions {
-  /** デフォルト: 500 */
-  debounceMs?: number;
-  /** デフォルト: 2000 */
-  idleMs?: number;
-  /** デフォルト: 20 */
-  maxGenerations?: number;
-  /** デフォルト: 50 * 1024 * 1024 */
-  maxBytes?: number;
-  /** feature flag: autosave.enabled=false の場合 true で無効化 */
+  /** フラグ連動の静的ガード。true の場合は全処理をスキップ。 */
   disabled?: boolean;
 }
 
@@ -122,7 +154,8 @@ export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 >;
 ```
-- `AutoSaveOptions` のデフォルト値は保存ポリシーの数値に一致する（`src/lib/autosave.ts` の `AUTOSAVE_DEFAULTS` を参照）。`disabled` が `true` または設定フラグ `autosave.enabled=false` の場合、`initAutoSave` は [実装計画](./IMPLEMENTATION-PLAN.md) §0 の no-op 要件を満たすため `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。
+- `AutoSaveOptions` は Phase A では `disabled` のみを受理する。その他の保存パラメータは `AUTOSAVE_POLICY` 固定値として扱い、将来の拡張時は `normalizeOptions()` でバリデーションを行う。
+- `disabled` が `true` または設定フラグ `autosave.enabled=false` の場合、`initAutoSave` は [実装計画](./IMPLEMENTATION-PLAN.md) §0 の no-op 要件を満たすため `flushNow` を no-op とした上で `dispose` だけを返し永続化を一切行わない。
 - 例外は `AutoSaveError` を基本とし、`retryable` が true のケース（ロック取得不可・一時的な書込失敗）は指数バックオフで再スケジュールする。`retryable=false` はユーザ通知＋即時停止。`code='disabled'` は再試行禁止の静的ガードとして扱い、ログのみ残して停止する。
 - `flushNow()` は保存可能な状態（`idle` or `debouncing`）であれば 2s アイドル待機をスキップし、ロック取得と書込の完了まで待つ。実行中のフライトがある場合はその完了を待機し、同時実行を避ける。
 - `snapshot()` は内部状態の即時スナップショットを返し UI 側の `isReadOnly` や `lastError` 表示に利用する。内部ステートは後述の状態遷移表に従う。
@@ -150,6 +183,16 @@ interface AutoSaveStatusSnapshot {
   queuedGeneration?: number; // index.json 上の世代番号
 }
 ```
+
+| フィールド | 型 | 取得タイミング | 備考 |
+| --- | --- | --- | --- |
+| `phase` | `AutoSavePhase` | `snapshot()` 呼び出しごと | 状態遷移表（§4.2）と同期。 |
+| `lastSuccessAt` | `string` (ISO8601) | `gc` 完了時 | 最終正常保存時刻。存在しない場合は未保存。 |
+| `pendingBytes` | `number` | `debouncing` エントリー時 | 最新の書込予定バイト数。`idle` へ戻るとリセット。 |
+| `lastError` | `AutoSaveError` | エラー発生時 | UI/Collector へ表示する詳細。`retryable=true` の場合は再試行後にクリア。 |
+| `retryCount` | `number` | バックオフ開始時 | `retry-exhausted` 発火までインクリメント。 |
+| `queuedGeneration` | `number` | `updating-index` | `index.json` 上の世代番号。GC 後に最新値へ更新。 |
+
 
 ### 4.2 オートセーブ状態遷移図
 ```mermaid
@@ -235,11 +278,23 @@ stateDiagram-v2
 ## 6) エラーハンドリングテーブル
 | コード | 発生源 | retryable | UI 通知 | ログレベル | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| disabled | initAutoSave | false | 不要 | info | flag off 時のみ。 |
-| lock-unavailable | scheduler | true | Snackbar（自動再試行中） | warn | 5 回連続で `phase='error'`。 |
-| write-failed | writer/index | cause による | dialog（書込失敗） | error | `context.bytesAttempted` を付与。 |
-| data-corrupted | restore/list | false | dialog（破損通知） | error | リストア系 API 共通。 |
+| disabled | initAutoSave | false | 不要 | info | flag off 時のみ（Collector 出力 1 行）。 |
+| lock-unavailable | scheduler | true | Snackbar（自動再試行中） | warn | 5 回連続で `phase='error'`。1 エラーにつき Collector へ 1 行。 |
+| write-failed | writer/index | cause による | dialog（書込失敗） | error | `context.bytesAttempted` を付与。Collector へは cause/hash を含め 1 行。 |
+| data-corrupted | restore/list | false | dialog（破損通知） | error | リストア系 API 共通。Collector へ高優先度ログを 1 行送信。 |
 | history-overflow | GC | false | 不要 | info | FIFO/Eviction 実行時に 1 行ログ。 |
+
+ログポリシー: すべてのエラー/通知は「1 イベント 1 行」を厳守し、冪等なリトライ中も追加行は発生させない。Collector 送信時は `code`・`retryable`・`context`（可能な限り構造化 JSON）を添付する。
+
+## 7) 公開 API I/O テーブル
+
+| 関数 | Input | Output | Throw | 備考 |
+| --- | --- | --- | --- | --- |
+| `initAutoSave(getStoryboard, options?)` | `StoryboardProvider` / `AutoSaveOptions` | `AutoSaveInitResult` | `AutoSaveError` (`disabled`/`lock-unavailable`/`write-failed`) | `autosave.enabled=false` または `options.disabled=true` の場合は `flushNow`/`dispose` が no-op。 |
+| `restorePrompt()` | なし | `null` または `{ ts, bytes, source, location }` | `AutoSaveError('data-corrupted')` | `index.json` が欠損/破損した場合は null を返し、Collector へ error を 1 行送信。 |
+| `restoreFromCurrent()` | なし | `boolean` (`true`: 復元適用) | `AutoSaveError('data-corrupted')` | 復元成功時のみ `true`。破損検知で `phase` は更新せず UI 通知。 |
+| `restoreFrom(ts)` | `string` (`ISO8601`) | `boolean` | `AutoSaveError('data-corrupted' | 'lock-unavailable')` | 履歴ファイル読み込み前にロック確認。再試行不可。 |
+| `listHistory()` | なし | `{ ts, bytes, location: 'history', retained: boolean }[]` | `AutoSaveError('data-corrupted')` | GC 実行後に FIFO 並びを保証。 |
 
 これらの仕様により、`Collector`/`Analyzer` など Day8 アーキテクチャの他コンポーネントへ不要な副作用を与えず、AutoSave 機構の一貫性と復元性を確保する。
 
