@@ -62,6 +62,8 @@ export interface CollectMetricsNotification {
   readonly channelType: 'slack' | 'pagerduty';
   /** Slack channel 名 or PagerDuty service 名 */
   readonly destination: string;
+  /** 通知の重要度。Incident-001 と連動。 */
+  readonly severity: 'info' | 'warning' | 'critical';
   /** 閾値を超えたメトリクスキー */
   readonly metric: MetricsKey;
   /** 達成値 */
@@ -70,6 +72,12 @@ export interface CollectMetricsNotification {
   readonly threshold: number;
   /** 通知本文テンプレートのパス（例: templates/alerts/rollback.md） */
   readonly template: string;
+}
+
+export interface NotificationDestination {
+  readonly channelType: CollectMetricsNotification['channelType'];
+  readonly destination: string;
+  readonly severity: CollectMetricsNotification['severity'];
 }
 
 export interface CollectMetricsArtifacts {
@@ -91,6 +99,8 @@ export interface PhaseGateCriterion {
   readonly violationWindowMinutes: number;
   /** 通知が必要なチャネル */
   readonly notifyChannels: ReadonlyArray<CollectMetricsNotification['channelType']>;
+  /** 通知先（フェーズ別チャンネルとエスカレーション） */
+  readonly notifyDestinations: ReadonlyArray<NotificationDestination>;
   /** ロールバックを実行する場合の遷移先フェーズ */
   readonly rollbackTo: RolloutPhase;
   /** ロールバックコマンド。policy.yaml と整合すること。 */
@@ -157,6 +167,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     {
       channelType: 'slack',
       destination: '#launch-autosave',
+      severity: 'warning',
       metric: 'autosave_p95',
       value: 3200,
       threshold: 2500,
@@ -165,6 +176,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     {
       channelType: 'pagerduty',
       destination: 'Autosave & Precision Merge',
+      severity: 'critical',
       metric: 'merge_auto_success_rate',
       value: 0.72,
       threshold: 0.8,
@@ -187,6 +199,13 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           threshold: 2500,
           violationWindowMinutes: 15,
           notifyChannels: ['slack'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#launch-autosave',
+              severity: 'warning',
+            },
+          ],
           rollbackTo: 'A-0',
           rollbackCommand: 'pnpm run flags:rollback --phase A-0',
         },
@@ -196,6 +215,18 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           threshold: 0.995,
           violationWindowMinutes: 15,
           notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#launch-autosave',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Autosave & Precision Merge',
+              severity: 'critical',
+            },
+          ],
           rollbackTo: 'A-0',
           rollbackCommand: 'pnpm run flags:rollback --phase A-0',
         },
@@ -211,6 +242,13 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           threshold: 2300,
           violationWindowMinutes: 15,
           notifyChannels: ['slack'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#launch-autosave',
+              severity: 'warning',
+            },
+          ],
           rollbackTo: 'A-1',
           rollbackCommand: 'pnpm run flags:rollback --phase A-1',
         },
@@ -220,6 +258,18 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           threshold: 0.997,
           violationWindowMinutes: 15,
           notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#launch-autosave',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Autosave & Precision Merge',
+              severity: 'critical',
+            },
+          ],
           rollbackTo: 'A-1',
           rollbackCommand: 'pnpm run flags:rollback --phase A-1',
         },
@@ -235,6 +285,18 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           threshold: 0.8,
           violationWindowMinutes: 15,
           notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#merge-ops',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Merge Duty',
+              severity: 'critical',
+            },
+          ],
           rollbackTo: 'A-2',
           rollbackCommand: 'pnpm run flags:rollback --phase A-2',
         },
@@ -250,6 +312,18 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           threshold: 0.85,
           violationWindowMinutes: 15,
           notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#merge-ops',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Merge Duty',
+              severity: 'critical',
+            },
+          ],
           rollbackTo: 'B-0',
           rollbackCommand: 'pnpm run flags:rollback --phase B-0',
         },
@@ -283,6 +357,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     sections: [
       'rollout.phase_gate',
       'rollout.rollback',
+      'rollout.notifications',
       'monitoring',
     ],
     verificationChecklist: [

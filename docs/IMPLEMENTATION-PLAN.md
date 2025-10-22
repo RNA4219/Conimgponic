@@ -198,6 +198,25 @@ gantt
 - `scripts/monitor/collect-metrics.ts` は `window=15m` を既定値とし、上図のサイクルで Analyzer/Reporter へ渡す入出力（`autosave_p95` / `restore_success_rate` / `merge_auto_success_rate`）を保証する。【F:scripts/monitor/collect-metrics.ts†L1-L89】
 - Runbook 手順（§2.2）は本サイクルの `d1` を基準に 15 分毎のレビューとロールバック判断を行う。
 
+#### 2.1.4 Analyzer / Reporter I/O 契約
+- **Input (Collector → Analyzer)**: `reports/monitoring/<timestamp>.jsonl` に書き出された JSONL。各レコードは `scripts/monitor/collect-metrics.ts` の `MetricsInputRecord` 仕様に従い、`autosave_p95` / `restore_success_rate` / `merge_auto_success_rate` を 15 分窓で提供する。
+- **Output (Analyzer → Reporter)**: `monitor:score` が出力するメトリクスサマリ（`phase`, `metric`, `value`, `threshold`, `breach`）。Reporter はこれを受けて Slack/PagerDuty 通知テンプレート `templates/alerts/rollback.md` を展開し、`reports/alerts/<timestamp>.md` に保存する。
+- **flags rollback コマンド**: Analyzer で `breach=true` かつ `PhaseGateCriterion.rollbackTo` が存在する場合、Reporter が `pnpm run flags:rollback --phase <prev>` を実行し、結果を通知本文に添付する。Incident-001 ワークフローと整合させ、PagerDuty へは `Incident-001` サービスを指定する。
+- **通知エスカレーション**: `notify=auto` 時は `policy.yaml` の guardrail 毎の `notifyChannels` を使用し、Slack → PagerDuty の順で 1 サイクル以内に評価する。`notify=force` は全チャネルを即時通知、`notify=suppress` は通知ログを生成せずダッシュボード更新のみ行う。
+
+### 2.2 ロールアウト Runbook（Incident-001 整合）
+1. **Collector 確認 (00:00-04:00)**: `pnpm ts-node scripts/monitor/collect-metrics.ts --window=15m` の完了と JSONL 正常性（スキーマ/欠損値）を確認し、異常時は再収集。
+2. **Analyzer 判定 (07:00-12:00)**: `pnpm run monitor:analyze` → `monitor:score` 実行ログをレビュー。`breach` 発生時は対象メトリクス・閾値・`rollbackTo` を Runbook に記録。
+3. **Reporter 通知 (12:00-14:00)**: Slack 通知はフェーズ別チャンネル（Phase A: `#launch-autosave`、Phase B: `#merge-ops`）へ送信。重大 (`pagerduty`) 通知は Incident-001 サービスへ発砲し、オンコールを起動。
+4. **ロールバック (14:00-15:00)**: Guardrail が `rollbackTo` を示す場合は `pnpm run flags:rollback --phase <prev>` を実行し、結果ログを `reports/alerts/<timestamp>.md` に追記。コマンド失敗時は PagerDuty へ `escalation_level=critical` で手動通報。
+5. **RCA 着手 (15:00)**: ロールバック後 1 サイクル以内に RCA ドラフト (`reports/rca/<phase>-<timestamp>.md`) を作成し、Slack `#incident` へ共有。5 営業日以内にレビューを完了させる。
+
+### 2.3 監視ダッシュボード要件
+- **レイアウト**: 3 パネル（AutoSave、Restore、Merge）。各パネルに 24 時間のスパークライン、15 分ウィンドウの現在値、SLO 閾値線を表示。Phase 遷移時は縦線で注記。
+- **フィルタ**: `phase`・`tenant`（Enterprise/Indie）・`client_version` を指定可能とし、Collector JSONL のメタデータをそのまま利用する。
+- **通知ログ連携**: `reports/alerts/` ディレクトリから通知イベントを取り込み、Slack/PagerDuty 発砲履歴をツールチップ表示。Incident-001 起動時は赤色バッジで強調。
+- **Runbook 連携**: ダッシュボード上から `docs/IMPLEMENTATION-PLAN.md#22-ロールアウト-runbookincident-001-整合` へのリンクを提供し、当該フェーズのフローへ即時アクセスできるようにする。
+
 ### 2.2 Canary / ローカル切替 Runbook
 1. **Flag 既定値確認**: `docs/CONFIG_FLAGS.md` を最新に反映させ、QA 用 `.env.qa` に `VITE_AUTOSAVE_ENABLED=true`, `VITE_MERGE_PRECISION=beta` を記載。
 2. **Canary 対象登録**: `ops/canary/phase-A1.csv`（スプレッドシート連携）へ QA アカウントを追記し、Slack `#launch-autosave` に通知。
