@@ -39,17 +39,17 @@ export interface FlagValueSnapshot<T> {
   readonly errors: readonly FlagValidationError[]
 }
 
+export type AutosaveFlagSnapshot = FlagValueSnapshot<boolean> & {
+  readonly enabled: boolean
+}
+
+export type MergePrecisionFlagSnapshot = FlagValueSnapshot<MergePrecision> & {
+  readonly precision: MergePrecision
+}
+
 export interface FlagSnapshot {
-  readonly autosave: {
-    readonly enabled: boolean
-    readonly source: FlagSource
-    readonly errors: readonly FlagValidationError[]
-  }
-  readonly merge: {
-    readonly precision: MergePrecision
-    readonly source: FlagSource
-    readonly errors: readonly FlagValidationError[]
-  }
+  readonly autosave: AutosaveFlagSnapshot
+  readonly merge: MergePrecisionFlagSnapshot
   readonly updatedAt: string
 }
 
@@ -118,6 +118,10 @@ function attemptResolve<T>(
  * `docs/IMPLEMENTATION-PLAN.md` §0.2 の設定ソースマッピングと `FlagSnapshot` の
  * ソース追跡要件を満たすよう、検証失敗時は次順位へフォールバックしながら
  * エラーを蓄積する。
+ *
+ * ⚠️ 後方互換ポリシー: Phase-a0 では `App.tsx` などの既存呼び出しが `localStorage`
+ * を直接読むフェールセーフを保持している。resolveFlags() は新ルートとして追加し、
+ * 直接参照の削除は `FLAG_MIGRATION_PLAN` のフェーズ完了後に行う。
  */
 export function resolveFlag<T>(
   def: FlagDefinition<T>,
@@ -237,14 +241,16 @@ export function resolveFeatureFlag<Name extends FeatureFlagName>(
 
 export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
   autosave: {
-    enabled: DEFAULT_FLAGS.autosave.enabled,
+    value: DEFAULT_FLAGS.autosave.enabled,
     source: 'default',
-    errors: []
+    errors: [],
+    enabled: DEFAULT_FLAGS.autosave.enabled
   },
   merge: {
-    precision: DEFAULT_FLAGS.merge.precision,
+    value: DEFAULT_FLAGS.merge.precision,
     source: 'default',
-    errors: []
+    errors: [],
+    precision: DEFAULT_FLAGS.merge.precision
   },
   updatedAt: new Date(0).toISOString()
 }
@@ -259,14 +265,16 @@ export function resolveFlags(options?: ResolveOptions): FlagSnapshot {
   // snapshot 未取得時は従来挙動へフォールバックできるようガイドする。
   return {
     autosave: {
-      enabled: autosave.value,
+      value: autosave.value,
       source: autosave.source,
-      errors: autosave.errors
+      errors: autosave.errors,
+      enabled: autosave.value
     },
     merge: {
-      precision: merge.value,
+      value: merge.value,
       source: merge.source,
-      errors: merge.errors
+      errors: merge.errors,
+      precision: merge.value
     },
     updatedAt: clock().toISOString()
   }

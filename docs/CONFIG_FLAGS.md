@@ -185,6 +185,16 @@ stateDiagram-v2
 - **Phase B-0**: QA 用段階。`autosave.enabled=true` を満たしたうえで `merge.precision=beta` を設定。`localStorage.merge.precision` で個別タブ単位の有効化が可能。障害時は `localStorage` 初期化で Phase A へ即時復帰。
 - **Phase B-1**: 全ユーザー公開。`merge.precision=stable` を満たす場合のみ `AutoSavePhase` を `phase-b` とし、タブは常時表示。ロールバックは `env` を `legacy` へ戻し `localStorage` をクリアする。
 
+### TDD 用テストケース草案
+
+| ID | 観点 | 入力 | 期待値 |
+| --- | --- | --- | --- |
+| T01 | env 優先 | `VITE_AUTOSAVE_ENABLED="true"`, `localStorage.autosave.enabled="false"` | `autosave.value=true`, `autosave.enabled=true`, `autosave.source='env'` |
+| T02 | localStorage フォールバック | env 未設定, `localStorage.merge.precision="beta"` | `merge.value='beta'`, `merge.precision='beta'`, `merge.source='localStorage'` |
+| T03 | 既定値採用 | env 未設定, `localStorage.merge.precision="invalid"` | `merge.value='legacy'`, `merge.precision='legacy'`, `merge.source='default'`, 検証エラー1件 |
+
+上記 TDD 草案を満たしたうえで、下表の全体テスト計画に合流する。
+
 ## 想定テストケース
 
 ### TDD フォーカステスト（先行実装）
@@ -229,3 +239,9 @@ stateDiagram-v2
   - `rollback_request_rate = 0`（逸脱で PagerDuty L2）
 - ロールバック失敗時は `flags-rollback-failed` として再試行不可扱い。Reporter が即時エスカレーションし、`pnpm run flags:push --env <prev>` の手動実行ログを `reports/rollback/` に保管する。
 - Canary → GA 移行判定は 48h 連続 SLO 達成と `reports/rollout-monitoring-checklist.md` 完了を要件とする。
+
+## 差分適用前のリスク評価
+
+- **localStorage の旧直接参照**: resolveFlags() 導入後も UI は段階的移行中。既存直読が残るため、キー名/値型が変わると即時障害となる。→ 現状は不変とし、フェーズ完了まで維持。
+- **env 未設定時の既定値依存**: `.env` 漏れで AutoSave が無効化される可能性。→ `DEFAULT_FLAGS` と同値であることを release checklist に追加し、CI で `.env.sample` Diff を監視。
+- **validation エラーの見落とし**: storage の無効値が静かに既定値へ戻る。→ `FlagSnapshot.*.errors` をテレメトリに送出し、Analyzer 側で `invalid-*` を監視する。
