@@ -122,8 +122,16 @@ export interface FlagValueSnapshot<T> {
 }
 
 export interface FlagSnapshot {
-  readonly autosave: FlagValueSnapshot<boolean>
-  readonly merge: FlagValueSnapshot<'legacy' | 'beta' | 'stable'>
+  readonly autosave: {
+    readonly enabled: boolean
+    readonly source: FlagSource
+    readonly errors: readonly FlagValidationError[]
+  }
+  readonly merge: {
+    readonly precision: 'legacy' | 'beta' | 'stable'
+    readonly source: FlagSource
+    readonly errors: readonly FlagValidationError[]
+  }
   readonly updatedAt: string
 }
 
@@ -168,6 +176,45 @@ export function resolveFeatureFlag<Name extends FeatureFlagName>(
 - `DEFAULT_FLAGS` は冒頭 JSON と同じ構造を `as const` で保持し、`defaultValue` 更新時の後方互換を担保する。
 - `FlagValueSnapshot.source` に `'env' | 'localStorage' | 'default'` を格納し、App/Merge UI からのテレメトリ一致を保証する。
 - `updatedAt` は `clock()`（既定: `() => new Date()`）で決定し、テストではフェイククロックで固定する。
+- Phase A では `App.tsx` / `MergeDock.tsx` の既存 `localStorage` 直接参照をフェールセーフとして維持し、`resolveFlags()` と併用する。
+
+### 解決フロー設計メモ
+
+```mermaid
+flowchart TD
+  Env[import.meta.env] -->|valid| Snapshot
+  Env -->|invalid / absent| Storage
+  Storage[window.localStorage] -->|valid| Snapshot
+  Storage -->|invalid / absent| Default[DEFAULT_FLAGS]
+  Default --> Snapshot
+```
+
+疑似コード:
+
+```text
+autosave := resolveFeatureFlag('autosave.enabled')
+merge := resolveFeatureFlag('merge.precision')
+timestamp := (clock ?? now)()
+return { autosave, merge, updatedAt: timestamp }
+```
+
+### TDD テストケース草案（resolveFlags / resolveFeatureFlag）
+
+| ID | 観点 | 入力 | 期待値 |
+| --- | --- | --- | --- |
+| TDD-ENV | env 優先 | `env.VITE_AUTOSAVE_ENABLED="true"`, `localStorage.autosave.enabled="false"` | `autosave.enabled=true`, source=`env`, errors=`[]` |
+| TDD-STORAGE | localStorage フォールバック | env 未設定, `localStorage.merge.precision="beta"` | `merge.precision='beta'`, source=`localStorage`, errors=`[]` |
+| TDD-DEFAULT | 無効値フォールバック | env 未設定, `localStorage.merge.precision="invalid"` | `merge.precision='legacy'`, source=`default`, errors=`[invalid-precision]` |
+
+### 差分整合性メモ
+
+- `DEFAULT_FLAGS` は本ドキュメント先頭の JSON と `src/config/flags.ts` の定義が `git diff` で差異ゼロであることを 2025-01-18 に確認済み。
+
+### リスク評価（適用前）
+
+- env / storage いずれも未設定の場合は既定値へフォールバックし、AutoSave 無効のまま起動するため、リスクは既存挙動と同等。
+- env に無効値が投入された場合でも検証エラーを記録し既定値へ戻るが、エラー通知経路の整備が Phase B まで未完了である点に留意。
+- localStorage フェールセーフを残すことで Phase A のロールバック容易性を担保するが、併存期間中はテレメトリの二重取得リスクがあるため、`docs/AUTOSAVE-DESIGN-IMPL.md` のログポリシーを踏襲しノイズ抑制を行う。
 
 ## フェーズ遷移とロールバック
 
