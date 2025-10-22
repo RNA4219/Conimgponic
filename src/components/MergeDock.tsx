@@ -7,8 +7,12 @@ import { sha256Hex } from '../lib/hash'
 import { GoldenCompare } from './GoldenCompare'
 import { planDiffMergeView } from './DiffMergeView'
 
-type MergePrecision = 'legacy' | 'beta' | 'stable'; const BASE_TAB_IDS = ['compiled', 'shot', 'assets', 'import', 'golden'] as const
-type BaseTabId = (typeof BASE_TAB_IDS)[number]; type MergeDockTabId = BaseTabId | 'diff'
+type MergePrecision = 'legacy' | 'beta' | 'stable'
+
+const BASE_TAB_IDS = ['compiled', 'shot', 'assets', 'import', 'golden'] as const
+type BaseTabId = (typeof BASE_TAB_IDS)[number]
+type MergeDockTabId = BaseTabId | 'diff'
+
 type MergeDockTabPlanEntry = { readonly id: MergeDockTabId; readonly label: string; readonly badge?: 'Beta' }
 type MergeDockDiffPlan = {
   readonly exposure: 'opt-in' | 'default'
@@ -22,24 +26,48 @@ type MergeDockTabPlan = {
 }
 
 const BASE_TABS = Object.freeze([
-  { id: 'compiled', label: 'Compiled Script' }, { id: 'shot', label: 'Shotlist / Export' },
-  { id: 'assets', label: 'Assets' }, { id: 'import', label: 'Import' }, { id: 'golden', label: 'Golden' }
+  { id: 'compiled', label: 'Compiled Script' },
+  { id: 'shot', label: 'Shotlist / Export' },
+  { id: 'assets', label: 'Assets' },
+  { id: 'import', label: 'Import' },
+  { id: 'golden', label: 'Golden' },
 ] as const satisfies readonly MergeDockTabPlanEntry[])
+
+const MERGE_DOCK_TAB_PLAN: Record<MergePrecision, MergeDockTabPlan> = Object.freeze({
+  legacy: { tabs: BASE_TABS, initialTab: 'compiled' },
+  beta: { tabs: [...BASE_TABS, { id: 'diff', label: 'Diff (Beta)', badge: 'Beta' }], initialTab: 'compiled' },
+  stable: { tabs: [...BASE_TABS.slice(0, -1), { id: 'diff', label: 'Diff' }, BASE_TABS.at(-1)!], initialTab: 'diff' },
+})
 
 const isBaseTabId = (value: unknown): value is BaseTabId => typeof value === 'string' && (BASE_TAB_IDS as readonly string[]).includes(value)
 
 export const planMergeDockTabs = (precision: MergePrecision, lastTab?: MergeDockTabId): MergeDockTabPlan => {
-  const sanitized = lastTab && (lastTab === 'diff' || isBaseTabId(lastTab)) ? lastTab : undefined
-  if (precision === 'legacy') return { tabs: BASE_TABS, initialTab: sanitized && sanitized !== 'diff' ? sanitized : 'compiled' }
-  if (precision === 'beta') {
-    const tabs = [...BASE_TABS, { id: 'diff', label: 'Diff (Beta)', badge: 'Beta' } satisfies MergeDockTabPlanEntry]
-    const initialTab = sanitized && tabs.some((tab) => tab.id === sanitized) ? sanitized : 'compiled'
-    const diffViewPlan = planDiffMergeView(precision)
-    return { tabs, initialTab, diff: { exposure: 'opt-in', backupAfterMs: diffViewPlan.backupAfterMs } }
-  }
-  const tabs = [...BASE_TABS.slice(0, -1), { id: 'diff', label: 'Diff' } satisfies MergeDockTabPlanEntry, BASE_TABS.at(-1)!]
-  const diffViewPlan = planDiffMergeView(precision)
-  return { tabs, initialTab: 'diff', diff: { exposure: 'default', backupAfterMs: diffViewPlan.backupAfterMs } }
+  const plan = MERGE_DOCK_TAB_PLAN[precision]
+  const requested = lastTab && (lastTab === 'diff' || isBaseTabId(lastTab)) ? lastTab : undefined
+  const sanitized = requested && plan.tabs.some((entry) => entry.id === requested) ? requested : undefined
+  if (precision === 'stable') return { tabs: plan.tabs, initialTab: sanitized ?? plan.initialTab }
+  if (precision === 'legacy') return { tabs: plan.tabs, initialTab: sanitized && sanitized !== 'diff' ? sanitized : plan.initialTab }
+  return { tabs: plan.tabs, initialTab: sanitized ?? plan.initialTab }
+}
+
+export interface DiffBackupPolicy {
+  readonly enabledPrecisions: readonly MergePrecision[]
+  readonly gateTab: MergeDockTabId
+  readonly thresholdMs: number
+}
+
+export const diffBackupPolicy: DiffBackupPolicy = Object.freeze({ enabledPrecisions: ['beta', 'stable'], gateTab: 'diff', thresholdMs: 5 * 60 * 1000 })
+
+export const shouldShowDiffBackupCTA = (
+  policy: DiffBackupPolicy,
+  precision: MergePrecision,
+  tab: MergeDockTabId,
+  lastSuccessAt: string | undefined,
+  now: number,
+): boolean => {
+  if (!policy.enabledPrecisions.includes(precision) || tab !== policy.gateTab || !lastSuccessAt) return false
+  const ts = Date.parse(lastSuccessAt)
+  return Number.isFinite(ts) && now - ts > policy.thresholdMs
 }
 
 function Checks(){
@@ -75,8 +103,7 @@ export function MergeDock(){
   }, [plan, precision, storage, tab])
   const setTab = (next: MergeDockTabId)=>{ setTabState(next); storage?.setItem('merge.lastTab', next) }
   const flushNow = autoSaveInterop?.__mergeDockFlushNow
-  const backupThresholdMs = plan.diff?.backupAfterMs ?? 5*60*1000
-  const showBackupCTA = (()=>{ if (tab!=='diff' || !flushNow || !plan.diff) return false; const last = autoSaveInterop?.__mergeDockAutoSaveSnapshot?.lastSuccessAt; if (!last) return false; const ts = Date.parse(last); return Number.isFinite(ts) && Date.now() - ts > backupThresholdMs })()
+  const showBackupCTA = (()=>{ if (!flushNow) return false; const last = autoSaveInterop?.__mergeDockAutoSaveSnapshot?.lastSuccessAt; return shouldShowDiffBackupCTA(diffBackupPolicy, precision, tab, last, Date.now()) })()
 
   const compiled = useMemo(()=>{
     const lines:string[] = []
