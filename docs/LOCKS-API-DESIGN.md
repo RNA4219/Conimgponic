@@ -1,137 +1,150 @@
 # ロック API 設計（`src/lib/locks.ts`）
 
 - 参照ドキュメント: [AutoSave 実装詳細](./AUTOSAVE-DESIGN-IMPL.md), [Day8 アーキテクチャ](../Day8/docs/day8/design/03_architecture.md)
-- 目的: AutoSave ファサードが Web Locks を最優先で利用し、Collector/Analyzer 系のファイルツリーと干渉しないロック管理を確定する。
-- スコープ: `src/lib/locks.ts`, `tests/locks/**`（OPFS 直接書き込みの詳細実装は別タスク）。
+- 目的: AutoSave/将来バッチが競合なく `project/` ツリーを更新できるよう、Web Locks 優先・フォールバック併用の API 契約を明確化する。
+- スコープ: `src/lib/locks.ts`, `tests/locks/**`。OPFS 書き込みは他モジュールに委譲する。
 
-## 1. ロック取得/更新/解放シーケンス
-
-| フェーズ | Web Locks 優先経路 | フォールバック `.lock` 経路 |
-| --- | --- | --- |
-| Acquire | `navigator.locks.request(name, { mode: 'exclusive' })` で lease を取得。`AbortSignal` で 10s タイムアウトを注入。 | `project/.lock` を `createWritable({ keepExistingData: false })` で生成し、`{ leaseId, ttlExpiresAt }` を JSON で書き込む。既存ロックが残存する場合は TTL を検査し、期限切れは再取得、期限内は `LockAcquireTimeoutError`。 |
-| Renew | Web Lock は自動延長されないため、`navigator.locks.request` のハンドラ中で `onExtend?: (leaseId) => Promise<boolean>` を呼び出し、true の場合のみ 5s 間隔で `setInterval` による再入要求を実施。 | `.lock` ファイルへ原子書き換え (`write + close`) し、`ttlExpiresAt` を `now + 30s` に更新する。更新失敗時は `LockRenewalError` をイベント通知。 |
-| Release | `release()` 呼出しで Web Lock ハンドラの `finally` を通過。`AbortController` は必ず `abort()`。 | `.lock` を `removeEntry('.lock')` で削除。例外発生時は `LockCleanupWarning` としてログイベントを送出。 |
-
-- Lease ID は `crypto.randomUUID()` に統一し、Web Lock / `.lock` 共通で `LeaseContext` に保持する。
-- Collector/Analyzer は `Collector/` 以下のパスを使用するため、ロックファイル名は `project/.lock` 固定とし、`Collector/**` 配下でのファイル作成は禁止する。
-
-## 2. 状態遷移（Web Locks + フォールバック）
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Acquiring: requestLock()
-    Acquiring --> WebLockHeld: web lock resolved
-    Acquiring --> FallbackHeld: web lock unsupported / rejected
-    Acquiring --> RetryPending: LockAcquireTimeoutError
-    WebLockHeld --> Renewing: scheduleRenewal
-    FallbackHeld --> Renewing: scheduleRenewal
-    Renewing --> WebLockHeld: renew success (web)
-    Renewing --> FallbackHeld: renew success (fallback)
-    Renewing --> RetryPending: renew failed (retryable)
-    WebLockHeld --> Releasing: release()
-    FallbackHeld --> Releasing: release()
-    RetryPending --> Acquiring: retryPolicy.next()
-    Releasing --> Idle: cleanup ok
-    Releasing --> CleanupWarning: cleanup failed
-    CleanupWarning --> Idle: emit warning, schedule cleanup task
-```
-
-- `RetryPending` は指数バックオフを適用し、最大再試行 5 回で `LockUnavailableError` に遷移。
-- `CleanupWarning` は Collector への副作用を避けるため、`setTimeout` で非同期掃除ジョブを `project/.lock` のみに限定する。
-
-## 3. API 型とイベント契約
+## 1. 公開 API シグネチャ
 
 ```ts
+export interface AcquireLockOptions {
+  readonly scope?: 'autosave' | 'history';
+  readonly signal?: AbortSignal;
+  readonly retry?: Partial<RetryPolicyConfig>;
+}
+
+export interface RetryPolicyConfig {
+  readonly initialDelayMs: number; // 既定: 500
+  readonly maxDelayMs: number; // 既定: 4000
+  readonly multiplier: number; // 既定: 2
+  readonly maxAttempts: number; // 既定: 5 (取得 1 + 再試行 4)
+}
+
 export type LockBackend = 'web' | 'fallback';
 
-export interface LeaseContext {
+export interface ProjectLockLease {
   readonly id: string; // UUID
-  backend: LockBackend;
-  acquiredAt: number;
-  ttlExpiresAt: number;
-}
-
-export type LockEventType =
-  | 'lock:acquired'
-  | 'lock:renewed'
-  | 'lock:released'
-  | 'lock:cleanup-warning'
-  | 'lock:retry-scheduled'
-  | 'lock:error';
-
-export interface LockEventBase {
-  readonly type: LockEventType;
   readonly backend: LockBackend;
-  readonly leaseId: string;
-  readonly at: number; // epoch ms
+  readonly scope: 'autosave' | 'history';
+  readonly acquiredAt: number; // epoch ms
+  readonly ttlExpiresAt: number; // epoch ms, fallback のみ更新対象
 }
 
-export interface LockRetryScheduledEvent extends LockEventBase {
-  readonly type: 'lock:retry-scheduled';
+export type LockErrorCode =
+  | 'web-lock-unsupported'
+  | 'lock-timeout'
+  | 'lock-unavailable'
+  | 'lock-renewal-failed'
+  | 'lock-release-failed';
+
+export interface LockError extends Error {
+  readonly code: LockErrorCode;
+  readonly retryable: boolean;
+  readonly cause?: unknown;
+}
+
+export interface ProjectLockEventBase {
+  readonly at: number;
+  readonly leaseId: string;
+  readonly backend: LockBackend;
+  readonly scope: 'autosave' | 'history';
+}
+
+export interface LockAcquiredEvent extends ProjectLockEventBase {
+  readonly type: 'lock:acquired';
+  readonly attempt: number;
+}
+
+export interface LockRenewedEvent extends ProjectLockEventBase {
+  readonly type: 'lock:renewed';
+  readonly ttlExpiresAt: number;
+}
+
+export interface LockReleasedEvent extends ProjectLockEventBase {
+  readonly type: 'lock:released';
+}
+
+export interface LockRetryScheduledEvent extends ProjectLockEventBase {
+  readonly type: 'lock:retry';
   readonly attempt: number;
   readonly delayMs: number;
+  readonly reason: 'contended' | 'unavailable' | 'transient-error';
 }
 
-export interface LockErrorEvent extends LockEventBase {
+export interface LockWarningEvent extends ProjectLockEventBase {
+  readonly type: 'lock:cleanup-warning';
+  readonly message: string;
+}
+
+export interface LockErrorEvent extends ProjectLockEventBase {
   readonly type: 'lock:error';
   readonly error: LockError;
 }
 
-export type LockEvent =
-  | LockEventBase & { readonly type: 'lock:acquired' | 'lock:renewed' | 'lock:released' | 'lock:cleanup-warning' }
+export type ProjectLockEvent =
+  | LockAcquiredEvent
+  | LockRenewedEvent
+  | LockReleasedEvent
   | LockRetryScheduledEvent
+  | LockWarningEvent
   | LockErrorEvent;
 
-export interface LockRequestOptions {
-  readonly signal?: AbortSignal;
-  readonly onEvent?: (event: LockEvent) => void;
-  readonly onExtend?: (ctx: LeaseContext) => Promise<boolean>;
-  readonly retryPolicy?: RetryPolicy;
-}
+export type LockEventListener = (event: ProjectLockEvent) => void;
 
-export interface RetryPolicy {
-  readonly next: (attempt: number) => number | null; // delay ms, null => give up
-  readonly maxAttempts: number;
-}
+export function subscribeLockEvents(listener: LockEventListener): () => void;
+
+export async function acquireProjectLock(
+  options?: AcquireLockOptions
+): Promise<ProjectLockLease>;
+
+export async function renewProjectLock(
+  lease: ProjectLockLease
+): Promise<ProjectLockLease>;
+
+export async function releaseProjectLock(lease: ProjectLockLease): Promise<void>;
 
 export async function withProjectLock<T>(
-  scope: string,
-  fn: (lease: LeaseContext) => Promise<T>,
-  options?: LockRequestOptions
+  fn: (lease: ProjectLockLease) => Promise<T>,
+  options?: AcquireLockOptions
 ): Promise<T>;
-
-export interface LockError extends Error {
-  readonly code:
-    | 'web-lock-unsupported'
-    | 'lock-timeout'
-    | 'lock-unavailable'
-    | 'lock-renewal-failed'
-    | 'lock-release-failed';
-  readonly retryable: boolean;
-  readonly cause?: unknown;
-}
 ```
 
-- `scope` は Collector/Analyzer の命名衝突を避けるため `"autosave" | "history"` のみを許可し、内部で `imgponic:project:${scope}` を Web Lock 名に利用する。
-- `onEvent` は UI とログの両方で共通利用できるよう、`LockEvent` を逐次通知する。
-- `RetryPolicy` のデフォルトは `(attempt) => attempt < 5 ? 2 ** attempt * 200 : null`。
+- `scope` 既定値は `'autosave'`。Web Lock 名は `imgponic:project:${scope}` とし、Day8 Collector (`collector:*`) と衝突しないよう固定する。【F:docs/IMPLEMENTATION-PLAN.md†L77-L111】【F:Day8/docs/day8/design/03_architecture.md†L1-L38】
+- `ProjectLockLease.ttlExpiresAt` はフォールバック経路の再取得判断に利用し、Web Lock 経路では `Number.POSITIVE_INFINITY` を設定する。
+- `LockError.retryable` が `false` の場合、AutoSave ランナーは閲覧専用モードへ移行し、UI 警告に利用される。【F:docs/IMPLEMENTATION-PLAN.md†L67-L111】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L72-L154】
 
-## 4. 再試行と期限更新のテストシナリオ
+## 2. 再試行戦略と TTL 管理
 
-| No. | シナリオ | 前提 | 操作 | 期待結果 |
-| --- | --- | --- | --- | --- |
-| T1 | 正常取得(Web Lock) | Web Locks 対応環境 | `withProjectLock('autosave', fn)` | `lock:acquired` → `fn` 実行 → `lock:released`。|
-| T2 | Web Lock 非対応フォールバック | `navigator.locks` 未実装 | フォールバックパスで `.lock` 作成 | `backend === 'fallback'` のイベント列が発火し、`.lock` が削除される。|
-| T3 | TTL 満了前更新 | フォールバック取得済 | `onExtend` が true を返す | `lock:renewed` が 5s 間隔で発火し、`ttlExpiresAt` が更新される。|
-| T4 | 衝突通知 | 既存 `.lock` が TTL 内 | 再取得試行 | `lock:retry-scheduled` が指数バックオフで発火し、最終的に `lock-unavailable` エラーを返す。|
-| T5 | フォールバック掃除 | `.lock` 削除失敗 | `release()` | `lock:cleanup-warning` イベントが発火し、次回取得時に孤児 `.lock` をクリーンアップする。|
+| フェーズ | 既定挙動 | 再試行判定 | 中断条件 |
+| --- | --- | --- | --- |
+| Acquire | Web Locks を `AbortSignal` 10s で要求。失敗時は `.lock` フォールバックを `project/.lock` に生成。 | Web Lock が `SecurityError`/`NotSupportedError` を返した場合はフォールバックへ即移行。競合 (`TimeoutError`/`.lock` TTL 内) は指数バックオフで再試行。 | `maxAttempts` 消費後は `LockError(code='lock-unavailable', retryable=false)` を投げ、UI を ReadOnly 化。 |
+| Renew | フォールバックのみ 20s 経過時に `renewProjectLock` を呼び、`ttlExpiresAt` を `now + 30s` に更新。Web Lock では no-op。 | 書き込み失敗 (`NotAllowedError` 以外) は再試行対象として `LockRetryScheduledEvent` を発火し、次回 0.5→1→2→4s で再実行。 | 更新が 5 回連続で失敗した場合は `lock-renewal-failed` を返却し、AutoSave は再取得シーケンスへ戻る。 |
+| Release | Web Lock ハンドラ `finally` で解放。フォールバックは `.lock` 削除。 | 削除失敗時は `lock:cleanup-warning` を通知し、次回取得前にガーベジコレクションを試行。 | `.lock` が削除できず 3 回失敗した場合でも処理を継続し、Collector/Analyzer 配下へは書き込まない。 |
 
-## 5. Collector/Analyzer との干渉排除チェックリスト
+- 既定 `RetryPolicyConfig`: `initialDelayMs=500`, `multiplier=2`, `maxDelayMs=4000`, `maxAttempts=5`。AutoSave の指数バックオフ要件（0.5s→1s→2s→4s）と一致させる。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L149-L214】
+- `.lock` の TTL は常に 30s。取得時は既存ファイルの `ttlExpiresAt` が過去なら孤児扱いで上書きし、未来なら競合として再試行へ遷移する。【F:docs/IMPLEMENTATION-PLAN.md†L67-L111】
+- Day8 Collector/Analyzer のパスは `workflow-cookbook/` 配下であるため、フォールバックファイルの作成・削除対象は `project/.lock` のみに限定する。【F:Day8/docs/day8/design/03_architecture.md†L1-L38】
 
-1. Web Lock 名は `imgponic:project:${scope}` で固定し、Collector が利用する `collector:*` 命名と分離する。
-2. フォールバック `.lock` は `project/.lock` のみ。`Collector/**` や `Analyzer/**` のディレクトリに触れない。
-3. ログ/イベントは `console.warn` 1 行のみ（AutoSave ポリシーに準拠）で、Collector の JSONL 収集対象に書き込まない。
-4. `RetryPolicy` の再試行は最大 5 回・合計 3.2s 遅延以内に抑え、Collector のアップロード間隔 15 分（Day8 アーキテクチャ）へ影響しない。
-5. 例外クラス `LockError` は Collector/Analyzer のエラー階層と独立させ、共通エラーハンドラで `retryable` 判定が可能。
+## 3. イベント購読モデル
+
+| イベント | 送信タイミング | 主要フィールド | AutoSave 側の利用例 |
+| --- | --- | --- | --- |
+| `lock:acquired` | 初回取得またはフォールバックへ切り替えた瞬間 | `attempt`, `backend` | インジケータを `awaiting-lock` → `writing` へ遷移させ、Collector メトリクスへ取得成功を記録。 |
+| `lock:renewed` | フォールバックの `renewProjectLock` 成功時 | `ttlExpiresAt` | 心拍タイマーが TTL 更新の成功/失敗を監視し、`retryable` 判定を UI に反映。 |
+| `lock:retry` | 競合または一時エラーで再試行をスケジュールした時 | `attempt`, `delayMs`, `reason` | AutoSave ステータスを `awaiting-lock` に戻し、指数バックオフが UI に可視化される。 |
+| `lock:error` | `retryable=false` の例外が発生した時 | `error.code`, `error.retryable` | UI を ReadOnly に切り替え、テレメトリに重大イベントとして送信。 |
+| `lock:cleanup-warning` | フォールバック解放で `.lock` 削除に失敗した時 | `message` | 次回取得前に遅延ガーベジコレクションを試行し、Collector/Analyzer への副作用を防止。 |
+| `lock:released` | 正常に解放した時 | - | AutoSave ステートを `idle` へ戻す。 |
+
+- `subscribeLockEvents` は複数購読者（UI・テレメトリ）が同時に登録できるよう、シンプルな pub/sub を返す。解除関数は idempotent。イベントは必ず `at` 昇順で同期発火し、Collector の JSONL に直接書き込まない。【F:docs/IMPLEMENTATION-PLAN.md†L67-L111】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L149-L214】
+- `withProjectLock` は `acquireProjectLock` → `fn` → `releaseProjectLock` を直列化し、途中エラー時でも `lock:released` または `lock:cleanup-warning` を必ず送出する。
+
+## 4. テスト観点（抜粋）
+
+1. Web Lock 正常系: `navigator.locks` 対応環境で `acquireProjectLock` → `releaseProjectLock`。イベント順序は `lock:acquired` → `lock:released`。
+2. フォールバック競合: `.lock` が TTL 内の状態で取得を試行し、指数バックオフイベントと最終 `lock:error` (`lock-unavailable`) を検証。
+3. 期限更新: フォールバック取得後 20s 経過時に `renewProjectLock` を呼び、`ttlExpiresAt` 更新と `lock:renewed` イベントを確認。
+4. クリーンアップ警告: `.lock` 削除に失敗するモックを用いて `lock:cleanup-warning` が送出されること、Collector/Analyzer 配下を変更しないことを確認。
+
+- 上記シナリオは AutoSave テスト戦略の Fake Timer/OPFS Stub を流用し、既存 `retryable` 判定と整合させる。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L215-L270】
 
