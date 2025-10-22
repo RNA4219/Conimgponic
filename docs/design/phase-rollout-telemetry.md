@@ -19,6 +19,12 @@
 - `import.meta.env` → `localStorage` → `docs/CONFIG_FLAGS.md` 既定値の順に解決する。`FlagSnapshot.source` を保持しロールバック調査時の証跡とする。【F:docs/IMPLEMENTATION-PLAN.md†L9-L52】
 - Phase A-1 までは QA 対象アカウントに限り `localStorage` 上書きを許容し、Phase A-2 以降は Collector が配布する `flags:push --env beta` による集中管理へ切り替える。【F:docs/IMPLEMENTATION-PLAN.md†L69-L110】
 
+### 1.3 フェーズ移行判定フロー
+1. Analyzer が 15 分毎に算出したメトリクスを `metrics/autosave_merge/<date>.json` に書き出し、`phase` キーで対象フェーズを明示する（Phase 移行時に履歴を切り分けるため）。【F:Day8/docs/day8/design/03_architecture.md†L12-L31】
+2. Release Captain は日次の `reports/rollout/<date>.md` を参照し、ゲート基準を満たすか判定する。レポートには `autosave_p95`・`restore_success_rate`・`merge_auto_success_rate` のウィンドウ別推移と QA チェックリスト完了状況を添付する。【F:docs/IMPLEMENTATION-PLAN.md†L52-L101】
+3. 判定結果は `governance/phase-ledger.yaml` に記録し、`flags:push --phase <next>` を実行した責任者とタイムスタンプを合わせて残す。Ledger はロールバック時の参照ポイントとなる。【F:docs/IMPLEMENTATION-PLAN.md†L69-L118】
+4. Phase B 以降は Merge Precision の既定値が変化するため、`flags:push` 完了後に `MergeDock` の UI スモークテスト（`tests/merge/phase_smoke.spec.ts`）を実行し、Diff Merge タブ露出とメトリクス送信が有効化されていることを確認する。【F:docs/IMPLEMENTATION-PLAN.md†L24-L48】
+
 ## 2. テレメトリとメトリクス
 ### 2.1 主要イベント
 | イベント | 発火元 | 必須フィールド | 指標 | 備考 |
@@ -45,6 +51,11 @@
 | `merge_auto_success_rate` | <0.85 | <0.80 | Phase B-0/B-1【F:docs/IMPLEMENTATION-PLAN.md†L58-L69】 |
 | `rollback.executed` | - | 発火時に incident | 全フェーズ【F:docs/IMPLEMENTATION-PLAN.md†L76-L118】 |
 
+### 2.4 イベントスキーマ & バリデーション
+- Collector は `schemas/events/autosave.json` / `schemas/events/merge.json` を利用し、`feature`・`phase`・`retryable` 等の必須フィールドを JSON Schema で検証する。スキーマ更新は `pnpm run schema:lint` に追加し、CI で逸脱を検知する。【F:Day8/docs/day8/design/03_architecture.md†L19-L31】
+- Analyzer では `phase_rollout.window` 設定（`1h`・`24h`・`7d`）に従って移動ウィンドウ集計を実施し、SLO 判定時には `phase` と `feature` の両方でパーティションを分ける。これにより Phase A/B が同日に混在しても閾値評価が崩れない。【F:docs/IMPLEMENTATION-PLAN.md†L52-L101】
+- Reporter のテンプレートは `templates/reports/rollout_phase.md` を新設し、各メトリクスの最新値とダッシュボード URL (`/dashboards/autosave-merge`) を埋め込む。テンプレート適用は Day8 Reporter のプラガブルレンダラを使用する。【F:Day8/docs/day8/design/03_architecture.md†L32-L78】
+
 ## 3. ロールバック動線
 ### 3.1 判断フロー
 ```mermaid
@@ -70,6 +81,10 @@ digraph Rollback {
 1. Analyzer が致命閾値を検知したら `incident_queue.json` に `action="notify_rollback"` を追加し、Reporter が Slack/PagerDuty 通知を送信する。【F:docs/IMPLEMENTATION-PLAN.md†L69-L118】【F:docs/TELEMETRY-COLLECTOR-AUTOSAVE.md†L92-L133】
 2. On-call が `pnpm run flags:rollback --phase <prev>` を実行し、`docs/CONFIG_FLAGS.md` の既定値を前フェーズへ戻す。実行ログは `rollback.executed` イベントとして Collector へ投入する。【F:docs/IMPLEMENTATION-PLAN.md†L76-L118】
 3. ロールバック後 1 営業日以内に RCA を `reports/rca/` へ格納し、Phase A-1 から再開する。Reporter は日次レポートへ RCA リンクを掲載する。【F:docs/IMPLEMENTATION-PLAN.md†L118-L155】
+
+### 3.3 フラグ反映と監査
+- Rollback コマンド完了後、`src/config/flags.ts` の `DEFAULT_FLAGS` を読み込む Smoke Test (`tests/flags/rollback.spec.ts`) を必ず実行し、`autosave.enabled` と `merge.precision` が Ledger の記録と一致することを確認する。【F:docs/IMPLEMENTATION-PLAN.md†L9-L52】
+- 監査ログは `governance/audit/phase_rollout/<date>.jsonl` に記録し、`action`（`promote`/`rollback`）、`phase`, `executor`, `reason`, `metrics_snapshot` を残す。`metrics_snapshot` には Analyzer 出力ファイルのハッシュを格納し、改竄を防ぐ。【F:Day8/docs/day8/design/03_architecture.md†L42-L78】
 
 ## 4. 実装チェックリスト
 - [ ] `FlagSnapshot` に `source` を保持し、Phase ごとの設定差異をトラッキングできる状態にする。【F:docs/IMPLEMENTATION-PLAN.md†L9-L52】
