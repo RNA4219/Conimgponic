@@ -129,157 +129,105 @@ UI 層は `precision` に応じて以下のプロトコルを実装する。
 
 Collector→Analyzer→Reporter のフローでは、`merge.precision` ごとに `merge_auto_success_rate` を分解集計し、フェーズ移行のゲートとして活用する。【F:Day8/docs/day8/design/03_architecture.md†L1-L29】【F:docs/IMPLEMENTATION-PLAN.md†L141-L164】
 
-## 5) UI / インタラクション
-### Algorithm Details
-#### 擬似コード
-```pseudo
-function merge3(input, profile):
-  cfg = resolveProfile(profile)
-  sections = detectSections(input, cfg.granularity)
-  hunks = []
-  stats = { auto: 0, conflicts: 0, sumSim: 0 }
-  for section in sections sorted by section.key:
-    tokens = tokenizeSection(section, cfg.tokenizer)
-    diff = computeLCS(tokens.base, tokens.ours, tokens.theirs)
-    similarity = score(diff, method="hybrid-jaccard-cosine")
-    decision = decide(section.lock, cfg, similarity)
-    hunk = assemble(section, decision, similarity)
-    updateStats(stats, hunk, similarity)
-    hunks.append(hunk)
-  mergedText = concatAuto(hunks)
-  stats.avgSim = stats.sumSim / max(1, len(hunks))
-  return { hunks, mergedText, stats }
-```
+## 5) UI / Diff Merge インタラクション
 
-#### フローチャート
+### 5.1 コンポーネントツリー
+
 ```mermaid
 flowchart TD
-  A[入力 MergeInput] --> B[セクション分割/キー生成]
-  B --> C[トークナイズ & LCS差分]
-  C --> D[類似度スコアリング]
-  D --> E{lock / prefer?}
-  E -->|lockあり| F[強制決定]
-  E -->|lockなし| G{similarity >= threshold}
-  G -->|Yes| H[auto 決定]
-  G -->|No| I[conflict 保持]
-  F --> J[Hunk生成]
-  H --> J
-  I --> J
-  J --> K[連続auto連結]
-  K --> L[統合結果 & 統計更新]
-  L --> M[証跡出力 runs/<ts>/merge.json]
+    MergeDock --> DiffMergeTabs
+    MergeDock -->|activeTab==='diff-merge'| DiffMergeView
+    DiffMergeView --> StateController[useReducer Store]
+    DiffMergeView --> HunkListPane
+    DiffMergeView --> OperationPane
+    DiffMergeView --> BannerStack
+    OperationPane --> DecisionDeck
+    OperationPane --> BulkActionBar
+    OperationPane --> EditModal
+    DiffMergeView --> TelemetryBridge[queueMergeCommand]
 ```
 
-#### データフロー図
+| ノード | 説明 | 関連モジュール | precision 依存 | AutoSave 協調 |
+| --- | --- | --- | --- | --- |
+| `MergeDock` | precision 切替に応じてタブ構成と初期タブを決定。 | `src/components/MergeDock.tsx` | `legacy` で Diff タブ非表示。 | AutoSave 独占ロック時にタブ遷移を抑止。 |
+| `DiffMergeView` | Diff タブ本体。ハンク状態・ロック状態のストアを保持。 | `src/components/DiffMergeView.tsx` | `beta/stable` でマウント。 | `locks.onChange` を購読し CTA 表示を制御。 |
+| `HunkListPane` | ハンク一覧 + フィルタ。仮想スクロールで 100 件超を扱う。 | `DiffMergeView.tsx` 内部 | `legacy` 非表示。 | AutoSave ロック中は `aria-disabled`。 |
+| `OperationPane` | 選択ハンクの詳細操作。 | `DiffMergeView.tsx` 内部 | `beta/stable`。 | AutoSave ロック中はボタン無効。 |
+| `BannerStack` | バナー/トーストの集中管理。 | `DiffMergeView.tsx` 内部 | 全 precision | `retryable` エラーとロック通知を表示。 |
+| `TelemetryBridge` | `queueMergeCommand` 発行とイベント購読を一元化。 | `src/lib/merge.ts` | 全 precision | AutoSave `flushNow()` 呼び出し順序を保証。 |
+
+### 5.2 ハンク状態機械
+
 ```mermaid
-graph LR
-  profile[MergeProfile] --> resolver(resolveProfile)
-  resolver --> cfg[ResolvedProfile]
-  input[MergeInput] --> splitter(detectSections)
-  splitter --> sections[Sections]
-  sections --> tokenizer[tokenizeSection]
-  tokenizer --> diff[computeLCS]
-  diff --> scorer[score]
-  cfg --> decider(decide)
-  scorer --> decider
-  decider --> assembler(assemble)
-  assembler --> hunks[Hunks]
-  hunks --> concat(concatAuto)
-  concat --> output[MergedText]
-  hunks --> stats[Aggregate Stats]
-  stats --> trace[runs/<ts>/merge.json]
-  cfg --> trace
+stateDiagram-v2
+    [*] --> Unloaded
+    Unloaded --> Hydrating: queueMergeCommand('hydrate')
+    Hydrating --> Ready: commandResolved(success)
+    Hydrating --> Error: commandResolved(error)
+    Ready --> Inspecting: selectHunk
+    Inspecting --> Editing: openEditModal
+    Editing --> Inspecting: closeModal
+    Inspecting --> BulkSelecting: openBulk
+    BulkSelecting --> Ready: bulkResolved
+    Inspecting --> Ready: commandResolved(success)
+    Ready --> ReadOnly: autosave.lock('project')
+    ReadOnly --> Ready: autosave.release('project')
+    Error --> Ready: retryCommand
 ```
 
-## 5) UI
-- `MergeDock` に **Diff Merge** タブ
-- セクション：自動採用（薄緑）／衝突（黄色）
-- 衝突ごとに「Manual採用」「AI採用」「手動編集」
-- 一括操作：しきい値スライダー、全Manual/全AI
-- 「結果を採用」→ `Scene.manual` に書き戻し（既存フローと互換）
+| 状態 | UI 表示 | 主トリガー | Exit 条件 | precision 影響 | AutoSave 影響 |
+| --- | --- | --- | --- | --- | --- |
+| `Unloaded` | Diff ペイン非表示。 | `precision` が `beta/stable` に遷移。 | `queueMergeCommand('hydrate')` | `legacy` 中は維持。 | ロック無し。 |
+| `Hydrating` | スケルトン + CTA ローディング。 | 初回フェッチ。 | `commandResolved(success/error)` | 全 precision | AutoSave ロック待ち表示を併用。 |
+| `Ready` | ハンク一覧 + 操作バー有効。 | フェッチ成功。 | `selectHunk`, `autosave.lock`, `commandResolved`. | `beta/stable` | 共有ロック中は CTA disable。 |
+| `Inspecting` | ハンク詳細強調。 | `selectHunk`. | `openBulk`, `openEditModal`, `commandResolved`. | `beta/stable` | ロック中は編集非表示。 |
+| `Editing` | 編集モーダル + focus trap。 | `openEditModal`. | `closeModal`, `commandResolved`. | `stable` 初期表示 | AutoSave 独占ロック時は入力禁止。 |
+| `BulkSelecting` | 一括操作バー固定。 | `openBulk`. | `bulkResolved`, `closeBulk`. | `stable` 主対象 | ロック中は enqueue のみ。 |
+| `ReadOnly` | 「保存中…」バナー + CTA 非活性。 | AutoSave `locks.isShared('project')`。 | `autosave.release('project')`. | `beta/stable` | shared lock 解除で `Ready` 復帰。 |
+| `Error` | 警告バナーとリトライ CTA。 | `commandResolved(error)`. | `retryCommand`. | 全 precision | `retryable` フラグで AutoSave 再試行と同期。 |
 
-### 5.1 コンポーネント構成
-```
-MergeDock (既存タブ群)
-└─ DiffMergeView (新規タブ本体)
-   ├─ DiffMergeTabs …… MergeDock のタブバーに `Diff Merge`
-   ├─ HunkListPane …… 左列。フィルタ/統計 + ハンク概要リスト
-   │   ├─ MergeSummaryHeader …… auto/conflict 件数と閾値スライダー
-   │   └─ MergeHunkRow[n] …… decision バッジ + section タイトル + ミニ差分
-   └─ OperationPane …… 右列。選択中ハンクの詳細
-       ├─ BulkActionBar …… 全Manual/全AI/全リセット + 選択操作
-       ├─ MergeHunkDetail …… Base/Ours/Theirs 差分ビュー + ステータス
-       │   ├─ DiffSplitView …… 左右比較（スクリーンリーダー向けテキスト複製）
-       │   ├─ DecisionButtons …… Manual / AI / 編集 / AI再実行
-       │   └─ StatusBadge …… 自動採用/衝突/進行中を色＋アイコン表示
-       └─ EditModal …… 手動編集フォーム（保存/キャンセル/Undo）
-```
-レイアウトは左右 2 カラム（`minmax(280px, 35%)` + `auto`）とし、ハンク一覧は仮想スクロールで 100+ 件でも再描画負荷を抑える。
+### 5.3 `queueMergeCommand` フロー
 
-### 5.2 マージハンク状態機械
-各ハンクは下記ステートマシンで管理し、UI 表示と `merge.ts` コマンドを同期する。
-
-```
-state MergeHunk {
-  AutoResolved
-  Conflict {
-    Idle
-    ApplyingManual
-    ApplyingAI
-    ManualEditing
-  }
-}
+```mermaid
+sequenceDiagram
+    participant UI as DiffMergeView
+    participant Hub as Merge Event Hub (merge.ts)
+    participant AutoSave as AutoSave Lock Manager
+    UI->>Hub: queueMergeCommand(payload)
+    Hub->>AutoSave: requestSharedLock('project')
+    AutoSave-->>Hub: lockGranted | lockPending
+    alt lockGranted
+        Hub->>Hub: execute merge3 / legacy pipeline
+        Hub-->>UI: commandResolved({ status, retryable })
+    else lockPending
+        UI->>UI: show "保存中…" banner, disable CTA
+        AutoSave-->>Hub: lockReleased
+        Hub->>Hub: resume queued commands
+        Hub-->>UI: commandResolved({ status, retryable })
+    end
+    UI->>AutoSave: flushNow() (success && precision in {beta,stable})
 ```
 
-- 初期状態は `AutoResolved`（`decision:'auto'`）または `Conflict.Idle`（`decision:'conflict'`）。
-- `Conflict.Idle --Manual採用--> AutoResolved` ：`queueMergeCommand({ type:'setManual', hunkId })` を `merge.ts` に送出。
-- `Conflict.Idle --AI採用--> AutoResolved` ：`queueMergeCommand({ type:'setAI', hunkId })`。AI テキスト未生成時は `ApplyingAI` に遷移し、`merge.ts` が AI 呼び出し後に `AutoResolved` へ遷移するイベントを publish。
-- `Conflict.Idle --手動編集--> Conflict.ManualEditing` ：DiffMergeView で `openEditModal(hunkId)` を dispatch。
-- `Conflict.ManualEditing --保存--> AutoResolved` ：`queueMergeCommand({ type:'commitManualEdit', hunkId, text })`。
-- `Conflict.ManualEditing --キャンセル--> Conflict.Idle` ：UI のみで state 戻し、副作用なし。
-- `AutoResolved --再オープン--> Conflict.Idle` ：「リセット」操作時に `queueMergeCommand({ type:'resetDecision', hunkId })`。
-- 一括操作（全Manual/全AI/全リセット）は対象ハンクへ順次コマンドを送出。送信中は `BulkActionBar` が progress 表示し、未完了ハンクを `ApplyingManual/AI` で表現する。
+| 手順 | 詳細 | precision 影響 | AutoSave 協調 | リスク緩和 |
+| --- | --- | --- | --- | --- |
+| 1. enqueue | UI から `queueMergeCommand` を発行し、`payload` をストアにバッファ。 | 全 precision | ロック中は enqueue のみ許可。 | `merge.lastTab` に状態保存。 |
+| 2. lock 交渉 | `merge.ts` が AutoSave 共有ロックを取得。 | `legacy` はスキップ。 | `lockPending` 時に UI へローディングバナーを表示。 | 5 秒超過で `retryable` エラー。 |
+| 3. 実行 | ロック取得後に `merge3` または従来処理を呼び出す。 | `beta/stable` で Diff ハンク更新。 | AutoSave ロック解除までは結果適用を遅延。 | 失敗時は `retryable` 判定で UI リトライ。 |
+| 4. 結果通知 | `commandResolved` を発火し UI ステータス更新。 | 全 precision | `retryable=false` で `MergeDock` を `compiled` へ戻す。 | Diff ステート破棄で不整合防止。 |
+| 5. AutoSave flush | 成功時に `flushNow()` を連携。 | `beta/stable` のみ | ロック解除直後に実行。 | Telemetry でロック時間を追跡。 |
 
-`queueMergeCommand` は `merge.ts` のコマンドキューラッパーで、UI からの要求をストアへ集約した後にバッチ書き戻しする。
+### 5.4 precision 切替とロック協調
 
-### 5.3 書き戻しと履歴整合
-- 全コマンドは `Scene.manual` を唯一のソースとし、反映は `merge.ts` → `store.ts` の既存アクション（`commitSceneManual(sceneId, text)`）経由で行う。Undo/Redo は `store.ts` のヒストリースタックに差分パッチを push して担保する。
-- `DiffMergeView` は書き戻し完了イベントを購読し、ハンクリストの `merged` 断片を再描画。Undo 実行時は `merge.ts` が逆コマンドを emit（`type:'revertDecision'`）し UI 状態も巻き戻す。
-- 書き戻し結果は AutoSave に委譲せず、AutoSave 側のファイル書き込みが完了したときのみ `Saved HH:MM:SS` を更新する（`AUTOSAVE-DESIGN-IMPL.md` に準拠）。
-- アクセシビリティ：タブ到達順は `MergeDock` → ハンクリスト → 操作パネル。全ボタンへ `aria-pressed` / `aria-label` 付与。差分ビューは `aria-describedby` でベーステキストを読み上げ可能にし、キーボード操作は `ArrowUp/Down` でハンク選択、`Enter` で決定、`Shift+Enter` で編集開始。
+| 遷移 | タブ制御 | ハンク状態 | AutoSave 要件 | ロールバック |
+| --- | --- | --- | --- | --- |
+| `legacy → beta` | Diff タブを末尾に追加し `activeTab` を `compiled` に維持。 | `Unloaded` → `Hydrating`。 | 共有ロックで読み取りのみ許可。 | 失敗時はタブ非表示。 |
+| `beta → stable` | Diff タブを初期表示に昇格。 | `Ready` を初期状態とし `BulkSelecting` を許可。 | AutoSave `flushNow()` を強制呼び出し。 | AutoSave ロック超過時は `beta` へ戻す。 |
+| `stable → beta` | Diff 特有 CTA を DOM から除去。 | `BulkSelecting` を終了させ `Ready` に戻す。 | AutoSave 独占ロック中は遷移禁止。 | 未完了コマンドをキャンセル。 |
+| `beta → legacy` | Diff タブを非表示にし `activeTab` を `compiled` にフォールバック。 | `ReadOnly` / `Error` 状態を破棄。 | `releaseShared('project')` を送信。 | Diff 状態と Telemetry キューを消去。 |
 
-### 5.4 異常系と AutoSave 協調
-- マージ統計（`merge.ts` → `stats`）取得失敗時：`MergeSummaryHeader` にエラーバナーを表示し、「再取得」ボタンで `queueMergeCommand({ type:'refreshStats' })` を再送。取得中はスピナー表示。
-- 証跡書き込み（`runs/<ts>/merge.json`）失敗時：フッターに `toast` + 詳細ダイアログ。「再試行」選択で `queueMergeCommand({ type:'persistTrace', hunkIds })` を再実行。連続失敗 3 回で `AUTOSAVE` と同様のバックオフ通知。
-- AutoSave 連携：`DiffMergeView` の編集開始時に `navigator.locks` で merge セクション専用ロック `imgponic:merge` を獲得。AutoSave 側はロック保持中でも読み込みのみ許可し、書き込みはロック解放後に差分マージを再確認。UI はロック保持中に「保存中…」を抑制し、衝突時は `MergeConflictDialog` を表示して再読込 or 手動差分適用を促す。
-
-### 5.5 TDD ケース・フィクスチャ
-React Testing Library で以下をカバーする。
-- `DiffMergeView` 初期表示：Auto/Conflict 件数・タブ切り替え・ハンク選択のキーボード操作。
-- `DecisionButtons` 操作：Manual/AI ボタン押下で `queueMergeCommand` が正しい payload になる。
-- `EditModal` 保存キャンセル：入力内容が `Scene.manual` 書き戻しに伝搬し、キャンセル時はコマンド送出なし。
-- 異常系：統計失敗モックでバナー表示 → 再取得クリック時に再試行イベントが発火。
-- アクセシビリティ：`aria` 属性、`tab` ナビゲーション順序、スクリーンリーダー用テキストが DOM 上に存在。
-
-Storybook では以下のシナリオを用意。
-- `AutoResolved` のみのプロファイル（100 件仮想スクロール）。
-- 混在ケース（衝突 + AI再実行中 + 編集モーダル開）
-- 異常系（統計取得失敗バナー表示）。
-
-必要フィクスチャ：
-- `merge-hunks/basic.json` …… auto/conflict 混在。`Scene.manual`/`ai` モック付き。
-- `merge-hunks/all-auto.json` …… 大量 auto 用。
-- `merge-hunks/error-stats.json` …… stats API 失敗レスポンス。
-- `merge-commands/log.ts` …… `queueMergeCommand` 呼び出し追跡モック。
-
-### 5.6 イベントログ出力チェックリスト
-Day8 アーキテクチャの Reporter → Governance 流れに従い、マージ操作で下記ログを残す。
-
-1. `merge:stats:refreshed` — 統計取得成功時。payload: 件数/類似度。
-2. `merge:hunk:decision` — Manual/AI/編集確定時。payload: `hunkId`, `decision`, `actor`。
-3. `merge:hunk:ai:requested` / `merge:hunk:ai:fulfilled` — AI 再実行の開始/完了。Reporter は AI 成果を草案ログへ追加。
-4. `merge:trace:persisted` — 証跡書き込み完了。失敗時は `merge:trace:error` にエラーコード。
-5. `merge:autosave:lock` — AutoSave ロック獲得/解放を Governance 監査に通知。
+### 5.5 テスト & ロールバック観点
+- React テスト (`tests/merge/diff-merge-view.spec.ts`) ではタブキーボード操作・バナー表示・`queueMergeCommand` フロー・AutoSave ロック遷移を網羅する。【F:docs/design/merge/diff-merge-view.md†L91-L154】
+- リスクシナリオは AutoSave ロック解除遅延・precision 降格・`retryable=false` エラーで Diff タブをロールバックする条件を維持する。【F:docs/design/merge/diff-merge-view.md†L157-L175】
 
 ## 6) 決定プロセスと通知
 1. `merge3` 開始時に `telemetry('merge:start')` を送信し、`sceneId` と `ResolvedMergeProfile` を Collector に記録。
