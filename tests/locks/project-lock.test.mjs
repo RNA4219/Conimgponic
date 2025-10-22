@@ -46,7 +46,7 @@ test('web lock acquisition emits attempt then acquired', async (t) => {
   const { locks, events } = await setup(t, { locks: { async request(){ return { async release(){} } } } })
   const lease = await locks.acquireProjectLock()
   assert.equal(lease.strategy, 'web-lock')
-  assert.deepEqual(events.map(e => e.type), ['lock:attempt', 'lock:acquired'])
+  assert.deepEqual(events.map(e => e.type), ['lock:attempt', 'lock:acquired', 'lock:renew-scheduled'])
   await locks.releaseProjectLock(lease)
 })
 test('fallback lock engages when web locks unsupported', async (t) => {
@@ -54,7 +54,9 @@ test('fallback lock engages when web locks unsupported', async (t) => {
   const lease = await locks.acquireProjectLock()
   assert.equal(lease.strategy, 'file-lock')
   assert.ok(opfs.files.has('project/.lock'))
-  assert.equal(events.filter(e => e.type === 'lock:fallback-engaged').length, 1)
+  const fallbackEvents = events.slice(1) // skip initial attempt event
+  assert.ok(fallbackEvents.some(e => e.type === 'lock:warning' && e.warning === 'fallback-engaged'))
+  assert.equal(fallbackEvents.filter(e => e.type === 'lock:fallback-engaged').length, 1)
   await locks.releaseProjectLock(lease)
 })
 test('renew extends ttl and schedules heartbeat', async (t) => {
@@ -69,8 +71,25 @@ test('withProjectLock releases lease after executor failure', async (t) => {
   const { locks, events } = await setup(t, {})
   await assert.rejects(locks.withProjectLock(async () => { throw new locks.ProjectLockError('renew-failed', 'fatal', { retryable: false, operation: 'renew' }) }))
   const types = events.map(e => e.type)
+  assert.ok(types.includes('lock:error'))
   assert.ok(types.includes('lock:readonly-entered'))
   const releaseIndex = types.indexOf('lock:release-requested')
   const releasedIndex = types.indexOf('lock:released')
   assert.ok(releaseIndex >= 0 && releasedIndex > releaseIndex)
+})
+
+test('acquire retry emits waiting and error events on conflict', async (t) => {
+  const { locks, events } = await setup(t, {})
+  const firstLease = await locks.acquireProjectLock()
+  const start = events.length
+  await assert.rejects(
+    locks.acquireProjectLock({ backoff: { initialDelayMs: 1, factor: 1, maxAttempts: 2 } }),
+    (error) => error instanceof locks.ProjectLockError && error.code === 'fallback-conflict'
+  )
+  const retryEvents = events.slice(start)
+  const waiting = retryEvents.filter(e => e.type === 'lock:waiting')
+  assert.ok(waiting.length >= 1)
+  assert.ok(waiting.every(e => e.delayMs >= 1))
+  assert.ok(retryEvents.some(e => e.type === 'lock:error' && e.operation === 'acquire'))
+  await locks.releaseProjectLock(firstLease)
 })
