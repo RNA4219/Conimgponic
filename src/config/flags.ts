@@ -1,12 +1,15 @@
 export type FlagSource = 'env' | 'localStorage' | 'default'
+export type MergePrecision = 'legacy' | 'beta' | 'stable'
+export type AutoSavePhase = 'disabled' | 'phase-a' | 'phase-b'
 
 export interface FlagSnapshot {
-  readonly autosave: { readonly enabled: boolean }
-  readonly merge: { readonly precision: 'legacy' | 'beta' | 'stable' }
+  readonly autosave: { readonly enabled: boolean; readonly phase: AutoSavePhase }
+  readonly merge: { readonly precision: MergePrecision }
   readonly source: {
     readonly autosaveEnabled: FlagSource
     readonly mergePrecision: FlagSource
   }
+  readonly resolvedAt: number
 }
 
 export interface FlagDefinition<T> {
@@ -20,11 +23,24 @@ export interface FlagDefinition<T> {
 export interface ResolveOptions {
   env?: Record<string, unknown>
   storage?: Pick<Storage, 'getItem'> | null
+  defaults?: FlagDefaults
+  mode?: 'browser' | 'cli'
 }
 export interface FlagResolution<T> {
   value: T
   source: FlagSource
+  resolvedAt: number
 }
+
+export interface FlagDefaults {
+  readonly autosave: { readonly enabled: boolean }
+  readonly merge: { readonly precision: MergePrecision }
+}
+
+export const DEFAULT_FLAGS: FlagDefaults = {
+  autosave: { enabled: false },
+  merge: { precision: 'legacy' }
+} as const
 
 const defaultEnv = ((import.meta as any)?.env ?? {}) as Record<string, unknown>
 const defaultStorage: Pick<Storage, 'getItem'> | null =
@@ -56,13 +72,15 @@ export function resolveFlag<T>(
   options: ResolveOptions = {}
 ): FlagResolution<T> {
   const env = options.env ?? defaultEnv
-  const storage = options.storage ?? defaultStorage
+  const storage = options.mode === 'cli' ? null : options.storage ?? defaultStorage
+  const resolvedAt = Date.now()
 
   const envValue = env[def.envKey]
   if (envValue != null && envValue !== '') {
     return {
       value: coerceValue(String(envValue), def),
-      source: 'env'
+      source: 'env',
+      resolvedAt
     }
   }
 
@@ -71,34 +89,89 @@ export function resolveFlag<T>(
     if (stored != null) {
       return {
         value: coerceValue(stored, def),
-        source: 'localStorage'
+        source: 'localStorage',
+        resolvedAt
       }
     }
   }
 
-  return { value: def.defaultValue, source: 'default' }
+  const defaults = options.defaults ?? DEFAULT_FLAGS
+  let fallback = def.defaultValue
+  if (def.name === 'autosave.enabled' || def.name === 'autoSave.enabled') {
+    fallback = defaults.autosave.enabled as unknown as T
+  } else if (def.name === 'merge.precision' || def.name === 'merge.diffTab') {
+    fallback = defaults.merge.precision as unknown as T
+  }
+  return { value: fallback, source: 'default', resolvedAt }
 }
 
-export type FeatureFlagName = 'autoSave.enabled' | 'merge.diffTab'
-
-export const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlagName, FlagDefinition<boolean>>
-  = {
-  'autoSave.enabled': {
-    name: 'AutoSave Enabled',
-    envKey: 'VITE_FLAG_AUTOSAVE',
-    storageKey: 'flag:autoSave.enabled',
-    defaultValue: false,
-    coerce: (raw) => raw === '1' || raw.toLowerCase() === 'true'
-  },
-  'merge.diffTab': {
-    name: 'Merge Dock Diff Tab',
-    envKey: 'VITE_FLAG_MERGE_DIFF',
-    storageKey: 'flag:merge.diffTab',
-    defaultValue: true,
-    coerce: (raw) => raw === '1' || raw.toLowerCase() === 'true'
+const AUTOSAVE_FLAG: FlagDefinition<boolean> = {
+  name: 'autosave.enabled',
+  envKey: 'VITE_AUTOSAVE_ENABLED',
+  storageKey: 'autosave.enabled',
+  defaultValue: DEFAULT_FLAGS.autosave.enabled,
+  coerce: (raw) => {
+    const lower = raw.toLowerCase()
+    if (lower === 'true' || raw === '1') return true
+    if (lower === 'false' || raw === '0') return false
+    return DEFAULT_FLAGS.autosave.enabled
   }
 }
 
-export function resolveFeatureFlag(name: FeatureFlagName, options?: ResolveOptions) {
-  return resolveFlag(FEATURE_FLAG_DEFINITIONS[name], options)
+const MERGE_PRECISION_FLAG: FlagDefinition<MergePrecision> = {
+  name: 'merge.precision',
+  envKey: 'VITE_MERGE_PRECISION',
+  storageKey: 'merge.precision',
+  defaultValue: DEFAULT_FLAGS.merge.precision,
+  coerce: (raw) => (raw === 'legacy' || raw === 'beta' || raw === 'stable' ? (raw as MergePrecision) : DEFAULT_FLAGS.merge.precision)
+}
+
+export type FeatureFlagName = 'autosave.enabled' | 'merge.precision' | 'autoSave.enabled' | 'merge.diffTab'
+
+export const FEATURE_FLAG_DEFINITIONS = {
+  'autosave.enabled': AUTOSAVE_FLAG,
+  'autoSave.enabled': AUTOSAVE_FLAG,
+  'merge.precision': MERGE_PRECISION_FLAG
+} satisfies Record<'autosave.enabled' | 'autoSave.enabled' | 'merge.precision', FlagDefinition<boolean | MergePrecision>>
+
+export function resolveFeatureFlag(
+  name: FeatureFlagName,
+  options?: ResolveOptions
+): FlagResolution<boolean | MergePrecision> {
+  if (name === 'merge.diffTab') {
+    const precision = resolveFlag(MERGE_PRECISION_FLAG, options)
+    return {
+      value: precision.value !== 'legacy',
+      source: precision.source,
+      resolvedAt: precision.resolvedAt
+    }
+  }
+
+  const key = (name === 'merge.precision' ? 'merge.precision' : name === 'autoSave.enabled' ? 'autoSave.enabled' : 'autosave.enabled') as
+    | 'autosave.enabled'
+    | 'autoSave.enabled'
+    | 'merge.precision'
+  if (key === 'merge.precision') {
+    return resolveFlag(MERGE_PRECISION_FLAG, options)
+  }
+  return resolveFlag(AUTOSAVE_FLAG, options)
+}
+
+export function resolveFlags(options: ResolveOptions = {}): FlagSnapshot {
+  const autosave = resolveFlag(AUTOSAVE_FLAG, options)
+  const merge = resolveFlag(MERGE_PRECISION_FLAG, options)
+  const resolvedAt = Math.max(autosave.resolvedAt, merge.resolvedAt)
+  return {
+    autosave: { enabled: autosave.value, phase: derivePhase(autosave.value, merge.value) },
+    merge: { precision: merge.value },
+    source: {
+      autosaveEnabled: autosave.source,
+      mergePrecision: merge.source
+    },
+    resolvedAt
+  }
+}
+
+function derivePhase(enabled: boolean, precision: MergePrecision): AutoSavePhase {
+  return !enabled ? 'disabled' : precision === 'stable' ? 'phase-b' : 'phase-a'
 }
