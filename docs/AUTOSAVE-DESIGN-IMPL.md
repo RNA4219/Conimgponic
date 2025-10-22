@@ -327,22 +327,37 @@ stateDiagram-v2
 
 ### 5.2 AutoSaveIndicator UI/UX 設計
 
-#### コンポーネント階層
-- `AutoSaveIndicator`（container）
-  - `autosave-indicator__banner`（banner）: ReadOnly 切替や致命エラーを `role=alert` で即時通知。
-  - `autosave-indicator__primary`（status）: フェーズ別ラベルと説明文。`aria-live` を `indicator` に応じて切り替え。
-  - `autosave-indicator__meta`（meta）: `lastSuccessAt`・`pendingBytes`・`retryCount` などを `<dl>` で表示。
-  - `autosave-indicator__history`（history-actions）: 履歴ボタンと利用率警告。`history.access` に応じて `disabled`/`aria-disabled` を制御。
-    - `autosave-indicator__history-note`（history-list）: GC 通知・ReadOnly 案内を表示。
+#### コンポーネント構成図
+```mermaid
+graph TD
+  AutoSaveIndicator[AutoSaveIndicator (container)] --> Banner[autosave-indicator__banner
+role="alert"]
+  AutoSaveIndicator --> Primary[autosave-indicator__primary
+role="status"]
+  AutoSaveIndicator --> Meta[autosave-indicator__meta
+<dl> metrics ]
+  AutoSaveIndicator --> History[autosave-indicator__history
+actions]
+  History --> HistoryNote[autosave-indicator__history-note
+read only hints]
+```
+
+| エリア | 役割 | 主なアクセシビリティ属性 | 主要データバインド | 備考 |
+| --- | --- | --- | --- | --- |
+| `AutoSaveIndicator` | コンテナ | `aria-busy`, `data-testid="autosave-indicator"` | `phase`, `retryCount`, `lastSuccessAt` | props で ViewModel を受け取り、Collector 通知は保持しない。 |
+| `__banner` | エラー/ReadOnly 通知 | `role="alert"`, `aria-live="assertive"` | `isReadOnly`, `lastError` | `lock:readonly-entered` のみを表示し、Collector 連携は `initAutoSave` が担当。 |
+| `__primary` | 状態ラベル | `role="status"`, `aria-live` 可変 | `statusLabel`, `description` | `retryCount>=3` で `Retrying (n)`。 |
+| `__meta` | 直近メトリクス | `aria-label` | `lastSuccessAt`, `pendingBytes` | `<dl>` 構造で画面リーダーが読み上げ可能にする。 |
+| `__history` | 操作群 | `aria-disabled`, `data-testid="autosave-history"` | `history.access`, `phase` | `phase='gc'`・ReadOnly では無効化し、GC 完了後に再度有効化。 |
 
 #### UI 状態表
-| UI 状態キー | 対応フェーズ | ReadOnly 判定 | Indicator | Banner | 履歴アクセス | 優先アクション | ノート |
+| 状態キー | 対応フェーズ | ReadOnly 判定 | Indicator 表示 | Banner 表示 | 履歴アクセス | 優先アクション | メモ |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| idle | `idle` | なし | idle | - | available | open-history / flush-now | 最新成功スナップショットを提示し履歴導線を常時露出 |
-| progress | `debouncing` / `awaiting-lock` / `writing-current` / `updating-index` / `gc` | なし | progress | - | disabled | flush-now | I/O 中は履歴操作を抑止し、再試行カウンタを表示 |
-| retrying | `awaiting-lock`（`retryCount>=3`） | 暗黙 (implicit) | progress | - | available | open-history | 再試行トーストで警告し、履歴復元の任意実行を許可 |
-| readonly | 全フェーズ（ReadOnly ロック中） | 強制 | warning | warning | disabled | - | `lock:readonly-entered` を契機に操作封鎖。解除で通常状態へ戻る |
-| fatal-error | `error`（`retryable=false`） | なし | error | error | available | open-history / request-restore | 復元導線を強調し Collector へ telemetry を送信 |
+| `idle` | `idle` | `false` | `Idle` ラベル、成功アイコン | 非表示 | `available` | 履歴を開く / 即時保存 | 最新成功スナップショットを表示し、Collector へ追加通知しない。 |
+| `progress` | `debouncing` / `awaiting-lock` / `writing-current` / `updating-index` / `gc` | `false` | `Saving…` ラベル + アニメーション | 非表示 | `disabled` (`aria-busy=true`) | `flushNow` | I/O 中は操作を抑止し、進捗を `aria-live="polite"` で発話。 |
+| `retrying` | `awaiting-lock` かつ `retryCount>=3` | `implicit` | `Retrying (n)` | 非表示 | `available` | 履歴を開く | 警告トーストは `App` 側で表示。Indicator は情報のみに留める。 |
+| `readonly` | 任意フェーズ + `ProjectLockEvent`=`conflict` | `true` | `Read only` ラベル | `lock` 警告を表示 | `disabled` | - | ReadOnly 遷移時のみバナー強調。解除時は通常表示へ戻す。 |
+| `fatal-error` | `error` かつ `retryable=false` | `false` | `Error` ラベル + アイコン | `role="alert"` で即時通知 | `available` | 履歴復元 / 手動保存 | 復元導線を強調し、Collector への `error-shown` 送信はランナー側が担う。 |
 
 #### 状態図
 ```mermaid
@@ -364,36 +379,69 @@ stateDiagram-v2
 ```
 
 #### 履歴一覧と GC 通知 UX
-- 履歴リストは progress 系フェーズでも ReadOnly でない限りボタンから起動可能。`historySummary` の世代数・容量を表記。
-- `historySummary.overflowDetected` または容量/世代 90% 超過時は警告文を表示し、`phase='gc'` 中は履歴ボタンを自動的に無効化。
-- GC 完了後は最新世代にフォーカスし、削除済み世代をメニューから除去。
+- 履歴リストは `progress` であっても ReadOnly でない限りトリガー可能とし、`aria-disabled` の切り替えで明示する。
+- `historySummary.overflowDetected` または容量/世代 90% 超過時は `__banner` ではなく `__history-note` に警告を集約し、Collector 通知はランナーに委譲する。
+- GC 完了時は最新世代のボタンにフォーカスを返し、削除済み世代はメニューから除去する。
 
 #### ユーザ操作シナリオ
-1. **通常保存（SCN-OK）**: `debouncing` → `awaiting-lock` → `idle`。保存中は履歴ボタンを無効化し、完了後に `lastSuccessAt` を更新。ユーザーは履歴パネルから任意世代を確認できる。
-2. **ロック再試行（SCN-RETRY）**: `awaiting-lock` で `retryCount>=3`。警告トーストを表示し履歴ボタンを再度有効化。ユーザーは履歴から最新成功世代を復元するか待機。
-3. **致命エラー（SCN-FATAL）**: `error` かつ `lastError.retryable=false`。バナーで停止理由を表示し、履歴復元/手動 flush ボタンを強調。Collector へ `error-shown` telemetry を送信。
+| シナリオ | イベント列 | UI 反応 | テレメトリ | 備考 |
+| --- | --- | --- | --- | --- |
+| SCN-OK (通常保存) | `debouncing` → `awaiting-lock` → `idle` | `progress` → `idle` へ遷移し、`lastSuccessAt` 更新 | なし（Collector は `initAutoSave` が送信） | 履歴ボタンが再度活性化。 |
+| SCN-RETRY (再試行) | `awaiting-lock` で `retryCount>=3` | Indicator は `retrying` に遷移、`__banner` は非表示 | `lock:retry` はランナー側 | 履歴から復元導線を許可。 |
+| SCN-FATAL (致命エラー) | `error` + `retryable=false` | `fatal-error` でバナー表示 | `error-shown` をランナーが送信 | ユーザーへ履歴復元を案内。 |
 
 ### 5.1 UI 起動条件とイベント連携
-- `docs/IMPLEMENTATION-PLAN.md` §0.1 の `autosave.enabled` フラグ解決に従い、`src/config/flags.ts` から `autosave.enabled` を取得する。取得順序は `import.meta.env` → `localStorage` → 既定値であり、Phase A までは既定で無効。【F:docs/IMPLEMENTATION-PLAN.md†L10-L39】
-- `App.tsx` 初期化時に `flags.autosave.enabled === true` **かつ** `AppState` が編集可能なときのみ `initAutoSave()` を呼び出す。読み取り専用モード（ロック取得不可・外部参照時）は `disabled` オプションを付与し、`AutoSavePhase` を `disabled` に固定する。
-- AutoSave ランナーは `App` のアンマウント時に `dispose()` を呼ぶ。ブラウザタブ遷移（`beforeunload`）では `flushNow()` を実行し、最後の書込を保証する。
-- `initAutoSave` の `snapshot()` を `App` レベルの状態管理（Zustand/Redux 等）へ保持し、`AutoSaveIndicator` へ props 経由で伝播する。ストア更新は 250ms 間隔でサンプリングし、不要なレンダリングを抑制する。
 
-#### `AutoSaveIndicator.tsx` の状態管理
-- `AutoSaveStatusSnapshot` と `ProjectLockEvent` を入力として、以下の view-model を導出する。
-  - `statusLabel`: `phase` に応じて `Idle`・`Saving…`・`Retrying`・`Error` を表示。
-  - `isAnimating`: `phase` が `awaiting-lock`/`writing-current`/`updating-index`/`gc` の場合にハートビートアニメーションを表示。
-  - `isReadOnly`: `ProjectLockEvent` で `type='conflict'` または `snapshot().phase==='error'`（非再試行）時に `true`。
-  - `lastSavedAt`: `snapshot().lastSuccessAt` をローカライズ表示。`undefined` の場合は `—`（エムダッシュ）。
-- `phase` の変化は [保存ポリシー状態遷移](#4-2-オートセーブ状態遷移図) に準拠し、`phase='error'` かつ `retryable=false` の場合はトースト/ダイアログを表示してユーザーへ通知する。
-- `retryCount` が 3 回以上に達した場合は `statusLabel` を `Retrying (n)` へ切り替え、Collector へのテレメトリ発火を 1 回だけ行う（フェーズ配列 Phase A-1 の監視要件に対応）。【F:docs/IMPLEMENTATION-PLAN.md†L64-L93】
+#### 起動条件サマリ
+| トリガー | 条件 | アクション | 備考 |
+| --- | --- | --- | --- |
+| フラグ解決 | `autosave.enabled === true`【F:docs/IMPLEMENTATION-PLAN.md†L10-L39】 | `initAutoSave()` を呼び出し | Phase A 既定は無効。 |
+| 読み取り専用判定 | `AppState.isEditable === false` または `options.disabled===true` | `phase='disabled'` として起動回避 | ロック競合時に明示的にセット。 |
+| アンマウント | React アンマウント / `beforeunload` | `dispose()` / `flushNow()` | `flushNow()` は最終保存保証。 |
+| 状態伝播 | `snapshot()` 更新 | ストアに格納し 250ms ごとにサンプリング | 不要な再レンダリングを抑制。 |
 
-#### イベント流路
-1. `Editor` コンポーネントが変更を発火すると、`initAutoSave` のスケジューラが `snapshot()` を更新し、`phase` を `debouncing` → `awaiting-lock` → `writing-current` → `idle` へ遷移させる。
-2. `locks.ts` でロック状態が変化した際は `subscribeLockEvents` で `AutoSaveIndicator` へイベントを通知。`type='acquired'` は成功バッジ表示、`type='conflict'` は読み取り専用トーストを表示し、`dispose()` を促す。
-3. `snapshot()` 更新は `App` ストア経由で `AutoSaveIndicator` に伝播し、`useEffect` で `statusLabel` やアニメーションを再計算する。
-4. `flushNow()` や `restore` 操作は `App` から発火し、完了時に `snapshot().lastSuccessAt` または `restorePrompt()` の結果を更新して `AutoSaveIndicator` のメッセージを差し替える。
-5. Collector へのイベント送信は `AutoSaveIndicator` ではなく `initAutoSave` 側で行う。Indicator は `ProjectLockEvent` と `AutoSaveStatusSnapshot` を監視するのみとし、Day8 アーキテクチャ（Collector→Analyzer→Reporter）との責務分離を維持する。【F:Day8/docs/day8/design/03_architecture.md†L1-L43】
+#### 状態管理選択肢比較
+| オプション | メリット | デメリット | 適用判断 |
+| --- | --- | --- | --- |
+| Zustand + `useStore` selector | 軽量・サブツリー更新を抑制。Immer なしでも読みやすい。 | ガバナンス上の devtools が薄い。SSR 時は手動初期化が必要。 | Phase A: UI 側の既存採用実績があるため第一候補。 |
+| Redux Toolkit + RTK Query 無し | 監視・ロギングが整備され、開発チームに馴染みあり。 | ボイラープレート増加。Indicator 用には過剰。 | Phase B で Collector 連携を強化する場合に検討。 |
+| React Context + `useReducer` | 依存がなく bundle が最小。 | コンポーネント毎のメモ化が難しく、再レンダリングが多い。 | 非推奨。Indicator の頻繁な更新には向かない。 |
+
+#### イベント流路図
+```mermaid
+flowchart LR
+  Editor -- change --> Scheduler[initAutoSave scheduler]
+  Scheduler -- snapshot update --> Store[App Store (Zustand/Redux)]
+  Store -- props --> Indicator[AutoSaveIndicator]
+  Locks[locks.ts events] -- subscribeLockEvents --> Store
+  App[App actions] -- flushNow/restore --> Scheduler
+  Scheduler -- telemetry --> Collector[(Collector)]
+  Indicator -- view-only --> User[User]
+```
+
+| イベント | 発火元 | 受信側 | Indicator の挙動 | Collector 連携 |
+| --- | --- | --- | --- | --- |
+| `snapshot()` 更新 | スケジューラ | ストア → Indicator | `phase`/`retryCount`/`lastSuccessAt` を再計算 | `initAutoSave` 内で送信。 |
+| `ProjectLockEvent` (`acquired`) | `locks.ts` | ストア → Indicator | バナーを閉じ、`aria-live="polite"` で完了を案内 | なし。 |
+| `ProjectLockEvent` (`conflict`) | `locks.ts` | ストア → Indicator | `readonly` バナー表示、操作無効化 | `lock:readonly-entered` はランナーが送信。 |
+| `flushNow()` / `restore*` 完了 | App | ストア | `lastSuccessAt` / 履歴メッセージ更新 | ランナー側で成功ログ送信。 |
+| `error-shown` | Indicator ではなくランナー | Collector | Indicator は通知しない | 責務分離を維持。 |
+#### React Testing Library 事前テストケース
+| カテゴリ | テスト ID | 観点 | 期待値 | 備考 |
+| --- | --- | --- | --- | --- |
+| ARIA 属性 | RTL-ARIA-STATUS | `role="status"` と `aria-live` が `phase` に応じて `polite/assertive` 切替される | `progress` 中は `aria-busy=true`、`fatal-error` で `aria-live="assertive"` | `getByRole('status')` を使用。 |
+| ARIA 属性 | RTL-ARIA-ALERT | ReadOnly/Fatal バナーが `role="alert"` を持ち、`aria-live="assertive"` で即時通知 | `readonly` 遷移でバナーが追加され、解除で削除される | `queryByRole('alert')` で存在確認。 |
+| 状態ラベル | RTL-LABEL-IDLE | `phase='idle'` 時に `Idle` が表示され、履歴ボタンが `aria-disabled=false` | 最新保存時刻が `<time>` に反映 | `screen.getByText('Idle')`。 |
+| 状態ラベル | RTL-LABEL-RETRY | `retryCount>=3` で `Retrying (n)` が表示される | `n` が現在の `retryCount` と一致 | `rerender` でカウント増加を検証。 |
+| ロックイベント | RTL-LOCK-READONLY | `ProjectLockEvent:conflict` 受信で `readonly` バナーと `aria-disabled=true` が設定される | 再取得イベントで解除 | イベントエミッタをモックし、`act()` で通知。 |
+| ロックイベント | RTL-LOCK-RECOVER | `ProjectLockEvent:acquired` で `readonly` が解除され、`Idle` ラベルに戻る | `aria-live` が `polite` に戻る | `waitFor` で非同期更新を待機。 |
+| 操作応答 | RTL-HISTORY-DISABLE | `progress` と `readonly` 状態で履歴ボタンが無効 (`aria-disabled=true`) | `fatal-error` 時は再度有効化 | `getByTestId('autosave-history')`. |
+| 操作応答 | RTL-RESTORE-MESSAGE | `restore*` 完了で履歴メッセージが更新される | `historySummary` の世代数が表示される | `fireEvent.click` → モック関数呼び出し確認。 |
+
+#### 承認前提条件とリスク
+- **責務分離**: Indicator から Collector 通知・ログ送信を行わない。`initAutoSave` 側で `error-shown`/`lock:retry` を送信し、Indicator は ViewModel を映すのみとすることをチケット記載の前提条件とする。
+- **UX リスク (読み取り専用モード)**: ReadOnly 状態が長時間継続する場合、編集不能と誤認される恐れがあるため、承認条件として (1) バナーに再取得操作案内、(2) 履歴復元導線の常時提示、(3) 再取得成功時にアニメーションで通常状態へ戻ることを定義する。
+- **レビュー前チェック**: 上記前提条件をチケットに追記し、React Testing Library のテストケース (RTL-*) が PR で網羅されていることを承認基準に加える。
 
 ## 6) エラーハンドリングテーブル
 | コード | 発生源 | retryable | UI 通知 | ログレベル | 備考 |
