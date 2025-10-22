@@ -118,6 +118,10 @@ function attemptResolve<T>(
  * `docs/IMPLEMENTATION-PLAN.md` §0.2 の設定ソースマッピングと `FlagSnapshot` の
  * ソース追跡要件を満たすよう、検証失敗時は次順位へフォールバックしながら
  * エラーを蓄積する。
+ *
+ * ⚠️ 後方互換ポリシー: Phase-a0 では `App.tsx` などの既存呼び出しが `localStorage`
+ * を直接読むフェールセーフを保持している。resolveFlags() は新ルートとして追加し、
+ * 直接参照の削除は `FLAG_MIGRATION_PLAN` のフェーズ完了後に行う。
  */
 export function resolveFlag<T>(
   def: FlagDefinition<T>,
