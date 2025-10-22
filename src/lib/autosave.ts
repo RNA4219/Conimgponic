@@ -96,10 +96,79 @@ export interface AutoSaveStatusSnapshot {
   queuedGeneration?: number
 }
 
+export interface AutoSaveRetryPolicy {
+  readonly initialDelayMs: number
+  readonly multiplier: number
+  readonly maxDelayMs: number
+  readonly maxAttempts: number
+}
+
+export const AUTOSAVE_RETRY_POLICY: AutoSaveRetryPolicy = Object.freeze({
+  initialDelayMs: 500,
+  multiplier: 2,
+  maxDelayMs: 4000,
+  maxAttempts: 5
+})
+
+export type AutoSavePhaseTransitionMap = Readonly<Record<AutoSavePhase, readonly string[]>>
+
+export const AUTOSAVE_STATE_TRANSITION_MAP: AutoSavePhaseTransitionMap = Object.freeze({
+  disabled: ['idle:init|タイマー初期化+監視開始'],
+  idle: ['debouncing:change-detected|debounce セット+pendingBytes 集計', 'awaiting-lock:flushNow|手動保存→即時ロック取得', 'disabled:dispose|監視解除+ロック解放+タイマー停止'],
+  debouncing: ['idle:debounce-cancelled|pendingBytes リセット', 'awaiting-lock:idle-confirmed|ロック要求開始+phase 更新', 'awaiting-lock:flushNow|手動保存→デバウンスキャンセル+即時ロック', 'disabled:dispose|監視解除+ジョブキャンセル'],
+  'awaiting-lock': ['writing-current:lock-acquired|current.json.tmp 書込+retryCount リセット', 'debouncing:lock-retry|retryable&&attempts<maxAttempts→バックオフ', 'error:flight-error|retryable=false or attempts>=maxAttempts', 'disabled:dispose|ロック要求取消+バックオフ解除'],
+  'writing-current': ['updating-index:write-committed|rename+index 更新準備', 'error:flight-error|ロールバック+retryCount++', 'disabled:dispose|フライト完了待機後ロック解放'],
+  'updating-index': ['gc:index-committed|履歴 FIFO+容量再計算', 'error:flight-error|index ロールバック+retryCount++', 'disabled:dispose|フライト完了待機+整合維持'],
+  gc: ["idle:gc-complete|lastSuccessAt 更新+pendingBytes クリア", 'disabled:dispose|GC 完了待ち→容量監査結果破棄'],
+  error: ['awaiting-lock:retry-scheduled|retryable=true→バックオフ完了で復帰', 'disabled:dispose|再試行キュークリア+phase disabled']
+} as const)
+
+export interface AutoSaveHistoryEntry {
+  readonly ts: string
+  readonly bytes: number
+  readonly location: 'current' | 'history'
+  readonly retained: boolean
+}
+
+export interface AutoSaveHistoryRotationPlan {
+  readonly targetDirectory: string
+  readonly indexFile: string
+  readonly currentFile: string
+  readonly maxGenerations: number
+  readonly maxBytes: number
+  readonly gcOrder: 'fifo'
+  readonly cleanupOrphans: boolean
+}
+
+export const AUTOSAVE_HISTORY_ROTATION_PLAN: AutoSaveHistoryRotationPlan = Object.freeze({ targetDirectory: 'project/autosave', indexFile: 'project/autosave/index.json', currentFile: 'project/autosave/current.json', maxGenerations: AUTOSAVE_DEFAULTS.maxGenerations, maxBytes: AUTOSAVE_DEFAULTS.maxBytes, gcOrder: 'fifo', cleanupOrphans: true })
+
+export interface AutoSaveSchedulerContract {
+  readonly start: () => void
+  readonly scheduleFlush: (reason: 'change' | 'flushNow') => void
+  readonly awaitIdle: () => Promise<void>
+  readonly dispose: () => Promise<void>
+}
+
+export interface AutoSavePersistenceContract {
+  readonly writeCurrent: (payload: Storyboard) => Promise<{ bytes: number }>
+  readonly updateIndex: (entry: AutoSaveHistoryEntry) => Promise<void>
+  readonly rotateHistory: (
+    entries: readonly AutoSaveHistoryEntry[],
+    options?: { enforceBytes?: boolean }
+  ) => Promise<readonly AutoSaveHistoryEntry[]>
+}
+
 export interface AutoSaveInitResult {
   readonly snapshot: () => AutoSaveStatusSnapshot
   flushNow: () => Promise<void>
   dispose: () => void
+}
+
+export interface AutoSaveTelemetryEvent {
+  readonly feature: 'autosave'
+  readonly phase: AutoSavePhase
+  readonly at: string
+  readonly detail?: Record<string, unknown>
 }
 
 export interface AutoSaveFlagScenario {
