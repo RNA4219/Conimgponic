@@ -50,6 +50,8 @@ export interface ProjectLockLease {
   readonly ownerId: string;
   /** Lock strategy currently holding the lease. */
   readonly strategy: LockAcquisitionStrategy;
+  /** True when the current lease is backed by the fallback file lock. */
+  readonly viaFallback: boolean;
   /** Web Lock key or fallback namespaced path, depending on the strategy. */
   readonly resource: string;
   /** Millisecond timestamp when the lease was first granted. */
@@ -138,6 +140,8 @@ export interface AcquireProjectLockOptions {
    * AutoSave-wide strategy constants in this module.
    */
   readonly backoff?: Partial<BackoffPolicy>;
+  /** Disable automatic retries when false. Defaults to true. */
+  readonly retry?: boolean;
   /** Optional callback invoked when the lock layer transitions to read-only. */
   readonly onReadonly?: (reason: ProjectLockError) => void;
 }
@@ -338,6 +342,7 @@ const buildLease = (
     leaseId: ctx.leaseId,
     ownerId: ctx.ownerId,
     strategy,
+    viaFallback: strategy === 'file-lock',
     resource,
     acquiredAt,
     expiresAt: now + ttl,
@@ -359,11 +364,12 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
     signal: options.signal,
   };
   const backoff = { ...defaultBackoff, ...options.backoff };
+  const maxAttempts = options.retry === false ? 1 : backoff.maxAttempts;
   let allowWeb = options.preferredStrategy !== 'file-lock';
   let delay = backoff.initialDelayMs;
   let fallbackNotified = false;
 
-  for (let attempt = 0; attempt < backoff.maxAttempts; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const order: LockAcquisitionStrategy[] =
       options.preferredStrategy === 'file-lock' ? ['file-lock'] : ['web-lock', 'file-lock'];
 
@@ -414,14 +420,14 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
           continue;
         }
 
-        if (!projectError.retryable || attempt === backoff.maxAttempts - 1) {
+        if (!projectError.retryable || attempt === maxAttempts - 1) {
           emitReadonly('acquire-failed', projectError, options.onReadonly);
           throw projectError;
         }
       }
     }
 
-    if (attempt < backoff.maxAttempts - 1) {
+    if (attempt < maxAttempts - 1) {
       projectLockEvents.emit({ type: 'lock:waiting', retry: attempt + 1, delayMs: delay });
       await new Promise<void>((resolve) => setTimeout(resolve, delay));
       delay *= backoff.factor;

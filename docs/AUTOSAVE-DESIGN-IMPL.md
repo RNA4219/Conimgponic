@@ -127,6 +127,78 @@ export async function listHistory(): Promise<
 - `flushNow()` は保存可能な状態（`idle` or `debouncing`）であれば 2s アイドル待機をスキップし、ロック取得と書込の完了まで待つ。実行中のフライトがある場合はその完了を待機し、同時実行を避ける。
 - `snapshot()` は内部状態の即時スナップショットを返し UI 側の `isReadOnly` や `lastError` 表示に利用する。内部ステートは後述の状態遷移表に従う。
 
+### 3.2 プロジェクトロック API 設計
+
+AutoSave の前提となる排他制御は `src/lib/locks.ts` に集約し、Web Locks を優先・フォールバックで `project/.lock`（Collector/Analyzer が参照しないプロジェクトルート配下）を使用する。`project/.lock` は OPFS の `project/autosave` 階層と並列に配置され、Collector/Analyzer 専用パス（`collector/`, `analyzer/`）と衝突しない。
+
+#### 3.2.1 API 面の責務
+
+| 関数 | 入力 | 出力 | 再試行・フォールバック戦略 | 説明 |
+| --- | --- | --- | --- | --- |
+| `acquireProjectLock(options?: AcquireProjectLockOptions)` | `signal?`, `ttlMs?`, `heartbeatIntervalMs?`, `preferredStrategy?`, `backoff?`, `retry?`, `onReadonly?` | `ProjectLockLease`（`leaseId`, `ownerId`, `strategy`, `viaFallback`, `resource`, `acquiredAt`, `expiresAt`, `ttlMillis`, `nextHeartbeatAt`, `renewAttempt`） | `retry` が `false` の場合は 1 回のみ、それ以外は `backoff.maxAttempts`（既定 3 回）で指数バックオフ。`navigator.locks` が無い場合は自動で `file-lock` に切替。 | Web Locks を優先し、拒否された場合や非対応環境では同一 UUID でフォールバック。獲得時にイベント `lock:acquired`/`lock:renew-scheduled` を発行。 |
+| `renewProjectLock(lease, options?: RenewProjectLockOptions)` | `lease`, `signal?` | 更新済み `ProjectLockLease` | TTL 内はリトライ可、`lease.strategy==='file-lock'` の場合は `.lock` を更新。 | TTL 手前でのハートビート更新。遅延時は `lock:warning`(`heartbeat-delayed`) を通知。 |
+| `releaseProjectLock(lease, options?: ReleaseProjectLockOptions)` | `lease`, `signal?`, `force?` | `void` | `force` が true でも `.lock` を削除。Web Lock ハンドル紛失時も冪等。 | 正常/強制解放を統一し、`lock:release-requested`→`lock:released` を通知。 |
+| `withProjectLock(executor, options?: WithProjectLockOptions)` | `executor`, `renewIntervalMs?`, `releaseOnError?`, `AcquireProjectLockOptions` 同等 | `Promise<T>` | `renewIntervalMs` で定期 `renew` を実行し、例外時は `releaseOnError`（既定 true）で解放。 | AutoSave の高階ユーティリティ。読み取り専用へ降格時は `onReadonly` を呼ぶ。 |
+| `projectLockEvents.subscribe(listener)` | `ProjectLockEventListener` | `() => void` | - | `projectLockApi.events` 経由で UI が購読する。 |
+
+`AcquireProjectLockOptions.retry` は API レベルで再試行の有無を明示するフラグで、型定義により呼び出し側が挙動を選択できる。
+
+#### 3.2.2 状態遷移
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> AcquireWeb: acquireProjectLock (preferred web)
+    AcquireWeb --> AcquireFallback: navigator.locks unsupported
+    AcquireWeb --> Acquired: handle granted
+    AcquireFallback --> Acquired: project/.lock written
+    AcquireWeb --> Readonly: retries exhausted / fatal error
+    AcquireFallback --> Readonly: fallback-conflict / fatal error
+    Acquired --> Renewing: heartbeat interval elapsed
+    Renewing --> Acquired: renew success
+    Renewing --> Readonly: ttl exceeded or retryable=false
+    Acquired --> Releasing: releaseProjectLock called
+    Releasing --> Idle: lock:released emitted
+    Releasing --> Readonly: release-failed retryable=false
+    Readonly --> Idle: manual refresh (new acquire)
+```
+
+#### 3.2.3 例外ハンドリングテーブル
+
+| エラーコード (`ProjectLockError.code`) | 発生オペレーション | retryable | UI 伝播 | 主要原因 |
+| --- | --- | --- | --- | --- |
+| `web-lock-unsupported` | acquire | true | `lock:warning`(`fallback-engaged`) → `lock:acquired`(viaFallback) | Web Locks API が存在しない/許可されない |
+| `acquire-denied` | acquire | true | `lock:error` → リトライ（`retry` が true の場合） | ブラウザがロックを拒否 |
+| `acquire-timeout` | acquire | false | `lock:readonly-entered`(`acquire-failed`) | リトライ上限到達 |
+| `fallback-conflict` | acquire | true | `lock:warning`(`fallback-degraded`) | `.lock` が別タブに保持されている |
+| `lease-stale` | renew / release | false | `lock:readonly-entered`(`renew-failed`/`release-failed`) | `.lock` の所有者不一致 |
+| `renew-failed` | renew | true | `lock:error` → リトライ | Web Lock ハンドル喪失・一時的な I/O エラー |
+| `release-failed` | release | true | `lock:error` → `lock:readonly-entered` | Web Lock ハンドル破棄済み・`.lock` 削除失敗 |
+
+#### 3.2.4 イベントと Payload
+
+| イベント | Payload | トリガー |
+| --- | --- | --- |
+| `lock:attempt` | `{ strategy, retry }` | `acquireProjectLock` の各トライ試行開始 |
+| `lock:waiting` | `{ retry, delayMs }` | リトライ待機 | 
+| `lock:acquired` | `{ lease }` | ロック獲得成功（`lease.viaFallback` で手段判別） |
+| `lock:renew-scheduled` | `{ lease, nextHeartbeatInMs }` | 獲得・更新後のハートビート予約 |
+| `lock:renewed` | `{ lease }` | `renewProjectLock` 完了 |
+| `lock:warning` | `{ lease, warning, detail? }` | フォールバック利用やハートビート遅延 |
+| `lock:fallback-engaged` | `{ lease }` | フォールバック初回使用 |
+| `lock:release-requested` | `{ lease }` | `releaseProjectLock` 呼出開始 |
+| `lock:released` | `{ leaseId }` | ロック解放完了 |
+| `lock:error` | `{ operation, error, retryable }` | 例外捕捉時 |
+| `lock:readonly-entered` | `{ reason, lastError, retryable:false }` | リトライ不可で ReadOnly へ降格 |
+
+UI 層は `lock:readonly-entered` を契機にバナー表示・保存停止へ遷移し、`lock:warning` の `warning` 種別で通知粒度を決定する。
+
+#### 3.2.5 フォールバック互換性
+
+- Web Locks 非対応環境では `acquireProjectLock` が自動的に `project/.lock` を使用し、`lease.viaFallback=true` を返却する。`withProjectLock` はこのフラグを参照しつつも API 互換を維持するため、既存 UI への破壊的変更は発生しない。
+- `.lock` ファイルは UUID・所有者 ID（タブ識別子）と TTL を持ち、`renewProjectLock` で `expiresAt` を延長する。Collector/Analyzer が監視するパス外にあるため副作用を与えない。
+- `retry=false` の場合でも `lock:error` イベントを通じて UI は即座に状況把握可能で、必要に応じて手動更新（ページリロード等）を案内する。
+
 ## 4) API 最終仕様と状態遷移
 
 ### 4.1 ステータススナップショット
