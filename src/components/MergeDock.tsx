@@ -5,11 +5,21 @@ import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importe
 import { saveText, loadText, ensureDir } from '../lib/opfs'
 import { sha256Hex } from '../lib/hash'
 import { GoldenCompare } from './GoldenCompare'
+import { planDiffMergeView } from './DiffMergeView'
 
 type MergePrecision = 'legacy' | 'beta' | 'stable'; const BASE_TAB_IDS = ['compiled', 'shot', 'assets', 'import', 'golden'] as const
 type BaseTabId = (typeof BASE_TAB_IDS)[number]; type MergeDockTabId = BaseTabId | 'diff'
 type MergeDockTabPlanEntry = { readonly id: MergeDockTabId; readonly label: string; readonly badge?: 'Beta' }
-type MergeDockTabPlan = { readonly tabs: readonly MergeDockTabPlanEntry[]; readonly initialTab: MergeDockTabId }
+type MergeDockDiffPlan = {
+  readonly exposure: 'opt-in' | 'default'
+  readonly backupAfterMs?: number
+}
+
+type MergeDockTabPlan = {
+  readonly tabs: readonly MergeDockTabPlanEntry[]
+  readonly initialTab: MergeDockTabId
+  readonly diff?: MergeDockDiffPlan
+}
 
 const BASE_TABS = Object.freeze([
   { id: 'compiled', label: 'Compiled Script' }, { id: 'shot', label: 'Shotlist / Export' },
@@ -22,9 +32,14 @@ export const planMergeDockTabs = (precision: MergePrecision, lastTab?: MergeDock
   const sanitized = lastTab && (lastTab === 'diff' || isBaseTabId(lastTab)) ? lastTab : undefined
   if (precision === 'legacy') return { tabs: BASE_TABS, initialTab: sanitized && sanitized !== 'diff' ? sanitized : 'compiled' }
   if (precision === 'beta') {
-    const tabs = [...BASE_TABS, { id: 'diff', label: 'Diff (Beta)', badge: 'Beta' } satisfies MergeDockTabPlanEntry]; return { tabs, initialTab: sanitized && tabs.some((tab) => tab.id === sanitized) ? sanitized : 'compiled' }
+    const tabs = [...BASE_TABS, { id: 'diff', label: 'Diff (Beta)', badge: 'Beta' } satisfies MergeDockTabPlanEntry]
+    const initialTab = sanitized && tabs.some((tab) => tab.id === sanitized) ? sanitized : 'compiled'
+    const diffViewPlan = planDiffMergeView(precision)
+    return { tabs, initialTab, diff: { exposure: 'opt-in', backupAfterMs: diffViewPlan.backupAfterMs } }
   }
-  const tabs = [...BASE_TABS.slice(0, -1), { id: 'diff', label: 'Diff' } satisfies MergeDockTabPlanEntry, BASE_TABS.at(-1)!]; return { tabs, initialTab: 'diff' }
+  const tabs = [...BASE_TABS.slice(0, -1), { id: 'diff', label: 'Diff' } satisfies MergeDockTabPlanEntry, BASE_TABS.at(-1)!]
+  const diffViewPlan = planDiffMergeView(precision)
+  return { tabs, initialTab: 'diff', diff: { exposure: 'default', backupAfterMs: diffViewPlan.backupAfterMs } }
 }
 
 function Checks(){
@@ -44,7 +59,7 @@ function Checks(){
 
 export function MergeDock(){
   const { sb } = useSB()
-  const storage = typeof window !== 'undefined' ? window.localStorage : undefined; const backupThresholdMs = 5*60*1000
+  const storage = typeof window !== 'undefined' ? window.localStorage : undefined
   const autoSaveInterop = typeof window !== 'undefined' ? (window as typeof window & { __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }; __mergeDockFlushNow?: () => void }) : undefined
   const precision = useMemo<MergePrecision>(()=>{
     const candidates = [(import.meta as any)?.env?.VITE_MERGE_PRECISION, storage?.getItem('merge.precision'), storage?.getItem('flag:merge.precision')]
@@ -60,7 +75,8 @@ export function MergeDock(){
   }, [plan, precision, storage, tab])
   const setTab = (next: MergeDockTabId)=>{ setTabState(next); storage?.setItem('merge.lastTab', next) }
   const flushNow = autoSaveInterop?.__mergeDockFlushNow
-  const showBackupCTA = (()=>{ if (tab!=='diff' || !flushNow) return false; const last = autoSaveInterop?.__mergeDockAutoSaveSnapshot?.lastSuccessAt; if (!last) return false; const ts = Date.parse(last); return Number.isFinite(ts) && Date.now() - ts > backupThresholdMs })()
+  const backupThresholdMs = plan.diff?.backupAfterMs ?? 5*60*1000
+  const showBackupCTA = (()=>{ if (tab!=='diff' || !flushNow || !plan.diff) return false; const last = autoSaveInterop?.__mergeDockAutoSaveSnapshot?.lastSuccessAt; if (!last) return false; const ts = Date.parse(last); return Number.isFinite(ts) && Date.now() - ts > backupThresholdMs })()
 
   const compiled = useMemo(()=>{
     const lines:string[] = []
