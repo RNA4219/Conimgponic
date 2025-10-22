@@ -256,6 +256,163 @@ export interface AutoSaveTelemetryEvent {
   readonly detail?: Record<string, unknown>
 }
 
+export type AutoSaveRunnerEventType =
+  | 'change-queued'
+  | 'lock-acquired'
+  | 'lock-rejected'
+  | 'write-succeeded'
+  | 'write-failed'
+  | 'gc-completed'
+  | 'cancelled'
+
+export interface AutoSaveRunnerEvent {
+  readonly type: AutoSaveRunnerEventType
+  readonly phase: AutoSavePhase
+  readonly at: string
+  readonly payload?: Record<string, unknown>
+  readonly error?: AutoSaveError
+}
+
+export interface AutoSaveQueueEntry {
+  readonly ts: string
+  readonly reason: 'change' | 'flushNow'
+  readonly estimatedBytes: number
+  readonly retries: number
+}
+
+export interface AutoSaveRunnerQueueModel {
+  readonly pending: readonly AutoSaveQueueEntry[]
+  readonly enqueue: (entry: AutoSaveQueueEntry) => void
+  readonly shift: () => AutoSaveQueueEntry | undefined
+  readonly cancel: (predicate: (entry: AutoSaveQueueEntry) => boolean) => number
+}
+
+export interface AutoSaveRunnerIOContract {
+  readonly input: {
+    readonly featureFlag: boolean
+    readonly optionsDisabled: boolean | undefined
+    readonly lockAcquired: (leaseMs: number) => void
+    readonly lockRejected: (reason: AutoSaveError) => void
+    readonly snapshot: () => AutoSaveStatusSnapshot
+  }
+  readonly output: {
+    readonly emit: (event: AutoSaveRunnerEvent) => void
+    readonly telemetry: (event: AutoSaveTelemetryEvent & { readonly slo: 'p99-success' | 'p95-latency' }) => void
+  }
+}
+
+export interface AutoSaveRunnerApiSurface {
+  readonly start: () => Promise<void>
+  readonly enqueue: (reason: 'change' | 'flushNow') => Promise<void>
+  readonly cancel: (reason: 'flushNow' | 'dispose') => Promise<void>
+  readonly onEvent: (handler: (event: AutoSaveRunnerEvent) => void) => () => void
+}
+
+export interface AutoSaveRunnerTransitionSpec {
+  readonly from: AutoSavePhase
+  readonly to: AutoSavePhase
+  readonly via: AutoSaveRunnerEventType
+  readonly guard: string
+  readonly actions: readonly string[]
+}
+
+export const AUTOSAVE_RUNNER_TRANSITIONS: readonly AutoSaveRunnerTransitionSpec[] = Object.freeze([
+  {
+    from: 'idle',
+    to: 'debouncing',
+    via: 'change-queued',
+    guard: 'autosave.enabled=true && options.disabled!=true',
+    actions: ['デバウンスタイマー起動', 'pendingBytes を更新']
+  },
+  {
+    from: 'debouncing',
+    to: 'awaiting-lock',
+    via: 'lock-acquired',
+    guard: 'WebLock 取得成功',
+    actions: ['retryCount をリセット', '書込フェーズを起動']
+  },
+  {
+    from: 'awaiting-lock',
+    to: 'error',
+    via: 'lock-rejected',
+    guard: 'retryable=false または attempts>=max',
+    actions: ['バックオフ停止', 'snapshot.lastError を更新']
+  },
+  {
+    from: 'writing-current',
+    to: 'updating-index',
+    via: 'write-succeeded',
+    guard: 'writeCurrent 完了',
+    actions: ['index 更新をスケジュール', 'pendingBytes を確定']
+  },
+  {
+    from: 'writing-current',
+    to: 'error',
+    via: 'write-failed',
+    guard: 'retryable=false',
+    actions: ['ロールバック', 'snapshot.lastError を更新']
+  },
+  {
+    from: 'gc',
+    to: 'idle',
+    via: 'gc-completed',
+    guard: 'GC 完了',
+    actions: ['lastSuccessAt を更新', 'queuedGeneration をクリア']
+  },
+  {
+    from: 'debouncing',
+    to: 'idle',
+    via: 'cancelled',
+    guard: 'dispose 呼び出し',
+    actions: ['pendingQueue をクリア', 'phase=disabled へ遷移準備']
+  }
+])
+
+export interface AutoSaveScenarioAssertion {
+  readonly description: string
+  readonly expectedPhase: AutoSavePhase
+  readonly expectedEvents: readonly AutoSaveRunnerEventType[]
+}
+
+export interface AutoSaveScenarioSpec {
+  readonly label: string
+  readonly given: {
+    readonly featureFlag: boolean
+    readonly optionsDisabled?: boolean
+    readonly lockAvailable: boolean
+    readonly persistenceError?: AutoSaveErrorCode
+  }
+  readonly when: 'single-change' | 'concurrent-change' | 'flushNow' | 'dispose'
+  readonly then: readonly AutoSaveScenarioAssertion[]
+}
+
+export const AUTOSAVE_TDD_SCENARIOS: readonly AutoSaveScenarioSpec[] = Object.freeze([
+  {
+    label: '正常系: 1 件保存が成功し GC まで完了する',
+    given: { featureFlag: true, lockAvailable: true },
+    when: 'single-change',
+    then: [
+      { description: '書き込み成功で idle に復帰', expectedPhase: 'idle', expectedEvents: ['change-queued', 'lock-acquired', 'write-succeeded', 'gc-completed'] }
+    ]
+  },
+  {
+    label: '失敗系: lock 取得失敗でバックオフに入る',
+    given: { featureFlag: true, lockAvailable: false },
+    when: 'single-change',
+    then: [
+      { description: 'retryable error で error フェーズへ遷移', expectedPhase: 'error', expectedEvents: ['change-queued', 'lock-rejected'] }
+    ]
+  },
+  {
+    label: 'キャンセル系: dispose 呼び出しでキューを破棄',
+    given: { featureFlag: true, lockAvailable: true },
+    when: 'dispose',
+    then: [
+      { description: 'cancelled イベントで disabled に遷移', expectedPhase: 'disabled', expectedEvents: ['cancelled'] }
+    ]
+  }
+])
+
 export interface AutoSaveFlagScenario {
   readonly label: string
   readonly featureFlag: boolean
