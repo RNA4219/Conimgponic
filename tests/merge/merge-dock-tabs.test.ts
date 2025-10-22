@@ -27,3 +27,28 @@ for (const [name, precision, lastTab, expectedTabs, expectedInitial, verify] of 
     throw error
   }
 }
+
+const diffPlanExpectations = [
+  ['E1 legacy precision exposes no diff plan', 'legacy', undefined],
+  ['E2 beta precision keeps diff opt-in', 'beta', { exposure: 'opt-in', backupAfterMs: undefined }],
+  ['E3 stable precision defaults to diff with backup window', 'stable', { exposure: 'default', backupAfterMs: 5 * 60 * 1000 }]
+] as const
+
+for (const [name, precision, expected] of diffPlanExpectations) {
+  try {
+    const plan = planMergeDockTabs(precision as 'legacy' | 'beta' | 'stable')
+    if (!expected) {
+      if (plan.diff !== undefined) throw new Error('diff plan should be undefined')
+    } else {
+      if (!plan.diff) throw new Error('diff plan missing')
+      if (plan.diff.exposure !== expected.exposure) throw new Error('diff exposure mismatch')
+      if (plan.diff.backupAfterMs !== expected.backupAfterMs) throw new Error('diff backup mismatch')
+    }
+    // eslint-disable-next-line no-console
+    console.log(`\u2713 ${name}`)
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(`\u2717 ${name}`)
+    throw error
+  }
+}
