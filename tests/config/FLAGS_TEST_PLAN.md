@@ -8,8 +8,8 @@
 ## 2. ユニットテスト案
 | ID | 観点 | 入力 | 期待値 |
 | --- | --- | --- | --- |
-| U-ENV-PRIMARY | env の値が最優先される | `VITE_AUTOSAVE_ENABLED="true"`, `localStorage.autosave.enabled="false"` | `enabled=true`, `source.autosaveEnabled='env'` |
-| U-STORAGE-SECONDARY | env 未設定時は storage が利用される | env 未設定、`localStorage.merge.precision="beta"` | `precision='beta'`, `source.mergePrecision='storage'` |
+| U-ENV-PRIMARY | env の値が最優先される | `VITE_AUTOSAVE_ENABLED="true"`, `localStorage.autosave.enabled="false"` | `enabled=true`, `autosave.source='env'` |
+| U-STORAGE-SECONDARY | env 未設定時は storage が利用される | env 未設定、`localStorage.merge.precision="beta"` | `precision='beta'`, `merge.source='localStorage'` |
 | U-DEFAULT-FALLBACK | env/storage が不正値なら既定値に戻る | env/storage ともに未設定 or 不正 (`"garbage"`) | `DEFAULT_FLAGS` のスナップショットが採用される |
 | U-PHASE-DERIVATION | `AutoSavePhase` の導出 | env=`true`, storage=`stable` | `phase='phase-b'` が算出される |
 | U-CLI-BYPASS | CLI モードでは storage を読まない | `resolveFlags({ mode: 'cli', storage: fakeStorage })` | storage 未呼び出しをモックで検証 |
@@ -36,4 +36,4 @@
 ## 5. 注意点
 - AutoSave 側の副作用（Web Lock, OPFS）は `docs/AUTOSAVE-DESIGN-IMPL.md` の不変条件に従い、フラグ OFF 時は副作用が発生しないことを assertion する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L5-L37】
 - Diff Merge UI の表示・非表示は Phase 管理の要なので、DOM テストではタブの順序とアクセシビリティラベルまで検証する。
-- `FlagSnapshot.source` をスナップショットとして保存し、後方互換性の確認に活用する。
+- `FlagSnapshot.autosave.source` / `merge.source` をスナップショットとして保存し、後方互換性の確認に活用する。
