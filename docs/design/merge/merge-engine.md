@@ -1,5 +1,10 @@
 # Merge Engine 設計サマリ
 
+## 0. ドキュメント概要
+- docs/MERGE-DESIGN-IMPL.md §0-§4 の要約として `merge3` コア処理・プロファイル制御・イベント通知・precision 切替要件を整理する。【F:docs/MERGE-DESIGN-IMPL.md†L4-L130】
+- `resolveProfile`/`score`/`decide`/`emitDecision` の連携と UI/Telemetry プロトコルを図表化し、AutoSave 連携および SLA 遵守ポイントを明示する。【F:docs/MERGE-DESIGN-IMPL.md†L96-L130】
+- 本メモを `tests/merge/merge3.spec.ts` の TDD 起点および 100 カット 5 秒 SLA ベンチマークの計画書として参照する。
+
 ## 1. 目的
 - Base/Ours/Theirs の 3-way 決定的マージ `merge3` を確立し、セクション単位で自動採択と競合提示を切り替える。【F:docs/MERGE-DESIGN-IMPL.md†L4-L19】
 
