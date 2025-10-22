@@ -91,11 +91,55 @@ export interface MergeStats {
   readonly aiDecisions: number;
 }
 
+export type MergePlanPhase = 'phase-a' | 'phase-b';
+
+export type MergePlanBand = 'auto' | 'review' | 'conflict';
+
+export type MergePlanRecommendedCommand =
+  | 'queue:auto-apply'
+  | 'queue:request-review'
+  | 'queue:manual-intervention'
+  | 'queue:force-lock-resolution';
+
+export type MergePlanPhaseBReason = 'review-band' | 'locked-conflict' | 'low-similarity';
+
+export interface MergePlanEntry {
+  readonly hunkId: string;
+  readonly section: string | null;
+  readonly decision: MergeDecision;
+  readonly similarity: number;
+  readonly locked: boolean;
+  readonly band: MergePlanBand;
+  readonly phase: MergePlanPhase;
+  readonly recommendedCommand: MergePlanRecommendedCommand;
+}
+
+export interface MergePlanSummary {
+  readonly total: number;
+  readonly phaseA: number;
+  readonly phaseB: number;
+  readonly reviewBand: number;
+  readonly locked: number;
+}
+
+export interface MergePlanPhaseB {
+  readonly required: boolean;
+  readonly reasons: readonly MergePlanPhaseBReason[];
+}
+
+export interface MergePlan {
+  readonly precision: MergePrecision;
+  readonly entries: readonly MergePlanEntry[];
+  readonly summary: MergePlanSummary;
+  readonly phaseB: MergePlanPhaseB;
+}
+
 export interface MergeResult {
   readonly hunks: readonly MergeHunk[];
   readonly mergedText: string;
   readonly stats: MergeStats;
   readonly trace: MergeTrace;
+  readonly plan?: MergePlan;
 }
 
 export interface MergeScoringInput {
@@ -195,6 +239,8 @@ interface SectionDecision {
   readonly hunk: MergeHunk;
   readonly similarity: number;
   readonly locked: boolean;
+  readonly band: MergePlanBand;
+  readonly recommendedCommand: MergePlanRecommendedCommand;
 }
 
 const PRECISION_FALLBACK: MergePrecision = 'legacy';
@@ -400,10 +446,16 @@ function decideSection(section: MergeSection, metrics: MergeScoringMetrics, prof
   const similarity = metrics.blended;
   const autoThreshold = profile.similarityBands.auto;
   const minThreshold = profile.minAutoThreshold;
+  const reviewThreshold = profile.similarityBands.review;
+  const isLocked = section.locked && profile.lockPolicy === 'strict';
   let decision: MergeDecision = 'conflict';
-  if (!section.locked || profile.lockPolicy === 'advisory') {
+  let band: MergePlanBand = 'conflict';
+  if (!isLocked) {
     if (similarity >= autoThreshold && similarity >= minThreshold) {
       decision = 'auto';
+      band = 'auto';
+    } else if (similarity >= reviewThreshold) {
+      band = 'review';
     }
   }
   const prefer = section.locked ? (profile.lockPolicy === 'strict' ? section.prefer : section.prefer) : section.prefer;
@@ -421,7 +473,20 @@ function decideSection(section: MergeSection, metrics: MergeScoringMetrics, prof
     base: section.base,
     prefer,
   };
-  return { hunk, similarity, locked: section.locked };
+  const recommendedCommand: MergePlanRecommendedCommand = decision === 'auto'
+    ? 'queue:auto-apply'
+    : isLocked
+      ? 'queue:force-lock-resolution'
+      : band === 'review'
+        ? 'queue:request-review'
+        : 'queue:manual-intervention';
+  return {
+    hunk,
+    similarity,
+    locked: isLocked,
+    band,
+    recommendedCommand,
+  };
 }
 
 function aggregateStats(hunks: readonly SectionDecision[]): MergeStats {
@@ -443,6 +508,53 @@ function aggregateStats(hunks: readonly SectionDecision[]): MergeStats {
 
 function assembleMergedText(hunks: readonly SectionDecision[]): string {
   return hunks.map((entry) => entry.hunk.merged).join('\n\n');
+}
+
+function buildPlan(decisions: readonly SectionDecision[], profile: ResolvedMergeProfile): MergePlan {
+  const entries: MergePlanEntry[] = decisions.map((decision) => ({
+    hunkId: decision.hunk.id,
+    section: decision.hunk.section,
+    decision: decision.hunk.decision,
+    similarity: decision.hunk.similarity,
+    locked: decision.locked,
+    band: decision.band,
+    phase: decision.band === 'auto' ? 'phase-a' : 'phase-b',
+    recommendedCommand: decision.recommendedCommand,
+  }));
+  const phaseA = entries.filter((entry) => entry.phase === 'phase-a').length;
+  const reviewBand = entries.filter((entry) => entry.band === 'review').length;
+  const locked = entries.filter((entry) => entry.locked).length;
+  const phaseBCount = entries.length - phaseA;
+  const reasons = new Set<MergePlanPhaseBReason>();
+  entries.forEach((entry) => {
+    if (entry.locked) {
+      reasons.add('locked-conflict');
+      return;
+    }
+    if (entry.band === 'review') {
+      reasons.add('review-band');
+      return;
+    }
+    if (entry.phase === 'phase-b') {
+      reasons.add('low-similarity');
+    }
+  });
+  const required = profile.precision !== 'legacy' && phaseBCount > 0;
+  return {
+    precision: profile.precision,
+    entries,
+    summary: {
+      total: entries.length,
+      phaseA,
+      phaseB: phaseBCount,
+      reviewBand,
+      locked,
+    },
+    phaseB: {
+      required,
+      reasons: Array.from(reasons),
+    },
+  };
 }
 
 function buildTrace(sceneId: string | undefined, stages: readonly MergeTraceEntry[]): MergeTrace {
@@ -544,6 +656,7 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
     stages.push({ stage: 'decide', startedAt: scoreStart, durationMs: now() - scoreStart, metadata: { hunks: decisions.length } });
 
     const stats = aggregateStats(decisions);
+    const plan = buildPlan(decisions, profile);
     const mergedText = assembleMergedText(decisions);
     const processingMillis = now() - startedAt;
     const finalStats: MergeStats = { ...stats, processingMillis };
@@ -553,7 +666,7 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
 
     options?.telemetry?.({ type: 'merge:finish', sceneId: input.sceneId ?? 'unknown', profile, stats: finalStats, trace: finalTrace });
 
-    return { hunks: decisions.map((entry) => entry.hunk), mergedText, stats: finalStats, trace: finalTrace };
+    return { hunks: decisions.map((entry) => entry.hunk), mergedText, stats: finalStats, trace: finalTrace, plan };
   },
   resolveProfile: resolveProfileInternal,
   score: DEFAULT_SCORING_STRATEGY,

@@ -83,6 +83,11 @@ test('locks force conflict decision regardless of similarity', () => {
   assert.equal(hunk.prefer, 'manual')
   assert.equal(result.stats.lockedDecisions, 1)
 
+  assert.ok(result.plan)
+  assert.equal(result.plan?.precision, 'stable')
+  assert.equal(result.plan?.entries[0]?.recommendedCommand, 'queue:force-lock-resolution')
+  assert.ok(result.plan?.phaseB.reasons.includes('locked-conflict'))
+
   process.env.MERGE_PRECISION = originalPrecision
 })
 
@@ -110,6 +115,79 @@ test('telemetry sink receives ordered lifecycle events with processing stats', (
 
   assert.deepEqual(telemetryCalls, ['merge:start', 'merge:hunk-decision', 'merge:finish'])
   assert.ok(result.stats.processingMillis >= 0)
+
+  process.env.MERGE_PRECISION = originalPrecision
+})
+
+test('merge plan classifies sections by precision thresholds', () => {
+  const originalPrecision = process.env.MERGE_PRECISION
+  process.env.MERGE_PRECISION = 'legacy'
+
+  const metrics = [
+    { jaccard: 0.95, cosine: 0.95, blended: 0.95 },
+    { jaccard: 0.95, cosine: 0.95, blended: 0.95 },
+  ]
+
+  const legacyResult = runMerge(
+    { base: 'A\n\nB', ours: 'A\n\nB', theirs: 'A\n\nB', sceneId: 'scene-plan-legacy' },
+    {
+      scoring: () => metrics.shift() ?? { jaccard: 0.9, cosine: 0.9, blended: 0.9 },
+      profile: { threshold: 0.6 },
+    },
+  )
+
+  assert.ok(legacyResult.plan)
+  legacyResult.plan?.entries.forEach((entry) => {
+    assert.equal(entry.phase, 'phase-a')
+    assert.equal(entry.recommendedCommand, 'queue:auto-apply')
+    assert.equal(entry.band, 'auto')
+  })
+  assert.equal(legacyResult.plan?.phaseB.required, false)
+
+  process.env.MERGE_PRECISION = 'beta'
+
+  const betaScores = [
+    { jaccard: 0.9, cosine: 0.9, blended: 0.9 },
+    { jaccard: 0.79, cosine: 0.79, blended: 0.79 },
+  ]
+
+  const betaResult = runMerge(
+    { base: 'Intro\n\nBody', ours: 'Intro\n\nManual', theirs: 'Intro\n\nAI', sceneId: 'scene-plan-beta' },
+    {
+      scoring: () => betaScores.shift() ?? { jaccard: 0.7, cosine: 0.7, blended: 0.7 },
+    },
+  )
+
+  assert.ok(betaResult.plan)
+  assert.equal(betaResult.plan?.precision, 'beta')
+  const betaReview = betaResult.plan?.entries.find((entry) => entry.band === 'review')
+  assert.ok(betaReview)
+  assert.equal(betaReview?.phase, 'phase-b')
+  assert.equal(betaReview?.recommendedCommand, 'queue:request-review')
+  assert.ok(betaResult.plan?.phaseB.required)
+  assert.ok(betaResult.plan?.phaseB.reasons.includes('review-band'))
+
+  process.env.MERGE_PRECISION = 'stable'
+
+  const stableScores = [
+    { jaccard: 0.95, cosine: 0.95, blended: 0.95 },
+    { jaccard: 0.6, cosine: 0.6, blended: 0.6 },
+  ]
+
+  const stableResult = runMerge(
+    { base: 'One\n\nTwo', ours: 'One\n\nManual', theirs: 'One\n\nAI', sceneId: 'scene-plan-stable' },
+    {
+      scoring: () => stableScores.shift() ?? { jaccard: 0.5, cosine: 0.5, blended: 0.5 },
+    },
+  )
+
+  assert.ok(stableResult.plan)
+  assert.equal(stableResult.plan?.precision, 'stable')
+  const lowSimilarity = stableResult.plan?.entries.find((entry) => entry.band === 'conflict')
+  assert.ok(lowSimilarity)
+  assert.equal(lowSimilarity?.recommendedCommand, 'queue:manual-intervention')
+  assert.equal(lowSimilarity?.phase, 'phase-b')
+  assert.ok(stableResult.plan?.phaseB.reasons.includes('low-similarity'))
 
   process.env.MERGE_PRECISION = originalPrecision
 })
