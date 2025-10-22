@@ -55,16 +55,36 @@
 2. **ブラウザ `localStorage`**: キーは後方互換のため `autosave.enabled`・`merge.precision` のまま保持し、値は JSON 文字列ではなくプレーン文字列を想定（例: `'true'`, `'beta'`）。無効値は読み捨てる。
 3. **既定値**: 本ドキュメント先頭の JSON を `DEFAULT_FLAGS` として `src/config/flags.ts` に内包する。どの入力ソースでも値が確定しない場合はこの既定値を採用する。
 
+### 解決シーケンス（設計メモ）
+
+```mermaid
+flowchart TD
+    Start([resolveFlags]) --> EnvCheck{{import.meta.env?}}
+    EnvCheck -- valid --> EnvHit[autosave.enabled / merge.precision ← env]
+    EnvCheck -- missing/invalid --> StorageCheck{window.localStorage?}
+    StorageCheck -- valid --> StorageHit[値を coercer で検証して採用]
+    StorageCheck -- missing/invalid --> DefaultHit[DEFAULT_FLAGS から既定値]
+    EnvHit --> Snapshot[FlagSnapshot 作成]
+    StorageHit --> Snapshot
+    DefaultHit --> Snapshot
+    Snapshot --> Telemetry[App/Merge へ source + errors を伝搬]
+```
+
+- `docs/AUTOSAVE-DESIGN-IMPL.md` と `Day8/docs/day8/design/03_architecture.md` で定義されている保存ポリシー / データフローと矛盾しないよう、スナップショットはイミュータブルに扱う。
+- Phase A では `localStorage` を直接参照する既存 UI が残存するため、`resolveFlags()` で取得できない場合でも **直読フェールセーフを温存する**。削除は Phase B-0 完了後に ADR 化して判断する。
+
 ### キャッシュとライフサイクル
 
 - フラグロードは `src/config/flags.ts` の `resolveFlags()` で一度だけ実行し、アプリ初期化時に `App.tsx` から呼び出す。結果はイミュータブルスナップショットとして React コンテキスト経由で配下へ配布する。
 - `localStorage` のホットリロードは Phase B まで延期し、当面はタブ再読み込みでのみ値を反映する（パフォーマンス ±5% 以内を保証）。
-- CLI/JSON 出力向けには同一ロジックを `resolveFlags({ mode: 'cli' })` で再利用し、`localStorage` レイヤーをスキップして `env → default` 順に評価する。
+- CLI/JSON 出力向けには同一ロジックを `resolveFlags({ storage: null })` で再利用し、`localStorage` レイヤーをスキップして `env → default` 順に評価する。
 
 ## `src/config/flags.ts` 設計
 
-```ts
+-```ts
 export type FlagSource = 'env' | 'localStorage' | 'default'
+
+export type MergePrecision = 'legacy' | 'beta' | 'stable'
 
 export interface FlagValidationIssue {
   readonly code: 'invalid-boolean' | 'invalid-precision'
@@ -85,22 +105,38 @@ export interface FlagValueSnapshot<T> {
 }
 
 export interface FlagSnapshot {
-  readonly autosave: FlagValueSnapshot<boolean>
-  readonly merge: FlagValueSnapshot<'legacy' | 'beta' | 'stable'>
+  readonly autosave: {
+    readonly enabled: boolean
+    readonly source: FlagSource
+    readonly errors: readonly FlagValidationError[]
+  }
+  readonly merge: {
+    readonly precision: MergePrecision
+    readonly source: FlagSource
+    readonly errors: readonly FlagValidationError[]
+  }
   readonly updatedAt: string
 }
 
-export interface FlagResolveOptions {
+export interface ResolveOptions {
   readonly env?: Record<string, unknown>
   readonly storage?: Pick<Storage, 'getItem'> | null
   readonly clock?: () => Date
 }
 
+export interface FlagDefinition<T> {
+  readonly name: string
+  readonly envKey: string
+  readonly storageKey: string
+  readonly legacyStorageKeys?: readonly string[]
+  readonly defaultValue: T
+  readonly coerce?: FlagCoercer<T>
+}
+
 export type FeatureFlagName = 'autosave.enabled' | 'merge.precision'
 
-export type FeatureFlagValue<Name extends FeatureFlagName> = Name extends 'autosave.enabled'
-  ? boolean
-  : 'legacy' | 'beta' | 'stable'
+export type FeatureFlagValue<Name extends FeatureFlagName> =
+  (typeof FEATURE_FLAG_DEFINITIONS)[Name]['defaultValue']
 
 export const DEFAULT_FLAGS = {
   autosave: {
@@ -121,16 +157,17 @@ export const DEFAULT_FLAGS = {
   }
 } as const
 
-export function resolveFlags(options?: FlagResolveOptions): FlagSnapshot
+export function resolveFlags(options?: ResolveOptions): FlagSnapshot
 export function resolveFeatureFlag<Name extends FeatureFlagName>(
   name: Name,
-  options?: FlagResolveOptions
+  options?: ResolveOptions
 ): FlagValueSnapshot<FeatureFlagValue<Name>>
 ```
 
 - `DEFAULT_FLAGS` は冒頭 JSON と同じ構造を `as const` で保持し、`defaultValue` 更新時の後方互換を担保する。
 - `FlagValueSnapshot.source` に `'env' | 'localStorage' | 'default'` を格納し、App/Merge UI からのテレメトリ一致を保証する。
 - `updatedAt` は `clock()`（既定: `() => new Date()`）で決定し、テストではフェイククロックで固定する。
+- 2025-01-18 時点で `src/config/flags.ts` と本節の定義に差異は存在しない。
 
 ## フェーズ遷移とロールバック
 
@@ -150,23 +187,36 @@ stateDiagram-v2
 
 ## 想定テストケース
 
+### TDD フォーカステスト（先行実装）
+
 | ID | 観点 | 入力 | 期待値 |
 | --- | --- | --- | --- |
-| F01 | env 優先 | `VITE_AUTOSAVE_ENABLED="true"`, `localStorage.autosave.enabled="false"` | `enabled=true`, source=`env` |
-| F02 | storage 上書き | env 未設定, `localStorage.merge.precision="beta"` | `precision='beta'`, source=`localStorage` |
-| F03 | 無効値除外 | env 未設定, `localStorage.merge.precision="invalid"` | `precision='legacy'`, source=`default` |
-| F04 | CLI 互換 | `resolveFlags({ mode: 'cli' })` で `localStorage` 供給なし | `precision` は env→default のみで決定 |
+| T01 | env 優先 | `VITE_AUTOSAVE_ENABLED="true"`, `localStorage.autosave.enabled="false"` | `enabled=true`, source=`env` |
+| T02 | localStorage フォールバック | env 未設定, `localStorage.merge.precision="beta"` | `precision='beta'`, source=`localStorage` |
+| T03 | 既定値リカバリ | env 未設定, `localStorage.merge.precision="invalid"` | `precision='legacy'`, source=`default` |
+
+### E2E/統合テスト
+
+| ID | 観点 | 入力 | 期待値 |
+| --- | --- | --- | --- |
+| F04 | CLI 互換 | `resolveFlags` に `storage: null` を指定 | `precision` は env→default のみで決定 |
 | F05 | App.tsx 初期化 | `autosave.enabled=true` | AutoSave ブートストラップが `FlagSnapshot.autosave.value` を参照し、ソースをテレメトリへ出力 |
 | F06 | MergeDock 表示制御 | `merge.precision='beta'` | Diff Merge タブが表示され、`FlagSnapshot.merge.source` が UI ログへ残る |
 
 - App.tsx / MergeDock からの利用シナリオを含む詳細テスト計画は `tests/config/FLAGS_TEST_PLAN.md` を参照。
+
+## リスク評価（差分適用前）
+
+- **想定外の直読依存**: 既存 UI が `localStorage` を直接参照し続けているため、`resolveFlags()` 導入時には「スナップショット取得失敗時は直読を許可する」ガイドラインを共有する。Feature Flag Cleanup の前段で利用箇所の棚卸しを実施。
+- **無効値持続**: `localStorage` に不正値が残っている場合、既定値へ戻す動線（`pnpm run flags:reset`）を QA Runbook へ明示し、サポートが迅速に対応できるようにする。
+- **テレメトリ不整合**: `source` が `default` へフォールバックしたケースを Analyzer が区別できるよう、JSONL スキーマに `flagSource` 属性を追加検討。追加実装は別タスクで扱う。
 
 ## 段階導入チェックリスト
 
 1. `DEFAULT_FLAGS` を `docs/CONFIG_FLAGS.md` と同期し、`git diff` で乖離がないことを確認。
 2. Staging ビルドで `VITE_AUTOSAVE_ENABLED=true` を指定し、`resolveFlags().autosave.source` が `env` になることをログで確認。
 3. QA アカウントで `localStorage.merge.precision='beta'` を設定し、MergeDock に Diff Merge タブが表示されることを目視確認。
-4. 本番ロールアウト前に `resolveFlags({ mode: 'cli' })` を用いた設定ダンプが後方互換 JSON（キー名・値型）を維持していることを CI で検証。
+4. 本番ロールアウト前に `resolveFlags({ storage: null })` を用いた設定ダンプが後方互換 JSON（キー名・値型）を維持していることを CI で検証。
 5. ロールバック訓練として `localStorage.clear()` 後に `beta`→`legacy` へ戻るまでの UI/ログを記録し、運用 Runbook に追記。
 
 ## 監視・ロールバック連携
