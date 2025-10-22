@@ -137,14 +137,17 @@ stateDiagram-v2
 
 ### 2.1 フェーズ基準と運用フロー
 
+- Collector/Analyzer/Reporter の責務は Day8 アーキテクチャ図で定義された 15 分 ETL パイプラインを継承する。Collector は JSONL を集約し、Analyzer が SLO 判定を行い、Reporter が通知・Runbook 連携を担う。【F:Day8/docs/day8/design/03_architecture.md†L1-L36】
+- フェーズゲート・通知フロー・ETL サイクルは下記 3 要素でレビューする: (1) フェーズ別 SLO とロールバック条件、(2) Collector→Analyzer→Reporter の判断フロー、(3) 15 分サイクル内でのタスク分担。
+
 #### 2.1.1 フェーズゲート一覧（SLO/ロールバック/通知再整理）
 | フェーズ | 想定期間 | 既定フラグ (`autosave.enabled` / `merge.precision`) | 対象ユーザー | SLO 判定指標（`governance/policy.yaml` 準拠） | ロールバック条件 (`policy.yaml`/Runbook) | 通知経路 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Phase A-0 (準備) | Week 0 | `false` / `legacy` | 全ユーザー | - | AutoSave 保存遅延 P95>2.5s（3 バッチ/日）で事前調整を停止 | Slack `#launch-autosave` で準備レビュー |
-| Phase A-1 (QA Canary) | Week 1 | `true` (QA スコープのみ) / `legacy` | 開発チーム・QA | `autosave_p95` ≤2.5s **かつ** `restore_success_rate` ≥99.5%（2 バッチ連続） | `autosave_p95`>2.5s（単発でも Runbook 手順 6） または `restore_success_rate`<99.5%【F:governance/policy.yaml†L4-L14】 | Slack `#launch-autosave`（警告）、重大違反時 PagerDuty AutoSave サービス |
+| Phase A-0 (準備) | Week 0 | `false` / `legacy` | 全ユーザー | - | AutoSave 保存遅延 P95>2.5s（3 バッチ/日）で事前調整を停止 | Slack `#launch-autosave` で準備レビュー（Collector 手動チェック報告） |
+| Phase A-1 (QA Canary) | Week 1 | `true` (QA スコープのみ) / `legacy` | 開発チーム・QA | `autosave_p95` ≤2.5s **かつ** `restore_success_rate` ≥99.5%（2 バッチ連続） | `autosave_p95`>2.5s（単発でも Runbook 手順 6） または `restore_success_rate`<99.5%【F:governance/policy.yaml†L4-L14】 | Slack `#launch-autosave`（警告）、重大違反時 PagerDuty AutoSave サービス（Reporter から即時発報） |
 | Phase A-2 (β導入) | Week 2 | `true` / `legacy` | ベータ招待 | `restore_success_rate` ≥99.5%（1 日継続） **かつ** QA12 ケース完了 | `restore_success_rate`<99.5% または クラッシュ率 baseline+5% | Slack `#launch-autosave` + PagerDuty AutoSave（P2）|
-| Phase B-0 (Merge β) | Week 3 | `true` / `beta` | ベータ招待 | `merge_auto_success_rate` ≥80%（日次平均） **かつ** Diff Merge QA20 ケース完了【F:governance/policy.yaml†L8-L9】 | `merge_auto_success_rate`<80%（3 バッチ連続） または 重大バグ報告>3 件/日 | Slack `#merge-ops`（警告）、PagerDuty Merge ローテ |
-| Phase B-1 (GA) | Week 4 | `true` / `stable` | 全ユーザー | AutoSave/マージ SLO を 5 日連続達成 **かつ** リリースノート承認 | 任意 SLO 未達が 24h 継続（`slo_breach_window_hours=24`） または 重大事故報告【F:governance/policy.yaml†L15-L27】 | PagerDuty Incident-001（P1） + Slack `#incident` |
+| Phase B-0 (Merge β) | Week 3 | `true` / `beta` | ベータ招待 | `merge_auto_success_rate` ≥80%（日次平均） **かつ** Diff Merge QA20 ケース完了【F:governance/policy.yaml†L8-L9】 | `merge_auto_success_rate`<80%（3 バッチ連続） または 重大バグ報告>3 件/日 | Slack `#merge-ops`（警告）、PagerDuty Merge ローテ（Analyzer 経由） |
+| Phase B-1 (GA) | Week 4 | `true` / `stable` | 全ユーザー | AutoSave/マージ SLO を 5 日連続達成 **かつ** リリースノート承認 | 任意 SLO 未達が 24h 継続（`slo_breach_window_hours=24`） または 重大事故報告【F:governance/policy.yaml†L15-L27】 | PagerDuty Incident-001（P1） + Slack `#incident`（Reporter 集約） |
 
 #### 2.1.2 運用フロー（監視→通知→ロールバック）
 ```mermaid
@@ -173,7 +176,7 @@ flowchart TD
     Continue --> End[5 日連続グリーンで GA]
 ```
 
-- 監視指標は Analyzer が出力する `autosave_p95`（保存遅延 P95）、`restore_success_rate`、`merge_auto_success_rate` を基準とし、Collector → Analyzer → Reporter の 15 分 ETL で検知する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+- Collector は `collect-metrics.ts` で JSONL を 15 分毎に出力し、Analyzer が SLO 判定 (`autosave_p95` / `restore_success_rate` / `merge_auto_success_rate`) を実施、Reporter が Slack/PagerDuty をトリガーする。判定結果は `rollback_required` フラグで一貫させる。【F:scripts/monitor/collect-metrics.ts†L1-L89】【F:Day8/docs/day8/design/03_architecture.md†L1-L36】
 - Slack/PagerDuty 通知経路はフェーズ別に上表へ明記し、重大ロールバック時は PagerDuty Incident-001 と Slack `#incident`/`#merge-ops` に同報する。テンプレートは `templates/alerts/rollback.md` を利用し、`governance/policy.yaml` の `rollback.command` をログへ添付する。【F:governance/policy.yaml†L18-L24】【F:templates/alerts/rollback.md†L1-L23】
 - ロールバック実行後は Phase を 1 段階戻し、Canary から再開する。RCA は 1 営業日以内に `reports/rca/` へ格納する。
 
@@ -195,6 +198,7 @@ gantt
     section Runbook
     フェーズ判定レビュー     :d1, 14:00, 1m
 ```
+- Collector タスクは 0-7 分で JSONL を整形し、Analyzer は 7-12 分で SLO 判定・通知種別を決定、Reporter は 12-15 分でテンプレ適用とガバナンス報告を完了する。各担当が時間枠を厳守し、サイクル超過時は Analyzer が遅延イベントを Reporter へ通知する。
 - `scripts/monitor/collect-metrics.ts` は `window=15m` を既定値とし、上図のサイクルで Analyzer/Reporter へ渡す入出力（`autosave_p95` / `restore_success_rate` / `merge_auto_success_rate`）を保証する。【F:scripts/monitor/collect-metrics.ts†L1-L89】
 - Runbook 手順（§2.2）は本サイクルの `d1` を基準に 15 分毎のレビューとロールバック判断を行う。
 
