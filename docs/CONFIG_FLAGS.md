@@ -55,6 +55,43 @@
 2. **ブラウザ `localStorage`**: キーは後方互換のため `autosave.enabled`・`merge.precision` のまま保持し、値は JSON 文字列ではなくプレーン文字列を想定（例: `'true'`, `'beta'`）。無効値は読み捨てる。
 3. **既定値**: 本ドキュメント先頭の JSON を `DEFAULT_FLAGS` として `src/config/flags.ts` に内包する。どの入力ソースでも値が確定しない場合はこの既定値を採用する。
 
+### 設計メモ（Mermaid / 擬似コード）
+
+```mermaid
+flowchart TD
+    Env[import.meta.env / process.env] -->|正しい値| Snapshot[FlagSnapshot]
+    Env -->|未設定・検証失敗| Storage[window.localStorage]
+    Storage -->|正しい値| Snapshot
+    Storage -->|未設定・検証失敗| Default[DEFAULT_FLAGS]
+    Snapshot --> Telemetry[App / Diff Merge / Telemetry]
+    Snapshot --> Legacy[直接 localStorage 参照 UI (フェールセーフ)]
+```
+
+```text
+function resolveFlag(def):
+  envValue = attemptResolve(env[def.envKey], source='env')
+  if envValue: return snapshot(envValue)
+
+  for key in [def.storageKey, ...legacyKeys]:
+    localValue = attemptResolve(storage.getItem(key), source='localStorage')
+    if localValue: return snapshot(localValue)
+
+  return snapshot(def.defaultValue, source='default')
+
+function resolveFlags():
+  autosave = resolveFlag(definitions['autosave.enabled'])
+  merge = resolveFlag(definitions['merge.precision'])
+  return {
+    autosave: { value: autosave.value, enabled: autosave.value, ... },
+    merge: { value: merge.value, precision: merge.value, ... },
+    updatedAt: clock().toISOString()
+  }
+
+※ `Day8/docs/day8/design/03_architecture.md` に記載のデータフロー、
+   `docs/AUTOSAVE-DESIGN-IMPL.md` の保存ポリシーを前提に構成。
+※ `enabled` / `precision` プロパティは既存 UI の互換維持用エイリアスとして Phase B 完了まで残置。
+```
+
 ### キャッシュとライフサイクル
 
 - フラグロードは `src/config/flags.ts` の `resolveFlags()` で一度だけ実行し、アプリ初期化時に `App.tsx` から呼び出す。結果はイミュータブルスナップショットとして React コンテキスト経由で配下へ配布する。
@@ -148,6 +185,16 @@ stateDiagram-v2
 - **Phase B-0**: QA 用段階。`autosave.enabled=true` を満たしたうえで `merge.precision=beta` を設定。`localStorage.merge.precision` で個別タブ単位の有効化が可能。障害時は `localStorage` 初期化で Phase A へ即時復帰。
 - **Phase B-1**: 全ユーザー公開。`merge.precision=stable` を満たす場合のみ `AutoSavePhase` を `phase-b` とし、タブは常時表示。ロールバックは `env` を `legacy` へ戻し `localStorage` をクリアする。
 
+### TDD 用テストケース草案
+
+| ID | 観点 | 入力 | 期待値 |
+| --- | --- | --- | --- |
+| T01 | env 優先 | `VITE_AUTOSAVE_ENABLED="true"`, `localStorage.autosave.enabled="false"` | `autosave.value=true`, `autosave.enabled=true`, `autosave.source='env'` |
+| T02 | localStorage フォールバック | env 未設定, `localStorage.merge.precision="beta"` | `merge.value='beta'`, `merge.precision='beta'`, `merge.source='localStorage'` |
+| T03 | 既定値採用 | env 未設定, `localStorage.merge.precision="invalid"` | `merge.value='legacy'`, `merge.precision='legacy'`, `merge.source='default'`, 検証エラー1件 |
+
+上記 TDD 草案を満たしたうえで、下表の全体テスト計画に合流する。
+
 ## 想定テストケース
 
 | ID | 観点 | 入力 | 期待値 |
@@ -179,3 +226,9 @@ stateDiagram-v2
   - `rollback_request_rate = 0`（逸脱で PagerDuty L2）
 - ロールバック失敗時は `flags-rollback-failed` として再試行不可扱い。Reporter が即時エスカレーションし、`pnpm run flags:push --env <prev>` の手動実行ログを `reports/rollback/` に保管する。
 - Canary → GA 移行判定は 48h 連続 SLO 達成と `reports/rollout-monitoring-checklist.md` 完了を要件とする。
+
+## 差分適用前のリスク評価
+
+- `resolveFlags()` へ移行する前に直接 `localStorage` を読む UI/サービスが存在するため、フェールセーフとして既存アクセスを残し段階的に削除する。 (`FLAG_MIGRATION_PLAN` 参照)
+- `DEFAULT_FLAGS` と本ドキュメント冒頭 JSON の差異は 0（2025-01-18 確認済）。乖離検知は `pnpm run flags:status` で継続監視する。
+- env/localStorage の不正値は `FlagValidationError` として記録しつつ既定値へフォールバックすることで、AutoSave/Diff Merge のレイテンシ増加リスクを ±5% 以内に抑制する。
