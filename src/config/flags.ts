@@ -249,6 +249,33 @@ export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
   updatedAt: new Date(0).toISOString()
 }
 
+/**
+ * Flag resolution flow（設計メモ）:
+ * ```mermaid
+ * flowchart TD
+ *   Env[import.meta.env] -->|valid| Snapshot
+ *   Env -->|invalid / absent| Storage
+ *   Storage[window.localStorage] -->|valid| Snapshot
+ *   Storage -->|invalid / absent| Default[DEFAULT_FLAGS]
+ *   Default --> Snapshot
+ * ```
+ *
+ * 疑似コード:
+ * ```
+ * autosave := resolveFeatureFlag('autosave.enabled')
+ * merge := resolveFeatureFlag('merge.precision')
+ * timestamp := (clock ?? now)()
+ * return { autosave, merge, updatedAt: timestamp }
+ * ```
+ *
+ * TDD 観点:
+ * 1. env が storage より優先されること（autosave.enabled）。
+ * 2. env 未指定時に storage が利用されること（merge.precision）。
+ * 3. env / storage が無効値の場合に既定値へフォールバックすること。
+ *
+ * 後方互換ポリシー: Phase A では `App.tsx` 等の既存 localStorage 直接参照を
+ * フェールセーフとして維持し、`resolveFlags()` 導入後もしばらく併存させる。
+ */
 export function resolveFlags(options?: ResolveOptions): FlagSnapshot {
   const autosave = resolveFeatureFlag('autosave.enabled', options)
   const merge = resolveFeatureFlag('merge.precision', options)
