@@ -10,3 +10,4 @@
 - `templates/` … 参考テンプレ（YAML, JSON, ディレクトリ構成の雛形）
 
 > 目的：手戻りリスクを下げ、AutoSave/精緻マージ/Export-Importの回帰を短時間で検証できる状態を作る。
+refactor(docs): seed line for v1 import
