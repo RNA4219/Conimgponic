@@ -23,6 +23,8 @@
 | AS-I-01 | OFF | 強制終了→再起動で AutoSave 復旧フローが発火しないことを確認 |
 | AS-I-02 | ON | Idle 2s 後に OPFS 書き込みが行われ、Collector へイベント送信が行われる |
 | AS-I-03 | ON (ロック衝突) | Web Lock 失敗→フォールバック `.lock` 取得の再試行シナリオ |
+| AS-I-04 | ON (`flushNow`) | `flushNow()` が `idle`/`debouncing` から即座に `awaiting-lock` へ遷移する |
+| AS-I-05 | ON (dispose) | 書込フライト中に `dispose()` が呼ばれても `current.json`/`index.json` が整合する |
 
 ## 3. I/O コントラクト
 ```typescript
@@ -71,8 +73,68 @@ export interface AutoSaveExpectation {
 - ロック衝突テストでは `MockWebLock` に `fails: ['already-held']` を設定し、フォールバックでは UUID と TTL を検証。
 - 復旧テスト用に `project/autosave/history.jsonl` を 2 レコード分生成し、最新レコードのみ適用されることを確認する。
 
+### 5.1 OPFS ローテーションスタブ
+
+| API | 役割 | 実装方針 |
+| --- | --- | --- |
+| `writeCurrent` | `current.json.tmp` → rename の模倣 | `InMemoryOpfs` 上で `current.tmp` キーに書込み後、`rename()` で `current` へ差し替える。`bytes` は `JSON.stringify(payload).length` を返す。 |
+| `updateIndex` | `index.json` の構築 | 最新世代を先頭に unshift し、`maxGenerations` 超過分を末尾から削除。整合しないときは `AutoSaveError('history-overflow')` を投げる。 |
+| `rotateHistory` | 履歴ファイル管理 | `history/<ts>.json` を map 化し、`AUTOSAVE_HISTORY_ROTATION_PLAN.gcOrder` に従って FIFO で削除。`options.enforceBytes` 指定時は合計サイズを再計算し、50MB 超過分を削除。 |
+
+`tests/autosave/__mocks__/opfs.ts` で上記 API を提供し、`beforeEach` で `reset()` を行う。容量は `Map<string, number>` で保持し、`cleanupOrphans` を検証する際は `history` ディレクトリの孤児キーを自動削除する。
+
 ## 6. CI コマンド順序
 1. `pnpm lint` — ruff 相当の静的解析（※Node 環境で ESLint 代替として設定予定）。
 2. `pnpm typecheck` — `tsc --noEmit` を想定。
 3. `pnpm test --filter autosave` — Node Test Runner で AutoSave 系のユニット/統合を順次実行。
 4. `pnpm test -- --coverage` — 回帰時のスナップショット更新前に全体の差分を確認。
+
+## 7. 状態遷移カバレッジ
+
+`AUTOSAVE_STATE_TRANSITION_MAP` の各遷移を以下で網羅する。
+
+| Transition | 対応テスト | 備考 |
+| --- | --- | --- |
+| `disabled -> idle (init)` | `tests/autosave/init.spec.ts` `AS-U-02` | Feature flag ON の初期化。 |
+| `idle -> debouncing` | `tests/autosave/scheduler.spec.ts` `change event` | Fake タイマーで検証。 |
+| `idle -> awaiting-lock (flushNow)` | `tests/autosave/scheduler.spec.ts` `flushNow` | 手動保存でアイドル待機をスキップ。 |
+| `debouncing -> awaiting-lock` | 同上 | `idle-confirmed` シーケンス。 |
+| `debouncing -> awaiting-lock (flushNow)` | `tests/autosave/scheduler.spec.ts` `flushNow` | デバウンスキャンセル経由。 |
+| `awaiting-lock -> writing-current` | `tests/autosave/scheduler.spec.ts` `lock success` | ロックモック成功。 |
+| `awaiting-lock -> debouncing (lock-retry)` | `tests/autosave/scheduler.spec.ts` `lock retry` | バックオフ回数を snapshot。 |
+| `awaiting-lock -> error (flight-error)` | `tests/autosave/locks.spec.ts` (新規) | `retryable=false` ケース。 |
+| `writing-current -> updating-index` | `tests/autosave/history.spec.ts` `write commit` | `writeCurrent` 成功。 |
+| `writing-current -> error` | `tests/autosave/history.spec.ts` `write failure` | OPFS スタブで例外。 |
+| `updating-index -> gc` | `tests/autosave/history.spec.ts` `index commit` | FIFO 実行。 |
+| `updating-index -> error` | 同上 | index 更新失敗。 |
+| `gc -> idle` | `tests/autosave/history.spec.ts` `gc complete` | 容量制限完了。 |
+| `error -> awaiting-lock (retry)` | `tests/autosave/scheduler.spec.ts` `retryable error` | バックオフ後に復帰。 |
+| `* -> disabled (dispose)` | `tests/autosave/init.spec.ts` `dispose` | フェーズ別にパラメタ化。 |
+
+## 8. 例外ハンドリング確認ポイント
+
+- `AutoSaveError(code='disabled')` は `initAutoSave` の戻り値でのみ使用し、テレメトリ記録を行わない。
+- `code='lock-unavailable'` で 5 回連続失敗した場合は `phase='error'` + `retryable=false` に降格することをアサート。
+- `code='write-failed'` で `cause.name==='NotAllowedError'` の場合は即時停止し、再試行を行わない。
+- `code='data-corrupted'` は復元 API 系でのみ発生させ、`restorePrompt()` が `null` を返すことを確認。
+
+## 9. テレメトリ検証
+
+`AutoSaveTelemetryEvent` の `feature` 固定値・`phase` 列挙の網羅性を以下で担保する。
+
+| Phase | テスト | チェック内容 |
+| --- | --- | --- |
+| `debouncing` | `scheduler.spec.ts` `change event` | `detail.pendingBytes` が設定される。 |
+| `awaiting-lock` | `locks.spec.ts` `lock retry` | `retryCount` を detail に含める。 |
+| `writing-current` | `history.spec.ts` `write commit` | `detail.bytes` を確認。 |
+| `gc` | `history.spec.ts` `gc complete` | 削除世代数を detail に含める。 |
+| `error` | `locks.spec.ts` `retry exhaustion` | `detail.code` と `retryable` を確認。 |
+
+## 10. タスク Seed
+
+| ID | タイトル | Owner | ステップ |
+| --- | --- | --- | --- |
+| AS-TDD-01 | initAutoSave scheduler のデバウンス/アイドル制御を実装 | backend | 1) `tests/autosave/scheduler.spec.ts` にデバウンス完了シナリオを追加<br>2) Fake タイマーで `flushNow` がアイドル待機をスキップすることを検証<br>3) 実装した状態遷移が `AUTOSAVE_STATE_TRANSITION_MAP` に一致することを確認 |
+| AS-TDD-02 | OPFS 書き込みと履歴ローテーションの実装 | backend | 1) `tests/autosave/history.spec.ts` に FIFO/容量制限ケースを作成<br>2) `InMemoryOpfs` を実装し `writeCurrent`/`updateIndex`/`rotateHistory` を検証<br>3) `AUTOSAVE_HISTORY_ROTATION_PLAN` とメタデータ整合性を確認 |
+| AS-TDD-03 | 復元 API 群の実装と破損検知 | backend | 1) `tests/autosave/restore.spec.ts` に `data-corrupted` エラーケースを追加<br>2) `restorePrompt`/`restoreFromCurrent`/`restoreFrom` の正常系を追加<br>3) `AutoSaveError(code="data-corrupted")` の `retryable=false` をアサート |
+| AS-QA-01 | AutoSave Telemetry 検証シナリオ | qa | 1) `tests/autosave/init.spec.ts` で feature flag ON/OFF のテレメトリ差分を記録<br>2) Collector イベントが `AutoSaveTelemetryEvent` と一致するかを確認<br>3) `retryCount>=3` で単一ログのみ出力されることを確認 |
