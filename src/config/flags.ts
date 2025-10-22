@@ -39,17 +39,17 @@ export interface FlagValueSnapshot<T> {
   readonly errors: readonly FlagValidationError[]
 }
 
+export type AutosaveFlagSnapshot = FlagValueSnapshot<boolean> & {
+  readonly enabled: boolean
+}
+
+export type MergePrecisionFlagSnapshot = FlagValueSnapshot<MergePrecision> & {
+  readonly precision: MergePrecision
+}
+
 export interface FlagSnapshot {
-  readonly autosave: {
-    readonly enabled: boolean
-    readonly source: FlagSource
-    readonly errors: readonly FlagValidationError[]
-  }
-  readonly merge: {
-    readonly precision: MergePrecision
-    readonly source: FlagSource
-    readonly errors: readonly FlagValidationError[]
-  }
+  readonly autosave: AutosaveFlagSnapshot
+  readonly merge: MergePrecisionFlagSnapshot
   readonly updatedAt: string
 }
 
@@ -237,14 +237,16 @@ export function resolveFeatureFlag<Name extends FeatureFlagName>(
 
 export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
   autosave: {
-    enabled: DEFAULT_FLAGS.autosave.enabled,
+    value: DEFAULT_FLAGS.autosave.enabled,
     source: 'default',
-    errors: []
+    errors: [],
+    enabled: DEFAULT_FLAGS.autosave.enabled
   },
   merge: {
-    precision: DEFAULT_FLAGS.merge.precision,
+    value: DEFAULT_FLAGS.merge.precision,
     source: 'default',
-    errors: []
+    errors: [],
+    precision: DEFAULT_FLAGS.merge.precision
   },
   updatedAt: new Date(0).toISOString()
 }
@@ -254,16 +256,21 @@ export function resolveFlags(options?: ResolveOptions): FlagSnapshot {
   const merge = resolveFeatureFlag('merge.precision', options)
   const clock = options?.clock ?? (() => new Date())
 
+  // 既存の UI/サービスが直接 localStorage を参照するフェールセーフは
+  // FLAG_MIGRATION_PLAN の完了まで残す。resolveFlags() からは常に
+  // source を付与したスナップショットを返し、段階的に移行する。
   return {
     autosave: {
-      enabled: autosave.value,
+      value: autosave.value,
       source: autosave.source,
-      errors: autosave.errors
+      errors: autosave.errors,
+      enabled: autosave.value
     },
     merge: {
-      precision: merge.value,
+      value: merge.value,
       source: merge.source,
-      errors: merge.errors
+      errors: merge.errors,
+      precision: merge.value
     },
     updatedAt: clock().toISOString()
   }
