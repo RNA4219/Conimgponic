@@ -4,10 +4,11 @@
 - 件名: `[Rollback][Phase <current>] <feature> フラグを <prev_phase> へロールバック`
 - 冒頭本文:
   1. 発生時刻（UTC / JST）とトリガー指標 (`autosave_p95` / `restore_success_rate` / `merge_auto_success_rate`)
-  2. 実行コマンド: ``pnpm run flags:rollback --phase <prev_phase>`` の出力ログリンク
+  2. 実行コマンド: ``pnpm run flags:rollback --phase <prev_phase>`` の出力ログリンク（`governance/policy.yaml#rollback.command` 参照）
   3. 影響範囲: 対象フェーズ・ユーザーセグメント（QA/Canary/GA）
-- 添付: `reports/monitoring/<timestamp>.jsonl`（Collector 出力）と Analyzer 判定サマリ
+- 添付: `reports/monitoring/<timestamp>.jsonl`（Collector 出力）、Analyzer 判定サマリ、`reports/rca/<phase>-<date>.md` プレースホルダー
 - ハッシュタグ: `#autosave` / `#merge` / `#incident`（必要に応じて複数）
+- 参考リンク: `docs/IMPLEMENTATION-PLAN.md#21-フェーズ基準と運用統制`（通知フロー）
 
 ## PagerDuty Incident-001 ハンドオフ
 - サービス: `Autosave & Precision Merge`
@@ -19,7 +20,7 @@
   Command: pnpm run flags:rollback --phase <prev_phase>
   Follow-up: RCA draft scheduled <due_date>
   ```
-- 添付ノート: Slack 投稿 URL、`reports/rca/<phase>-<date>.md` のプレースホルダー、再発防止タスクの Jira リンク
+- 添付ノート: Slack 投稿 URL、`reports/rca/<phase>-<date>.md` のプレースホルダー、再発防止タスクの Jira リンク、`templates/alerts/rollback.md` の参照行
 
 ## RCA 作成リマインダー
 - 担当: Incident Commander（当番 SRE）

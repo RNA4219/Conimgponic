@@ -138,43 +138,73 @@ stateDiagram-v2
 ### 2.1 フェーズ基準と運用フロー
 
 #### 2.1.1 フェーズゲート一覧（SLO/ロールバック/通知再整理）
-| フェーズ | 想定期間 | 既定フラグ (`autosave.enabled` / `merge.precision`) | 対象ユーザー | SLO 判定指標 | ロールバック条件 | 通知経路 |
+| フェーズ | 想定期間 | 既定フラグ (`autosave.enabled` / `merge.precision`) | 対象ユーザー | SLO 判定指標（`governance/policy.yaml` 準拠） | ロールバック条件 (`policy.yaml`/Runbook) | 通知経路 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Phase A-0 (準備) | Week 0 | `false` / `legacy` | 全ユーザー | - | AutoSave 保存遅延 P95>2.5s が 1 日 3 回超過 | Slack `#launch-autosave` へ準備状況報告 |
-| Phase A-1 (QA Canary) | Week 1 | `true` (QA スコープのみ) / `legacy` | 開発チーム・QA | AutoSave 保存時間 P95 ≤2.5s **かつ** QA レポート（Canary 10 ケース完了） | 保存 P95>2.5s または 復旧成功率<99.5% | Slack `#launch-autosave`（警告）、重大時 PagerDuty AutoSave サービス |
-| Phase A-2 (β導入) | Week 2 | `true` / `legacy` | ベータ招待 | 復元 QA シナリオ 12/12 合格 **かつ** SLO 違反ゼロ | 復元失敗率≥0.5% または クラッシュ率 baseline+5% | Slack `#launch-autosave` + `templates/alerts/rollback.md` 参照 |
-| Phase B-0 (Merge β) | Week 3 | `true` / `beta` | ベータ招待 | Diff Merge QA 20 ケース完了 **かつ** 自動マージ率≥80% (1 日平均) | 自動マージ率<80% または 重大バグ報告>3 件/日 | Slack `#merge-ops`（警告）、PagerDuty Merge ローテ |
-| Phase B-1 (GA) | Week 4 | `true` / `stable` | 全ユーザー | AutoSave/マージ SLO 連続 5 日達成 **かつ** リリースノート承認 | 任意 SLO 未達が 24h 継続 または 重大事故報告 | PagerDuty Incident-001 起動 + Slack `#incident` |
+| Phase A-0 (準備) | Week 0 | `false` / `legacy` | 全ユーザー | - | AutoSave 保存遅延 P95>2.5s（3 バッチ/日）で事前調整を停止 | Slack `#launch-autosave` で準備レビュー |
+| Phase A-1 (QA Canary) | Week 1 | `true` (QA スコープのみ) / `legacy` | 開発チーム・QA | `autosave_p95` ≤2.5s **かつ** `restore_success_rate` ≥99.5%（2 バッチ連続） | `autosave_p95`>2.5s（単発でも Runbook 手順 6） または `restore_success_rate`<99.5%【F:governance/policy.yaml†L4-L14】 | Slack `#launch-autosave`（警告）、重大違反時 PagerDuty AutoSave サービス |
+| Phase A-2 (β導入) | Week 2 | `true` / `legacy` | ベータ招待 | `restore_success_rate` ≥99.5%（1 日継続） **かつ** QA12 ケース完了 | `restore_success_rate`<99.5% または クラッシュ率 baseline+5% | Slack `#launch-autosave` + PagerDuty AutoSave（P2）|
+| Phase B-0 (Merge β) | Week 3 | `true` / `beta` | ベータ招待 | `merge_auto_success_rate` ≥80%（日次平均） **かつ** Diff Merge QA20 ケース完了【F:governance/policy.yaml†L8-L9】 | `merge_auto_success_rate`<80%（3 バッチ連続） または 重大バグ報告>3 件/日 | Slack `#merge-ops`（警告）、PagerDuty Merge ローテ |
+| Phase B-1 (GA) | Week 4 | `true` / `stable` | 全ユーザー | AutoSave/マージ SLO を 5 日連続達成 **かつ** リリースノート承認 | 任意 SLO 未達が 24h 継続（`slo_breach_window_hours=24`） または 重大事故報告【F:governance/policy.yaml†L15-L27】 | PagerDuty Incident-001（P1） + Slack `#incident` |
 
 #### 2.1.2 運用フロー（監視→通知→ロールバック）
 ```mermaid
 flowchart TD
-    Start[フラグ配布・フェーズ開始] --> Collect[Collector: JSONL イベント収集<br/>15 分サイクル]
-    Collect --> Analyze[Analyzer: SLO 算出<br/>autosave_p95 / restore_success_rate / merge_auto_success_rate]
-    Analyze --> Reporter[Reporter: 通知整形<br/>Slack/PagerDuty/RCA 雛形]
-    Reporter --> Gate{フェーズ基準を満たすか?}
-    Gate -- はい --> Continue[継続運用 / 次フェーズ判定]
-    Gate -- いいえ --> Breach{重大閾値か?}
-    Breach -- いいえ --> Warn[Slack #launch-autosave へ警告通知<br/>Runbook 手順 5 で 2h 以内再測定]
-    Breach -- はい --> Rollback[pnpm run flags:rollback --phase <prev><br/>Collector 停止通知]
-    Rollback --> PagerDuty[PagerDuty Incident-001 を起動]
-    PagerDuty --> Slack[Slack #incident/#merge-ops へ同報<br/>テンプレ: templates/alerts/rollback.md]
-    Slack --> RCA[reports/rca/ に RCA ドキュメント作成]
+    Start[フェーズ開始
+    (flags push)] --> Collect[Collector
+    (JSONL 15m 集約)]
+    Collect --> Analyze[Analyzer
+    (SLO 判定)]
+    Analyze --> Reporter[Reporter
+    (Slack/PagerDuty 整形)]
+    Reporter --> Gate{フェーズ基準充足?}
+    Gate -- はい --> Continue[次フェーズ準備]
+    Gate -- いいえ --> Breach{重大閾値?}
+    Breach -- いいえ --> Warn[Slack #launch-autosave
+    通知 + 再測定 2h]
+    Breach -- はい --> Rollback[pnpm run flags:rollback --phase <prev>
+    (`policy.yaml` 参照)]
+    Rollback --> PagerDuty[PagerDuty Incident-001
+    (P1/P2 切替)]
+    PagerDuty --> Slack[Slack #incident / #merge-ops
+    テンプレ共有]
+    Slack --> RCA[reports/rca/
+    RCA 作成]
     Warn --> Collect
-    Continue --> End[次フェーズ移行判断]
+    Continue --> End[5 日連続グリーンで GA]
 ```
 
 - 監視指標は Analyzer が出力する `autosave_p95`（保存遅延 P95）、`restore_success_rate`、`merge_auto_success_rate` を基準とし、Collector → Analyzer → Reporter の 15 分 ETL で検知する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
-- Slack/PagerDuty 通知経路はフェーズ別に上表へ明示し、重大ロールバック時は PagerDuty Incident-001 と Slack `#incident`/`#merge-ops` に同報する。テンプレートは `templates/alerts/rollback.md` を利用し、RCA は 1 営業日以内に `reports/rca/` へ格納する。
+- Slack/PagerDuty 通知経路はフェーズ別に上表へ明記し、重大ロールバック時は PagerDuty Incident-001 と Slack `#incident`/`#merge-ops` に同報する。テンプレートは `templates/alerts/rollback.md` を利用し、`governance/policy.yaml` の `rollback.command` をログへ添付する。【F:governance/policy.yaml†L18-L24】【F:templates/alerts/rollback.md†L1-L23】
 - ロールバック実行後は Phase を 1 段階戻し、Canary から再開する。RCA は 1 営業日以内に `reports/rca/` へ格納する。
+
+#### 2.1.3 15 分 ETL タイムライン
+```mermaid
+gantt
+    title Collector→Analyzer→Reporter 15 分サイクル
+    dateFormat  mm:ss
+    axisFormat  %M:%S
+    section Collector
+    JSONL 取り込み           :a1, 00:00, 4m
+    正規化/バッファリング    :a2, after a1, 3m
+    section Analyzer
+    SLO 計算・閾値比較       :b1, 07:00, 4m
+    通知決定（auto/force）   :b2, after b1, 1m
+    section Reporter
+    Slack/PagerDuty 整形     :c1, 12:00, 2m
+    テンプレ展開 & 保存      :c2, after c1, 2m
+    section Runbook
+    フェーズ判定レビュー     :d1, 14:00, 1m
+```
+- `scripts/monitor/collect-metrics.ts` は `window=15m` を既定値とし、上図のサイクルで Analyzer/Reporter へ渡す入出力（`autosave_p95` / `restore_success_rate` / `merge_auto_success_rate`）を保証する。【F:scripts/monitor/collect-metrics.ts†L1-L89】
+- Runbook 手順（§2.2）は本サイクルの `d1` を基準に 15 分毎のレビューとロールバック判断を行う。
 
 ### 2.2 Canary / ローカル切替 Runbook
 1. **Flag 既定値確認**: `docs/CONFIG_FLAGS.md` を最新に反映させ、QA 用 `.env.qa` に `VITE_AUTOSAVE_ENABLED=true`, `VITE_MERGE_PRECISION=beta` を記載。
 2. **Canary 対象登録**: `ops/canary/phase-A1.csv`（スプレッドシート連携）へ QA アカウントを追記し、Slack `#launch-autosave` に通知。
 3. **配布コマンド**: QA/開発は `pnpm run flags:pull` → `pnpm run flags:push --env qa` で `localStorage` を同期。ローカル確認用: `pnpm run flags:set autosave.enabled true`。
-4. **観測**: Canary 期間中は `scripts/monitor/collect-metrics.ts --window=15m --input reports/canary/phase-A1/*.jsonl` を 15 分サイクルで実行し、同一ウィンドウの結果を Analyzer へストリーミング投入する（Collector→Analyzer→Reporter の 15 分 ETL と同期）。
-5. **判定**: Analyzer が出力する `autosave_p95` / `restore_success_rate` / `merge_auto_success_rate` の 2 バッチ連続グリーンを QA リードが確認し、`RUNBOOK.md` の承認欄へサイン。
-6. **ロールバック即応**: 条件発生時は `pnpm run flags:rollback --phase A-0` を実行し、Slack 通知テンプレート `templates/alerts/rollback.md` を `#launch-autosave` に投稿。PagerDuty Incident-001 をトリガーして on-call を招集し、再開は Phase A-1 からリトライ。
+4. **観測**: Canary 期間中は `scripts/monitor/collect-metrics.ts --window=15m --input reports/canary/phase-A1/*.jsonl` を 15 分サイクル（§2.1.3）で実行し、Collector → Analyzer → Reporter の順にストリーミング投入する。
+5. **判定**: Analyzer が出力する `autosave_p95` / `restore_success_rate` / `merge_auto_success_rate` の 2 バッチ連続グリーンを QA リードが確認し、`RUNBOOK.md` の承認欄へサイン。判定結果は Slack `#launch-autosave` に共有し、Reporter のテンプレ展開ログ（`reports/alerts/`）を添付。
+6. **ロールバック即応**: 閾値逸脱検知時は `governance/policy.yaml` の `rollback.command`（`pnpm run flags:rollback --phase <prev>`）を実行し、Slack 通知テンプレート `templates/alerts/rollback.md` を `#launch-autosave` に投稿。PagerDuty Incident-001 をトリガーして on-call を招集し、再開は Phase A-1 からリトライ。【F:governance/policy.yaml†L18-L24】
 
 #### ローカル切替手順書（I/O Contract）
 ```bash
@@ -194,6 +224,7 @@ pnpm run flags:reset
 ### 2.3 モニタリング・チェックリスト
 - [ ] `Collector` → `Analyzer` → `Reporter` の ETL が 15m 間隔で動作し、保存時間/復元成功率/自動マージ率を集計。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
 - [ ] `scripts/monitor/collect-metrics.ts --window=15m --input <metrics.jsonl>` の実行ログと出力 JSONL を `reports/monitoring/` へ保存し、SLO ダッシュボードと整合を確認。
+- [ ] Slack/PagerDuty 通知ログ（`reports/alerts/*.md`）に `governance/policy.yaml` の `rollback.command` / `notify.template` の参照が残っているかを確認。
 - [ ] Analyzer が Slack/PagerDuty 通知を発火した際、`templates/alerts/rollback.md` に基づき Reporter が投稿ログを `reports/alerts/` へ保管していることを確認。
 - [ ] QA 成果物（テストケース表、リグレッションレポート）が `shared/qa/phase-*/` にアップロード済みであることをリリース前にレビュー。
 - [ ] `governance/policy.yaml` の SLO 閾値変更が必要な場合、リリース会議で承認を得る。
@@ -218,14 +249,14 @@ pnpm run flags:reset
   - [ ] `collect-metrics.ts` の `--simulate-latency` オプションで遅延を注入し、Slack 警告テンプレートの投稿を検証。
   - [ ] `reports/canary/phase-A*/` に Analyzer へ投入した JSONL を 48h 分保持し、`autosave_p95` の推移をレビュー。
 - Phase B（精緻マージ β/GA）
-  - [ ] `merge_auto_success_rate` が 3 バッチ連続で 80% を下回った際、PagerDuty Incident-001 が発火することをモック通知で確認。
-  - [ ] `templates/alerts/rollback.md` の PagerDuty セクションに `pnpm run flags:rollback --phase <prev>` の実行ログリンクを添付。
+  - [ ] `merge_auto_success_rate` が 3 バッチ連続で 80% を下回った際、PagerDuty Incident-001 が発火することをモック通知で確認し、Slack `#merge-ops` と Incident タイムラインを比較する。
+  - [ ] `templates/alerts/rollback.md` の PagerDuty セクションに `pnpm run flags:rollback --phase <prev>` の実行ログリンクと `reports/rca/` プレースホルダーを添付。
 
 ### 2.6 テレメトリ検証テスト計画（シミュレーション）
 1. **Collector 入力シミュレーション**: `tests/monitoring/fixtures/metrics.phase-a.jsonl` を `scripts/monitor/collect-metrics.ts --window=15m --input tests/monitoring/fixtures/metrics.phase-a.jsonl --dry-run` で読み込み、Analyzer への送出スキーマ（`autosave_p95`, `restore_success_rate`, `merge_auto_success_rate`）が `governance/policy.yaml` の閾値と一致するか確認。
-2. **閾値越え試験**: `--simulate-breach autosave_p95=3200` を付与して Slack 警告が `#launch-autosave` に、`--simulate-breach merge_auto_success_rate=0.75` で PagerDuty が起動することをモックで検証。
-3. **ロールバック演習**: Phase B-0 中に `--simulate-breach restore_success_rate=0.98` を実行し、テンプレートに沿って `pnpm run flags:rollback --phase A-2` と RCA 作成フローを 15 分以内に完了できるかタイムボックス。
-4. **再開確認**: ロールバック後に `collect-metrics.ts --window=15m --input reports/canary/phase-A1/*.jsonl --notify=suppress` を実行し、Collector が `phase=A-1` の JSONL のみを取り扱うことを確認。
+2. **閾値越え試験**: `--simulate-breach autosave_p95=3200` を付与して Slack 警告が `#launch-autosave` に、`--simulate-breach merge_auto_success_rate=0.75` で PagerDuty が起動することをモックで検証。通知本文は `templates/alerts/rollback.md` の構成と一致させる。
+3. **ロールバック演習**: Phase B-0 中に `--simulate-breach restore_success_rate=0.98` を実行し、テンプレートに沿って `pnpm run flags:rollback --phase A-2` と RCA 作成フローを 15 分以内（§2.1.3 タイムライン 1 サイクル）で完了できるかタイムボックス。
+4. **再開確認**: ロールバック後に `collect-metrics.ts --window=15m --input reports/canary/phase-A1/*.jsonl --notify=suppress` を実行し、Collector が `phase=A-1` の JSONL のみを取り扱うことを確認。Reporter 出力に `rollback.command` 記載が残ることをチェック。
 
 ## 3) 工数（概算）
 - AutoSave 実装 1.5–2.0 人日 + UI 0.5
