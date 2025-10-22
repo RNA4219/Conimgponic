@@ -25,6 +25,7 @@ export function MergeDock(){
   const { sb } = useSB()
   const [tab, setTab] = useState<'compiled'|'shot'|'assets'|'import'|'golden'>('compiled')
   const [pref, setPref] = useState<'manual-first'|'ai-first'|'diff-merge'>('manual-first')
+  // TODO(merge.precision): docs/design/diff-merge-view.md に従い precision='stable' で初期値を diff-merge に切り替える
 
   const compiled = useMemo(()=>{
     const lines:string[] = []
