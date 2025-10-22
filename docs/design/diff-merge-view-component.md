@@ -40,7 +40,13 @@ stateDiagram-v2
     BulkBar --> Operation
     EditModal --> Operation
 ```
-- `precision` の変更は `useEffect` で `activeTab` を再初期化し、`legacy` へ降格した場合は Diff Merge 関連ステートを破棄する。
+- `precision` の変更は `useEffect` で `activeTab` を再初期化し、`legacy` へ降格した場合は Diff Merge 関連ステートを破棄する。【F:docs/IMPLEMENTATION-PLAN.md†L38-L83】
+
+### 2.4 MergeDock 連携
+- `MergeDock.tsx` は `merge.precision` フラグを解決し、`pref` セレクタに `diff-merge` オプションを差し込む。`legacy` フェーズではタブを隠し、`beta/stable` で `DiffMergeView` を遅延ロードする。【F:docs/IMPLEMENTATION-PLAN.md†L38-L83】【F:src/components/MergeDock.tsx†L24-L147】
+- `DiffMergeView` は `mergePrecision`, `activeTab`, `scenes`, `mergeProfile`, `queueMergeCommand` を props で受信し、`activeTab==='diff-merge'` のときのみペインを描画する。タブ離脱時は内部ステートを `snapshot()` しておき、戻った際に復元することで既存タブとの衝突を防ぐ。
+- `DiffMergeTabs` は `MergeDock` 直下で制御されるが、`DiffMergeView` が `onTabChange` ハンドラを提供し、precision 切替と同時に `pref` を調停する。これにより `compiled` など legacy タブとの往復でもタブ順序／遷移図（Implementation Plan §0.3）と一致させる。
+- `queueMergeCommand` 実行結果は `MergeDock` の Telemetry レイヤーへ伝播させ、Day8 Collector が取りこぼさないようイベント名を `merge:ui:*` に統一する。【F:Day8/docs/day8/design/03_architecture.md†L1-L41】
 
 ### 2.3 レイアウト
 ```
@@ -97,17 +103,20 @@ stateDiagram-v2
 - `queueMergeCommand` への投入は `ManualApplying` / `AIApplying` / `BulkApplying` / `ManualEditing` から発火し、成功時に `merge.ts` からの完了イベントで `Idle` に戻す。
 - `queueMergeCommand` 失敗時は `Error` へ遷移し、`retryable` なら再度 `queueMergeCommand` を呼び出す。非 retryable はバナー表示＋ Collector 送信。
 
-### 3.3 `queueMergeCommand` 連携
-| Command | 発火元 | Payload | UI リアクション |
-| --- | --- | --- | --- |
-| `setManual` | ManualApplying | `{ hunkId, source: 'manual', actor }` | ハンク行に `manual` バッジ付与。 |
-| `setAI` | AIApplying | `{ hunkId, source: 'ai', actor }` | ハンク行に `ai` バッジ。 |
-| `commitManualEdit` | ManualEditing | `{ hunkId, diff }` | モーダル閉鎖、`autosaveLock` 解放。 |
-| `queueBulk` | BulkApplying | `{ hunkIds, decision }` | リストを一括更新。 |
-| `revertDecision` | Error banner action | `{ hunkId }` | ハンクを `Idle` へ戻し再描画。 |
+### 3.3 `queueMergeCommand` 連携と責務境界
+| Command | 発火元 | Payload | `queueMergeCommand` 側責務 | UI リアクション |
+| --- | --- | --- | --- | --- |
+| `setManual` | ManualApplying | `{ hunkId, source: 'manual', actor }` | ハンク決定を永続キューへ投入。競合検知時は `retryable`=`true` で再試行を指示。 | ハンク行に `manual` バッジ付与。 |
+| `setAI` | AIApplying | `{ hunkId, source: 'ai', actor }` | AI 決定の適用と統計更新。非 retryable エラーは `MergeError` として返却。 | ハンク行に `ai` バッジ。 |
+| `commitManualEdit` | ManualEditing | `{ hunkId, diff }` | 編集内容を 3-way マージへ転送し、OPFS 書込完了イベントを publish。 | モーダル閉鎖、`autosaveLock` 解放。 |
+| `queueBulk` | BulkApplying | `{ hunkIds, decision }` | 一括処理のバックプレッシャ制御。進捗イベントを段階的に emit。 | リストを一括更新。 |
+| `revertDecision` | Error banner action | `{ hunkId }` | 差分復元とロールバックログ記録。Collector へ incident-level を送信。 | ハンクを `Idle` へ戻し再描画。 |
+
+- `queueMergeCommand` は **非同期コマンドキュー**として機能し、UI からは fire-and-forget。戻り値は `Promise<MergeCommandResult>` で、UI は `retryable`/`fatal` フラグのみ参照する。キュー内部での実ファイル更新や Day8 Collector へのテレメトリ送出は UI の外に閉じ込める。
+- DiffMergeView 側はコマンド発火前に入力検証（選択済みハンクの存在確認など）を行い、結果イベント (`subscribeMergeEvents`) に応じて UI ステートを更新する。これにより Merge エンジンのリプレース時も UI 契約を維持できる。【F:docs/MERGE-DESIGN-IMPL.md†L140-L238】
 
 ### 3.4 AutoSave 連携
-- 編集開始時 (`ManualEditing` へ遷移) に `navigator.locks` で `imgponic:merge` を取得し、AutoSave の保存シーケンスを一時停止。【docs/AUTOSAVE-DESIGN-IMPL.md】
+- 編集開始時 (`ManualEditing` へ遷移) に `navigator.locks` で `imgponic:merge` を取得し、AutoSave の保存シーケンスを一時停止。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L135】
 - ロック解放後に `autosave.lock.released` を受信して `autosaveLock='idle'` へ戻す。保存再開時は Diff Merge 側の更新完了イベントと整合させる。
 
 ## 4. Precision 切替時の UI 遷移
@@ -138,6 +147,6 @@ stateDiagram-v2
 | DM-AUTOSAVE-01 | `stable` | 編集開始時の AutoSave 停止 | `autosaveLock='held'` 中は AutoSave が書込を遅延し、解放後に保存再開。 |
 
 ## 7. データフロー整合性
-- `queueMergeCommand` 成功時に `merge.ts` が統計・JSONL ログを更新し、Day8 パイプラインへ渡す。【Day8/docs/day8/design/03_architecture.md】
+- `queueMergeCommand` 成功時に `merge.ts` が統計・JSONL ログを更新し、Day8 パイプラインへ渡す。【F:Day8/docs/day8/design/03_architecture.md†L1-L41】
 - AutoSave はロックフェーズを尊重し、`current.json` と `index.json` の整合を維持する。【docs/AUTOSAVE-DESIGN-IMPL.md】
 
