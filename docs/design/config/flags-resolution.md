@@ -2,8 +2,8 @@
 intent_id: INT-001
 owner: config-working-group
 status: active
-last_reviewed_at: 2024-05-05
-next_review_due: 2024-06-05
+last_reviewed_at: 2025-05-13
+next_review_due: 2025-06-13
 ---
 
 # Task Seed Template
@@ -11,7 +11,7 @@ next_review_due: 2024-06-05
 ## メタデータ
 
 ```yaml
-task_id: 20240505-01
+task_id: 20250513-01
 repo: https://github.com/Conimgponic/app
 base_branch: main
 work_branch: feat/config-flags-resolution
@@ -21,7 +21,7 @@ langs: [typescript]
 
 ## Objective
 
-`src/config/flags.ts` を新設し、AutoSave/精緻マージ両機能のフラグ解決を env→localStorage→既定値の優先順位で統合する。
+`src/config/flags.ts` の解決責務を formalize し、AutoSave/精緻マージ両機能の段階導入を env→localStorage→既定値の優先順位で統合する。
 
 ## Scope
 
@@ -103,12 +103,26 @@ classDiagram
         +source: FlagSource
         +errors: FlagValidationError[]
     }
+    class AutosaveFlagSnapshot {
+        +enabled: boolean
+    }
+    AutosaveFlagSnapshot --|> FlagValueSnapshot
+    class MergePrecisionFlagSnapshot {
+        +precision: 'legacy' | 'beta' | 'stable'
+    }
+    MergePrecisionFlagSnapshot --|> FlagValueSnapshot
     class FlagSnapshot {
-        +autosave.enabled: boolean
-        +merge.precision: 'legacy' | 'beta' | 'stable'
-        +source: FlagSource
-        +errors: FlagValidationError[]
+        +autosave: AutosaveFlagSnapshot
+        +merge: MergePrecisionFlagSnapshot
         +updatedAt: string
+    }
+    class FlagDefinition~T~ {
+        +name: string
+        +envKey: string
+        +storageKey: string
+        +legacyStorageKeys: string[]
+        +defaultValue: T
+        +coerce(raw): FlagCoerceResult
     }
     class ResolveOptions {
         +env?: Record<string, unknown>
@@ -117,10 +131,15 @@ classDiagram
     }
 ```
 
-- `FlagDefinition<T>` と `FlagCoercer<T>` を内部ユーティリティとして保持し、入力値検証とエラー集約を一元化する。
-- `legacyStorageKeys` により Phase A で残る旧キー互換を確保する。
+| 型 | 役割 | 備考 |
+| --- | --- | --- |
+| `FlagDefinition<T>` | env/localStorage/既定値の優先解決を司るメタ情報 | `legacyStorageKeys` で Phase A の旧キー互換を維持 |
+| `FlagCoercer<T>` | 文字列入力を強制型変換する純関数 | boolean/precision それぞれ個別実装 |
+| `FlagValueSnapshot<T>` | 値・決定ソース・検証エラーをスナップショット化 | UI/Collector が `source` を参照し可観測性を確保 |
+| `FlagSnapshot` | `resolveFlags()` が返す集約構造体 | `updatedAt` は `ResolveOptions.clock()` を ISO8601 で記録 |
+| `FlagMigrationStep` | フェーズ別ロールアウト要件のメタデータ | `FLAG_MIGRATION_PLAN` により段階的ロールアウトを可視化 |
 
-### 解決フロー
+### 解決フロー（`docs/IMPLEMENTATION-PLAN.md` §0.2 同期）
 
 ```mermaid
 flowchart TD
@@ -128,15 +147,18 @@ flowchart TD
     Env -->|valid| SnapshotEnv[Snapshot ← env]
     Env -->|missing/invalid| Storage[localStorage 読み取り]
     Storage -->|valid| SnapshotStorage[Snapshot ← localStorage]
-    Storage -->|missing/invalid| Defaults[DEFAULT_FLAGS]
+    Storage -->|missing/invalid| Legacy[legacyStorageKeys]
+    Legacy -->|valid| SnapshotLegacy[Snapshot ← legacy keys]
+    Legacy -->|missing/invalid| Defaults[DEFAULT_FLAGS]
     Defaults --> SnapshotDefault[Snapshot ← default]
     SnapshotEnv --> Final[FlagSnapshot + updatedAt]
     SnapshotStorage --> Final
+    SnapshotLegacy --> Final
     SnapshotDefault --> Final
     Final --> Telemetry[FlagSnapshot.source を UI/Collector へ伝播]
 ```
 
-### 後方互換マトリクス
+### 後方互換マトリクス（`docs/IMPLEMENTATION-PLAN.md` §0.1-0.2 連携）
 
 | 既存利用箇所 | 互換要件 | 対応策 |
 | --- | --- | --- |
@@ -146,19 +168,21 @@ flowchart TD
 
 ## テスト駆動シナリオ（`tests/config/flags.spec.ts`）
 
-1. env 優先: `import.meta.env` に `VITE_AUTOSAVE_ENABLED='true'`, `VITE_MERGE_PRECISION='beta'` を与える → `source==='env'`, `value` 正常化。
-2. localStorage フォールバック: env 未設定、`localStorage.autosave.enabled='false'`, `localStorage.merge.precision='stable'` → `source==='localStorage'`。
-3. 既定値: env/localStorage が未設定 → 既定 JSON を採用し `source==='default'`。
-4. 不正値処理: env が `"maybe"`/`"hyper"` → `errors` に `invalid-boolean`/`invalid-precision` を追加し、localStorage も不正な場合は既定値にフォールバック。
-5. 旧キー互換: `legacyStorageKeys=['autosaveEnabled']` など旧キーに値があり、新キー無し → 旧キーから読み取り、`source==='localStorage'`。
-6. `FlagSnapshot.source` 伝播: env→storage→default の各分岐をモックし、`App`/`MergeDock` ダミーコンシューマーへ `source` が渡ることを検証。
-7. Clock 注入: `clock` を固定して `updatedAt` が ISO8601 になることを確認。
+1. env 優先: `import.meta.env` に `VITE_AUTOSAVE_ENABLED='true'`, `VITE_MERGE_PRECISION='beta'` を与え、`source==='env'`・正規化済み値を検証。
+2. localStorage フォールバック: env 未設定、`localStorage.autosave.enabled='false'`, `localStorage.merge.precision='stable'` → `source==='localStorage'` を確認。
+3. 既定値採用: env/localStorage/legacy が未設定 → 既定 JSON を採用し `source==='default'`、`updatedAt` が固定 `clock` 依存であることを確認。
+4. 不正値処理: env が `"maybe"`/`"hyper"`、localStorage も不正 → `errors` に `invalid-boolean`/`invalid-precision` を追加し既定値へフェールオーバー。
+5. 旧キー互換: 新キー未設定、`legacyStorageKeys` に値 → 旧キーから読み取り `source==='localStorage'`、`errors` は空。
+6. FlagSnapshot.source 伝播: `resolveFlags()` の戻り値をモックコンシューマー（`App`/`MergeDock` のスタブ）へ注入し、`source` と `errors` がそのまま受け渡されることをアサート。
+7. Clock 注入: `clock` を固定して `updatedAt` が期待する ISO8601 文字列になること、`Date` 呼び出しが 1 回に限定されることを確認。
+8. テレメトリ積み上げ: `errors` を含むスナップショットを Collector モックへ送出し、`source` と `errors.code` を JSONL 化できることを検証。
 
 ## レビュー用チェックリスト
 
-- [ ] 入力ソースマッピング: env→localStorage→既定値の優先順位が `docs/CONFIG_FLAGS.md` と一致しているか。
+- [ ] 入力ソースマッピング: env→localStorage→legacyKey→既定値の優先順位が `docs/CONFIG_FLAGS.md` と一致しているか。
 - [ ] 回帰リスク評価: Phase A の旧 `localStorage` 直接参照が継続し、Diff タブ露出条件が変化していないか。
-- [ ] ロールバック手順: `pnpm run flags:rollback --phase <prev>` を実行し、`FlagSnapshot.source` が `default` へ戻ることを確認済みか。
+- [ ] ロールバック手順: `pnpm run flags:rollback --phase <prev>` 実行時に `FlagSnapshot.source` が `default` へ戻ること、Collector がロールバック記録を保持するか。
+- [ ] テレメトリ: `FlagValidationError` を JSONL に出力できること、`retryable=false` を維持できているか。
 
 ### 承認フロー
 
