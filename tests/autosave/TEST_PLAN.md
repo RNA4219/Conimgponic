@@ -1,5 +1,12 @@
 # AutoSave フラグ試験計画
 
+## 0. TDD 手順
+1. `tests/autosave/scheduler.spec.ts` に Fake タイマーを使ったフェーズ遷移テストを追加し、`AUTOSAVE_PHASE_DESCRIPTIONS`/`AUTOSAVE_STATE_TRANSITION_MAP` の `idle → debouncing → awaiting-lock` を先に赤→緑で確認する。
+2. `tests/autosave/history.spec.ts` で `__mocks__/opfs.ts` を用意し、`AUTOSAVE_HISTORY_ROTATION_PLAN` に沿った FIFO/容量制約を失敗ケースから実装する。
+3. `tests/autosave/locks.spec.ts` にロックモックを追加し、`AUTOSAVE_CONTROL_RESPONSIBILITIES` の `flushNow`/`dispose` が適切にバックオフ・停止することを検証してから本体を実装する。
+4. `tests/autosave/restore.spec.ts` で `AUTOSAVE_ERROR_NOTIFICATION_FLOWS` を参照しつつ `data-corrupted` を先に再現、その後に正常復元を実装する。
+5. 以上のユニットを統合する前に `tests/autosave/init.spec.ts` で `AUTOSAVE_DISABLED_CONDITIONS` の 3 条件を再現し、副作用ゼロを保証する。
+
 ## 1. スコープと目的
 - 対象: `autosave.enabled` フラグ ON/OFF 両系統のユニット/統合試験。
 - 目的: AutoSave ランナー起動、ロック制御、OPFS 書き込み、復旧パスの機能安全性を確認し、Phase A ロールアウト判断に足る証跡を確保する。
