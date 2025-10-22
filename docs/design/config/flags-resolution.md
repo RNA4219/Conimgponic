@@ -2,8 +2,8 @@
 intent_id: INT-001
 owner: config-working-group
 status: active
-last_reviewed_at: 2024-05-16
-next_review_due: 2024-06-16
+last_reviewed_at: 2025-05-13
+next_review_due: 2025-06-13
 ---
 
 # Task Seed Template
@@ -11,7 +11,7 @@ next_review_due: 2024-06-16
 ## メタデータ
 
 ```yaml
-task_id: 20240516-01
+task_id: 20250513-01
 repo: https://github.com/Conimgponic/app
 base_branch: main
 work_branch: feat/config-flags-resolution
@@ -113,7 +113,7 @@ sequenceDiagram
 | 2 | `localStorage`（旧キー含む） | `localStorage` | Phase A の既存 UI 互換、ユーザーごとの上書き。【F:docs/IMPLEMENTATION-PLAN.md†L38-L55】 | 破損時は `FlagValidationError` を発行し、既定値へフォールバック。
 | 3 | `DEFAULT_FLAGS`（`docs/CONFIG_FLAGS.md` 由来） | `default` | 新規起動や破損時の安全な既定値。【F:docs/IMPLEMENTATION-PLAN.md†L5-L33】 | `source` を `default` として Collector ログへ送信し、後方互換参照の削除判断に活用。
 
-### 後方互換マトリクス
+### 後方互換マトリクス（`docs/IMPLEMENTATION-PLAN.md` §0.1-0.2 連携）
 
 | 既存利用箇所 | 互換要件 | 対応策 |
 | --- | --- | --- |
