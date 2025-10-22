@@ -6,6 +6,14 @@
 - **参照仕様**: [AUTOSAVE-DESIGN-IMPL.md](../../AUTOSAVE-DESIGN-IMPL.md) §5 の UI 指針と一致させる。
 
 ## 1. スコープ定義
+## テンプレート設計タスク
+1. **UI スケルトン定義**: `templates/ui/autosave/indicator.html` にコンテナ/バナー/メタ情報/操作領域の DOM 構造を作成する。
+2. **スタイル変数整理**: `templates/ui/autosave/_indicator.css` に状態別のカラートークンとアニメーション用変数を配置し、`progress`/`warning`/`error` の 3 系統を定義する。
+3. **状態バインディング準備**: `templates/ui/autosave/indicator.ts` に props 受け口を用意し、`phase`・`retryCount`・`lastSuccessAt`・`isReadOnly` を束ねる ViewModel インターフェースを宣言する。
+4. **アクセシビリティ下準備**: テンプレート上に `role="status"`/`role="alert"` を設置し、`aria-live`/`aria-disabled`/`aria-busy` をバインディング用 data-attribute でマークする。
+5. **テレメトリ連携ポイント定義**: テンプレートコメントとして Collector 通知を禁止し、必要なテレメトリは呼び出し元（AutoSave ランナー）で処理する旨を記述する。
+6. **ViewModel→DOM マッピング表の添付**: `templates/ui/autosave/indicator.mapping.md` を追加し、ViewModel 各フィールドと DOM ノードの `data-bind-*` 属性対応表を記すことでテンプレートベースの設計レビューを容易にする。
+7. **テンプレート差分テスト方針の記述**: `tests/templates/autosave/indicator.spec.ts` で `aria-*` 属性とラベル表示をスナップショット検証する方針をコメント化し、テンプレート更新が UI 仕様逸脱を起こさないようにする。
 
 ### 1.1 対象
 - `templates/ui/autosave/indicator.html` のマークアップ設計とデータ属性の割当。
