@@ -284,6 +284,17 @@ export function deriveAutoSaveIndicatorViewModel({
     return undefined
   })()
 
+  const historyView = (() => {
+    if (isReadOnly) {
+      return {
+        access: 'disabled' as const,
+        note: AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.notes[0] ?? base.history.note,
+        usageWarning: undefined
+      }
+    }
+    return { ...base.history, usageWarning: historyUsage }
+  })()
+
   const banner = (() => {
     if (isReadOnly) {
       const readonlyReason = lockState?.reason
@@ -326,7 +337,7 @@ export function deriveAutoSaveIndicatorViewModel({
     label: statusLabel,
     description: base.description,
     indicator: banner?.variant === 'error' ? 'error' : isReadOnly ? 'warning' : base.indicator,
-    history: { ...base.history, usageWarning: historyUsage },
+    history: historyView,
     meta: {
       lastSuccessAt: snapshot.lastSuccessAt,
       pendingBytes: snapshot.pendingBytes,

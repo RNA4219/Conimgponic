@@ -38,6 +38,7 @@ stateDiagram-v2
 - `AutoSaveIndicator` は `AUTOSAVE_INDICATOR_MESSAGE_SPEC` を参照し、該当するキーを順に評価して UI を更新する。
 - `readonlyEntered` が優先され、次いで `fatalFailure`、`retryableFailure`、`success` の順で評価する。
 - トースト発火時は `onToast` コールバックを単一イベントで呼び出し、連続発火時は最新のみを表示する。
+- `readonlyEntered` 判定中はスナップショットのフェーズに関わらず `history.access='disabled'` とし、ノート文言は `AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.notes[0]` を流用する。
 
 ## 3. I/O 契約
 ```ts
