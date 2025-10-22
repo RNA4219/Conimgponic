@@ -1,19 +1,29 @@
-# AutoSave/精緻マージ フェーズ管理テンプレート
+# AutoSave & 精緻マージ ロールアウト管理テンプレート
 
-本テンプレートは `docs/IMPLEMENTATION-PLAN.md` §2.1 と `docs/design/autosave-merge-rollout.md` の運用条件を整理し、フェーズ管理の対象・非対象を明確化する。Collector→Analyzer→Reporter パイプラインの責務は Day8 アーキテクチャ図を参照し、各フェーズの運用資料に転記する。
+本テンプレートは AutoSave (`autosave.enabled`) および 精緻マージ (`merge.precision`) のロールアウトフェーズを統合管理するための定義集である。各フェーズで Collector/Analyzer/Reporter が監視・通知対象とする要素と、運用統制の対象外（観測のみ）とする要素を明示する。
 
-## 1. フェーズ定義テンプレート
+## 1. フェーズ管理対象一覧
 
-| フェーズ | 管理対象コンポーネント | 管理対象アクティビティ | 非対象（除外理由） | 主担当 | 参考資料 |
-| --- | --- | --- | --- | --- | --- |
-| Phase A-0 (準備) | フラグ既定値レビュー、Collector 手動起動手順 | `pnpm tsx scripts/monitor/collect-metrics.ts --dry-run` の検証、`docs/CONFIG_FLAGS.md` 差分レビュー | Diff Merge UI（`merge.precision=legacy` で非露出） | Dev Lead / SRE | `docs/IMPLEMENTATION-PLAN.md` §2.1.1, §2.1.3 |
-| Phase A-1 (QA Canary) | AutoSave 保存経路、Collector→Analyzer JSONL 連携 | QA テレメトリの 15 分 ETL、Slack `autosave-warn` テンプレ動作確認 | 一般ユーザー通知（QA 専用チャネルで代替） | QA / Analyzer 担当 | `docs/design/autosave-merge-monitoring.md` §2, §5 |
-| Phase A-2 (β導入) | AutoSave + ロールバック Runbook、Reporter OK/Warn 通知 | `pnpm run flags:rollback --phase a1` のドライラン、PagerDuty AutoSave サービス接続確認 | Merge Diff UI 検証（Phase B 以降で実施） | Release Ops / Reporter 担当 | `docs/IMPLEMENTATION-PLAN.md` §2.1.2 |
-| Phase B-0 (Merge β) | Diff Merge UI、Analyzer マージ成功率算出 | `merge_auto_success_rate` 閾値試験、`autosave-incident` 通知テンプレ | 全量展開（Phase B-1 で実施） | Merge PM / Analyzer 担当 | `docs/design/autosave-merge-rollout.md` §0.2 |
-| Phase B-1 (GA) | 全ユーザー通知、ガバナンス承認、RCA アーカイブ | 72h 連続 SLO 確認、`reports/rca/<date>.md` 作成、`templates/alerts/rollback.md` 添付 | Canary 限定計測（前フェーズで完了済み） | Governance 委員会 / Reporter | `governance/policy.yaml` ロールアウト章 |
+| フェーズ | 管理対象フラグ | Collector 収集指標 | Analyzer 判定項目 | Reporter 通知チャネル |
+| --- | --- | --- | --- | --- |
+| Phase A-0 (準備) | `autosave.enabled` | `autosave_p95`, `autosave_error_count` | ロールバック閾値未設定（準備レビューのみ） | Slack `#launch-autosave` 準備メモ |
+| Phase A-1 (QA Canary) | `autosave.enabled` | `autosave_p95`, `restore_success_rate` | `autosave_p95`≤2.5s、`restore_success_rate`≥99.5% | Slack `#launch-autosave`、重大時 PagerDuty AutoSave |
+| Phase A-2 (β導入) | `autosave.enabled` | `restore_success_rate`, `autosave_incident_rate` | `restore_success_rate`≥99.5%、クラッシュ率差分 | Slack `#launch-autosave`、PagerDuty AutoSave (P2) |
+| Phase B-0 (Merge β) | `merge.precision` | `merge_auto_success_rate`, `merge_conflict_rate` | `merge_auto_success_rate`≥80% | Slack `#merge-ops`、PagerDuty Merge |
+| Phase B-1 (GA) | `autosave.enabled`, `merge.precision` | 全 AutoSave/Merge SLO 指標 | SLO 連続達成 5 日、重大事故未発生 | PagerDuty Incident-001、Slack `#incident` |
 
-## 2. フェーズ以外の管理観点
+## 2. フェーズ管理非対象（モニタリングのみ）
 
-- **非対象例**: インフラ系メトリクス（例: CDN キャッシュヒット率）は AutoSave/精緻マージロールアウトの直接管理対象外とし、SRE プラットフォームチームの既存運用に委任する。
-- **テンプレート利用手順**: 新規フェーズを追加する場合、上表の列を踏襲し、Collector/Analyzer/Reporter の責務が Day8 アーキテクチャ図と齟齬しないことを確認する。【F:Day8/docs/day8/design/03_architecture.md†L1-L36】
-- **レビュー観点**: 管理対象アクティビティが `docs/CHECKLIST.md` と重複する場合はチェックリスト ID を列挙し、ロールバック手順が最新 Runbook に一致するかをレビューログで証跡化する。
+| 項目 | 理由 | 監視タイミング | 担当 |
+| --- | --- | --- | --- |
+| `merge.precision`=`legacy` 時の Diff タブ UI | Phase B-0 以前は露出しないため運用判断対象外 | Phase A-0〜A-2 | プロダクトチーム（QA レポート共有） |
+| `autosave.enabled` Canary 外ユーザーの保存成否 | 標準ユーザーにはフラグ未展開 | Phase A-1 | Collector (ログ保持のみ) |
+| `merge.precision` ステージング環境 | 本番ロールアウト前のテストであり、SLO レビュー対象外 | Phase B-0 | Analyzer (結果レビュー共有のみ) |
+| Runbook `flags:rollback` ドライラン結果 | 手順確認のための演習であり、実ロールバック判定から除外 | 全フェーズ | Reporter (演習記録を docs/rehearsal/ へ保管) |
+
+> **備考**: 非対象項目も JSONL には記録するが、Analyzer による SLO 判定には含めない。Collector はタグ `observed_only=true` を付与し、Reporter は日次サマリに脚注として掲載する。
+
+## 3. 運用メモ
+- 各フェーズ遷移前に本テンプレートを更新し、レビュー議事録にリンクする。
+- 監視対象の変更は `docs/CONFIG_FLAGS.md` および `governance/policy.yaml` の更新と同一コミットで行う。
+- Day8 パイプラインの ETL 15 分サイクルと整合するよう、Collector/Analyzer/Reporter の担当窓口を再確認する。

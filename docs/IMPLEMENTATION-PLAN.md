@@ -137,8 +137,9 @@ stateDiagram-v2
 
 ### 2.1 フェーズ基準と運用フロー
 
-- Collector/Analyzer/Reporter の責務は Day8 アーキテクチャ図で定義された 15 分 ETL パイプラインを継承する。Collector は JSONL を集約し、Analyzer が SLO 判定を行い、Reporter が通知・Runbook 連携を担う。【F:Day8/docs/day8/design/03_architecture.md†L1-L36】
-- フェーズゲート・通知フロー・ETL サイクルは下記 3 要素でレビューする: (1) フェーズ別 SLO とロールバック条件、(2) Collector→Analyzer→Reporter の判断フロー、(3) 15 分サイクル内でのタスク分担。
+- フェーズ管理対象と非対象を [docs/design/rollout/autosave-merge-phases.md](./design/rollout/autosave-merge-phases.md) でテンプレート化し、Day8 アーキテクチャの Collector/Analyzer/Reporter レイヤと連携する。【F:Day8/docs/day8/design/03_architecture.md†L1-L36】
+- 15 分 ETL の中で Collector が **4 分収集→3 分正規化**、Analyzer が **4 分算出→1 分判定**、Reporter が **4 分整形・承認** を担当し、ゲート判定結果を `rollback_required` に集約する（§2.1.3 参照）。
+- レビュー観点は (1) フェーズ別 SLO とロールバック条件、(2) Collector→Analyzer→Reporter の判断フロー、(3) ETL 15 分制約内の責務と通知経路の整合性の 3 点に整理する。
 
 #### 2.1.1 フェーズゲート一覧（SLO/ロールバック/通知再整理）
 | フェーズ | 想定期間 | 既定フラグ (`autosave.enabled` / `merge.precision`) | 対象ユーザー | SLO 判定指標（`governance/policy.yaml` 準拠） | ロールバック条件 (`policy.yaml`/Runbook) | 通知経路 |
@@ -208,6 +209,13 @@ gantt
 - **flags rollback コマンド**: Analyzer で `breach=true` かつ `PhaseGateCriterion.rollbackTo` が存在する場合、Reporter が `pnpm run flags:rollback --phase <prev>` を実行し、結果を通知本文に添付する。Incident-001 ワークフローと整合させ、PagerDuty へは `Incident-001` サービスを指定する。
 - **通知エスカレーション**: `notify=auto` 時は `policy.yaml` の guardrail 毎の `notifyChannels` を使用し、Slack → PagerDuty の順で 1 サイクル以内に評価する。`notify=force` は全チャネルを即時通知、`notify=suppress` は通知ログを生成せずダッシュボード更新のみ行う。
 
+#### 2.1.5 `collect-metrics.ts` TDD 計画とエスカレーション
+1. **メトリクス算出ユニットテスト**: フィクスチャ `tests/monitoring/fixtures/collector/base.jsonl` を入力し、`calculateWindowMetrics(window=15m)` が `autosave_p95` / `restore_success_rate` / `merge_auto_success_rate` を正規化することを検証する。閾値に近い値を用意し、境界条件を RED → GREEN の順で TDD する。
+2. **通知テンプレ選択テスト**: `--simulate-breach` オプションで各ガードレールを強制し、Reporter へ送付する `AlertPayload` が `templates/alerts/rollback.md` のセクション（Slack/PagerDuty/RCA）を揃えることをモックで確認する。
+3. **ロールバックコマンド発火テスト**: Analyzer モックが `rollback_required=true` を返すケースを用意し、Reporter が `pnpm run flags:rollback --phase <prev>` を実行するフローをスパイで検証する。エラー時は `retryable=true` の場合に 2 回まで指数バックオフ（15s, 45s）で再試行し、`retryable=false` は即時 PagerDuty エスカレーションとする。
+4. **再試行・エスカレーションシナリオ**: Collector の出力失敗 (`EPIPE`) をシミュレートし、`retryable=true` で 3 回（15s 間隔）再試行後に Analyzer へ `degraded` ステータスを通知する経路を TDD する。再試行尽きた場合は Reporter が Slack `#telemetry` に警告、連続 2 サイクル失敗時は PagerDuty AutoSave を P2 で起動する。
+5. **エンドツーエンド契約テスト**: `pnpm ts-node scripts/monitor/collect-metrics.ts --window=15m --input tests/monitoring/fixtures/collector/breach.jsonl --dry-run` を node:test から起動し、Collector → Analyzer → Reporter のハンドオフ JSON が Day8 アーキテクチャ（Collector/Analyzer/Reporter）の順序と整合することを確認する。
+
 ### 2.2 ロールアウト Runbook（Incident-001 整合）
 1. **Collector 確認 (00:00-04:00)**: `pnpm ts-node scripts/monitor/collect-metrics.ts --window=15m` の完了と JSONL 正常性（スキーマ/欠損値）を確認し、異常時は再収集。
 2. **Analyzer 判定 (07:00-12:00)**: `pnpm run monitor:analyze` → `monitor:score` 実行ログをレビュー。`breach` 発生時は対象メトリクス・閾値・`rollbackTo` を Runbook に記録。
@@ -244,13 +252,22 @@ pnpm run flags:set merge.precision beta
 pnpm run flags:reset
 ```
 
-### 2.3 モニタリング・チェックリスト
-- [ ] `Collector` → `Analyzer` → `Reporter` の ETL が 15m 間隔で動作し、保存時間/復元成功率/自動マージ率を集計。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
-- [ ] `scripts/monitor/collect-metrics.ts --window=15m --input <metrics.jsonl>` の実行ログと出力 JSONL を `reports/monitoring/` へ保存し、SLO ダッシュボードと整合を確認。
-- [ ] Slack/PagerDuty 通知ログ（`reports/alerts/*.md`）に `governance/policy.yaml` の `rollback.command` / `notify.template` の参照が残っているかを確認。
-- [ ] Analyzer が Slack/PagerDuty 通知を発火した際、`templates/alerts/rollback.md` に基づき Reporter が投稿ログを `reports/alerts/` へ保管していることを確認。
-- [ ] QA 成果物（テストケース表、リグレッションレポート）が `shared/qa/phase-*/` にアップロード済みであることをリリース前にレビュー。
-- [ ] `governance/policy.yaml` の SLO 閾値変更が必要な場合、リリース会議で承認を得る。
+### 2.3 インシデント対応・ダッシュボード承認表
+
+| ステップ | チェック内容 | PagerDuty/Slack 連携 | RCA 保存 | レビュー承認条件 |
+| --- | --- | --- | --- | --- |
+| 1. アラート受付 | `collect-metrics.ts` → Analyzer で `breach=true` を検知し、`rollback_required` を評価する。 | Slack `#launch-autosave` or `#merge-ops` へ自動投稿。重大時 PagerDuty Incident-001 (P1/P2)。 | - | 値の再計算ログを `reports/monitoring/` に添付できている。 |
+| 2. フェーズ判定 | `docs/design/rollout/autosave-merge-phases.md` の対象フェーズ確認とロールバック要否の判断。 | Slack スレッドで `@oncall` メンション。 | - | Phase 判定コメントが Runbook に追記され、Reviewer が確認済み。 |
+| 3. ロールバック実行 | `pnpm run flags:rollback --phase <prev>` を Reporter が実行し、成功/失敗ログを共有。 | PagerDuty Incident-001 に指令ログを残し、Slack へ結果を転送。失敗時は 2 回リトライ後 Escalation。 | `reports/alerts/<timestamp>.md` にコマンドログ保存。 | Reviewer がコマンド結果と次回測定時間を確認。 |
+| 4. RCA 着手 | 1 サイクル以内に RCA ドラフト (`reports/rca/<phase>-<timestamp>.md`) を生成。 | Slack `#incident` に RCA 雛形リンクを共有。 | yes（RCA ファイル作成） | 承認者が RCA の責任者・期限をコメントで明示。 |
+| 5. クローズ判定 | SLO 緑化 2 サイクル連続を確認し、PagerDuty インシデントを解消。 | Slack `#incident` でクローズ通知、PagerDuty で Resolved。 | RCA 最終版を `reports/rca/` にリンク。 | Reviewer がダッシュボード更新と RCA 承認を確認し、チェックリストに署名。 |
+
+| ダッシュボードビュー | 必須指標 | データソース | PagerDuty 表示 | レビュー承認条件 |
+| --- | --- | --- | --- | --- |
+| AutoSave パネル | `autosave_p95`, `autosave_error_count`, フェーズ注記 | `reports/monitoring/*.jsonl` | Incident-001 発報時に赤バッジ表示 | Reviewer が SLO 線と実測値を照合し承認サインを残す。 |
+| Restore パネル | `restore_success_rate`, `rollback_required` フラグ履歴 | Collector JSONL (`feature=autosave`) | PagerDuty チケット ID をツールチップ表示 | Incident 対応ログ（`reports/alerts/*.md`）と一致すること。 |
+| Merge パネル | `merge_auto_success_rate`, `merge_conflict_rate` | Analyzer 出力 (`monitor:score`) | `#merge-ops` 通知リンク | Reviewer が Phase B 判定メモと一致を確認。 |
+| SLA/SLO 集計 | Phase 別 SLO 達成率、`retryable` 失敗件数 | `monitor:score` 結果、`reports/rca/` メタ | PagerDuty Escalation Level を履歴表示 | ガバナンス会議で承認済み（議事録リンク添付）。 |
 
 ### 2.4 ロールバック意思決定ツリー（Runbook 抜粋）
 ```
