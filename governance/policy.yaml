@@ -63,11 +63,27 @@ rollout:
     notify:
       slack_channel: "#launch-autosave"
       template: templates/alerts/rollback.md
+  notifications:
+    slack:
+      default_channel: "#launch-autosave"
+      incident_channel: "#incident"
+      per_phase:
+        A-1: "#launch-autosave"
+        A-2: "#launch-autosave"
+        B-0: "#merge-ops"
+        B-1: "#merge-ops"
+    pagerduty:
+      autosave_service: "Autosave & Precision Merge"
+      merge_service: "Merge Duty"
+      incident_workflow: "Incident-001"
+    templates:
+      rollback: templates/alerts/rollback.md
+      incident: templates/alerts/rollback.md
 monitoring:
   collectors:
     - scripts/monitor/collect-metrics.ts
   report_sink: reports/monitoring/
-  decision_tree_ref: docs/IMPLEMENTATION-PLAN.md#24-ロールバック意思決定ツリーrunbook-抜粋
+  decision_tree_ref: docs/IMPLEMENTATION-PLAN.md#22-ロールアウト-runbookincident-001-整合
   cycle:
     schedule: "*/15 * * * *"
     window_minutes: 15
