@@ -109,6 +109,26 @@ export function merge3(
 | 4. `decide` | `MergeScoringMetrics`, lock/prefer | `MergeDecision`, `similarity` | `similarity<minAutoThreshold` を必ず競合へフォールバック |
 | 5. `emitDecision` | `MergeDecision`, `MergeHunk` | UI/Telemetry へのイベント | `merge:auto-applied`/`merge:conflict-detected` を 1 ハンク ≤1ms で送信 |
 
+### 4.2 precision 別スコアリングと UI プロトコル
+
+`merge.precision` フラグは `resolveProfile()` と `MergeScoringStrategy` の両方に影響する。下表は `src/lib/merge.ts` の `ResolvedMergeProfile` へ反映される閾値と、`docs/IMPLEMENTATION-PLAN.md` §0.3 のタブ制御を同期させた UI プロトコルである。
+
+| precision | `minAutoThreshold` | `similarityBands.auto` / `review` | `score()` の重み | UI 反映 | Telemetry |
+| --- | --- | --- | --- | --- | --- |
+| `legacy` | `max(profile.threshold, 0.65)` | `auto=profile.threshold+0.08`, `review=profile.threshold-0.04` | `blended = 0.5*jaccard + 0.5*cosine` | Diff タブ非表示、`pref` は `manual-first`/`ai-first` のみ。【F:docs/IMPLEMENTATION-PLAN.md†L56-L70】 | `merge:finish` で従来統計のみ送信。 |
+| `beta` | `max(profile.threshold, 0.75)` | `auto=clamp(profile.threshold+0.05, 0.8, 0.92)`, `review=profile.threshold-0.02` | `blended = 0.4*jaccard + 0.6*cosine` | Diff タブを末尾追加し `Beta` バッジとバックアップ CTA を表示。`queueMergeCommand('auto-apply')` 成功時に AutoSave `flushNow()` を要求。【F:docs/MERGEDOCK-FLAG-DESIGN.md†L97-L105】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L63】 | `merge.precision.suggested` に `confidence_score=blended` を含め Analyzer が Phase B-0 SLO を算出。【F:docs/IMPLEMENTATION-PLAN.md†L246-L257】 |
+| `stable` | `max(profile.threshold, 0.82)` | `auto=clamp(profile.threshold+0.03, 0.86, 0.95)`, `review=profile.threshold-0.01` | `blended = 0.3*jaccard + 0.7*cosine + historyBoost` (`historyBoost≤0.05`) | Diff タブを初期選択。ハンク確定時に `merge:lastTab=diff` を保持し、AutoSave 成功時刻が 5 分超過なら CTA を常時表示。【F:docs/IMPLEMENTATION-PLAN.md†L74-L90】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L63】 | `merge.precision.blocked` を `retryable` 区分付きで Collector→Analyzer→Reporter へ伝搬し、Phase B-1 の SLO 監視を行う。【F:Day8/docs/day8/design/03_architecture.md†L1-L29】 |
+
+`historyBoost` は AutoSave 履歴（直近 5 世代の差分）から抽出したハンク安定度スコアで、`autosave.enabled=true` の場合のみ最大 0.05 を加算する。AutoSave が無効または履歴不足時は 0 とし、後方互換性を保つ。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L120】
+
+UI 層は `precision` に応じて以下のプロトコルを実装する。
+
+1. `legacy`: `DiffMergeView` をマウントせず、`merge:auto-applied` イベントは `MergeDock` の従来 UI で処理する。
+2. `beta`: `merge:hunk-decision` イベントのたびに `uiSurface='diff-review'` を Collector へ送信し、ハンク承認後に AutoSave `flushNow()` を非同期実行する。
+3. `stable`: `OperationPane` で `queueMergeCommand('commit-hunk')` 成功後に `merge:finish` をフックし、`Diff` タブへフォーカスを戻す。ロールバック時（precision→`legacy`）は `merge.lastTab` を `overview` へ更新し Diff ステートを破棄する。【F:docs/IMPLEMENTATION-PLAN.md†L59-L90】
+
+Collector→Analyzer→Reporter のフローでは、`merge.precision` ごとに `merge_auto_success_rate` を分解集計し、フェーズ移行のゲートとして活用する。【F:Day8/docs/day8/design/03_architecture.md†L1-L29】【F:docs/IMPLEMENTATION-PLAN.md†L141-L164】
+
 ## 5) UI / インタラクション
 ### Algorithm Details
 #### 擬似コード

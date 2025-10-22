@@ -1,4 +1,6 @@
 export type FlagSource = 'env' | 'localStorage' | 'default'
+export type MergePrecision = 'legacy' | 'beta' | 'stable'
+export type AutoSavePhase = 'disabled' | 'phase-a' | 'phase-b'
 
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 
