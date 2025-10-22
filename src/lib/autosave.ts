@@ -3,23 +3,48 @@ import type { Storyboard } from '../types'
 export type StoryboardProvider = () => Storyboard
 
 export interface AutoSaveOptions {
-  debounceMs?: number
-  idleMs?: number
-  maxGenerations?: number
-  maxBytes?: number
-  disabled?: boolean
+  /**
+   * フラグ/ユーザー設定による完全無効化。`true` の場合は initAutoSave が no-op を返し、副作用を発生させない。
+   */
+  readonly disabled?: boolean
+  /**
+   * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
+   */
+  readonly debounceMs?: never
+  /**
+   * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
+   */
+  readonly idleMs?: never
+  /**
+   * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
+   */
+  readonly maxGenerations?: never
+  /**
+   * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
+   */
+  readonly maxBytes?: never
+}
+
+export interface AutoSavePolicy {
+  readonly debounceMs: 500
+  readonly idleMs: 2000
+  readonly maxGenerations: 20
+  readonly maxBytes: 50 * 1024 * 1024
+  readonly disabled: false
 }
 
 /**
  * 保存ポリシー既定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 の表と同期する必要がある。
  */
-export const AUTOSAVE_DEFAULTS: Required<AutoSaveOptions> = Object.freeze({
+export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze({
   debounceMs: 500,
   idleMs: 2000,
   maxGenerations: 20,
   maxBytes: 50 * 1024 * 1024,
   disabled: false
-})
+} as const)
+
+export const AUTOSAVE_DEFAULTS = AUTOSAVE_POLICY
 
 export type AutoSaveErrorCode =
   | 'lock-unavailable'
@@ -77,6 +102,29 @@ export const AUTOSAVE_FAILURE_PLAN: readonly AutoSaveFailurePlanEntry[] = Object
   }
 ])
 
+export interface AutoSaveErrorNotificationFlow {
+  readonly code: AutoSaveErrorCode | 'any'
+  readonly retryable: boolean
+  readonly ui: 'none' | 'toast' | 'modal'
+  readonly collectorLevel: 'debug' | 'info' | 'warn' | 'error'
+  readonly message: string
+}
+
+export const AUTOSAVE_ERROR_NOTIFICATION_FLOWS = Object.freeze<readonly AutoSaveErrorNotificationFlow[]>([
+  { code: 'disabled', retryable: false, ui: 'none', collectorLevel: 'debug', message: 'Feature flag/オプションによる停止。UI 通知なしで snapshot.phase を disabled とする。' },
+  { code: 'lock-unavailable', retryable: true, ui: 'toast', collectorLevel: 'warn', message: 'Web Lock 取得失敗。バックオフ再試行を UI に表示し、Collector へ単発 warn を送る。' },
+  { code: 'write-failed', retryable: true, ui: 'toast', collectorLevel: 'warn', message: 'OPFS 書込失敗。retryCount を UI に表示し、cause/context を構造化して送信。' },
+  { code: 'data-corrupted', retryable: false, ui: 'modal', collectorLevel: 'error', message: '復元不能。ユーザーに復旧不可を通知し、Collector へ高優先度 error を送る。' },
+  { code: 'history-overflow', retryable: false, ui: 'toast', collectorLevel: 'info', message: '履歴 FIFO により世代を削除。ユーザーへ情報通知のみ。' },
+  { code: 'any', retryable: false, ui: 'modal', collectorLevel: 'error', message: '未分類エラーはフォールバックで致命扱いとし、UI/Collector へ escalated 通知を行う。' }
+])
+
+export const AUTOSAVE_DISABLED_CONDITIONS = Object.freeze({
+  featureFlag: 'autosave.enabled=false',
+  optionsDisabled: 'AutoSaveOptions.disabled=true',
+  runtimeOverride: 'StoryboardProvider が undefined を返した場合は初期化自体を拒否する'
+} as const)
+
 export type AutoSavePhase =
   | 'disabled'
   | 'idle'
@@ -123,6 +171,23 @@ export const AUTOSAVE_STATE_TRANSITION_MAP: AutoSavePhaseTransitionMap = Object.
   error: ['awaiting-lock:retry-scheduled|retryable=true→バックオフ完了で復帰', 'disabled:dispose|再試行キュークリア+phase disabled']
 } as const)
 
+export interface AutoSavePhaseDescription {
+  readonly summary: string
+  readonly entry: readonly string[]
+  readonly exit: readonly string[]
+}
+
+export const AUTOSAVE_PHASE_DESCRIPTIONS: Readonly<Record<AutoSavePhase, AutoSavePhaseDescription>> = Object.freeze({
+  disabled: { summary: 'AutoSave 全停止状態。監視やロック取得を行わない。', entry: ['scheduleFlush を解除', 'Web Lock/ファイルロックを解放', 'Telemetry を抑制'], exit: ['StoryboardProvider を即時評価', '監視タイマーを初期化'] },
+  idle: { summary: '変更待ちの安定状態。次の保存を監視する。', entry: ['pendingBytes を 0 にリセット', 'retryCount を 0 にリセット'], exit: ['debounce タイマーをセット', 'flushNow でロック要求へ移行'] },
+  debouncing: { summary: '変更を集約し、最小保存間隔を担保する。', entry: ['pendingBytes を算出', 'idle タイマーをセット'], exit: ['pendingBytes を確定', 'idle タイマーをクリア'] },
+  'awaiting-lock': { summary: 'ロック取得中。Web Lock 優先でフォールバックに繋ぐ。', entry: ['lock request を発行', 'retryCount を監視'], exit: ['バックオフタイマーを解除', 'ロックハンドルを確保または解放'] },
+  'writing-current': { summary: 'current.json.tmp へアトミックに書き込み中。', entry: ['StoryboardProvider の出力を serialize', 'writeCurrent を呼び出す'], exit: ['writeCurrent の Promise 解決を待つ', 'pendingBytes を更新'] },
+  'updating-index': { summary: 'index.json を更新し履歴メタデータを整備する。', entry: ['updateIndex を呼び出し最新世代を先頭に挿入'], exit: ['index.json の整合性を検証', 'GC 判定の入力を準備'] },
+  gc: { summary: '履歴世代/容量制限を満たすようクリーンアップする。', entry: ['rotateHistory を呼び出し', '削除対象を決定'], exit: ['lastSuccessAt を更新', 'pendingBytes をクリア'] },
+  error: { summary: 'UI/Collector へ公開する致命/警告状態。', entry: ['AutoSaveError を snapshot.lastError に格納', 'telemetry に code/retryable を添付'], exit: ['retryCount を次試行へ引き継ぐ', 'バックオフ完了を待機'] }
+} as const)
+
 export interface AutoSaveHistoryEntry {
   readonly ts: string
   readonly bytes: number
@@ -160,9 +225,29 @@ export interface AutoSavePersistenceContract {
 
 export interface AutoSaveInitResult {
   readonly snapshot: () => AutoSaveStatusSnapshot
+  /**
+   * デバウンス/アイドル待機をスキップして即座に `awaiting-lock` へ遷移させる。
+   * 実行中の書込フェーズがある場合はその完了を待った後に再実行をスケジュールする。
+   */
   flushNow: () => Promise<void>
+  /**
+   * タイマー停止・イベント購読解除・ロック開放を順番に実行する終端処理。
+   * フライト中の場合でも完了を待機してから `phase='disabled'` に確定させる。
+   */
   dispose: () => void
 }
+
+export interface AutoSaveControlResponsibility {
+  readonly name: 'flushNow' | 'dispose'
+  readonly allowedPhases: readonly AutoSavePhase[]
+  readonly operations: readonly string[]
+  readonly failureModes: readonly AutoSaveErrorCode[]
+}
+
+export const AUTOSAVE_CONTROL_RESPONSIBILITIES = Object.freeze<readonly AutoSaveControlResponsibility[]>([
+  { name: 'flushNow', allowedPhases: ['idle', 'debouncing', 'awaiting-lock', 'error'], operations: ['debounce タイマーを解除', 'ロック取得を要求', 'retryable error の場合はバックオフ完了後に再実行'], failureModes: ['lock-unavailable', 'write-failed'] },
+  { name: 'dispose', allowedPhases: ['disabled', 'idle', 'debouncing', 'awaiting-lock', 'writing-current', 'updating-index', 'gc', 'error'], operations: ['scheduler/タイマーの停止', '保留ロック/バックオフの破棄', 'final snapshot を phase=\'disabled\' で確定'], failureModes: ['lock-unavailable', 'write-failed'] }
+])
 
 export interface AutoSaveTelemetryEvent {
   readonly feature: 'autosave'
