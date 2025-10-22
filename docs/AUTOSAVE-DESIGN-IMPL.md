@@ -2,12 +2,16 @@
 # AutoSave 実装詳細
 
 ## 0) モジュール責務と不変条件
-- `src/lib/autosave.ts` は AutoSave 機能の**中核ファサード**として、OPFS 上の `project/autosave` ツリーへ最新スナップショットを保存し、履歴一覧・復元 API を提供する。対象モジュールは [実装計画](./IMPLEMENTATION-PLAN.md) の「1) 対象モジュール追加」に列挙された `locks.ts`・UI コンポーネント群と疎結合である必要がある。
-- 保存ポリシーのパラメータ（デバウンス 500ms、アイドル 2s、履歴 20 世代、容量 50MB）は Phase A では固定値とし、`AutoSaveOptions.disabled` と設定フラグ `autosave.enabled` のみで有効/無効を制御する。フラグ `autosave.enabled` が false の場合はどの永続化 API も副作用を発生させてはならない。
-- 生成物は常に `current.json`（最新）と `index.json`（履歴メタデータ）で整合していなければならない。片方だけが更新される状態は例外扱いとし、リカバリ時にはロールバックで整合性を取り戻す。
-- Web Locks を優先し、排他獲得前には OPFS へ書き込まない。フォールバックのファイルロックも同じ UUID を保持し、再入（同一タブ二重保存）を禁止する。
-- `history/<ISO>.json` は ISO8601 時刻で単調増加する命名とし、`index.json` に存在しないファイルは掃除対象、逆に `index.json` にのみ存在する項目はゴースト扱いで再構築する。
-- 例外が発生した場合でも既存 UI・Collector/Analyzer へ不要な副作用（意図しないログ出力、無制限 I/O）を与えない。ログは後述の制約に従って 1 エラーにつき 1 行、警告レベルで記録する。
+
+| 観点 | 要件 | 依存/備考 |
+| --- | --- | --- |
+| 責務 | `src/lib/autosave.ts` が AutoSave の**中核ファサード**として、スナップショット保存・履歴取得・復元 API を提供する。 | [IMPLEMENTATION-PLAN](./IMPLEMENTATION-PLAN.md) §1 と連携し、`locks.ts`・UI 層とは疎結合。 |
+| 永続化 | `project/autosave/current.json` と `index.json` をアトミック更新し整合を維持する。 | 片方のみ更新された場合はロールバックし、`AutoSaveError('write-failed', retryable=true)` を発行。 |
+| ロック | Web Locks を優先し、獲得前に OPFS へ書き込まない。同一 UUID によるフォールバック `.lock` で再入を禁止。 | `src/lib/locks.ts` の契約に従い、取得失敗は指数バックオフで再試行。 |
+| 履歴 | `history/<ISO>.json` を ISO8601 で単調増加させ、`index.json` と相互整合を保つ。 | 乖離検知時は GC が再構築し、欠落は `AutoSaveError('history-overflow', retryable=false)`。 |
+| エラーポリシー | UI・Collector/Analyzer へ副作用を与えず、`warn` ログ 1 行で終了。`retryable` により再試行可否を明示。 | 例外階層は §3.1.1 を参照。 |
+
+Phase A では保存パラメータ（デバウンス 500ms、アイドル 2s、履歴 20 世代、容量 50MB）を固定し、`AutoSaveOptions.disabled` と設定フラグ `autosave.enabled` の二重ガードで有効/無効のみを制御する。
 
 ## 1) 保存ポリシー
 
@@ -28,73 +32,150 @@ Phase B 以降で可変化する場合は `AutoSaveOptions` を拡張し、`norm
 - `history/<ISO>.json` を最大 N=20 世代保持し、`index.json` で参照。
 - 容量上限 50MB を超過した場合は古い世代から FIFO で削除。
 
+### 1.3 Phase A ガードの設計リスクとロールバック条件
+
+| ガード | 想定リスク | ロールバック条件 | 備考 |
+| --- | --- | --- | --- |
+| `AutoSaveOptions.disabled` | UI からの誤設定で常時無効化され、復元データが欠落する。 | 連続 3 回の `snapshot().phase==='disabled'` かつ `autosave.enabled=true` を検出した場合、ガードを強制無効化してローカル通知を出す。 | 将来の可変ポリシー導入時は `normalizeOptions()` でワーニングを返す。 |
+| Feature flag `autosave.enabled` | フラグ配信遅延により有効化が遅れる。 | フラグ false のまま 24h 経過した場合はオペレーション通知を行い、ロールバック（AutoSave 完全停止）で整合性を保つ。 | 配信障害時の暫定策。 |
+| 固定ポリシー値 | 将来のしきい値緩和を阻害する。 | GC が `history-overflow` を 2 回連続で検出した場合、最後の成功世代へ復帰して以降の保存を一時停止。 | Phase B でダイナミック設定を導入予定。 |
+
 ## 2) Runtime Sequencing
-### シーケンス図
+
+### 2.1 `initAutoSave` I/O / 状態遷移 / 例外
+
+| I/O | 説明 |
+| --- | --- |
+| Input | `getStoryboard: () => Storyboard`, `options?: AutoSaveOptions`, feature flag `autosave.enabled`. |
+| Output | `AutoSaveInitResult`（`snapshot`, `flushNow`, `dispose`）。`snapshot` は状態を同期取得し、`flushNow` は保存完了で解決する。 |
+| 副作用 | Web Locks / `.lock` 取得、OPFS への書込、`history/` のローテーション、`warn` ログ発行。 |
+
 ```mermaid
 sequenceDiagram
-  participant Input as Editor
-  participant Scheduler as AutoSaveScheduler
-  participant Lock as WebLock
-  participant Writer as OPFSWriter
+  participant UI as UI/Input
+  participant AutoSave as initAutoSave
+  participant Scheduler as Scheduler
+  participant Lock as ProjectLock
+  participant Store as OPFS
   participant GC as HistoryGC
 
-  Input->>Scheduler: change event
-  Scheduler->>Scheduler: debounce(500ms)
-  Scheduler->>Scheduler: idle(2s)
-  Scheduler->>Lock: navigator.locks.request('imgponic:project')
-  alt Web Locks available
-    Lock-->>Scheduler: exclusive handle
-  else Fallback
-    Scheduler->>Lock: acquire project/.lock (UUID, TTL=30s)
+  UI->>AutoSave: initAutoSave(getStoryboard, options)
+  AutoSave->>AutoSave: normalizeOptions()
+  AutoSave->>AutoSave: check feature flag
+  alt disabled
+    AutoSave-->>UI: {snapshot, flushNow(no-op), dispose(no-op)}
+  else enabled
+    AutoSave->>Scheduler: start()
+    loop On change
+      Scheduler->>Scheduler: debounce(500ms) + idle(2s)
+      Scheduler->>Lock: acquireProjectLock()
+      alt lock granted
+        Scheduler->>Store: write current.json.tmp
+        Store->>Store: fsync + rename
+        Scheduler->>Store: update index.json.tmp → rename
+        Scheduler->>GC: rotate history & enforce maxBytes
+        GC-->>Scheduler: gcResult
+        Scheduler->>Lock: releaseProjectLock()
+      else lock denied
+        Scheduler->>Scheduler: schedule retry (backoff)
+        Scheduler->>Scheduler: throw AutoSaveError('lock-unavailable', retryable=true)
+      end
+    end
+    AutoSave-->>UI: {snapshot, flushNow, dispose}
   end
-  Scheduler->>Writer: write current.json.tmp
-  Writer->>Writer: fsync + rename -> current.json
-  Scheduler->>GC: update index.json.tmp → rename
-  GC->>GC: rotate history (FIFO, maxGenerations)
-  GC->>GC: enforce maxBytes (oldest-first eviction)
-  Lock-->>Scheduler: release handle / remove .lock
-  Note over Scheduler: エラー時はロールバック → 再スケジュール（指数バックオフ）
 ```
 
-### 2.1 復元フロー
+```mermaid
+stateDiagram-v2
+    [*] --> Disabled: flag=false or options.disabled
+    Disabled --> Idle: dispose() && flag toggled true
+    [*] --> Idle: initAutoSave()
+    Idle --> Debouncing: change detected
+    Debouncing --> Idle: dispose()
+    Debouncing --> AwaitLock: timer elapsed
+    AwaitLock --> Writing: lock granted
+    AwaitLock --> Backoff: AutoSaveError(lock-unavailable, retryable=true)
+    Backoff --> AwaitLock: retry scheduled
+    Writing --> Committing: current.json rename
+    Committing --> GC: index.json commit
+    GC --> Idle: success
+    Writing --> Rollback: write-failed (retryable)
+    Rollback --> AwaitLock: reschedule with backoff
+    GC --> Halted: history-overflow (retryable=false)
+    Halted --> Idle: manual reset (dispose + re-init)
+```
+
+### 2.2 `restorePrompt` / `restoreFrom*` I/O / 例外
+
+| 関数 | Input | Output | 主な例外 |
+| --- | --- | --- | --- |
+| `restorePrompt()` | なし | `null` or `{ts, bytes, source, location}` | `AutoSaveError('data-corrupted', retryable=false)` when `index.json` parse fails. |
+| `restoreFromCurrent()` | なし | `Promise<boolean>` | `AutoSaveError('data-corrupted', retryable=false)` / `'write-failed'`（UI 反映不可）。 |
+| `restoreFrom(ts)` | `ts: string` | `Promise<boolean>` | `AutoSaveError('data-corrupted', retryable=false)` / `'history-overflow'`（履歴欠落）。 |
+
 ```mermaid
 sequenceDiagram
-  participant UI as App
-  participant Restore as restorePrompt/restoreFrom*
+  participant UI as UI Layer
+  participant Restore as restorePrompt
   participant Index as index.json
+
+  UI->>Restore: restorePrompt()
+  Restore->>Index: read + parse
+  alt index empty
+    Restore-->>UI: null
+  else
+    Index-->>Restore: latest entry
+    Restore-->>UI: metadata
+  end
+  Note over Restore: parse failure => AutoSaveError('data-corrupted', retryable=false)
+```
+
+```mermaid
+sequenceDiagram
+  participant UI as UI Layer
+  participant Restore as restoreFrom*
   participant Current as current.json
   participant History as history/<ts>.json
 
-  UI->>Restore: restorePrompt()
-  Restore->>Index: read index.json
-  alt index missing or empty
-    Restore-->>UI: null
-  else 有効な履歴あり
-    Index-->>Restore: {ts, bytes, source}
-    Restore-->>UI: 最終世代メタデータ
+  UI->>Restore: restoreFromCurrent()
+  Restore->>Current: read + parse
+  Restore-->>UI: apply storyboard
+  UI->>Restore: restoreFrom(ts)
+  Restore->>History: read + parse
+  alt file missing
+    Restore->>Restore: throw AutoSaveError('history-overflow', retryable=false)
+  else
+    Restore-->>UI: apply storyboard
   end
-  UI->>Restore: restoreFromCurrent()/restoreFrom(ts)
-  Restore->>Current: read current.json
-  alt 要求が history
-    Restore->>History: read history/<ts>.json
-  end
-  Restore-->>UI: Storyboard payload
-  UI->>UI: applyStoryboard()
-  Note over Restore: JSON parse 失敗時は AutoSaveError(code='data-corrupted') を throw
 ```
 
-### 2.2 GC フロー
+### 2.3 `listHistory` I/O / シーケンス
+
+| Input | Output | 例外 |
+| --- | --- | --- |
+| なし | `{ ts, bytes, location: 'history', retained }[]` | `AutoSaveError('data-corrupted', retryable=false)` when index parse fails. |
+
 ```mermaid
-stateDiagram-v2
-    [*] --> EnforceGenerations: index.json commit
-    EnforceGenerations --> EnforceBytes: exceed maxGenerations?
-    EnforceGenerations --> PruneOrphans: orphan files detected
-    EnforceBytes --> PruneOrphans: 超過世代の削除完了
-    PruneOrphans --> Finalize: GC 結果を index.json に反映
-    Finalize --> [*]: lastSuccessAt 更新 / pendingBytes=0
+sequenceDiagram
+  participant Caller as listHistory()
+  participant Index as index.json
+  participant Files as history/*
+
+  Caller->>Index: read + parse index.json
+  Index-->>Caller: entries
+  loop each entry
+    Caller->>Files: stat history/<ts>.json
+    alt file missing
+      Caller->>Caller: mark retained=false
+    else
+      Files-->>Caller: size
+    end
+  end
+  Caller-->>Caller: return sorted entries
+  Note over Caller: parse failure => AutoSaveError('data-corrupted', retryable=false)
 ```
 
-### 時系列表
+### 2.4 時系列表
 | 時刻 | スレッド/コンテキスト | 動作 | 同期メカニズム |
 | --- | --- | --- | --- |
 | t0 | UI スレッド | 入力変更を検出 | イベントループ |
@@ -159,6 +240,24 @@ export async function listHistory(): Promise<
 - 例外は `AutoSaveError` を基本とし、`retryable` が true のケース（ロック取得不可・一時的な書込失敗）は指数バックオフで再スケジュールする。`retryable=false` はユーザ通知＋即時停止。`code='disabled'` は再試行禁止の静的ガードとして扱い、ログのみ残して停止する。
 - `flushNow()` は保存可能な状態（`idle` or `debouncing`）であれば 2s アイドル待機をスキップし、ロック取得と書込の完了まで待つ。実行中のフライトがある場合はその完了を待機し、同時実行を避ける。
 - `snapshot()` は内部状態の即時スナップショットを返し UI 側の `isReadOnly` や `lastError` 表示に利用する。内部ステートは後述の状態遷移表に従う。
+
+### 3.1.1 例外階層
+
+```mermaid
+flowchart TD
+    AutoSaveError[AutoSaveError]
+    LockErr[code="lock-unavailable"\nretryable=true]
+    WriteErr[code="write-failed"\nretryable=true]
+    DataErr[code="data-corrupted"\nretryable=false]
+    HistoryErr[code="history-overflow"\nretryable=false]
+    DisabledErr[code="disabled"\nretryable=false]
+
+    AutoSaveError --> LockErr
+    AutoSaveError --> WriteErr
+    AutoSaveError --> DataErr
+    AutoSaveError --> HistoryErr
+    AutoSaveError --> DisabledErr
+```
 
 ### 3.2 プロジェクトロック API 設計
 
@@ -231,6 +330,19 @@ UI 層は `lock:readonly-entered` を契機にバナー表示・保存停止へ�
 - Web Locks 非対応環境では `acquireProjectLock` が自動的に `project/.lock` を使用し、`lease.viaFallback=true` を返却する。`withProjectLock` はこのフラグを参照しつつも API 互換を維持するため、既存 UI への破壊的変更は発生しない。
 - `.lock` ファイルは UUID・所有者 ID（タブ識別子）と TTL を持ち、`renewProjectLock` で `expiresAt` を延長する。Collector/Analyzer が監視するパス外にあるため副作用を与えない。
 - `retry=false` の場合でも `lock:error` イベントを通じて UI は即座に状況把握可能で、必要に応じて手動更新（ページリロード等）を案内する。
+
+### 3.4 TDD 計画（`tests/autosave/*.spec.ts`）
+
+| フェーズ | モジュール | 優先度 | テスト観点 |
+| --- | --- | --- | --- |
+| Phase A | `initAutoSave.debounce.spec.ts` | P0 | 500ms デバウンス、2s アイドル判定、`flushNow()` の即時コミット。 |
+| Phase A | `initAutoSave.gc.spec.ts` | P0 | 履歴 20 世代維持、50MB 超過時の FIFO 削除、孤児ファイル再構築。 |
+| Phase A | `initAutoSave.error-recovery.spec.ts` | P1 | lock 失敗時の指数バックオフ、`write-failed` からのロールバック、`history-overflow` で停止。 |
+| Phase A | `restore.flow.spec.ts` | P1 | `restorePrompt` の空/正常/破損ケース、`restoreFrom*` の history 欠落。 |
+| Phase A | `list-history.spec.ts` | P2 | `retained=false` マーク付与とメタデータ整合、並び順保証。 |
+| Phase B | `options-matrix.spec.ts` | P2 | 将来の動的オプション有効化、`disabled` ガード優先順位。 |
+
+優先度は Phase A のクリティカル挙動（デバウンス・GC・エラー復帰）を P0/P1 とし、拡張ケースを P2 に後ろ倒しする。
 
 ## 4) API 最終仕様と状態遷移
 
