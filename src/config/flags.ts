@@ -260,9 +260,9 @@ export function resolveFlags(options?: ResolveOptions): FlagSnapshot {
   const merge = resolveFeatureFlag('merge.precision', options)
   const clock = options?.clock ?? (() => new Date())
 
-  // 既存の UI/サービスが直接 localStorage を参照するフェールセーフは
-  // FLAG_MIGRATION_PLAN の完了まで残す。resolveFlags() からは常に
-  // source を付与したスナップショットを返し、段階的に移行する。
+  // Phase A 移行中は既存 UI の `localStorage` 直読フェールセーフが残るため、
+  // resolveFlags() だけでは値が届かないケースも想定する。App/Merge 側で
+  // snapshot 未取得時は従来挙動へフォールバックできるようガイドする。
   return {
     autosave: {
       value: autosave.value,
