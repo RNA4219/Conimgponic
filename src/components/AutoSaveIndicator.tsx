@@ -1,7 +1,19 @@
-import { memo } from 'react'
+import { memo, useEffect, useMemo } from 'react'
 import type { ReactElement } from 'react'
 
 import type { AutoSavePhase, AutoSaveStatusSnapshot } from '../lib/autosave'
+import type { ProjectLockEvent } from '../lib/locks'
+
+const RETRY_LABEL_THRESHOLD = 3
+const HISTORY_USAGE_WARNING_RATIO = 0.9
+
+export interface AutoSaveHistorySummary {
+  readonly totalGenerations: number
+  readonly maxGenerations: number
+  readonly totalBytes: number
+  readonly maxBytes: number
+  readonly overflowDetected?: boolean
+}
 
 export interface AutoSavePhaseHistoryRequirement {
   readonly access: 'hidden' | 'available' | 'disabled'
@@ -107,60 +119,210 @@ export const AUTOSAVE_PHASE_STATE_MAP = Object.freeze({
   }
 } satisfies Record<AutoSavePhase, AutoSavePhaseViewConfig>)
 
+export interface AutoSaveIndicatorToast {
+  readonly variant: 'warning' | 'error'
+  readonly message: string
+}
+
+export interface AutoSaveIndicatorBanner {
+  readonly variant: 'warning' | 'error'
+  readonly message: string
+}
+
+export interface AutoSaveIndicatorViewModel {
+  readonly label: string
+  readonly description: string
+  readonly indicator: AutoSavePhaseViewConfig['indicator']
+  readonly history: AutoSavePhaseHistoryRequirement & { readonly usageWarning?: string }
+  readonly meta: {
+    readonly lastSuccessAt?: string
+    readonly pendingBytes?: number
+    readonly retryCount?: number
+    readonly retryLabel?: string
+    readonly errorMessage?: string
+  }
+  readonly banner?: AutoSaveIndicatorBanner
+  readonly toast?: AutoSaveIndicatorToast
+}
+
+export interface DeriveAutoSaveIndicatorViewModelOptions {
+  readonly snapshot: AutoSaveStatusSnapshot
+  readonly historySummary?: AutoSaveHistorySummary
+  readonly lockEvent?: ProjectLockEvent
+}
+
+export function deriveAutoSaveIndicatorViewModel({
+  snapshot,
+  historySummary,
+  lockEvent
+}: DeriveAutoSaveIndicatorViewModelOptions): AutoSaveIndicatorViewModel {
+  const base = AUTOSAVE_PHASE_STATE_MAP[snapshot.phase]
+  const retryLabel =
+    snapshot.retryCount >= RETRY_LABEL_THRESHOLD ? `再試行中 (${snapshot.retryCount})` : undefined
+
+  const historyUsage = (() => {
+    if (!historySummary || base.history.access === 'hidden') {
+      return undefined
+    }
+    const generationsRatio = historySummary.maxGenerations
+      ? historySummary.totalGenerations / historySummary.maxGenerations
+      : 0
+    const bytesRatio = historySummary.maxBytes ? historySummary.totalBytes / historySummary.maxBytes : 0
+    if (historySummary.overflowDetected || historySummary.totalGenerations >= historySummary.maxGenerations) {
+      return '履歴の世代数が上限に達しました。古い履歴から順に削除されます。'
+    }
+    if (bytesRatio >= 1 || historySummary.totalBytes >= historySummary.maxBytes) {
+      return '履歴の保存容量が上限に達しました。自動で容量調整を実行しています。'
+    }
+    if (generationsRatio >= HISTORY_USAGE_WARNING_RATIO || bytesRatio >= HISTORY_USAGE_WARNING_RATIO) {
+      return '履歴の利用率が 90% を超えています。不要な世代を整理してください。'
+    }
+    return undefined
+  })()
+
+  const banner = (() => {
+    if (lockEvent?.type === 'lock:readonly-entered') {
+      const reason =
+        lockEvent.reason === 'acquire-failed'
+          ? '他のタブが編集しています'
+          : lockEvent.reason === 'renew-failed'
+          ? 'ロック更新に失敗しました'
+          : 'ロック解放に失敗しました'
+      return {
+        variant: 'warning' as const,
+        message: `閲覧専用モードに切り替わりました（${reason}）。` + ' 復元・再試行の前にタブの状態を確認してください。'
+      }
+    }
+    if (snapshot.phase === 'error' && snapshot.lastError && !snapshot.lastError.retryable) {
+      return {
+        variant: 'error' as const,
+        message: `自動保存を停止しました: ${snapshot.lastError.message}`
+      }
+    }
+    return undefined
+  })()
+
+  const toast = (() => {
+    if (snapshot.lastError && snapshot.lastError.retryable) {
+      return { variant: 'warning' as const, message: `自動保存の再試行に失敗しました（${snapshot.lastError.message}）` }
+    }
+    if (snapshot.retryCount >= RETRY_LABEL_THRESHOLD && snapshot.phase === 'awaiting-lock') {
+      return { variant: 'warning' as const, message: `ロック取得を再試行中です (${snapshot.retryCount})` }
+    }
+    return undefined
+  })()
+
+  return {
+    label: retryLabel ?? base.label,
+    description: base.description,
+    indicator: banner?.variant === 'error' ? 'error' : base.indicator,
+    history: { ...base.history, usageWarning: historyUsage },
+    meta: {
+      lastSuccessAt: snapshot.lastSuccessAt,
+      pendingBytes: snapshot.pendingBytes,
+      retryCount: snapshot.retryCount || undefined,
+      retryLabel,
+      errorMessage: snapshot.lastError?.message
+    },
+    banner,
+    toast
+  }
+}
+
 export interface AutoSaveIndicatorProps {
   readonly snapshot: AutoSaveStatusSnapshot
+  readonly historySummary?: AutoSaveHistorySummary
+  readonly lockEvent?: ProjectLockEvent
+  readonly onToast?: (toast: AutoSaveIndicatorToast) => void
   readonly onOpenHistory?: () => void
   readonly historyButtonLabel?: string
 }
 
 function AutoSaveIndicatorComponent({
   snapshot,
+  historySummary,
+  lockEvent,
+  onToast,
   onOpenHistory,
   historyButtonLabel = '履歴を開く'
 }: AutoSaveIndicatorProps): ReactElement {
-  const config = AUTOSAVE_PHASE_STATE_MAP[snapshot.phase]
-  const historyButtonDisabled = config.history.access !== 'available'
+  const viewModel = useMemo(
+    () => deriveAutoSaveIndicatorViewModel({ snapshot, historySummary, lockEvent }),
+    [snapshot, historySummary, lockEvent]
+  )
+
+  useEffect(() => {
+    if (onToast && viewModel.toast) {
+      onToast(viewModel.toast)
+    }
+  }, [onToast, viewModel.toast])
+
+  const historyButtonDisabled = viewModel.history.access !== 'available'
 
   return (
     <div
       className="autosave-indicator"
       role="status"
-      aria-live={config.indicator === 'error' ? 'assertive' : 'polite'}
+      aria-live={viewModel.indicator === 'error' ? 'assertive' : 'polite'}
       data-phase={snapshot.phase}
     >
+      {viewModel.banner ? (
+        <div className={`autosave-indicator__banner autosave-indicator__banner--${viewModel.banner.variant}`} role="alert">
+          {viewModel.banner.message}
+        </div>
+      ) : null}
       <div className="autosave-indicator__primary">
-        <span className={`autosave-indicator__state autosave-indicator__state--${config.indicator}`}>
-          {config.label}
+        <span className={`autosave-indicator__state autosave-indicator__state--${viewModel.indicator}`}>
+          {viewModel.label}
         </span>
-        <span className="autosave-indicator__description">{config.description}</span>
+        <span className="autosave-indicator__description">{viewModel.description}</span>
       </div>
       <dl className="autosave-indicator__meta">
-        {snapshot.lastSuccessAt ? (
+        {viewModel.meta.lastSuccessAt ? (
           <div>
             <dt>最終保存</dt>
-            <dd>{snapshot.lastSuccessAt}</dd>
+            <dd>{viewModel.meta.lastSuccessAt}</dd>
           </div>
         ) : null}
-        {snapshot.pendingBytes ? (
+        {viewModel.meta.pendingBytes ? (
           <div>
             <dt>保留中サイズ</dt>
-            <dd>{`${snapshot.pendingBytes} bytes`}</dd>
+            <dd>{`${viewModel.meta.pendingBytes} bytes`}</dd>
           </div>
         ) : null}
-        {snapshot.retryCount ? (
+        {viewModel.meta.retryCount ? (
           <div>
             <dt>再試行回数</dt>
-            <dd>{snapshot.retryCount}</dd>
+            <dd>{viewModel.meta.retryCount}</dd>
           </div>
         ) : null}
-        {snapshot.lastError ? (
+        {viewModel.meta.retryLabel ? (
+          <div>
+            <dt>状態</dt>
+            <dd>{viewModel.meta.retryLabel}</dd>
+          </div>
+        ) : null}
+        {viewModel.meta.errorMessage ? (
           <div className="autosave-indicator__error">
             <dt>エラー</dt>
-            <dd>{snapshot.lastError.message}</dd>
+            <dd>{viewModel.meta.errorMessage}</dd>
+          </div>
+        ) : null}
+        {historySummary ? (
+          <div>
+            <dt>履歴利用状況</dt>
+            <dd>
+              {`${historySummary.totalGenerations}/${historySummary.maxGenerations} 世代・${historySummary.totalBytes}/${historySummary.maxBytes} bytes`}
+            </dd>
           </div>
         ) : null}
       </dl>
-      {onOpenHistory && config.history.access !== 'hidden' ? (
+      {viewModel.history.usageWarning ? (
+        <p className="autosave-indicator__history-warning" role="alert">
+          {viewModel.history.usageWarning}
+        </p>
+      ) : null}
+      {onOpenHistory && viewModel.history.access !== 'hidden' ? (
         <button
           type="button"
           className="autosave-indicator__history"
@@ -171,7 +333,7 @@ function AutoSaveIndicatorComponent({
           {historyButtonLabel}
         </button>
       ) : null}
-      <p className="autosave-indicator__history-note">{config.history.note}</p>
+      <p className="autosave-indicator__history-note">{viewModel.history.note}</p>
     </div>
   )
 }
