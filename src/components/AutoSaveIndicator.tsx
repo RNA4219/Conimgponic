@@ -819,6 +819,45 @@ export const AUTO_SAVE_INDICATOR_TEST_PLAN: readonly AutoSaveIndicatorTestCase[]
   }
 ])
 
+export interface AutoSaveIndicatorDesignHierarchyEntry {
+  readonly id: string; readonly role: 'container' | 'banner' | 'status' | 'meta' | 'history-list' | 'history-actions'; readonly description: string; readonly children?: readonly string[]
+}
+
+export interface AutoSaveIndicatorDesignStateEntry {
+  readonly key: 'idle' | 'progress' | 'retrying' | 'readonly' | 'fatal-error'; readonly phases: readonly AutoSavePhase[]; readonly readonlyMode: 'no' | 'implicit' | 'forced'; readonly indicator: AutoSavePhaseViewConfig['indicator']; readonly banner?: 'warning' | 'error' | null; readonly historyAccess: AutoSavePhaseHistoryRequirement['access']; readonly actions: readonly ('open-history' | 'request-restore' | 'flush-now')[]; readonly notes: readonly string[]
+}
+
+export interface AutoSaveIndicatorDesignScenarioEntry {
+  readonly id: 'SCN-OK' | 'SCN-RETRY' | 'SCN-FATAL'; readonly title: string; readonly trigger: string; readonly userGoal: string; readonly systemResponses: readonly string[]; readonly followUp: readonly string[]
+}
+
+export const AUTO_SAVE_INDICATOR_DESIGN = Object.freeze({
+  hierarchy: [
+    { id: 'autosave-indicator', role: 'container', description: 'AutoSave 状態パネル本体。aria-live で状態を放送し、読み取り専用時は data-readonly 属性を付与', children: ['autosave-indicator__banner', 'autosave-indicator__primary', 'autosave-indicator__meta', 'autosave-indicator__history'] },
+    { id: 'autosave-indicator__banner', role: 'banner', description: '致命エラー/閲覧専用モードをアラートとして露出。`role=alert` で即時読み上げ' },
+    { id: 'autosave-indicator__primary', role: 'status', description: '状態ラベルと概要説明。phase ごとの indicator variant を背景アイコンに反映' },
+    { id: 'autosave-indicator__meta', role: 'meta', description: '最終保存時刻・保留中サイズ・エラー詳細などのメタ情報を定義リストとして表示' },
+    { id: 'autosave-indicator__history', role: 'history-actions', description: '履歴パネル起動ボタンと使用率警告。`history.access` が disabled の場合は `aria-disabled` で無効化', children: ['autosave-indicator__history-note'] },
+    { id: 'autosave-indicator__history-note', role: 'history-list', description: '履歴操作の補足説明と GC 通知テキストを表示' }
+  ] as const,
+  states: [
+    { key: 'idle', phases: ['idle'], readonlyMode: 'no', indicator: 'idle', banner: null, historyAccess: 'available', actions: ['open-history', 'flush-now'], notes: ['最新成功スナップショットを表示', '履歴導線を常時露出'] },
+    { key: 'progress', phases: ['debouncing', 'awaiting-lock', 'writing-current', 'updating-index', 'gc'], readonlyMode: 'no', indicator: 'progress', banner: null, historyAccess: 'disabled', actions: ['flush-now'], notes: ['保留中 I/O で履歴操作を抑止', 'ロック待機中は再試行カウンタを表示'] },
+    { key: 'retrying', phases: ['awaiting-lock'], readonlyMode: 'implicit', indicator: 'progress', banner: null, historyAccess: 'available', actions: ['open-history'], notes: ['retryCount>=3 で警告トースト', '履歴復元導線を案内'] },
+    { key: 'readonly', phases: ['idle', 'debouncing', 'awaiting-lock', 'writing-current', 'updating-index', 'gc', 'error'], readonlyMode: 'forced', indicator: 'warning', banner: 'warning', historyAccess: 'disabled', actions: [], notes: ['lock:readonly-entered で遷移', '解除まで履歴操作を封鎖'] },
+    { key: 'fatal-error', phases: ['error'], readonlyMode: 'no', indicator: 'error', banner: 'error', historyAccess: 'available', actions: ['open-history', 'request-restore'], notes: ['再試行不可エラー', '履歴復元と telemetry を優先'] }
+  ] as const,
+  scenarios: [
+    { id: 'SCN-OK', title: '通常保存', trigger: '`debouncing` → `awaiting-lock` → `idle`', userGoal: '編集内容を自動保存させつつ履歴を確認', systemResponses: ['progress 表示で履歴ボタンを一時的に無効化', '保存完了で lastSuccessAt を更新'], followUp: ['履歴パネルから任意世代を閲覧・復元'] },
+    { id: 'SCN-RETRY', title: 'ロック再試行', trigger: '`awaiting-lock` かつ `retryCount>=3`', userGoal: '排他ロック解放まで待機', systemResponses: ['警告トーストで再試行中を通知', '履歴ボタンを再び有効化し復元導線を提示'], followUp: ['最新成功世代の復元または待機継続を選択'] },
+    { id: 'SCN-FATAL', title: '致命エラー', trigger: '`phase="error"` かつ `retryable=false`', userGoal: '停止理由を把握し復元を開始', systemResponses: ['error バナーで停止理由を強調', 'Collector へ error telemetry を送信'], followUp: ['request-restore イベントで復元モーダルを起動'] }
+  ] as const
+} satisfies {
+  readonly hierarchy: readonly AutoSaveIndicatorDesignHierarchyEntry[]
+  readonly states: readonly AutoSaveIndicatorDesignStateEntry[]
+  readonly scenarios: readonly AutoSaveIndicatorDesignScenarioEntry[]
+})
+
 export interface AutoSaveIndicatorTelemetryPolicyEvent {
   readonly type: AutoSaveIndicatorTelemetryEvent['type']
   readonly trigger: string
