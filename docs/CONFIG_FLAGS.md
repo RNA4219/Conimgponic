@@ -74,6 +74,12 @@
 2. **ブラウザ `localStorage`**: キーは後方互換のため `autosave.enabled`・`merge.precision` のまま保持し、値は JSON 文字列ではなくプレーン文字列を想定（例: `'true'`, `'beta'`）。無効値は読み捨てる。
 3. **既定値**: 本ドキュメント先頭の JSON を `DEFAULT_FLAGS` として `src/config/flags.ts` に内包する。どの入力ソースでも値が確定しない場合はこの既定値を採用する。
 
+### FlagSnapshot
+
+- `resolveFlags()` は `FlagSnapshot` を返却し、`autosave`・`merge` の各フラグに対して `value`・`source`・`errors` を収集する。
+- `source` は `'env' | 'localStorage' | 'default'` のいずれかであり、UI/Collector が Phase 判定やテレメトリ整合性を検証する際のキーとなる。
+- `updatedAt` は `ResolveOptions.clock()`（既定: `() => new Date()`）から得た ISO8601 文字列で記録し、`docs/AUTOSAVE-DESIGN-IMPL.md` における AutoSave フェーズ遷移ログと相関させる。
+
 ### 解決シーケンス（設計メモ）
 
 ```mermaid
@@ -203,6 +209,16 @@ stateDiagram-v2
 - **Phase A**: 既定状態。AutoSave は初期化されず、MergeDock は従来タブのみを表示。
 - **Phase B-0**: QA 用段階。`autosave.enabled=true` を満たしたうえで `merge.precision=beta` を設定。`localStorage.merge.precision` で個別タブ単位の有効化が可能。障害時は `localStorage` 初期化で Phase A へ即時復帰。
 - **Phase B-1**: 全ユーザー公開。`merge.precision=stable` を満たす場合のみ `AutoSavePhase` を `phase-b` とし、タブは常時表示。ロールバックは `env` を `legacy` へ戻し `localStorage` をクリアする。
+
+### フェーズ状態遷移表（検証用）
+
+| Phase | 入力条件 (`autosave.enabled` / `merge.precision`) | 期待される `FlagSnapshot.autosave.source` / `merge.source` | AutoSave 状態 (`docs/AUTOSAVE-DESIGN-IMPL.md` §4) | MergeDock 表示 | チェック観点 |
+| --- | --- | --- | --- | --- | --- |
+| PhaseA (`phase-a0`) | `false` / `legacy`（既定値） | `default` / `default` | `disabled` 固定 | 従来タブのみ | `pnpm run flags:reset` 後に `updatedAt` が初期化されること |
+| PhaseB0 (`phase-b0`) | `true` / `beta`（env または storage） | `env` 優先、`storage` フォールバック | `idle → awaiting-lock` への遷移が許可 | β UI を明示表示 | Collector テレメトリが `source` を JSONL に含めること |
+| PhaseB1 (`phase-b1`) | `true` / `stable`（env 推奨） | `env` / `env` | `idle → awaiting-lock`、安定版ロールアウト | Stable UI 常時表示 | env 切替で `updatedAt` が再更新し、`storage` が未使用であること |
+
+- Reviewer は上記表を参照し、Phase 切替時に `resolveFlags()` から得られる `source` と AutoSave/Merge の UI 状態が一致しているかを検証する。
 
 ### TDD 用テストケース草案
 
