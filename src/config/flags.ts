@@ -76,7 +76,21 @@ export interface ResolveOptions {
 
 export interface FlagResolution<T> extends FlagValueSnapshot<T> {}
 
-const defaultEnv = ((import.meta as any)?.env ?? {}) as Record<string, unknown>
+const defaultEnv = (() => {
+  const metaEnv = ((import.meta as any)?.env ?? {}) as Record<string, unknown>
+  const nodeProcess =
+    typeof globalThis === 'object'
+      ? ((globalThis as unknown as { process?: { env?: Record<string, unknown> } })
+          .process ?? null)
+      : null
+  if (nodeProcess?.env) {
+    return {
+      ...nodeProcess.env,
+      ...metaEnv
+    }
+  }
+  return metaEnv
+})()
 const defaultStorage: Pick<Storage, 'getItem'> | null =
   typeof localStorage !== 'undefined' ? localStorage : null
 
