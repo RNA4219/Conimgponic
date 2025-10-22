@@ -33,6 +33,25 @@
 - `beta` 列は Phase B-0 に限定し、`import.meta.env.VITE_MERGE_PRECISION=beta` または `localStorage.merge.precision="beta"` で QA のみ解放。
 - `stable` へ昇格する際は Phase B-1 で `autosave.enabled=true` が前提。未達成時は `legacy` へ即時ロールバック。
 
+## MergeDock Diff タブ段階露出設計
+
+| `merge.precision` | タブ構成 | 初期表示 | Diff 露出モード | フォールバックと後方互換 |
+| --- | --- | --- | --- | --- |
+| `legacy` | `compiled → shot → assets → import → golden` | `compiled` | 非表示 | `localStorage.merge.lastTab` が `diff` の場合でも `compiled` へ復帰。`pref` は常に `manual-first` 起点。 |
+| `beta` | 既存タブ末尾に `diff (Beta)` を追加 | 直前の選択/既定 (`compiled`) | 段階露出（opt-in） | 既存ショートカット/タブ順序を維持。`diff` を選択済みのままベータに昇格/ロールバックしても保持される。`pref='diff-merge'` はロールバック時に `manual-first` へ戻す。 |
+| `stable` | `golden` の直前に `diff` を挿入 | `diff` | 既定露出（default） | `beta` → `stable` への昇格時に `initialTab=diff` を優先。`localStorage.merge.lastTab` に互換値があればそれを尊重。Diff バックアップ CTA は 5 分経過で表示。`pref` 初期値は `diff-merge`。 |
+
+- `FlagSnapshot.merge.precision` を最優先し、未提供時は `import.meta.env` → `localStorage.merge.precision` → 既定値を順に参照する。
+- `MergeDock` は `flags` プロパティを受け入れるが、従来どおりプロパティ未指定でもローカルストレージ経由で後方互換動作する。
+- `pref` セレクタは `stable` 以外の精度にダウングレードした際、自動で `manual-first` へ復帰し既存シーン選択ロジックを維持する。
+- Diff タブは `beta` でのみ `Beta` バッジを付与。タブ順序・ショートカット (`Alt+[数字]`) は既存定義を再利用し、Diff を途中挿入する `stable` でもキーアサインが変わらないよう ID 順を保持する。
+
+### Diff タブ QA チェックリスト
+
+- [ ] **legacy**: `merge.precision=legacy` で Diff タブが描画されず、`localStorage.merge.lastTab='diff'` でも初期タブが `compiled` へ戻る。`pref` は `manual-first` のまま。
+- [ ] **beta**: `merge.precision=beta` でタブ末尾に `Diff (Beta)` が追加され、既存タブ順序とショートカットが崩れない。`pref='diff-merge'` 選択状態から `legacy` へ戻した際、自動で `manual-first` へ復帰する。
+- [ ] **stable**: `merge.precision=stable` で Diff タブが `golden` の直前に挿入され、初期タブが `diff`。AutoSave スナップショットの最終成功から 5 分超過時にバックアップ CTA が表示される。
+
 ## フェーズ別既定値とチーム配布
 
 | フェーズ | `autosave.enabled` | `merge.precision` | 配布対象 | 配布手順 |

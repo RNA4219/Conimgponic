@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+
+import type { FlagSnapshot } from '../config'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
@@ -7,7 +9,7 @@ import { sha256Hex } from '../lib/hash'
 import { GoldenCompare } from './GoldenCompare'
 import { planDiffMergeView } from './DiffMergeView'
 
-type MergePrecision = 'legacy' | 'beta' | 'stable'
+type MergePrecision = FlagSnapshot['merge']['precision']
 
 const BASE_TAB_IDS = ['compiled', 'shot', 'assets', 'import', 'golden'] as const
 type BaseTabId = (typeof BASE_TAB_IDS)[number]
@@ -25,6 +27,8 @@ type MergeDockTabPlan = {
   readonly diff?: MergeDockDiffPlan
 }
 
+const DIFF_BACKUP_THRESHOLD_MS = 5 * 60 * 1000
+
 const BASE_TABS = Object.freeze([
   { id: 'compiled', label: 'Compiled Script' },
   { id: 'shot', label: 'Shotlist / Export' },
@@ -35,8 +39,16 @@ const BASE_TABS = Object.freeze([
 
 const MERGE_DOCK_TAB_PLAN: Record<MergePrecision, MergeDockTabPlan> = Object.freeze({
   legacy: { tabs: BASE_TABS, initialTab: 'compiled' },
-  beta: { tabs: [...BASE_TABS, { id: 'diff', label: 'Diff (Beta)', badge: 'Beta' }], initialTab: 'compiled' },
-  stable: { tabs: [...BASE_TABS.slice(0, -1), { id: 'diff', label: 'Diff' }, BASE_TABS.at(-1)!], initialTab: 'diff' },
+  beta: {
+    tabs: [...BASE_TABS, { id: 'diff', label: 'Diff (Beta)', badge: 'Beta' }],
+    initialTab: 'compiled',
+    diff: { exposure: 'opt-in' },
+  },
+  stable: {
+    tabs: [...BASE_TABS.slice(0, -1), { id: 'diff', label: 'Diff' }, BASE_TABS.at(-1)!],
+    initialTab: 'diff',
+    diff: { exposure: 'default', backupAfterMs: DIFF_BACKUP_THRESHOLD_MS },
+  },
 })
 
 const isBaseTabId = (value: unknown): value is BaseTabId => typeof value === 'string' && (BASE_TAB_IDS as readonly string[]).includes(value)
@@ -56,7 +68,11 @@ export interface DiffBackupPolicy {
   readonly thresholdMs: number
 }
 
-export const diffBackupPolicy: DiffBackupPolicy = Object.freeze({ enabledPrecisions: ['beta', 'stable'], gateTab: 'diff', thresholdMs: 5 * 60 * 1000 })
+export const diffBackupPolicy: DiffBackupPolicy = Object.freeze({
+  enabledPrecisions: ['beta', 'stable'],
+  gateTab: 'diff',
+  thresholdMs: DIFF_BACKUP_THRESHOLD_MS,
+})
 
 export const shouldShowDiffBackupCTA = (
   policy: DiffBackupPolicy,
@@ -85,22 +101,32 @@ function Checks(){
   )
 }
 
-export function MergeDock(){
+interface MergeDockProps {
+  readonly flags?: Pick<FlagSnapshot, 'merge'>
+}
+
+export function MergeDock(props?: MergeDockProps){
   const { sb } = useSB()
+  const flags = props?.flags
   const storage = typeof window !== 'undefined' ? window.localStorage : undefined
   const autoSaveInterop = typeof window !== 'undefined' ? (window as typeof window & { __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }; __mergeDockFlushNow?: () => void }) : undefined
+  const flagPrecision = flags?.merge.precision
   const precision = useMemo<MergePrecision>(()=>{
+    if (flagPrecision) return flagPrecision
     const candidates = [(import.meta as any)?.env?.VITE_MERGE_PRECISION, storage?.getItem('merge.precision'), storage?.getItem('flag:merge.precision')]
     for (const value of candidates){ if (typeof value === 'string'){ const lower = value.toLowerCase(); if (lower==='legacy'||lower==='beta'||lower==='stable') return lower as MergePrecision } }
     return 'legacy'
-  }, [storage])
+  }, [flagPrecision, storage])
   const plan = useMemo(()=>{ const stored = storage?.getItem('merge.lastTab'); return planMergeDockTabs(precision, stored==='diff'||isBaseTabId(stored)? stored as MergeDockTabId: undefined) }, [precision, storage])
-  const [tab, setTabState] = useState<MergeDockTabId>(plan.initialTab); const [pref, setPref] = useState<'manual-first'|'ai-first'|'diff-merge'>('manual-first')
+  const [tab, setTabState] = useState<MergeDockTabId>(plan.initialTab); const [pref, setPref] = useState<'manual-first'|'ai-first'|'diff-merge'>(()=> precision==='stable' ? 'diff-merge' : 'manual-first')
   const precisionRef = useRef(precision)
   useEffect(()=>{
     if (precisionRef.current !== precision){ precisionRef.current = precision; setTabState(plan.initialTab); storage?.setItem('merge.lastTab', plan.initialTab); return }
     if (!plan.tabs.some(entry=>entry.id===tab)){ setTabState(plan.initialTab); storage?.setItem('merge.lastTab', plan.initialTab) }
   }, [plan, precision, storage, tab])
+  useEffect(()=>{
+    if (precision !== 'stable' && pref === 'diff-merge'){ setPref('manual-first') }
+  }, [precision, pref])
   const setTab = (next: MergeDockTabId)=>{ setTabState(next); storage?.setItem('merge.lastTab', next) }
   const flushNow = autoSaveInterop?.__mergeDockFlushNow
   const showBackupCTA = (()=>{ if (!flushNow) return false; const last = autoSaveInterop?.__mergeDockAutoSaveSnapshot?.lastSuccessAt; return shouldShowDiffBackupCTA(diffBackupPolicy, precision, tab, last, Date.now()) })()
