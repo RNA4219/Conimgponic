@@ -210,6 +210,28 @@ stateDiagram-v2
   8. `dispose()` が進行中フライトの完了を待機し、ロックが解放される。
 - **テスト構成**: `tests/autosave/init.spec.ts`（起動/停止・フラグ判定）、`tests/autosave/scheduler.spec.ts`（デバウンス/アイドル/flush）、`tests/autosave/history.spec.ts`（GC・容量制限）、`tests/autosave/restore.spec.ts`（復元系）で段階的に実装。Fake タイマーと OPFS Stub を共有ユーティリティとして `tests/autosave/test-utils.ts` に切り出す。
 
+### 5.1 UI 起動条件とイベント連携
+- `docs/IMPLEMENTATION-PLAN.md` §0.1 の `autosave.enabled` フラグ解決に従い、`src/config/flags.ts` から `autosave.enabled` を取得する。取得順序は `import.meta.env` → `localStorage` → 既定値であり、Phase A までは既定で無効。【F:docs/IMPLEMENTATION-PLAN.md†L10-L39】
+- `App.tsx` 初期化時に `flags.autosave.enabled === true` **かつ** `AppState` が編集可能なときのみ `initAutoSave()` を呼び出す。読み取り専用モード（ロック取得不可・外部参照時）は `disabled` オプションを付与し、`AutoSavePhase` を `disabled` に固定する。
+- AutoSave ランナーは `App` のアンマウント時に `dispose()` を呼ぶ。ブラウザタブ遷移（`beforeunload`）では `flushNow()` を実行し、最後の書込を保証する。
+- `initAutoSave` の `snapshot()` を `App` レベルの状態管理（Zustand/Redux 等）へ保持し、`AutoSaveIndicator` へ props 経由で伝播する。ストア更新は 250ms 間隔でサンプリングし、不要なレンダリングを抑制する。
+
+#### `AutoSaveIndicator.tsx` の状態管理
+- `AutoSaveStatusSnapshot` と `ProjectLockEvent` を入力として、以下の view-model を導出する。
+  - `statusLabel`: `phase` に応じて `Idle`・`Saving…`・`Retrying`・`Error` を表示。
+  - `isAnimating`: `phase` が `awaiting-lock`/`writing-current`/`updating-index`/`gc` の場合にハートビートアニメーションを表示。
+  - `isReadOnly`: `ProjectLockEvent` で `type='conflict'` または `snapshot().phase==='error'`（非再試行）時に `true`。
+  - `lastSavedAt`: `snapshot().lastSuccessAt` をローカライズ表示。`undefined` の場合は `—`（エムダッシュ）。
+- `phase` の変化は [保存ポリシー状態遷移](#4-2-オートセーブ状態遷移図) に準拠し、`phase='error'` かつ `retryable=false` の場合はトースト/ダイアログを表示してユーザーへ通知する。
+- `retryCount` が 3 回以上に達した場合は `statusLabel` を `Retrying (n)` へ切り替え、Collector へのテレメトリ発火を 1 回だけ行う（フェーズ配列 Phase A-1 の監視要件に対応）。【F:docs/IMPLEMENTATION-PLAN.md†L64-L93】
+
+#### イベント流路
+1. `Editor` コンポーネントが変更を発火すると、`initAutoSave` のスケジューラが `snapshot()` を更新し、`phase` を `debouncing` → `awaiting-lock` → `writing-current` → `idle` へ遷移させる。
+2. `locks.ts` でロック状態が変化した際は `subscribeLockEvents` で `AutoSaveIndicator` へイベントを通知。`type='acquired'` は成功バッジ表示、`type='conflict'` は読み取り専用トーストを表示し、`dispose()` を促す。
+3. `snapshot()` 更新は `App` ストア経由で `AutoSaveIndicator` に伝播し、`useEffect` で `statusLabel` やアニメーションを再計算する。
+4. `flushNow()` や `restore` 操作は `App` から発火し、完了時に `snapshot().lastSuccessAt` または `restorePrompt()` の結果を更新して `AutoSaveIndicator` のメッセージを差し替える。
+5. Collector へのイベント送信は `AutoSaveIndicator` ではなく `initAutoSave` 側で行う。Indicator は `ProjectLockEvent` と `AutoSaveStatusSnapshot` を監視するのみとし、Day8 アーキテクチャ（Collector→Analyzer→Reporter）との責務分離を維持する。【F:Day8/docs/day8/design/03_architecture.md†L1-L43】
+
 ## 6) エラーハンドリングテーブル
 | コード | 発生源 | retryable | UI 通知 | ログレベル | 備考 |
 | --- | --- | --- | --- | --- | --- |
