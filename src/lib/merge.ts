@@ -75,6 +75,7 @@ export interface MergeHunk {
   readonly section: string | null;
   readonly decision: MergeDecision;
   readonly similarity: number;
+  readonly locked: boolean;
   readonly merged: string;
   readonly manual: string;
   readonly ai: string;
@@ -91,11 +92,55 @@ export interface MergeStats {
   readonly aiDecisions: number;
 }
 
+export type MergePlanPhase = 'phase-a' | 'phase-b';
+
+export type MergePlanBand = 'auto' | 'review' | 'conflict';
+
+export type MergePlanRecommendedCommand =
+  | 'queue:auto-apply'
+  | 'queue:request-review'
+  | 'queue:manual-intervention'
+  | 'queue:force-lock-resolution';
+
+export type MergePlanPhaseBReason = 'review-band' | 'locked-conflict' | 'low-similarity';
+
+export interface MergePlanEntry {
+  readonly hunkId: string;
+  readonly section: string | null;
+  readonly decision: MergeDecision;
+  readonly similarity: number;
+  readonly locked: boolean;
+  readonly band: MergePlanBand;
+  readonly phase: MergePlanPhase;
+  readonly recommendedCommand: MergePlanRecommendedCommand;
+}
+
+export interface MergePlanSummary {
+  readonly total: number;
+  readonly phaseA: number;
+  readonly phaseB: number;
+  readonly reviewBand: number;
+  readonly locked: number;
+}
+
+export interface MergePlanPhaseB {
+  readonly required: boolean;
+  readonly reasons: readonly MergePlanPhaseBReason[];
+}
+
+export interface MergePlan {
+  readonly precision: MergePrecision;
+  readonly entries: readonly MergePlanEntry[];
+  readonly summary: MergePlanSummary;
+  readonly phaseB: MergePlanPhaseB;
+}
+
 export interface MergeResult {
   readonly hunks: readonly MergeHunk[];
   readonly mergedText: string;
   readonly stats: MergeStats;
   readonly trace: MergeTrace;
+  readonly plan?: MergePlan;
 }
 
 export interface MergeScoringInput {
@@ -146,6 +191,7 @@ export interface MergeEngineOptions {
   readonly scoring?: MergeScoringStrategy;
   readonly telemetry?: MergeTelemetrySink;
   readonly events?: MergeEventHub;
+  readonly queueMergeCommand?: (command: MergeQueueCommand) => void;
   readonly abortSignal?: AbortSignal;
 }
 
@@ -156,7 +202,7 @@ export interface MergeEngine {
 }
 
 export interface MergeTraceEntry {
-  readonly stage: 'segment' | 'score' | 'decide' | 'emit';
+  readonly stage: 'segment' | 'score' | 'decide' | 'emit' | 'queue';
   readonly startedAt: number;
   readonly durationMs: number;
   readonly metadata?: Readonly<Record<string, unknown>>;
@@ -166,6 +212,140 @@ export interface MergeTrace {
   readonly sceneId: string;
   readonly entries: readonly MergeTraceEntry[];
 }
+
+export type MergePipelineStage = 'segment' | 'score' | 'decide' | 'queue';
+
+export interface MergePlanHunk {
+  readonly id: string;
+  readonly section: string | null;
+  readonly decision: MergeDecision;
+  readonly similarity: number;
+  readonly locked: boolean;
+  readonly preferred: MergePreference;
+  readonly queueAction: 'apply' | 'hold';
+}
+
+export interface MergePlan {
+  readonly sceneId: string;
+  readonly precision: MergePrecision;
+  readonly stats: MergeStats;
+  readonly hunks: readonly MergePlanHunk[];
+  readonly stages: readonly MergePipelineStage[];
+}
+
+export interface MergeDecisionError {
+  readonly code: 'locked-conflict' | 'score-underflow' | 'aborted';
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly sceneId: string;
+  readonly precision: MergePrecision;
+}
+
+export type MergePlanResult =
+  | { readonly kind: 'ok'; readonly plan: MergePlan }
+  | { readonly kind: 'error'; readonly error: MergeDecisionError };
+
+export interface MergeQueueCommand {
+  readonly type: 'merge:enqueue';
+  readonly sceneId: string;
+  readonly precision: MergePrecision;
+  readonly hunks: readonly MergePlanHunk[];
+}
+
+export interface MergeUiPrecisionState {
+  readonly badge: string;
+  readonly description: string;
+  readonly allowsAutoApply: boolean;
+  readonly requiresReview: boolean;
+}
+
+const PRECISION_PRESENTATION: Record<MergePrecision, MergeUiPrecisionState> = {
+  legacy: {
+    badge: 'Legacy',
+    description: '従来スコアリング（閾値固定）',
+    allowsAutoApply: true,
+    requiresReview: false,
+  },
+  beta: {
+    badge: 'Beta',
+    description: '改良スコアリング（段階レビュー）',
+    allowsAutoApply: true,
+    requiresReview: true,
+  },
+  stable: {
+    badge: 'Stable',
+    description: '安定版スコアリング（厳格適用）',
+    allowsAutoApply: false,
+    requiresReview: true,
+  },
+};
+
+export const getPrecisionUiState = (precision: MergePrecision): MergeUiPrecisionState =>
+  PRECISION_PRESENTATION[precision];
+
+export const buildMergePlan = (
+  hunks: readonly MergeHunk[],
+  stats: MergeStats,
+  profile: ResolvedMergeProfile,
+  sceneId?: string,
+): MergePlanResult => {
+  const precisionState = getPrecisionUiState(profile.precision);
+  const lockedConflicts = hunks.filter((hunk) => hunk.decision === 'conflict' && hunk.locked);
+  if (lockedConflicts.length > 0 && profile.lockPolicy === 'strict') {
+    return {
+      kind: 'error',
+      error: {
+        code: 'locked-conflict',
+        message: 'ロックされたセクションに衝突が発生しました。',
+        retryable: false,
+        sceneId: sceneId ?? 'unknown',
+        precision: profile.precision,
+      },
+    };
+  }
+
+  const underflow = hunks.filter((hunk) => hunk.similarity < profile.similarityBands.review);
+  if (underflow.length > 0 && profile.precision !== 'legacy') {
+    return {
+      kind: 'error',
+      error: {
+        code: 'score-underflow',
+        message: 'スコアがレビュー帯域を下回りました。',
+        retryable: true,
+        sceneId: sceneId ?? 'unknown',
+        precision: profile.precision,
+      },
+    };
+  }
+
+  const planHunks = hunks.map<MergePlanHunk>((hunk) => ({
+    id: hunk.id,
+    section: hunk.section,
+    decision: hunk.decision,
+    similarity: hunk.similarity,
+    locked: hunk.locked,
+    preferred: hunk.prefer,
+    queueAction: hunk.decision === 'auto' && precisionState.allowsAutoApply ? 'apply' : 'hold',
+  }));
+
+  return {
+    kind: 'ok',
+    plan: {
+      sceneId: sceneId ?? 'unknown',
+      precision: profile.precision,
+      stats,
+      hunks: planHunks,
+      stages: ['segment', 'score', 'decide', 'queue'],
+    },
+  };
+};
+
+export const createQueueMergeCommand = (plan: MergePlan): MergeQueueCommand => ({
+  type: 'merge:enqueue',
+  sceneId: plan.sceneId,
+  precision: plan.precision,
+  hunks: plan.hunks,
+});
 
 export class MergeError extends Error {
   readonly code: 'timeout' | 'aborted';
@@ -195,6 +375,8 @@ interface SectionDecision {
   readonly hunk: MergeHunk;
   readonly similarity: number;
   readonly locked: boolean;
+  readonly band: MergePlanBand;
+  readonly recommendedCommand: MergePlanRecommendedCommand;
 }
 
 const PRECISION_FALLBACK: MergePrecision = 'legacy';
@@ -400,10 +582,16 @@ function decideSection(section: MergeSection, metrics: MergeScoringMetrics, prof
   const similarity = metrics.blended;
   const autoThreshold = profile.similarityBands.auto;
   const minThreshold = profile.minAutoThreshold;
+  const reviewThreshold = profile.similarityBands.review;
+  const isLocked = section.locked && profile.lockPolicy === 'strict';
   let decision: MergeDecision = 'conflict';
-  if (!section.locked || profile.lockPolicy === 'advisory') {
+  let band: MergePlanBand = 'conflict';
+  if (!isLocked) {
     if (similarity >= autoThreshold && similarity >= minThreshold) {
       decision = 'auto';
+      band = 'auto';
+    } else if (similarity >= reviewThreshold) {
+      band = 'review';
     }
   }
   const prefer = section.locked ? (profile.lockPolicy === 'strict' ? section.prefer : section.prefer) : section.prefer;
@@ -415,13 +603,27 @@ function decideSection(section: MergeSection, metrics: MergeScoringMetrics, prof
     section: section.label,
     decision,
     similarity,
+    locked: section.locked,
     merged,
     manual: section.manual,
     ai: section.ai,
     base: section.base,
     prefer,
   };
-  return { hunk, similarity, locked: section.locked };
+  const recommendedCommand: MergePlanRecommendedCommand = decision === 'auto'
+    ? 'queue:auto-apply'
+    : isLocked
+      ? 'queue:force-lock-resolution'
+      : band === 'review'
+        ? 'queue:request-review'
+        : 'queue:manual-intervention';
+  return {
+    hunk,
+    similarity,
+    locked: isLocked,
+    band,
+    recommendedCommand,
+  };
 }
 
 function aggregateStats(hunks: readonly SectionDecision[]): MergeStats {
@@ -443,6 +645,53 @@ function aggregateStats(hunks: readonly SectionDecision[]): MergeStats {
 
 function assembleMergedText(hunks: readonly SectionDecision[]): string {
   return hunks.map((entry) => entry.hunk.merged).join('\n\n');
+}
+
+function buildPlan(decisions: readonly SectionDecision[], profile: ResolvedMergeProfile): MergePlan {
+  const entries: MergePlanEntry[] = decisions.map((decision) => ({
+    hunkId: decision.hunk.id,
+    section: decision.hunk.section,
+    decision: decision.hunk.decision,
+    similarity: decision.hunk.similarity,
+    locked: decision.locked,
+    band: decision.band,
+    phase: decision.band === 'auto' ? 'phase-a' : 'phase-b',
+    recommendedCommand: decision.recommendedCommand,
+  }));
+  const phaseA = entries.filter((entry) => entry.phase === 'phase-a').length;
+  const reviewBand = entries.filter((entry) => entry.band === 'review').length;
+  const locked = entries.filter((entry) => entry.locked).length;
+  const phaseBCount = entries.length - phaseA;
+  const reasons = new Set<MergePlanPhaseBReason>();
+  entries.forEach((entry) => {
+    if (entry.locked) {
+      reasons.add('locked-conflict');
+      return;
+    }
+    if (entry.band === 'review') {
+      reasons.add('review-band');
+      return;
+    }
+    if (entry.phase === 'phase-b') {
+      reasons.add('low-similarity');
+    }
+  });
+  const required = profile.precision !== 'legacy' && phaseBCount > 0;
+  return {
+    precision: profile.precision,
+    entries,
+    summary: {
+      total: entries.length,
+      phaseA,
+      phaseB: phaseBCount,
+      reviewBand,
+      locked,
+    },
+    phaseB: {
+      required,
+      reasons: Array.from(reasons),
+    },
+  };
 }
 
 function buildTrace(sceneId: string | undefined, stages: readonly MergeTraceEntry[]): MergeTrace {
@@ -544,16 +793,41 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
     stages.push({ stage: 'decide', startedAt: scoreStart, durationMs: now() - scoreStart, metadata: { hunks: decisions.length } });
 
     const stats = aggregateStats(decisions);
+    const plan = buildPlan(decisions, profile);
     const mergedText = assembleMergedText(decisions);
     const processingMillis = now() - startedAt;
     const finalStats: MergeStats = { ...stats, processingMillis };
     const emitStart = now();
     stages.push({ stage: 'emit', startedAt: emitStart, durationMs: now() - emitStart, metadata: { events: decisions.length } });
+    const hunks = decisions.map((entry) => entry.hunk);
+
+    if (options?.queueMergeCommand) {
+      const queueStartedAt = now();
+      const planResult = buildMergePlan(hunks, finalStats, profile, input.sceneId);
+      if (planResult.kind === 'ok') {
+        options.queueMergeCommand(createQueueMergeCommand(planResult.plan));
+        stages.push({
+          stage: 'queue',
+          startedAt: queueStartedAt,
+          durationMs: now() - queueStartedAt,
+          metadata: { hunks: planResult.plan.hunks.length, precision: planResult.plan.precision },
+        });
+      } else {
+        stages.push({
+          stage: 'queue',
+          startedAt: queueStartedAt,
+          durationMs: now() - queueStartedAt,
+          metadata: { error: planResult.error.code, retryable: planResult.error.retryable },
+        });
+      }
+    }
+
     const finalTrace = buildTrace(input.sceneId, stages);
+    const mergeResult: MergeResult = { hunks, mergedText, stats: finalStats, trace: finalTrace };
 
     options?.telemetry?.({ type: 'merge:finish', sceneId: input.sceneId ?? 'unknown', profile, stats: finalStats, trace: finalTrace });
 
-    return { hunks: decisions.map((entry) => entry.hunk), mergedText, stats: finalStats, trace: finalTrace };
+    return mergeResult;
   },
   resolveProfile: resolveProfileInternal,
   score: DEFAULT_SCORING_STRATEGY,

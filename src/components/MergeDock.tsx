@@ -5,6 +5,7 @@ import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importe
 import { saveText, loadText, ensureDir } from '../lib/opfs'
 import { sha256Hex } from '../lib/hash'
 import { GoldenCompare } from './GoldenCompare'
+import { planDiffMergeView } from './DiffMergeView'
 
 type MergePrecision = 'legacy' | 'beta' | 'stable'
 
@@ -13,7 +14,16 @@ type BaseTabId = (typeof BASE_TAB_IDS)[number]
 type MergeDockTabId = BaseTabId | 'diff'
 
 type MergeDockTabPlanEntry = { readonly id: MergeDockTabId; readonly label: string; readonly badge?: 'Beta' }
-type MergeDockTabPlan = { readonly tabs: readonly MergeDockTabPlanEntry[]; readonly initialTab: MergeDockTabId }
+type MergeDockDiffPlan = {
+  readonly exposure: 'opt-in' | 'default'
+  readonly backupAfterMs?: number
+}
+
+type MergeDockTabPlan = {
+  readonly tabs: readonly MergeDockTabPlanEntry[]
+  readonly initialTab: MergeDockTabId
+  readonly diff?: MergeDockDiffPlan
+}
 
 const BASE_TABS = Object.freeze([
   { id: 'compiled', label: 'Compiled Script' },
