@@ -99,11 +99,13 @@ export type ProjectLockEvent =
       readonly type: 'lock:error';
       readonly operation: ProjectLockOperation;
       readonly error: ProjectLockError;
+      readonly retryable: boolean;
     }
   | {
       readonly type: 'lock:readonly-entered';
       readonly reason: ProjectLockReadonlyReason;
       readonly lastError: ProjectLockError;
+      readonly retryable: false;
     };
 
 export type ProjectLockEventListener = (event: ProjectLockEvent) => void;
@@ -144,12 +146,16 @@ export interface ReleaseProjectLockOptions { readonly signal?: AbortSignal; read
 
 export interface WithProjectLockOptions extends AcquireProjectLockOptions { readonly renewIntervalMs?: number; readonly releaseOnError?: boolean; }
 
+/** Attempts project-scoped acquisition, invoking the fallback path when Web Locks fail and emitting events per {@link PROJECT_LOCK_STATE_MACHINE}. */
 export type AcquireProjectLock = (options?: AcquireProjectLockOptions) => Promise<ProjectLockLease>;
 
+/** Renews both lock channels atomically; failures stay retryable until the active TTL lapses. */
 export type RenewProjectLock = (lease: ProjectLockLease, options?: RenewProjectLockOptions) => Promise<ProjectLockLease>;
 
+/** Releases the lease, ensuring fallback artefacts are removed even during forced teardown. */
 export type ReleaseProjectLock = (lease: ProjectLockLease, options?: ReleaseProjectLockOptions) => Promise<void>;
 
+/** Wraps {@link AcquireProjectLock}, {@link RenewProjectLock}, and {@link ReleaseProjectLock} so AutoSave either completes or downgrades to read-only via events. */
 export type WithProjectLock = <T>(executor: (lease: ProjectLockLease) => Promise<T>, options?: WithProjectLockOptions) => Promise<T>;
 
 export interface ProjectLockApi {
@@ -190,3 +196,80 @@ export class ProjectLockError extends Error {
     this.name = 'ProjectLockError';
   }
 }
+
+export interface ProjectLockStateTransition {
+  readonly state:
+    | 'idle'
+    | 'acquiring:web-lock'
+    | 'acquiring:file-lock'
+    | 'acquired'
+    | 'renewing'
+    | 'releasing'
+    | 'readonly';
+  readonly action:
+    | 'request'
+    | 'fallback'
+    | 'lease-established'
+    | 'heartbeat'
+    | 'timeout'
+    | 'force-release'
+    | 'error';
+  readonly next: ProjectLockStateTransition['state'];
+  readonly retryable: boolean;
+  readonly notes: string;
+}
+
+export const PROJECT_LOCK_STATE_MACHINE: readonly ProjectLockStateTransition[] = Object.freeze([
+  { state: 'idle', action: 'request', next: 'acquiring:web-lock', retryable: true, notes: 'Primary acquisition attempts Web Locks first with ttl=25s (or ttlMs override) and max 3 retries using exponential backoff.' },
+  { state: 'acquiring:web-lock', action: 'fallback', next: 'acquiring:file-lock', retryable: true, notes: 'When navigator.locks is unavailable or denied, switch to project/.lock using a shared leaseId, ttl=30s, and collision detection.' },
+  { state: 'acquiring:file-lock', action: 'lease-established', next: 'acquired', retryable: true, notes: 'Successful acquisition schedules heartbeats every 10s and records expiresAt based on negotiated ttl.' },
+  { state: 'acquired', action: 'heartbeat', next: 'renewing', retryable: true, notes: 'Heartbeats renew both lock mechanisms ahead of ttl expiry; delays trigger lock:warning events with retry guidance.' },
+  { state: 'renewing', action: 'timeout', next: 'readonly', retryable: false, notes: 'Renewals that miss ttlSeconds demote AutoSave to read-only and require user notification per docs/AUTOSAVE-DESIGN-IMPL.md.' },
+  { state: 'renewing', action: 'lease-established', next: 'acquired', retryable: true, notes: 'Renew success updates renewAttempt and schedules the next heartbeat based on heartbeatIntervalMs.' },
+  { state: 'acquired', action: 'force-release', next: 'releasing', retryable: true, notes: 'Forced release bypasses Web Lock release but must unlink the fallback file to avoid stale leases.' },
+  { state: 'releasing', action: 'lease-established', next: 'idle', retryable: true, notes: 'Release completion resets retry counters and clears scheduled renewals, returning to idle.' },
+  { state: 'acquiring:web-lock', action: 'error', next: 'readonly', retryable: false, notes: 'Acquisition errors after maxAttempts=3 trigger read-only mode and UI banner with retry CTA.' },
+  { state: 'acquiring:file-lock', action: 'error', next: 'readonly', retryable: false, notes: 'Fallback collisions detected via leaseId/mtime comparison keep the project in read-only to prevent split-brain writes.' },
+]);
+
+export interface FallbackLockLeaseRecord {
+  readonly leaseId: string;
+  readonly ownerId: string;
+  readonly acquiredAt: number;
+  readonly expiresAt: number;
+  readonly ttlSeconds: number;
+  readonly mtime: number;
+}
+
+export const FALLBACK_LOCK_LEASE_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'com.day8.conimgponic.project-lock-lease',
+  type: 'object',
+  additionalProperties: false,
+  required: ['leaseId', 'ownerId', 'acquiredAt', 'expiresAt', 'ttlSeconds', 'mtime'],
+  properties: {
+    leaseId: { type: 'string', format: 'uuid' },
+    ownerId: { type: 'string', minLength: 1 },
+    acquiredAt: { type: 'integer', minimum: 0 },
+    expiresAt: { type: 'integer', minimum: 0 },
+    ttlSeconds: { type: 'integer', const: 30 },
+    mtime: { type: 'integer', minimum: 0 },
+  },
+} as const;
+
+export const PROJECT_LOCK_TEST_CASES = Object.freeze({
+  webLock: [
+    'acquire success with navigator.locks mock resolving immediately',
+    'acquire timeout leading to fallback engagement and warning event',
+    'renewal heartbeat before ttl expiry with sequential lease extension',
+  ],
+  fallback: [
+    'file-lock collision detected via differing leaseId while mtime < ttl',
+    'stale fallback record ignored when expiresAt < now and new lease succeeds',
+    'force release removes project/.lock even when web lock handle is lost',
+  ],
+  readonly: [
+    'max retries exceeded emits lock:readonly-entered with retryable=false',
+    'renewal timeout triggers UI downgrade event and halts AutoSave writes',
+  ],
+});
