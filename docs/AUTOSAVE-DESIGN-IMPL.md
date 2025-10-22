@@ -210,6 +210,54 @@ stateDiagram-v2
   8. `dispose()` が進行中フライトの完了を待機し、ロックが解放される。
 - **テスト構成**: `tests/autosave/init.spec.ts`（起動/停止・フラグ判定）、`tests/autosave/scheduler.spec.ts`（デバウンス/アイドル/flush）、`tests/autosave/history.spec.ts`（GC・容量制限）、`tests/autosave/restore.spec.ts`（復元系）で段階的に実装。Fake タイマーと OPFS Stub を共有ユーティリティとして `tests/autosave/test-utils.ts` に切り出す。
 
+### 5.2 AutoSaveIndicator UI/UX 設計
+
+#### コンポーネント階層
+- `AutoSaveIndicator`（container）
+  - `autosave-indicator__banner`（banner）: ReadOnly 切替や致命エラーを `role=alert` で即時通知。
+  - `autosave-indicator__primary`（status）: フェーズ別ラベルと説明文。`aria-live` を `indicator` に応じて切り替え。
+  - `autosave-indicator__meta`（meta）: `lastSuccessAt`・`pendingBytes`・`retryCount` などを `<dl>` で表示。
+  - `autosave-indicator__history`（history-actions）: 履歴ボタンと利用率警告。`history.access` に応じて `disabled`/`aria-disabled` を制御。
+    - `autosave-indicator__history-note`（history-list）: GC 通知・ReadOnly 案内を表示。
+
+#### UI 状態表
+| UI 状態キー | 対応フェーズ | ReadOnly 判定 | Indicator | Banner | 履歴アクセス | 優先アクション | ノート |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| idle | `idle` | なし | idle | - | available | open-history / flush-now | 最新成功スナップショットを提示し履歴導線を常時露出 |
+| progress | `debouncing` / `awaiting-lock` / `writing-current` / `updating-index` / `gc` | なし | progress | - | disabled | flush-now | I/O 中は履歴操作を抑止し、再試行カウンタを表示 |
+| retrying | `awaiting-lock`（`retryCount>=3`） | 暗黙 (implicit) | progress | - | available | open-history | 再試行トーストで警告し、履歴復元の任意実行を許可 |
+| readonly | 全フェーズ（ReadOnly ロック中） | 強制 | warning | warning | disabled | - | `lock:readonly-entered` を契機に操作封鎖。解除で通常状態へ戻る |
+| fatal-error | `error`（`retryable=false`） | なし | error | error | available | open-history / request-restore | 復元導線を強調し Collector へ telemetry を送信 |
+
+#### 状態図
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: snapshot.phase='idle'
+    Idle --> Progress: phase in {'debouncing','awaiting-lock','writing-current','updating-index','gc'}
+    Progress --> Idle: commit success
+    Progress --> Retry: awaiting-lock && retryCount>=3
+    Retry --> Progress: retryCount<3
+    Idle --> FatalError: phase='error' && retryable=false
+    Progress --> FatalError: non-retryable error
+    Retry --> FatalError: non-retryable error
+    state ReadOnly <<choice>>
+    Idle --> ReadOnly: lock:readonly-entered
+    Progress --> ReadOnly: lock:readonly-entered
+    Retry --> ReadOnly: lock:readonly-entered
+    FatalError --> ReadOnly: lock:readonly-entered
+    ReadOnly --> Idle: lock reacquired
+```
+
+#### 履歴一覧と GC 通知 UX
+- 履歴リストは progress 系フェーズでも ReadOnly でない限りボタンから起動可能。`historySummary` の世代数・容量を表記。
+- `historySummary.overflowDetected` または容量/世代 90% 超過時は警告文を表示し、`phase='gc'` 中は履歴ボタンを自動的に無効化。
+- GC 完了後は最新世代にフォーカスし、削除済み世代をメニューから除去。
+
+#### ユーザ操作シナリオ
+1. **通常保存（SCN-OK）**: `debouncing` → `awaiting-lock` → `idle`。保存中は履歴ボタンを無効化し、完了後に `lastSuccessAt` を更新。ユーザーは履歴パネルから任意世代を確認できる。
+2. **ロック再試行（SCN-RETRY）**: `awaiting-lock` で `retryCount>=3`。警告トーストを表示し履歴ボタンを再度有効化。ユーザーは履歴から最新成功世代を復元するか待機。
+3. **致命エラー（SCN-FATAL）**: `error` かつ `lastError.retryable=false`。バナーで停止理由を表示し、履歴復元/手動 flush ボタンを強調。Collector へ `error-shown` telemetry を送信。
+
 ### 5.1 UI 起動条件とイベント連携
 - `docs/IMPLEMENTATION-PLAN.md` §0.1 の `autosave.enabled` フラグ解決に従い、`src/config/flags.ts` から `autosave.enabled` を取得する。取得順序は `import.meta.env` → `localStorage` → 既定値であり、Phase A までは既定で無効。【F:docs/IMPLEMENTATION-PLAN.md†L10-L39】
 - `App.tsx` 初期化時に `flags.autosave.enabled === true` **かつ** `AppState` が編集可能なときのみ `initAutoSave()` を呼び出す。読み取り専用モード（ロック取得不可・外部参照時）は `disabled` オプションを付与し、`AutoSavePhase` を `disabled` に固定する。
