@@ -80,6 +80,13 @@ flowchart LR
 5. Rollback 後 30 分間は Collector を 5 分間隔で手動実行し、SLO が回復したことを確認。
 6. Incident レポートに `autosave-rollback` テンプレート出力を貼付し、Governance 承認を取得。
 
+### 6.1 再試行・エスカレーション
+
+1. `collect-metrics.ts` が API 応答タイムアウトで失敗した場合は指数バックオフ（30s, 60s, 120s, 240s）で最大 4 回まで再実行し、失敗が継続したら Analyzer へ `collector.retry_exhausted` イベントを送る。
+2. Analyzer は `collector.retry_exhausted` を受信した時点で即座に `autosave-incident` テンプレートを Reporter に渡し、PagerDuty AutoSave サービス（P2）へ自動発報する。
+3. PagerDuty で 30 分以内に担当がアクノリッジされない場合、Reporter は Incident を P1 に昇格し、Slack `#incident` にエスカレーション通知を再送する。
+4. RCA 作成が 24h 超で遅延した場合は Governance が Phase を 1 つ戻す判断を行い、`pnpm run flags:rollback --phase <prev>` を強制実行する。
+
 ## 7. テスト計画
 
 ### 7.1 シミュレーション
@@ -94,8 +101,24 @@ flowchart LR
 - `scripts/monitor/collect-metrics.ts` の JSONL スキーマ変更がないことをスキーマ検証で確認。
 - Slack テンプレートのレンダリングユニットテストで全プレースホルダが埋まることを保証。
 
+### 7.4 TDD シナリオ（`scripts/monitor/collect-metrics.ts`）
+1. **メトリクス計算**: フィクスチャ `tests/fixtures/collector/autosave_latency.json` を投入し、`autosave_p95` が 15 分ウィンドウで正規化されることを node:test で検証。Collector の再試行設定がテストから注入可能であることを確認。
+2. **通知テンプレート連携**: Analyzer モックを用いて `rollback_required=false/true` の両ケースを Reporter に送信し、Slack テンプレート (`autosave-ok`, `autosave-incident`) の差分が Snapshot テストで固定されることを確認。
+3. **ロールバックコマンド発火**: `autosave-incident` を受信した Reporter が `templates/alerts/rollback.md` を展開し、`pnpm run flags:rollback --phase <prev>` を生成するまでを CLI モックで TDD。失敗時に再試行回数が 4 回に達すると PagerDuty エスカレーションを発火することを検証。
+4. **遅延・失敗シナリオ**: Collector のバックオフ上限超過で `collector.retry_exhausted` を発報し、Analyzer が即座に Incident を Reporter へ送るパスを TDD。失敗ログが `reports/monitoring/retry_failures.jsonl` に追記されることを確認。
+
 ## 8. 変更管理
 
 - 本設計に基づく閾値やテンプレート変更は `governance/policy.yaml` と `docs/design/autosave-merge-rollout.md` を同期更新する。
 - ダッシュボード定義を更新する際は Incident 発生中の計測を優先し、Collector サイクル停止を 5 分以内に留める。
+
+## 9. インシデント対応チェックリストとダッシュボード承認基準
+
+| 区分 | チェック項目 | 承認条件 | 所管 |
+| --- | --- | --- | --- |
+| PagerDuty 連携 | Incident 通知に `autosave-incident` テンプレ ID と `rollback.command` が含まれるか確認 | PagerDuty タイムラインにテンプレ本文が記録され、担当が 15 分以内に ACK | Reporter / On-call |
+| 再試行ログ | `collector.retry_exhausted` イベントが `reports/monitoring/retry_failures.jsonl` に保存されているか確認 | Analyzer レビューで再試行数・失敗原因が特定され、再発防止タスクが `docs/CHECKLIST.md` へ追記 | Analyzer |
+| RCA 保存 | `reports/rca/<date>.md` が 24h 以内に追加され、Incident ID とのリンクが存在するか確認 | Governance 承認コメントで「RCA 確認済み」が記録される | Governance 委員会 |
+| ダッシュボード | `reports/monitoring/dashboard.json` の SLO カードに `phase`, `p95`, `err_rate` が表示され、Slack OK 通知と一致するか確認 | ダッシュボードレビューで ±5% 以内の差異、承認欄に Reviewer の署名 | Reporter |
+| レビュー承認 | 上記項目がすべて完了した Evidence を PR コメントにまとめる | Release Ops が承認ボタン押下、未達時はフェーズ移行ブロック | Release Ops |
 
