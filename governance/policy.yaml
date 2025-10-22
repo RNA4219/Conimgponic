@@ -15,6 +15,49 @@ rollout:
       - shared/qa/phase-A2/recovery-report.md
       - shared/qa/phase-B0/diff-merge-report.md
     slo_breach_window_hours: 24
+    phases:
+      A-1:
+        previous: A-0
+        guardrails:
+          autosave_p95:
+            comparator: lte
+            threshold: 2500
+            notify: [slack]
+            rollback: A-0
+          restore_success_rate:
+            comparator: gte
+            threshold: 0.995
+            notify: [slack, pagerduty]
+            rollback: A-0
+      A-2:
+        previous: A-1
+        guardrails:
+          autosave_p95:
+            comparator: lte
+            threshold: 2300
+            notify: [slack]
+            rollback: A-1
+          restore_success_rate:
+            comparator: gte
+            threshold: 0.997
+            notify: [slack, pagerduty]
+            rollback: A-1
+      B-0:
+        previous: A-2
+        guardrails:
+          merge_auto_success_rate:
+            comparator: gte
+            threshold: 0.8
+            notify: [slack, pagerduty]
+            rollback: A-2
+      B-1:
+        previous: B-0
+        guardrails:
+          merge_auto_success_rate:
+            comparator: gte
+            threshold: 0.85
+            notify: [slack, pagerduty]
+            rollback: B-0
   rollback:
     command: "pnpm run flags:rollback --phase <prev>"
     notify:
@@ -25,3 +68,19 @@ monitoring:
     - scripts/monitor/collect-metrics.ts
   report_sink: reports/monitoring/
   decision_tree_ref: docs/IMPLEMENTATION-PLAN.md#24-ロールバック意思決定ツリーrunbook-抜粋
+  cycle:
+    schedule: "*/15 * * * *"
+    window_minutes: 15
+    steps:
+      collector:
+        - "pnpm ts-node scripts/monitor/collect-metrics.ts --window=15m --input reports/canary/phase-*.jsonl"
+      analyzer:
+        - "pnpm run monitor:analyze --input reports/monitoring/<timestamp>.jsonl"
+        - "pnpm run monitor:score --phase <phase>"
+      reporter:
+        - "pnpm run monitor:report --phase <phase> --window=15m"
+        - "pnpm run monitor:notify --phase <phase>"
+  governance_check:
+    - "pnpm lint"
+    - "pnpm test --filter monitor"
+    - "pnpm exec yaml-lint governance/policy.yaml"
