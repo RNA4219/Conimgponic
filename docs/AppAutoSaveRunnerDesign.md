@@ -14,6 +14,11 @@
 | フラグ更新時 | true→true | no-op。既存ランナーを維持し、`snapshot` を更新 | 状態は継続 |
 | アンマウント時 | ランナーが存在 | `dispose()` を呼び `runnerRef` を `null` | すべての副作用終了 |
 
+### フェーズ配列との対応
+- `docs/IMPLEMENTATION-PLAN.md` の Phase 行列に従い、`autosave.enabled` の既定値は Phase A-0 までは `false`、Phase A-1 以降にロールアウト対象へ段階的に `true` を配布する。【F:docs/IMPLEMENTATION-PLAN.md†L64-L93】
+- App 側は `FlagSnapshot.source` から取得元（env/localStorage/既定値）を把握し、Phase A-1 までは QA セッションのみ `initAutoSave` を許可、β（Phase A-2）以降は対象ユーザーの `readOnly` 判定で除外する。
+- Phase B 系では `merge.precision` の解放と並行しつつも AutoSave の挙動は同一コードパスを利用し、Phase が後退した場合は即座に `dispose()` を呼び `phase='disabled'` を維持する。
+
 ### フラグソース
 - `FlagSnapshot`（例: `useFeatureFlags()` が返す）を `useEffect` で購読し、`autosave.enabled` の真偽により初期化・破棄を制御。
 - フラグが undefined の間は初期化を保留し、`snapshot.phase = 'disabled'` を UI に渡す。
@@ -70,6 +75,11 @@ useEffect(() => {
 - エフェクト依存配列では `FlagSnapshot` の relevant keys と `getStoryboard` の参照安定性を担保（`useCallback` を利用）。
 - `setStatus` 更新は `snapshot()` に限定し、外部イベントを生成しない。
 - Interval は UI 更新専用の副作用であり、Collector 系の計測には参加させない。
+
+### AutoSaveIndicator との状態同期
+- `initAutoSave` から得た `snapshot()` を 250ms ピリオドでストアへ反映し、`AutoSaveIndicator` へ `phase`/`retryCount`/`lastSuccessAt` を props 経由で渡す。高速すぎるポーリングは避け、Phase A-1 の監視要件（Retrying 3 回以上で警告）に合わせて更新する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L205-L238】【F:docs/IMPLEMENTATION-PLAN.md†L64-L93】
+- `subscribeLockEvents` の購読解除は `dispose()` と同タイミングで実施し、`type='conflict'` 受信時は App ストアに `isReadOnly=true` を書き込み、Indicator が ReadOnly モードに遷移できるようにする。
+- `flushNow()` / `restore` 操作は App 層で完結させ、結果イベントのみをストアへ格納する。Day8 アーキテクチャに沿って Collector へ直接通知せず、UI はステータス表示のみに専念する。【F:Day8/docs/day8/design/03_architecture.md†L1-L43】
 
 ## 5. 疑似コード（関数責務）
 ```ts
