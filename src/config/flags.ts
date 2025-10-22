@@ -2,176 +2,273 @@ export type FlagSource = 'env' | 'localStorage' | 'default'
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 export type AutoSavePhase = 'disabled' | 'phase-a' | 'phase-b'
 
+export type MergePrecision = 'legacy' | 'beta' | 'stable'
+
+export interface FlagValidationIssue {
+  readonly code: 'invalid-boolean' | 'invalid-precision'
+  readonly flag: string
+  readonly raw: string
+  readonly message: string
+  readonly retryable: false
+}
+
+export interface FlagValidationError extends FlagValidationIssue {
+  readonly source: FlagSource
+}
+
+export interface FlagValueSnapshot<T> {
+  readonly value: T
+  readonly source: FlagSource
+  readonly errors: readonly FlagValidationError[]
+}
+
 export interface FlagSnapshot {
-  readonly autosave: { readonly enabled: boolean; readonly phase: AutoSavePhase }
-  readonly merge: { readonly precision: MergePrecision }
-  readonly source: {
-    readonly autosaveEnabled: FlagSource
-    readonly mergePrecision: FlagSource
+  readonly autosave: {
+    readonly enabled: boolean
+    readonly source: FlagSource
+    readonly errors: readonly FlagValidationError[]
   }
-  readonly resolvedAt: number
+  readonly merge: {
+    readonly precision: MergePrecision
+    readonly source: FlagSource
+    readonly errors: readonly FlagValidationError[]
+  }
+  readonly updatedAt: string
 }
 
 export interface FlagDefinition<T> {
-  name: string
-  envKey: string
-  storageKey: string
-  defaultValue: T
-  coerce?: (raw: string) => T
+  readonly name: string
+  readonly envKey: string
+  readonly storageKey: string
+  readonly legacyStorageKeys?: readonly string[]
+  readonly defaultValue: T
+  readonly coerce?: FlagCoercer<T>
 }
+
+export type FlagCoerceResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: FlagValidationIssue }
+
+export type FlagCoercer<T> = (raw: string) => FlagCoerceResult<T>
 
 export interface ResolveOptions {
-  env?: Record<string, unknown>
-  storage?: Pick<Storage, 'getItem'> | null
-  defaults?: FlagDefaults
-  mode?: 'browser' | 'cli'
-}
-export interface FlagResolution<T> {
-  value: T
-  source: FlagSource
-  resolvedAt: number
+  readonly env?: Record<string, unknown>
+  readonly storage?: Pick<Storage, 'getItem'> | null
+  readonly clock?: () => Date
 }
 
-export interface FlagDefaults {
-  readonly autosave: { readonly enabled: boolean }
-  readonly merge: { readonly precision: MergePrecision }
-}
-
-export const DEFAULT_FLAGS: FlagDefaults = {
-  autosave: { enabled: false },
-  merge: { precision: 'legacy' }
-} as const
+export interface FlagResolution<T> extends FlagValueSnapshot<T> {}
 
 const defaultEnv = ((import.meta as any)?.env ?? {}) as Record<string, unknown>
 const defaultStorage: Pick<Storage, 'getItem'> | null =
   typeof localStorage !== 'undefined' ? localStorage : null
 
-function coerceValue<T>(raw: string, def: FlagDefinition<T>): T {
-  return def.coerce ? def.coerce(raw) : (raw as unknown as T)
+function coerceValue<T>(
+  raw: string,
+  def: FlagDefinition<T>
+): FlagCoerceResult<T> {
+  if (!def.coerce) {
+    return { ok: true, value: raw as unknown as T }
+  }
+  return def.coerce(raw)
+}
+
+function attemptResolve<T>(
+  rawValue: unknown,
+  source: FlagSource,
+  def: FlagDefinition<T>,
+  errors: FlagValidationError[]
+): T | null {
+  if (rawValue == null) {
+    return null
+  }
+  const raw = String(rawValue).trim()
+  if (!raw) {
+    return null
+  }
+
+  const coerced = coerceValue(raw, def)
+  if (coerced.ok) {
+    return coerced.value
+  }
+
+  errors.push({ ...coerced.error, source })
+  return null
 }
 
 /**
  * env → localStorage → docs/CONFIG_FLAGS.md 既定値の優先順位でフラグ値を解決する。
- * `docs/IMPLEMENTATION-PLAN.md` §0.2 の設定ソースマッピングを反映し、解決済みの
- * 値は `FlagSnapshot` として `App.tsx` / `MergeDock.tsx` へ伝達する。
- * ```mermaid
- * graph TD
- *   App[App.tsx bootstrap] -->|useFlagSnapshot| Resolver
- *   Merge[MergeDock.tsx bootstrap] -->|useFlagSnapshot| Resolver
- *   Resolver -->|envKey| Env(import.meta.env)
- *   Resolver -->|storageKey| Storage(localStorage)
- *   Resolver -->|defaults| Defaults(DEFAULT_FLAGS)
- *   Defaults -.->|docs/CONFIG_FLAGS.md| Spec
- *   Resolver --> Snapshot(FlagSnapshot with source metadata)
- *   Snapshot -->|autosave.enabled| AutoSaveRunner
- *   Snapshot -->|merge.precision| DiffMergeTab
- * ```
+ * `docs/IMPLEMENTATION-PLAN.md` §0.2 の設定ソースマッピングと `FlagSnapshot` の
+ * ソース追跡要件を満たすよう、検証失敗時は次順位へフォールバックしながら
+ * エラーを蓄積する。
  */
 export function resolveFlag<T>(
   def: FlagDefinition<T>,
   options: ResolveOptions = {}
 ): FlagResolution<T> {
   const env = options.env ?? defaultEnv
-  const storage = options.mode === 'cli' ? null : options.storage ?? defaultStorage
-  const resolvedAt = Date.now()
+  const storage = options.storage ?? defaultStorage
+  const errors: FlagValidationError[] = []
 
-  const envValue = env[def.envKey]
-  if (envValue != null && envValue !== '') {
-    return {
-      value: coerceValue(String(envValue), def),
-      source: 'env',
-      resolvedAt
-    }
+  const envResolved = attemptResolve(env[def.envKey], 'env', def, errors)
+  if (envResolved !== null) {
+    return { value: envResolved, source: 'env', errors: [...errors] }
   }
 
   if (storage) {
-    const stored = storage.getItem(def.storageKey)
-    if (stored != null) {
-      return {
-        value: coerceValue(stored, def),
-        source: 'localStorage',
-        resolvedAt
+    const storageKeys = [
+      def.storageKey,
+      ...(def.legacyStorageKeys ?? [])
+    ]
+    for (const key of storageKeys) {
+      const resolved = attemptResolve(
+        storage.getItem(key),
+        'localStorage',
+        def,
+        errors
+      )
+      if (resolved !== null) {
+        return { value: resolved, source: 'localStorage', errors: [...errors] }
       }
     }
   }
 
-  const defaults = options.defaults ?? DEFAULT_FLAGS
-  let fallback = def.defaultValue
-  if (def.name === 'autosave.enabled' || def.name === 'autoSave.enabled') {
-    fallback = defaults.autosave.enabled as unknown as T
-  } else if (def.name === 'merge.precision' || def.name === 'merge.diffTab') {
-    fallback = defaults.merge.precision as unknown as T
-  }
-  return { value: fallback, source: 'default', resolvedAt }
+  return { value: def.defaultValue, source: 'default', errors: [...errors] }
 }
 
-const AUTOSAVE_FLAG: FlagDefinition<boolean> = {
-  name: 'autosave.enabled',
-  envKey: 'VITE_AUTOSAVE_ENABLED',
-  storageKey: 'autosave.enabled',
-  defaultValue: DEFAULT_FLAGS.autosave.enabled,
-  coerce: (raw) => {
-    const lower = raw.toLowerCase()
-    if (lower === 'true' || raw === '1') return true
-    if (lower === 'false' || raw === '0') return false
-    return DEFAULT_FLAGS.autosave.enabled
-  }
-}
+const BOOLEAN_TRUE = new Set(['1', 'true'])
+const BOOLEAN_FALSE = new Set(['0', 'false'])
 
-const MERGE_PRECISION_FLAG: FlagDefinition<MergePrecision> = {
-  name: 'merge.precision',
-  envKey: 'VITE_MERGE_PRECISION',
-  storageKey: 'merge.precision',
-  defaultValue: DEFAULT_FLAGS.merge.precision,
-  coerce: (raw) => (raw === 'legacy' || raw === 'beta' || raw === 'stable' ? (raw as MergePrecision) : DEFAULT_FLAGS.merge.precision)
-}
-
-export type FeatureFlagName = 'autosave.enabled' | 'merge.precision' | 'autoSave.enabled' | 'merge.diffTab'
-
-export const FEATURE_FLAG_DEFINITIONS = {
-  'autosave.enabled': AUTOSAVE_FLAG,
-  'autoSave.enabled': AUTOSAVE_FLAG,
-  'merge.precision': MERGE_PRECISION_FLAG
-} satisfies Record<'autosave.enabled' | 'autoSave.enabled' | 'merge.precision', FlagDefinition<boolean | MergePrecision>>
-
-export function resolveFeatureFlag(
-  name: FeatureFlagName,
-  options?: ResolveOptions
-): FlagResolution<boolean | MergePrecision> {
-  if (name === 'merge.diffTab') {
-    const precision = resolveFlag(MERGE_PRECISION_FLAG, options)
+function coerceBoolean(flag: string): FlagCoercer<boolean> {
+  return (raw) => {
+    const normalized = raw.trim().toLowerCase()
+    if (BOOLEAN_TRUE.has(normalized)) {
+      return { ok: true, value: true }
+    }
+    if (BOOLEAN_FALSE.has(normalized)) {
+      return { ok: true, value: false }
+    }
     return {
-      value: precision.value !== 'legacy',
-      source: precision.source,
-      resolvedAt: precision.resolvedAt
+      ok: false,
+      error: {
+        code: 'invalid-boolean',
+        flag,
+        raw,
+        message: `${flag} expects a boolean-like string`,
+        retryable: false
+      }
     }
   }
-
-  const key = (name === 'merge.precision' ? 'merge.precision' : name === 'autoSave.enabled' ? 'autoSave.enabled' : 'autosave.enabled') as
-    | 'autosave.enabled'
-    | 'autoSave.enabled'
-    | 'merge.precision'
-  if (key === 'merge.precision') {
-    return resolveFlag(MERGE_PRECISION_FLAG, options)
-  }
-  return resolveFlag(AUTOSAVE_FLAG, options)
 }
 
-export function resolveFlags(options: ResolveOptions = {}): FlagSnapshot {
-  const autosave = resolveFlag(AUTOSAVE_FLAG, options)
-  const merge = resolveFlag(MERGE_PRECISION_FLAG, options)
-  const resolvedAt = Math.max(autosave.resolvedAt, merge.resolvedAt)
+function coerceMergePrecision(flag: string): FlagCoercer<MergePrecision> {
+  const allowed: readonly MergePrecision[] = ['legacy', 'beta', 'stable']
+  return (raw) => {
+    const normalized = raw.trim().toLowerCase()
+    if (allowed.includes(normalized as MergePrecision)) {
+      return { ok: true, value: normalized as MergePrecision }
+    }
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-precision',
+        flag,
+        raw,
+        message: `${flag} expects one of: ${allowed.join(', ')}`,
+        retryable: false
+      }
+    }
+  }
+}
+
+export const FEATURE_FLAG_DEFINITIONS = {
+  'autosave.enabled': {
+    name: 'AutoSave Enabled',
+    envKey: 'VITE_AUTOSAVE_ENABLED',
+    storageKey: 'autosave.enabled',
+    legacyStorageKeys: ['flag:autoSave.enabled'],
+    defaultValue: false,
+    coerce: coerceBoolean('autosave.enabled')
+  },
+  'merge.precision': {
+    name: 'Merge Precision Mode',
+    envKey: 'VITE_MERGE_PRECISION',
+    storageKey: 'merge.precision',
+    legacyStorageKeys: ['flag:merge.precision'],
+    defaultValue: 'legacy' as const,
+    coerce: coerceMergePrecision('merge.precision')
+  }
+} as const satisfies {
+  readonly 'autosave.enabled': FlagDefinition<boolean>
+  readonly 'merge.precision': FlagDefinition<MergePrecision>
+}
+
+export type FeatureFlagName = keyof typeof FEATURE_FLAG_DEFINITIONS
+
+export type FeatureFlagValue<Name extends FeatureFlagName> =
+  (typeof FEATURE_FLAG_DEFINITIONS)[Name]['defaultValue']
+
+export function resolveFeatureFlag<Name extends FeatureFlagName>(
+  name: Name,
+  options?: ResolveOptions
+): FlagResolution<FeatureFlagValue<Name>> {
+  const definition = FEATURE_FLAG_DEFINITIONS[name] as FlagDefinition<
+    FeatureFlagValue<Name>
+  >
+  return resolveFlag(definition, options)
+}
+
+export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
+  autosave: { enabled: false, source: 'default', errors: [] },
+  merge: { precision: 'legacy', source: 'default', errors: [] },
+  updatedAt: new Date(0).toISOString()
+}
+
+export function resolveFlags(options?: ResolveOptions): FlagSnapshot {
+  const autosave = resolveFeatureFlag('autosave.enabled', options)
+  const merge = resolveFeatureFlag('merge.precision', options)
+  const clock = options?.clock ?? (() => new Date())
+
   return {
-    autosave: { enabled: autosave.value, phase: derivePhase(autosave.value, merge.value) },
-    merge: { precision: merge.value },
-    source: {
-      autosaveEnabled: autosave.source,
-      mergePrecision: merge.source
+    autosave: {
+      enabled: autosave.value,
+      source: autosave.source,
+      errors: autosave.errors
     },
-    resolvedAt
+    merge: {
+      precision: merge.value,
+      source: merge.source,
+      errors: merge.errors
+    },
+    updatedAt: clock().toISOString()
   }
 }
 
-function derivePhase(enabled: boolean, precision: MergePrecision): AutoSavePhase {
-  return !enabled ? 'disabled' : precision === 'stable' ? 'phase-b' : 'phase-a'
+export interface FlagMigrationStep {
+  readonly phase: 'phase-a0' | 'phase-a1' | 'phase-b0'
+  readonly summary: string
+  readonly exitCriteria: string
 }
+
+export const FLAG_MIGRATION_PLAN: readonly FlagMigrationStep[] = [
+  {
+    phase: 'phase-a0',
+    summary:
+      'Introduce resolveFlags() for App.tsx while keeping direct localStorage fallbacks',
+    exitCriteria: 'App bootstrap reads autosave.enabled exclusively via FlagSnapshot'
+  },
+  {
+    phase: 'phase-a1',
+    summary:
+      'Route AutoSave runner initialization through FlagSnapshot and emit validation telemetry',
+    exitCriteria:
+      'Collector captures FlagValidationError JSONL entries with source metadata'
+  },
+  {
+    phase: 'phase-b0',
+    summary:
+      'Gate MergeDock Diff tab with merge.precision from FlagSnapshot and remove legacy keys',
+    exitCriteria:
+      'localStorage access is mediated by resolveFlags and legacy key reads drop to zero'
+  }
+]
