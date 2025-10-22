@@ -122,6 +122,61 @@ stateDiagram-v2
 - **失敗時の挙動**: ロック取得が最終的に失敗した場合は閲覧専用モードへ移行し、UI へ警告イベントを伝播する（同 §3.4）。
 - **Collector/Analyzer との干渉防止**: Lock ファイルは `project/` 配下に限定し、`workflow-cookbook/` や `logs/` など Day8 系アーティファクトには触れない（`docs/day8/design/03_architecture.md`）。
 
+#### 1.1 ロック API 状態遷移図
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> AcquireWeb: acquireProjectLock()
+    AcquireWeb --> AcquireFallback: navigator.locks unavailable / denied / timeout
+    AcquireWeb --> Acquired: lock:acquired (strategy=web-lock)
+    AcquireFallback --> Acquired: lock:acquired (strategy=file-lock)
+    AcquireWeb --> Readonly: retries exhausted / retryable=false
+    AcquireFallback --> Readonly: fallback-conflict / retryable=false
+    Acquired --> RenewScheduling: scheduleHeartbeat(ttl-5s)
+    RenewScheduling --> Renewing: renewProjectLock()
+    Renewing --> Acquired: lock:renewed
+    Renewing --> Readonly: renew-failed / lease-stale
+    Acquired --> Releasing: releaseProjectLock()
+    Releasing --> Idle: lock:released
+    Releasing --> Readonly: release-failed / retryable=false
+    Readonly --> Idle: manual refresh / new acquire
+```
+
+#### 1.2 API イベントマトリクス
+| API | 呼び出し起点 | 主状態 | 発火イベント | 備考 |
+| --- | --- | --- | --- | --- |
+| `acquireProjectLock` | AutoSave 初期化・CLI | `Idle → AcquireWeb/AcquireFallback → Acquired` | `lock:attempt` → `lock:waiting`* → `lock:acquired` / `lock:error` / `lock:readonly-entered` | `lock:waiting` は再試行が残る場合のみ。フォールバック有効化時に `lock:warning(fallback-engaged)` を 1 度送出。 |
+| `renewProjectLock` | ハートビートタイマー | `Acquired/RenewScheduling → Renewing → Acquired` | `lock:attempt` → `lock:renew-scheduled` → `lock:renewed` / `lock:error` / `lock:readonly-entered` | `.lock` モード時は `expiresAt` を `now + ttlMillis` へ上書きし、遅延時は `lock:warning(heartbeat-delayed)` を通知。 |
+| `releaseProjectLock` | AutoSave 終了・手動保存 | `Acquired → Releasing → Idle` | `lock:release-requested` → `lock:released` / `lock:error` / `lock:readonly-entered` | 冪等性確保のため Web Lock と `.lock` を順に解放し、失敗が残っても readonly 降格で UI へ共有。 |
+| `withProjectLock` | CLI / バッチ | `Idle` から各状態 | Acquire/Renew/Release のイベントを合成 | `renewIntervalMs` 未指定時は `ttlMillis-5000` を採用し、`onReadonly` コールバックで UI 通知。 |
+| `subscribeLockEvents` | UI / Telemetry | - | 任意の `lock:*` イベント | `Set` ベースの購読管理。解除後はイベント配送を停止。 |
+
+#### 1.3 イベントタイムライン（参考）
+```mermaid
+sequenceDiagram
+    participant Runner as AutoSave Runner
+    participant Locks as locks.ts
+    participant Events as subscribeLockEvents
+    Runner->>Locks: acquireProjectLock()
+    Locks-->>Events: lock:attempt(strategy=web-lock, retry=0)
+    Locks-->>Runner: lease(strategy=web-lock)
+    Locks-->>Events: lock:acquired(lease)
+    Locks-->>Events: lock:renew-scheduled(nextHeartbeat=ttl-5s)
+    Runner->>Locks: renewProjectLock(lease)
+    Locks-->>Events: lock:attempt(strategy=web-lock, retry=0)
+    Locks-->>Events: lock:renewed(lease)
+    Runner->>Locks: releaseProjectLock(lease)
+    Locks-->>Events: lock:release-requested(lease)
+    Locks-->>Events: lock:released(leaseId)
+```
+
+#### 1.4 フォールバック `.lock` と Day8 干渉防止
+| 観点 | Day8 制約 | `.lock` 運用ポリシー | 監視/ロールバック |
+| --- | --- | --- | --- |
+| Collector | `collector/` / `workflow-cookbook/` の JSONL を 4 分で収集。【F:Day8/docs/day8/design/03_architecture.md†L5-L16】 | `.lock` は `project/` 直下のみ。Collector の巡回リストから除外し、`.lock` に JSONL を混在させない。 | `autosave.lock.readonly` イベントを Day8 Telemetry に送出し、Collector 集計値と突合。 |
+| Analyzer | 4 分算出→1 分判定で `rollback_required` を決定。【F:Day8/docs/day8/design/03_architecture.md†L17-L31】 | Analyzer は `.lock` を参照しない前提で、AutoSave からの通知は `autosave.lock.*` メトリクス経由に限定。 | Analyzer が `.lock` を参照した形跡があれば lint/レビューで是正し、`readonly` 発生率が 5% 超でロールバック検討。 |
+| Reporter | 4 分整形→承認フロー。【F:Day8/docs/day8/design/03_architecture.md†L31-L36】 | Reporter への通知は `autosave.lock.readonly` の集計結果のみ。ファイル削除失敗時も `.lock` を移動しない。 | Reporter が `.lock` 異常を検知した際は Runbook 手順 4（フォールバック無効化）でロールバック。 |
+
 #### `src/lib/locks.ts` 公開 API と想定利用者
 | API | 役割 | 想定利用者 |
 | --- | --- | --- |
