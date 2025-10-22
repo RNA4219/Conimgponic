@@ -1,6 +1,6 @@
 export type FlagSource = 'env' | 'localStorage' | 'default'
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
-export type AutoSavePhase = 'disabled' | 'phase-a' | 'phase-b'
+export type FlagRolloutPhase = 'phase-a0' | 'phase-a1' | 'phase-b0'
 
 export const DEFAULT_FLAGS = {
   autosave: {
@@ -295,7 +295,7 @@ export function resolveFlags(options?: ResolveOptions): FlagSnapshot {
 }
 
 export interface FlagMigrationStep {
-  readonly phase: 'phase-a0' | 'phase-a1' | 'phase-b0'
+  readonly phase: FlagRolloutPhase
   readonly summary: string
   readonly exitCriteria: string
 }
