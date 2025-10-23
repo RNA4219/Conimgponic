@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 import { strict as assert } from 'node:assert'
 import { tmpdir } from 'node:os'
@@ -10,6 +10,11 @@ type CompareModule = typeof import('../../scripts/golden/compare')
 const compareModulePromise = import(
   pathToFileURL(join(process.cwd(), 'scripts/golden/compare.ts')).href
 ) as Promise<CompareModule>
+
+type GoldenCompareModule = typeof import('../../src/lib/golden/compare')
+const goldenCompareModulePromise = import(
+  pathToFileURL(join(process.cwd(), 'src/lib/golden/compare.ts')).href
+) as Promise<GoldenCompareModule>
 
 type ExportersModule = typeof import('../../src/lib/exporters')
 const exportersModulePromise = import(
@@ -33,6 +38,10 @@ const baseStoryboard = JSON.parse(readFileSync(storyboardPath, 'utf8')) as Story
 
 async function loadCompareModule(): Promise<CompareModule> {
   return compareModulePromise
+}
+
+async function loadGoldenCompareModule(): Promise<GoldenCompareModule> {
+  return goldenCompareModulePromise
 }
 
 function createTempDir(prefix: string): string {
@@ -238,4 +247,66 @@ describe('export bridge golden comparison', () => {
       ctx.cleanup()
     }
   })
+
+  test('UI で用いる比較ユーティリティが CI の diff サマリと完全一致する', async () => {
+    const ctx = await setupGolden((outputs) => {
+      outputs.csv = `${outputs.csv}\n"corrupted"`
+    })
+    try {
+      const { compareStoryboardToGolden } = ctx.compare
+      const compareResult = await compareStoryboardToGolden({
+        storyboardPath,
+        goldenDir: ctx.goldenDir,
+        outputDir: ctx.outputDir,
+        runId: 'unit',
+      })
+      assert.equal(compareResult.ok, false)
+
+      const exporters = await loadExporters()
+      const normalized = exporters.createNormalizedOutputs(baseStoryboard)
+
+      const { compareNormalizedOutputs, formatComparisonSummary } = await loadGoldenCompareModule()
+
+      const goldenArtifacts = readGoldenArtifacts(ctx.goldenDir)
+      const comparison = compareNormalizedOutputs(normalized, goldenArtifacts)
+
+      assert.equal(comparison.ok, false)
+      const diffReport = readFileSync(compareResult.diffPath, 'utf8').trimEnd()
+      assert.equal(formatComparisonSummary(comparison.entries), diffReport)
+      const csvEntry = comparison.entries.find((entry) => entry.format === 'csv')
+      assert.ok(csvEntry)
+      assert.equal(csvEntry.status, 'diff')
+      assert.match(csvEntry.diff ?? '', /corrupted/)
+    } finally {
+      ctx.cleanup()
+    }
+  })
 })
+
+function readGoldenArtifacts(dir: string): GoldenCompareModule['GoldenArtifacts'] {
+  const markdownPath = join(dir, 'markdown', 'storyboard.md')
+  const csvPath = join(dir, 'csv', 'storyboard.csv')
+  const jsonlPath = join(dir, 'jsonl', 'storyboard.jsonl')
+  const artifacts: GoldenCompareModule['GoldenArtifacts'] = {
+    package: {},
+  }
+  if (existsSync(markdownPath)) {
+    artifacts.markdown = readFileSync(markdownPath, 'utf8')
+  }
+  if (existsSync(csvPath)) {
+    artifacts.csv = readFileSync(csvPath, 'utf8')
+  }
+  if (existsSync(jsonlPath)) {
+    artifacts.jsonl = readFileSync(jsonlPath, 'utf8')
+  }
+  const packageDir = join(dir, 'package')
+  if (existsSync(packageDir)) {
+    for (const name of readdirSync(packageDir)) {
+      const target = join(packageDir, name)
+      if (existsSync(target)) {
+        artifacts.package[name] = readFileSync(target, 'utf8')
+      }
+    }
+  }
+  return artifacts
+}
