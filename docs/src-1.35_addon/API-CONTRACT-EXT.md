@@ -98,7 +98,18 @@ type ExtToWv =
   | ({ type: "fs.list.result" } & MsgBase & { ok: boolean, entries?: string[], error?: any })
   | ({ type: "merge.result" } & MsgBase & { ok: boolean, result?: any, trace?: any, error?: any })
   | ({ type: "export.result" } & MsgBase & { ok: boolean, uri?: string, durationMs?: number, error?: { code: string, message: string, retryable: boolean, nextBackoffMs?: number } })
-  | ({ type: "status.autosave" } & MsgBase & { payload: { state: "idle"|"dirty"|"saving"|"saved", debounceMs: number, latencyMs: number, attempt: number } })
+  | ({
+      type: "status.autosave"
+    } & MsgBase & {
+      payload: {
+        state: "idle"|"dirty"|"saving"|"saved"
+        debounceMs: number
+        latencyMs: number
+        attempt: number
+        phaseStep: "disabled"|"debouncing"|"awaiting-lock"|"writing"|"gc"|"idle"|"backoff"|"error"
+        guard: { current: "A-0"|"A-1"|"A-2"|"B-0"|"B-1"; rollbackTo: "A-0"|"A-1"|"A-2"|"B-0"|"B-1" }
+      }
+    })
   | ({ type: "plugins.lifecycle" } & MsgBase & { payload: { pluginId: string, action: "invoked"|"completed"|"failed", durationMs: number, sandboxViolation?: boolean } })
   | ({ type: "gen.chunk" } & MsgBase & { payload: { text: string } })   // 将来
   | ({ type: "gen.done" } & MsgBase )
@@ -157,9 +168,9 @@ Extension → Webview: "export.result" {ok:true, uri, normalizedUri}
 ## 7. テレメトリ JSONL
 - **スキーマ**: `schema=vscode.telemetry.v1`、Envelope は `{ event, ts, correlationId, phase, attempt, maxAttempts, backoffMs[] }`。
 - **主要イベント**:
-  - `status.autosave`: `{ state, debounce_ms, latency_ms, attempt }` を出力し `autosave_p95` ガードへ渡す。
+  - `status.autosave`: `{ state, debounce_ms, latency_ms, attempt, phase_step, guard.current, guard.rollbackTo }` を出力し `autosave_p95` ガードへ渡す。
   - `flag_resolution`: `{ flag, variant, source, phase, evaluation_ms }` が Analyzer のロールアウト推定に直結。
-  - `merge.trace`: `{ collisions, guardrail.metric, guardrail.observed, guardrail.rollbackTo, digest }` を Analyzer が 15 分窓で評価。
+  - `merge.trace`: `{ phase, collisions, processing_ms, guardrail.metric, guardrail.observed, guardrail.tolerance_pct, guardrail.rollbackTo, digest }` を Analyzer が 15 分窓で評価。
   - `export.started/completed/failed`: format/runId/uri/error.retryable/next_backoff_ms を Reporter が利用。
   - `plugins.invoked/completed/failed`: pluginId/action/result/sandboxViolation を監査。sandbox 違反時は rollbackTo=`B-0` を Phase ガードへ通知。
 - **再試行ポリシー**: `maxAttempts=3`、`backoffMs=[100,300,900]`。Collector は 3 回失敗で `retryable=false` として Reporter へ転送し、Day8 `03_architecture.md` の手順でロールバックする。
