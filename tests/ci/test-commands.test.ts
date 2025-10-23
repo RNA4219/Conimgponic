@@ -27,7 +27,7 @@ test('test:coverage script prepares coverage directory and writes into it', () =
   );
   assert.ok(
     script.includes('--test-coverage-dir=coverage'),
-    'test coverage output should be written to coverage/',
+    `test:coverage script must pass "--test-coverage-dir=coverage" (received ${script})`,
   );
 });
 
