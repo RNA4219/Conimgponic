@@ -63,6 +63,17 @@ Phase B 以降で可変化する場合は `AutoSaveOptions` を拡張し、`norm
 | Output | `AutoSaveInitResult`（`snapshot`, `flushNow`, `dispose`）。`snapshot` は状態を同期取得し、`flushNow` は保存完了で解決する。 |
 | 副作用 | Web Locks / `.lock` 取得、OPFS への書込、`history/` のローテーション、`warn` ログ発行。 |
 
+#### I/O 契約マトリクス
+
+| 呼出 | 前提状態 | 主な入力/依存 | 書込・読取 I/O | ロック操作 | エラーとロールバック |
+| --- | --- | --- | --- | --- | --- |
+| `initAutoSave()` | `autosave.enabled=true` かつ `options?.disabled!==true` | `StoryboardProvider`・`AUTOSAVE_POLICY` | `current.json`/`index.json`/`history/` を lazy open | Web Lock → `.lock` フォールバック | 初期化失敗は `AutoSaveError('lock-unavailable'|'write-failed')` を UI/Collector へ warn として転送し、全ハンドルを解放する。 |
+| `snapshot()` | 全状態 | 内部ステートマシン | I/O なし（in-memory） | なし | `phase='error'` 時は `lastError` を返却するのみ。 |
+| `flushNow()` | `phase!=='disabled'` | 現在の pending バッファ | `current.json.tmp` → rename、`index.json.tmp` → rename、`history/*.json` | 実行前にロックを acquire（失敗時は backoff 再試行） | commit 途中で失敗した場合 `write-failed` を返し、`current.json` と `index.json` を直近成功世代へロールバック。 |
+| `dispose()` | 全状態 | - | I/O なし（未完了フライト待機のみ） | 取得済みロックを release | `phase` を `disabled` へ遷移させ、未送信のバックオフジョブをキャンセルする。 |
+
+ガード条件で `disabled` 判定になった場合は上記すべての I/O を抑止し、`flushNow`/`dispose` は no-op を返すことで Phase A の安全弁を担保する。
+
 #### シーケンス図
 
 ```mermaid
@@ -121,6 +132,55 @@ stateDiagram-v2
     GC --> Halted: history-overflow (retryable=false)
     Halted --> Idle: manual reset (dispose + re-init)
 ```
+
+#### 状態遷移マトリクス
+
+| 現在状態 | トリガー | 次状態 | I/O | ロック | 例外/ロールバック |
+| --- | --- | --- | --- | --- | --- |
+| `disabled` | フラグ/オプション解除 | `idle` | タイマー初期化 | なし | - |
+| `idle` | 変更検知 | `debouncing` | 変更バイトを集計 | なし | - |
+| `debouncing` | アイドル確定 / `flushNow()` | `awaiting-lock` | pending バッファ確定 | `acquireProjectLock()` を要求 | 取得失敗で `AutoSaveError('lock-unavailable', retryable=true)` → `backoff` |
+| `awaiting-lock` | ロック取得 | `writing-current` | `current.json.tmp` 書込 | 取得済ハンドル保持 | 書込失敗で `write-failed` → ロールバックし `retryCount++` |
+| `writing-current` | rename 完了 | `updating-index` | `index.json.tmp` 書込 | 同ハンドル継続 | rename 失敗で `write-failed` → フライト中断 |
+| `updating-index` | index 更新完了 | `gc` | `history/` メタ更新 | 同ハンドル継続 | 整合不整合検知で `history-overflow` → `error` |
+| `gc` | FIFO/容量チェック成功 | `idle` | 履歴削除・`lastSuccessAt` 更新 | release | - |
+| `error` | retryable & backoff 解消 | `awaiting-lock` | 再試行準備 | 再取得 | 非 retryable は `dispose()` で `disabled` へフェイルセーフ |
+
+#### ロック依存と UI 結合ポイント
+
+```mermaid
+flowchart LR
+  subgraph App
+    UI[AutoSaveIndicator]
+    Provider[AutoSaveProvider]
+  end
+  subgraph Core
+    Runner[initAutoSave Runner]
+    Locks[locks.ts ProjectLock API]
+    OPFS[OPFS Writer]
+  end
+  subgraph Telemetry
+    Collector[Collector/Analyzer]
+  end
+
+  Provider -- storyboard delta --> Runner
+  Runner -- snapshot --> Provider
+  Provider -- props {phase,retryCount,lastSuccessAt} --> UI
+  UI -- manual flushNow --> Runner
+  Runner -- lock:attempt/lock:released events --> Locks
+  Locks -- event stream --> Runner
+  Runner -- warn/info telemetry --> Collector
+  Collector -. incident feedback .-> UI
+```
+
+| 接続点 | データ | 方向 | 備考 |
+| --- | --- | --- | --- |
+| Runner → Provider | `AutoSaveStatusSnapshot` | push | 250ms ポーリングで UI に転送。`phase='retrying'` は `locks.ts` のバックオフ結果に同期。 |
+| UI → Runner | `flushNow()` | pull | Indicator の CTA から即時保存を発行し、Runner 内で `awaiting-lock` へ強制遷移。 |
+| Runner ↔ Locks | `ProjectLockEvent` | pub/sub | `lock:warning(fallback-engaged)` を受けて UI 側で retry バナーを表示。Day8 設計書の Collector→Analyzer 連携に合わせ `lock:error` は warn として記録する。 |
+| Runner → Collector | `autosave.*` メトリクス | push | Day8 `Collector` の JSONL パイプラインへ転送し、`history-overflow` など致命エラーは Reporter 連携のトリガとなる。 |
+
+`AutoSaveIndicator` とのデータフローは [Day8 アーキテクチャ](../Day8/docs/day8/design/03_architecture.md) の Collector/Analyzer/Reporter パイプラインへ継続的に情報を供給し、ロック階層 (`src/lib/locks.ts`) の警告イベントを UI ガード（Phase A 二重ガード）と整合させる。
 
 ### 2.2 `restorePrompt` / `restoreFrom*` I/O / 例外
 
