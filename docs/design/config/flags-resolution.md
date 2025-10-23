@@ -109,9 +109,17 @@ sequenceDiagram
 
 | 優先順位 | 読み取り層 | `FlagSnapshot.source` | 主な用途 | フェールオーバー時のログ/対策 |
 | --- | --- | --- | --- | --- |
-| 1 | `import.meta.env` (`process.env` 同期含む) | `env` | CI / pnpm スクリプトからの強制切替。【F:docs/IMPLEMENTATION-PLAN.md†L17-L43】 | env が無効値ならバリデーションエラーを蓄積し、Storage 解決を試みる。
-| 2 | `localStorage`（旧キー含む） | `localStorage` | Phase A の既存 UI 互換、ユーザーごとの上書き。【F:docs/IMPLEMENTATION-PLAN.md†L38-L55】 | 破損時は `FlagValidationError` を発行し、既定値へフォールバック。
-| 3 | `DEFAULT_FLAGS`（`docs/CONFIG_FLAGS.md` 由来） | `default` | 新規起動や破損時の安全な既定値。【F:docs/IMPLEMENTATION-PLAN.md†L5-L33】 | `source` を `default` として Collector ログへ送信し、後方互換参照の削除判断に活用。
+| 1 | `import.meta.env`（`process.env` 同期含む） | `env` | CI / pnpm スクリプトからの強制切替。`autosave.enabled` / `merge.precision` の既定値上書きに利用。【F:docs/IMPLEMENTATION-PLAN.md†L13-L36】 | env が無効値ならバリデーションエラーを蓄積し、Storage 解決を試みる。
+| 2 | `localStorage`（旧キー含む） | `localStorage` | Phase A の既存 UI 互換、ユーザーごとの上書き。【F:docs/IMPLEMENTATION-PLAN.md†L37-L58】 | 破損時は `FlagValidationError` を発行し、既定値へフォールバック。
+| 3 | `DEFAULT_FLAGS`（`docs/CONFIG_FLAGS.md` 由来） | `default` | 新規起動や破損時の安全な既定値。`merge.precision` を `legacy` で維持。【F:docs/IMPLEMENTATION-PLAN.md†L5-L33】 | `source` を `default` として Collector ログへ送信し、後方互換参照の削除判断に活用。
+
+#### FlagSnapshot.source 遷移サマリ（マトリクス）
+
+| Consumer | Primary Source | Secondary | Fallback 時の `FlagSnapshot.source` | 備考 |
+| --- | --- | --- | --- | --- |
+| `App.tsx` AutoSave Runner | `env` (`VITE_AUTOSAVE_ENABLED`) | `localStorage.autosave.enabled` | `default` | AutoSave 起動条件を Phase A の既定値 `false` と同期。【F:docs/IMPLEMENTATION-PLAN.md†L13-L43】 |
+| `MergeDock.tsx` Diff Merge タブ | `env` (`VITE_MERGE_PRECISION`) | `localStorage.merge.precision` | `default` | `legacy` フォールバックでタブ非表示を維持。【F:docs/IMPLEMENTATION-PLAN.md†L37-L76】 |
+| Node CLI (`scripts/config-dump.ts`) | `process.env` | - | `default` | Storage 未接続環境での安全解決。|
 
 ### 後方互換マトリクス（`docs/IMPLEMENTATION-PLAN.md` §0.1-0.2 連携）
 
@@ -123,16 +131,19 @@ sequenceDiagram
 
 ## テスト駆動シナリオ（`tests/config/flags.spec.ts`）
 
-| ラベル | 想定ユース / 事前条件 | 期待結果 |
-| --- | --- | --- |
-| T1 | `import.meta.env` 未設定、`localStorage` 正常 (`autosave.enabled='false'`, `merge.precision='beta'`) | `source==='localStorage'` で正規化された値を返し、`errors` は空。|
-| T2 | `import.meta.env` 未設定、`localStorage` 破損（`autosave.enabled='???'`） | `source==='default'` へフォールバックし、`invalid-boolean` を `errors` に記録。|
-| T3 | `import.meta.env` 正常（`VITE_*` 設定済み）、`localStorage` 破損 | env 優先で `source==='env'`。Storage エラーは `errors` に蓄積するが値は env を採用。|
-| T4 | env・Storage とも値無し | `DEFAULT_FLAGS` を採用し `source==='default'`、`updatedAt` が注入 Clock に従う。|
-| T5 | 旧キーのみ存在（`flag:autoSave.enabled='true'`） | `source==='localStorage'` で旧キーから読める。|
-| T6 | `localStorage` 非存在（null 注入） | env→default のみで解決し、Storage アクセスが行われない。|
+### Env 未設定パス
+- **T1**: env 未設定、`localStorage` 正常（`autosave.enabled='false'`, `merge.precision='beta'`）。`source==='localStorage'`、`errors` は空。
+- **T4**: env・Storage とも値無し。`DEFAULT_FLAGS` を採用し `source==='default'`、`updatedAt` が注入 Clock に従う。
 
-> 各ケースは node:test を利用し、`ResolveOptions` へモックを注入するテストファーストで追加する。
+### Env 破損パス
+- **T2**: env 未設定、`localStorage` 破損（`autosave.enabled='???'`）。`invalid-boolean` を `errors` に残し `source==='default'`。
+- **T3**: env 正常（`VITE_*` 設定済み）、`localStorage` 破損。env 優先で `source==='env'`、Storage エラーは `errors` に蓄積。
+
+### 後方互換チェック
+- **T5**: 旧キーのみ存在（`flag:autoSave.enabled='true'`）。`source==='localStorage'` で旧キーから解決。
+- **T6**: `localStorage` 非存在（`storage: null`）。env→default のみで解決し、Storage アクセスは行わない。
+
+> 各ケースは node:test を利用し、`ResolveOptions` モックをテスト先行で注入する。
 
 ## レビュー観点
 
@@ -140,8 +151,9 @@ sequenceDiagram
 - `FlagSnapshot.source` のログ活用方針が App/Merge/Collector の要件と整合しているか。
 - 上表の TDD ケースが `tests/config/flags.spec.ts` に網羅されているか。
 
-## 承認フロー
+## レビュー用チェックリスト
 
-- [ ] 後方互換ガード: 既存 `localStorage` 直接参照を残す箇所の TODO / Issue 化、Phase-B0 で除去する計画を `FLAG_MIGRATION_PLAN` と同期。【F:src/config/flags.ts†L110-L191】
-- [ ] ロールバック条件: `env` 上書きで事故が発生した場合、`pnpm run flags:rollback --phase <prev>` を実行し Phase を 1 段階戻す運用手順が `docs/IMPLEMENTATION-PLAN.md` §2.1 と一致。【F:docs/IMPLEMENTATION-PLAN.md†L107-L173】
+- [ ] **ロールバック条件整合**: `pnpm run flags:rollback --phase <prev>` の手順と Phase 戻し条件（Collector/Analyzer/Reporter の閾値）が `docs/IMPLEMENTATION-PLAN.md` §2.1 と一致しているか。【F:docs/IMPLEMENTATION-PLAN.md†L101-L173】
+- [ ] **localStorage 段階廃止計画**: Phase-A0 で旧参照を残し、Phase-B0 で `FlagSnapshot` へ移行する TODO / Issue が明記されているか。テレメトリで `source==='localStorage'` が 5% 未満になった時点で削除判断を下せるように Collector 連携を確認。【F:docs/IMPLEMENTATION-PLAN.md†L37-L76】【F:src/config/flags.ts†L110-L191】
+- [ ] **後方互換テスト**: T5/T6 の旧キー・Storage 無しケースが `tests/config/flags.spec.ts` に含まれ、`FlagSnapshot.source` をアサートしているか。
 
