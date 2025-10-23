@@ -27,3 +27,17 @@
 
 ## 5. 受入基準
 - サンプル10件で**自動採用>=80%**（ラベル付きケース）。
+
+## 6. Phase別 UI ガードとしきい値クランプ
+- MergeDock は `merge.precision`（legacy/beta/stable）と VS Code 設定 `conimg.merge.threshold` を `resolveMergeDockPhasePlan()` で統合し、フェーズごとのタブ露出と自動採用ガードを計算する。
+- 設定値が欠落/NaN の場合は `DEFAULT_THRESHOLD=0.72` を基準にする。
+- しきい値は Phase B 要件に応じてクランプし、UI スライダー最小/最大と自動採用率ターゲットを同時に更新する。
+
+| precision | request.threshold | Diff タブ露出 | 自動採用 band | Review band | Conflict band | Phase B guard |
+| --- | --- | --- | --- | --- | --- | --- |
+| legacy | `max(cfg, 0.65)` | hidden | `>= threshold + 0.08` | なし | なし | false |
+| beta | `clamp(cfg, 0.68, 0.9)` | opt-in | `>= threshold + 0.05` | `[threshold-0.02, threshold+0.05)` | `< threshold-0.02` | `reviewBandCount > 0` |
+| stable | `clamp(cfg, 0.7, 0.94)` | default | `>= threshold + 0.03` | `[threshold-0.01, threshold+0.03)` | `< threshold-0.01` | `(review+conflict) > 0` |
+
+- 自動採用率がターゲットを下回る場合、Diff タブは Phase B の opt-in 状態に留まり、Collector ログへ `autoAppliedRate < target` を書き出す。UI スライダー値の更新は `merge.request.threshold` に即時反映する。
+- 詳細は [docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md) のフラグ協調要件および [Day8/docs/day8/design/03_architecture.md](../../Day8/docs/day8/design/03_architecture.md) の Collector/Analyzer 連携を参照。

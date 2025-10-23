@@ -138,6 +138,12 @@ stateDiagram-v2
 - しきい値スライダー（0.0–1.0、既定0.72）。
 - 採用時はハイライトを消し、履歴へスナップショット保存。
 
+### 4.1 MergeDock Phase コントロール
+- `resolveMergeDockPhasePlan()` が `merge.precision` と `conimg.merge.threshold` を組み合わせ、しきい値スライダーのレンジと Diff タブ露出を制御する。
+- legacy: スライダー範囲 `0.65–0.9`、Diff タブは非表示。
+- beta: スライダー範囲 `0.68–0.9`。Review band（`threshold-0.02`〜`threshold+0.05`）にハンクが残る場合のみ Diff タブを opt-in 表示。
+- stable: スライダー範囲 `0.7–0.94`。Review または Conflict band にハンクがあれば Diff タブを既定タブとして露出し、自動採用ターゲットを `threshold+0.03` に固定。
+
 ## 5. 保存インジケータ
 - `AutoSaveIndicator` は `snapshot().phase` と `pendingBytes` を監視し、3 ペイン共通のタイトルバーに `●` / `○` / `↻` を表示する。
 - `phase='backoff'` 時は `↻` をオレンジで点滅させ、ツールチップに `retry in <ms>` と `lastError.code` を表示。
