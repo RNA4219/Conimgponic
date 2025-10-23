@@ -14,6 +14,134 @@ export type MetricsKey =
   | 'restore_success_rate'
   | 'merge_auto_success_rate';
 
+export type TelemetryEventName =
+  | 'status.autosave'
+  | 'flag_resolution'
+  | 'merge.trace'
+  | 'export.started'
+  | 'export.completed'
+  | 'export.failed'
+  | 'plugins.invoked'
+  | 'plugins.completed'
+  | 'plugins.failed';
+
+export interface MessageEnvelope {
+  readonly type: string;
+  readonly apiVersion: 1;
+  readonly reqId: string;
+  readonly ts: string;
+  readonly correlationId: string;
+  readonly phase: RolloutPhase;
+}
+
+export interface TelemetryJsonlRecordBase {
+  readonly schema: 'vscode.telemetry.v1';
+  readonly event: TelemetryEventName;
+  readonly ts: string;
+  readonly correlationId: string;
+  readonly phase: RolloutPhase;
+  readonly attempt: number;
+  readonly maxAttempts: number;
+  readonly backoffMs: ReadonlyArray<number>;
+}
+
+export interface StatusAutosavePayload {
+  readonly state: 'idle' | 'dirty' | 'saving' | 'saved';
+  readonly debounce_ms: number;
+  readonly latency_ms: number;
+  readonly attempt: number;
+}
+
+export interface FlagResolutionPayload {
+  readonly flag: string;
+  readonly variant: string;
+  readonly source: 'env' | 'remote' | 'local';
+  readonly phase: RolloutPhase;
+  readonly evaluation_ms: number;
+}
+
+export interface MergeTracePayload {
+  readonly collisions: number;
+  readonly guardrail: {
+    readonly metric: MetricsKey;
+    readonly observed: number;
+    readonly rollbackTo: RolloutPhase;
+  };
+  readonly digest: string;
+}
+
+export type ExportFormat = 'md' | 'csv' | 'jsonl' | 'package';
+
+export interface ExportEventPayloadBase {
+  readonly format: ExportFormat;
+  readonly runId: string;
+  readonly duration_ms?: number;
+}
+
+export interface ExportStartedPayload extends ExportEventPayloadBase {
+  readonly stage: 'started';
+}
+
+export interface ExportCompletedPayload extends ExportEventPayloadBase {
+  readonly stage: 'completed';
+  readonly uri: string;
+}
+
+export interface ExportFailedPayload extends ExportEventPayloadBase {
+  readonly stage: 'failed';
+  readonly error: {
+    readonly code: string;
+    readonly message: string;
+    readonly retryable: boolean;
+    readonly next_backoff_ms: number;
+  };
+}
+
+export interface PluginEventPayload {
+  readonly pluginId: string;
+  readonly action: string;
+  readonly result: 'success' | 'failure';
+  readonly duration_ms: number;
+  readonly sandboxViolation?: boolean;
+}
+
+export interface TelemetryPayloads {
+  readonly 'status.autosave': StatusAutosavePayload;
+  readonly 'flag_resolution': FlagResolutionPayload;
+  readonly 'merge.trace': MergeTracePayload;
+  readonly 'export.started': ExportStartedPayload;
+  readonly 'export.completed': ExportCompletedPayload;
+  readonly 'export.failed': ExportFailedPayload;
+  readonly 'plugins.invoked': PluginEventPayload;
+  readonly 'plugins.completed': PluginEventPayload;
+  readonly 'plugins.failed': PluginEventPayload & { readonly sandboxViolation: true };
+}
+
+export interface TelemetryEventSpec<E extends TelemetryEventName = TelemetryEventName> {
+  readonly event: E;
+  readonly description: string;
+  readonly jsonlFields: ReadonlyArray<string>;
+  readonly retryable: boolean;
+  readonly pipelineStage: 'collector' | 'analyzer' | 'reporter';
+  readonly guardrail?: {
+    readonly metric: MetricsKey;
+    readonly rollbackTo: RolloutPhase;
+  };
+}
+
+export interface TelemetryRetryPolicy {
+  readonly maxAttempts: number;
+  readonly backoffMs: ReadonlyArray<number>;
+  readonly flushWindowMinutes: number;
+}
+
+export interface TelemetryContract {
+  readonly schema: TelemetryJsonlRecordBase['schema'];
+  readonly envelope: ReadonlyArray<keyof TelemetryJsonlRecordBase>;
+  readonly events: ReadonlyArray<TelemetryEventSpec>;
+  readonly retryPolicy: TelemetryRetryPolicy;
+}
+
 export interface MetricsInputRecord {
   /** ISO8601 形式の計測開始時刻 */
   readonly window_started_at: string;
@@ -140,6 +268,7 @@ export interface CollectMetricsContract {
   readonly phaseGates: ReadonlyArray<PhaseGateSpec>;
   readonly cycle: CollectorAnalyzerReporterCycle;
   readonly governanceAlignment: GovernanceAlignment;
+  readonly telemetry: TelemetryContract;
 }
 
 export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
@@ -365,5 +494,99 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       'pnpm test --filter monitor',
       'pnpm exec yaml-lint governance/policy.yaml',
     ],
+  },
+  telemetry: {
+    schema: 'vscode.telemetry.v1',
+    envelope: ['schema', 'event', 'ts', 'correlationId', 'phase', 'attempt', 'maxAttempts', 'backoffMs'],
+    events: [
+      {
+        event: 'status.autosave',
+        description: 'AutoSave 状態遷移と遅延を Phase ガード autosave_p95 と同期させる。',
+        jsonlFields: ['payload.state', 'payload.debounce_ms', 'payload.latency_ms', 'payload.attempt'],
+        retryable: true,
+        pipelineStage: 'collector',
+        guardrail: {
+          metric: 'autosave_p95',
+          rollbackTo: 'A-0',
+        },
+      },
+      {
+        event: 'flag_resolution',
+        description: 'Feature flag の判定結果を Analyzer の restore_success_rate 推定に反映する。',
+        jsonlFields: ['payload.flag', 'payload.variant', 'payload.source', 'payload.phase'],
+        retryable: true,
+        pipelineStage: 'analyzer',
+        guardrail: {
+          metric: 'restore_success_rate',
+          rollbackTo: 'A-0',
+        },
+      },
+      {
+        event: 'merge.trace',
+        description: '精緻マージの衝突数と Phase ガード merge_auto_success_rate の観測値を出力する。',
+        jsonlFields: ['payload.collisions', 'payload.guardrail.metric', 'payload.guardrail.observed'],
+        retryable: false,
+        pipelineStage: 'analyzer',
+        guardrail: {
+          metric: 'merge_auto_success_rate',
+          rollbackTo: 'A-2',
+        },
+      },
+      {
+        event: 'export.started',
+        description: 'Export 開始時の format/runId を Reporter の進捗計測と合わせる。',
+        jsonlFields: ['payload.format', 'payload.runId', 'payload.stage'],
+        retryable: true,
+        pipelineStage: 'collector',
+      },
+      {
+        event: 'export.completed',
+        description: 'Export 正常終了時の URI と duration を Reporter が通知テンプレートへ反映する。',
+        jsonlFields: ['payload.format', 'payload.uri', 'payload.duration_ms'],
+        retryable: false,
+        pipelineStage: 'reporter',
+      },
+      {
+        event: 'export.failed',
+        description: 'Export 失敗時に retryable と next_backoff_ms を記録しローリングバックログに登録する。',
+        jsonlFields: ['payload.error.code', 'payload.error.retryable', 'payload.error.next_backoff_ms'],
+        retryable: true,
+        pipelineStage: 'reporter',
+        guardrail: {
+          metric: 'autosave_p95',
+          rollbackTo: 'A-0',
+        },
+      },
+      {
+        event: 'plugins.invoked',
+        description: 'プラグイン呼び出し開始を Phase ガードへ相関 ID 付きで伝播する。',
+        jsonlFields: ['payload.pluginId', 'payload.action'],
+        retryable: true,
+        pipelineStage: 'collector',
+      },
+      {
+        event: 'plugins.completed',
+        description: 'プラグイン成功結果を Reporter がサマリに集計する。',
+        jsonlFields: ['payload.pluginId', 'payload.result', 'payload.duration_ms'],
+        retryable: false,
+        pipelineStage: 'reporter',
+      },
+      {
+        event: 'plugins.failed',
+        description: 'Sandbox 違反や失敗を rollbackTo 指標と連動させる。',
+        jsonlFields: ['payload.pluginId', 'payload.result', 'payload.sandboxViolation'],
+        retryable: true,
+        pipelineStage: 'reporter',
+        guardrail: {
+          metric: 'merge_auto_success_rate',
+          rollbackTo: 'B-0',
+        },
+      },
+    ],
+    retryPolicy: {
+      maxAttempts: 3,
+      backoffMs: [100, 300, 900],
+      flushWindowMinutes: 15,
+    },
   },
 };

@@ -10,17 +10,19 @@
 - 外部ネットワークへの fetch は**禁止**。ネットワークは**拡張側ゲート**を介す（将来）。
 
 ## 3. メッセージバス（基本）
-- **封筒型**（Envelope）: すべてのメッセージに共通のヘッダを付与。
+- **封筒型**（Envelope）: すべてのメッセージに共通のヘッダを付与。Phase ガードが `phase` と `correlationId` を用いて監視する。
 ```ts
 type MsgBase = {
   type: string              // 例: "snapshot.request"
   apiVersion: 1             // メッセージ契約のバージョン
-  reqId?: string            // 要求→応答の相関ID（応答はreqIdをエコー）
-  ts?: number               // epoch ms（送信側で付与）
+  reqId: string             // 要求→応答の相関ID（応答はreqIdをエコー）
+  ts: string                // ISO8601（送信側で付与）
+  correlationId: string     // Telemetry JSONL と共有
+  phase: 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1'
 }
 ```
-- **相関**: 要求系は `reqId` を必須。応答は同一 `reqId` を返却。
-- **エラー**: 応答系は `{ ok: false, error: { code, message, details? } }` を許容。
+- **相関**: 要求は `reqId` と `correlationId` を必須。応答は同値を返却し、Collector は `correlationId` で JSONL に変換する。
+- **エラー契約**: 応答系は `{ ok: false, error: { code, message, retryable, details? } }` を返却。`retryable=false` は Phase ガードに即通知。
 
 ## 4. 型定義（抜粋）
 
@@ -48,8 +50,9 @@ type ExtToWv =
   | ({ type: "fs.read.result" } & MsgBase & { ok: boolean, dataBase64?: string, error?: any })
   | ({ type: "fs.list.result" } & MsgBase & { ok: boolean, entries?: string[], error?: any })
   | ({ type: "merge.result" } & MsgBase & { ok: boolean, result?: any, trace?: any, error?: any })
-  | ({ type: "export.result" } & MsgBase & { ok: boolean, uri?: string, error?: any })
-  | ({ type: "status.autosave" } & MsgBase & { payload: { state: "idle"|"dirty"|"saving"|"saved" } })
+  | ({ type: "export.result" } & MsgBase & { ok: boolean, uri?: string, durationMs?: number, error?: { code: string, message: string, retryable: boolean, nextBackoffMs?: number } })
+  | ({ type: "status.autosave" } & MsgBase & { payload: { state: "idle"|"dirty"|"saving"|"saved", debounceMs: number, latencyMs: number, attempt: number } })
+  | ({ type: "plugins.lifecycle" } & MsgBase & { payload: { pluginId: string, action: "invoked"|"completed"|"failed", durationMs: number, sandboxViolation?: boolean } })
   | ({ type: "gen.chunk" } & MsgBase & { payload: { text: string } })   // 将来
   | ({ type: "gen.done" } & MsgBase )
   | ({ type: "gen.error" } & MsgBase & { error: { code: string, message: string } })
@@ -93,9 +96,20 @@ Extension → Webview: "export.result" {ok:true, uri}
 ```
 
 ## 6. エラーと再試行（方針）
-- 失敗は**応答メッセージで通知**（throw禁止）。
-- 再試行は**指数バックオフ**（100/300/900ms 目安）。
-- `E_FS_ATOMIC` はユーザー提示（保存できない場合は復旧ダイアログへ）。
+- 失敗は**応答メッセージで通知**（throw禁止）。Envelope と同一 `correlationId` を保持する。
+- 再試行は**指数バックオフ**（100/300/900ms）。`export.failed` / `plugins.failed` は Telemetry JSONL に `next_backoff_ms` を記録する。
+- `retryable=false` の場合は Phase ガードが即座に RED 判定し、Day8 pipeline の Reporter がロールバック指示を生成する。
+- `E_FS_ATOMIC` や sandbox 違反はユーザー提示＋`plugins.failed` Telemetry で rollbackTo を明示。
+
+## 7. テレメトリ JSONL
+- **スキーマ**: `schema=vscode.telemetry.v1`、Envelope は `{ event, ts, correlationId, phase, attempt, maxAttempts, backoffMs[] }`。
+- **主要イベント**:
+  - `status.autosave`: `{ state, debounce_ms, latency_ms, attempt }` を出力し `autosave_p95` ガードへ渡す。
+  - `flag_resolution`: `{ flag, variant, source, phase, evaluation_ms }` が Analyzer のロールアウト推定に直結。
+  - `merge.trace`: `{ collisions, guardrail.metric, guardrail.observed, guardrail.rollbackTo, digest }` を Analyzer が 15 分窓で評価。
+  - `export.started/completed/failed`: format/runId/uri/error.retryable/next_backoff_ms を Reporter が利用。
+  - `plugins.invoked/completed/failed`: pluginId/action/result/sandboxViolation を監査。sandbox 違反時は rollbackTo=`B-0` を Phase ガードへ通知。
+- **再試行ポリシー**: `maxAttempts=3`、`backoffMs=[100,300,900]`。Collector は 3 回失敗で `retryable=false` として Reporter へ転送し、Day8 `03_architecture.md` の手順でロールバックする。
 
 ## 7. セキュリティ境界
 - Webviewは**外部fetch禁止**。ネットは拡張側ゲートのみ。
