@@ -206,6 +206,69 @@ stateDiagram-v2
 - precision 切替は `merge.precision` フラグの再評価で発火し、`MergeDock` のタブ DOM を再構成する。【F:docs/design/merge/diff-merge-view.md†L26-L78】
 - `stable` でのみ Diff タブが初期表示となり、`Legacy`/`Beta` は `Compiled` を初期タブとして `diff-merge` を遅延マウントする。既存 UI との整合は `docs/MERGE-DESIGN-IMPL.md` §5 のタブ制御要件と同期する。【F:docs/MERGE-DESIGN-IMPL.md†L168-L206】
 
+
+### 0.4 AutoSave Webview Bridge 設計
+
+- Phase A ガード（`autosave.enabled` フラグと `AutoSaveOptions.disabled`）をブリッジ層で合成し、Webview 側が Phase 判定を誤らないよう封筒型メッセージに `guard` スナップショットを埋め込む。【F:src/lib/autosave.ts†L118-L149】
+- 保存ポリシーは固定値（デバウンス 500ms・アイドル 2s・履歴 20 世代・容量 50MB）を常に `bridge.bootstrap` で通知し、`snapshot.request` ごとに検証する。atomic write は `current.json.tmp` → rename を強制し、履歴ローテーションも同一 `reqId` で実施する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L104】
+- 失敗応答は `{ ok:false, error }` を必須とし、`status.autosave.state` に `error/backoff` を露出した上で Day8 Telemetry へ `autosave.guard`・`autosave.save` イベントを伝搬させる。【F:src/lib/autosave.ts†L151-L188】【F:Day8/docs/day8/design/03_architecture.md†L1-L39】
+
+#### 0.4.1 メッセージ契約
+
+| type | 方向 | 主ペイロード | 制約 | 出典 |
+| --- | --- | --- | --- | --- |
+| `bridge.bootstrap` | Extension → Webview | `{ version:1, policy, guard }` | 起動時に 500ms/2s/20 世代/50MB を通知し Phase ガードの現在値とソース（env→workspace→localStorage→default）を共有する。 | 【F:src/lib/autosave.ts†L168-L176】 |
+| `bridge.ready` | Webview → Extension | `{ accepted, reason? }` | Phase ガードが許可されれば `accepted=true`。拒否時は理由を付けて `snapshot.request` を抑止する。 | 【F:src/lib/autosave.ts†L178-L184】 |
+| `snapshot.request` | Webview → Extension | `storyboard`、`pendingBytes`、`queuedGeneration`、`guard`、`policy` | 保存対象は 1 回だけシリアライズし、atomic write 用 tmp ファイルに送る。Phase ガードのスナップショットを必ず同梱する。 | 【F:src/lib/autosave.ts†L133-L147】 |
+| `snapshot.result` | Extension → Webview | `{ ok:true, bytes, lastSuccessAt, generation, retainedBytes }` or `{ ok:false, error }` | 成功時はアトミックコミット結果と履歴サイズを返却。エラー時は `AutoSaveError` を封筒に含めリトライ可否を明示する。 | 【F:src/lib/autosave.ts†L149-L166】 |
+| `status.autosave` | Extension → Webview | `{ state, phase, retryCount, lastSuccessAt?, pendingBytes?, guard }` | `dirty→saving→saved` など UI 用状態遷移を提供。Phase ガード解除前は `state='disabled'` を維持する。 | 【F:src/lib/autosave.ts†L151-L166】 |
+
+封筒 (`AutoSaveBridgeEnvelope`) は全メッセージで `reqId` と `issuedAt` を共有し、`phase` フィールドで次の期待遷移（`bootstrap→ready→snapshot.request→snapshot.result→status.autosave`）を明示する。【F:src/lib/autosave.ts†L125-L131】
+
+#### 0.4.2 シーケンス / 状態機械
+
+```mermaid
+sequenceDiagram
+    participant Ext as Extension Runner
+    participant Bridge as MessageBridge
+    participant Web as Webview UI
+    Ext->>Web: bridge.bootstrap{policy=500/2000/20世代/50MB, guard}
+    Web-->>Ext: bridge.ready{accepted=true}
+    Web->>Ext: status.autosave{state="dirty", guard}
+    Web->>Ext: snapshot.request{storyboard, pendingBytes, guard}
+    Ext-->>Web: status.autosave{state="saving"}
+    Ext-->>Web: snapshot.result{ok=true, retainedBytes<=50MB}
+    Ext-->>Web: status.autosave{state="saved", lastSuccessAt}
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> Disabled
+    Disabled --> Dirty: bridge.ready.accepted && guard.allowed
+    Dirty --> Saving: snapshot.request 発行
+    Saving --> Saved: snapshot.result.ok=true
+    Saving --> Backoff: snapshot.result.ok=false && error.retryable=true
+    Backoff --> Saving: retry delay 終了
+    Any --> Disabled: bridge.ready.accepted=false or guard復帰待ち
+    Any --> Error: snapshot.result.ok=false && retryable=false
+    Error --> Disabled: dispose()/Phase guard 再評価
+```
+
+- `Dirty` から `Saving` への遷移では必ず 500ms デバウンスと 2s アイドル確認が完了していることを `status.autosave` の `notes` に残す。
+- `Saved` で `lastSuccessAt` を更新し、20 世代/50MB の条件から外れた履歴は GC が FIFO で削除する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L61-L136】
+
+#### 0.4.3 テレメトリ連携
+
+- `autosave.status`：`status.autosave` 受信のたびに `state`/`phase`/`retryCount` を Day8 Collector へ JSONL 送信。`saved` 遷移率 < 0.98 で Warn、< 0.95 で Rollback 判定とする。【F:Day8/docs/day8/design/03_architecture.md†L1-L39】
+- `autosave.save`：`snapshot.result.ok=true` で 1 回送信し、`retainedBytes` と `generation` を detail に格納する。【F:src/lib/autosave.ts†L149-L166】
+- `autosave.guard`：Phase ガードが拒否した場合に一度だけ送信し、Collector/Analyzer が Rollout 可否を判断する。`reason` は `bridge.ready.reason` に揃える。【F:src/lib/autosave.ts†L178-L184】
+
+#### 0.4.4 統合テスト (RED)
+
+- `tests/webview/autosave.bridge.test.ts` は Webview ブリッジの RED ケースを列挙し、`dirty→saving→saved` の遷移と Phase ガード抑止を確認する。封筒の `notes` 列で 500ms デバウンス・2s アイドル・tmp→rename・20世代/50MB といった要件を固定化する。【F:tests/webview/autosave.bridge.test.ts†L1-L83】
+- Phase ガードで `accepted=false` を返した場合は `snapshot.request` を禁止し、Collector には `autosave.guard(blocked=true)` を送る想定をテーブルで共有する。【F:tests/webview/autosave.bridge.test.ts†L85-L123】
+
+
 ## 1) 対象モジュール追加
 - `src/lib/autosave.ts`（API・イベント・ローテ）
 - `src/lib/locks.ts`（Web Locks + フォールバック）
