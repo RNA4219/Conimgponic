@@ -71,7 +71,18 @@ sequenceDiagram
 4. **Collector 連携**: `FlagValidationError` と `FlagSnapshot.source` をテレメトリに送出し、Day8/Collector の JSONL に `flag_resolution` イベントを追加する。`docs/AUTOSAVE-DESIGN-IMPL.md` の保存ポリシーと整合すること。
 5. **段階的差分**: Phase-a1 で AutoSave ランナーへ `FlagSnapshot` を渡し、Phase-b0 でレガシー参照を除去する。各段階は小粒な PR とし、既存読者が差分で追えるよう `FLAG_MIGRATION_PLAN` の exit criteria をレビュー checklist に転記する。
 
-#### 0.2.2 Phase ガード解除時の挙動整理
+#### 0.2.2 Phase ガード優先度と解除時の挙動整理
+
+`docs/src-1.35_addon/CONFIG.md` で規定された VSCode 設定と、Phase ガード用フラグの突き合わせを以下の優先度で固定する。Collector 連携時は `flag_resolution` テレメトリに `source` を付与し、Day8 パイプラインの責務境界（Collector → Analyzer → Reporter）と矛盾しないイベント系列に整流する。【F:docs/src-1.35_addon/CONFIG.md†L1-L9】【F:Day8/docs/day8/design/03_architecture.md†L1-L39】
+
+| Phase ガード | Primary (env / workspace) | Secondary (ローカルストレージ) | Fallback (`DEFAULT_FLAGS` / 設定既定値) | Telemetry & Rollback | 備考 |
+| --- | --- | --- | --- | --- | --- |
+| AutoSave 起動判定 | `VITE_AUTOSAVE_ENABLED` → `conimg.autosave.enabled` | `localStorage.autosave.enabled` | `autosave.enabled=false` | `flag_resolution` に `source` と `autosave.phase` を付与。`lock:readonly-entered` が 24h で 5 回超過したら Phase を差し戻す。 | Phase A-1 で env true が優先される。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L85】 |
+| AutoSave 履歴容量 | `conimg.autosave.sizeLimitMB` | - | 50MB 固定 | `history-overflow` を Collector WARN として送出し、Analyzer が閾値逸脱を検知したら GC を停止。 | Phase B で可変化予定だが Phase ガード配下では固定。 |
+| AutoSave 履歴世代 | `conimg.autosave.historyLimit` | - | 20 固定 | `history-rotation` イベントに `limit` を添付し、Reporter が `reports/today.md` で逸脱可視化。 | Phase B で緩和検討。 |
+| Merge 精度制御 | `VITE_MERGE_PRECISION` → `conimg.merge.threshold` | `localStorage.merge.precision` | `merge.precision='legacy'` | `flag_resolution` に `precision` と `threshold` を同梱し、`DiffMergeView` 露出率を追跡。 | Phase C で `beta/stable` を解放。【F:docs/MERGE-DESIGN-IMPL.md†L140-L206】 |
+
+Phase ガードの解除と UI・ロック制御の変化は下表で管理する。
 Phase ガード（`autosave.enabled=false` + `AutoSaveOptions.disabled=true`）を順次解除する際は、段階ごとに UI とロック制御の既定値が変化する。切替点を明示し、ロールバック条件と一致させる。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L66】【F:docs/AUTOSAVE-INDICATOR-UI.md†L122-L176】
 
 | 移行フェーズ | フラグ既定値 (`autosave.enabled`) | UI 表示の変化 | ロック/保存ポリシーの変化 | ロールバック条件 |
