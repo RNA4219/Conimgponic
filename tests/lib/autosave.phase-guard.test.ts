@@ -2,6 +2,7 @@ import { test } from 'node:test'; import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'; import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'; import { createRequire } from 'node:module'
 import vm from 'node:vm'; import ts from 'typescript'
+import type { AutoSavePhaseGuardSnapshot } from '../../src/lib/autosave'
 
 type SetupOverrides = { navigator?: any; locks?: any; opfs?: { beforeWrite?: (path: string) => void } }
 type FlagSnapshot = { readonly autosave: { readonly enabled: boolean; readonly phase: 'phase-a'; readonly source: string } }
@@ -182,6 +183,18 @@ scenario(
   }
 )
 
+scenario(
+  'disabled flushNow returns shared resolved promise',
+  async (_t: any, { initAutoSave }: any) => {
+    const flags = createFlags(false)
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, flags)
+    const first = runner.flushNow()
+    const second = runner.flushNow()
+    assert.strictEqual(first, second)
+    assert.equal(await first, undefined)
+  }
+)
+
 scenario('phase guard returns to idle when re-enabled', async (_t: any, { initAutoSave }: any) => {
   const disabledGuard = {
     featureFlag: { value: false, source: 'env' },
@@ -205,6 +218,19 @@ scenario('phase guard keeps dirty snapshot when enabled and generation queued', 
   assert.equal(runner.snapshot().phase, 'dirty')
   assert.equal(runner.snapshot().retryCount, 0)
 })
+
+scenario(
+  'phase guard marks dirty when AutoSavePhaseGuardSnapshot is provided directly',
+  async (_t: any, { initAutoSave }: any) => {
+    const guard: AutoSavePhaseGuardSnapshot = {
+      featureFlag: { value: true, source: 'workspace' },
+      optionsDisabled: false
+    }
+    const runner = initAutoSave(() => ({ nodes: [{ id: 'guard-direct' }] } as any), { disabled: false }, guard)
+    runner.markDirty()
+    assert.equal(runner.snapshot().phase, 'dirty')
+  }
+)
 
 scenario('phase guard treats guard snapshot as phase-a when feature flag enabled', async (_t: any, { initAutoSave }: any) => {
   const guard = {

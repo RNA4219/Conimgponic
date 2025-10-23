@@ -37,6 +37,18 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
 const require = createRequire(import.meta.url);
+const expectedSequence = [
+  'pnpm -s lint',
+  'pnpm -s typecheck',
+  'pnpm test --filter autosave',
+  'pnpm test --filter merge',
+  'pnpm test --filter cli',
+  'pnpm test --filter collector',
+  'pnpm test --filter telemetry',
+  'pnpm test -- --test-coverage',
+  'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml',
+];
+
 const { load } = await importJsYaml();
 
 describe('ci workflow build job', () => {
@@ -60,22 +72,12 @@ describe('ci workflow build job', () => {
 
       const pnpmCommands = extractPnpmCommands(steps);
 
-      assertCommandSequence(pnpmCommands, [
-        'pnpm -s lint',
-        'pnpm -s typecheck',
-        'pnpm test --filter autosave',
-        'pnpm test --filter merge',
-        'pnpm test --filter cli',
-        'pnpm test --filter collector',
-        'pnpm test --filter telemetry',
-        'pnpm test -- --test-coverage',
-        'pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml',
-      ];
+      assertCommandSequence(pnpmCommands, expectedSequence);
 
       let cursor = -1;
 
       for (const expected of expectedSequence) {
-        const nextIndex = runCommands.findIndex((command, index) => index > cursor && command.includes(expected));
+        const nextIndex = pnpmCommands.findIndex((command, index) => index > cursor && command.includes(expected));
 
         assert.notStrictEqual(
           nextIndex,

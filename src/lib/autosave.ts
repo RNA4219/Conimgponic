@@ -1,4 +1,5 @@
 import type { Storyboard } from '../types'
+import { FLAG_MIGRATION_PLAN } from '../config/flags'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
 
@@ -172,6 +173,8 @@ export interface AutoSavePhaseGuardSnapshot {
   }
   readonly optionsDisabled: boolean
 }
+
+const PHASE_GUARD_ROLLOUT_ACTIVE = FLAG_MIGRATION_PLAN.some((step) => step.phase.startsWith('phase-a'))
 
 interface Day8CollectorLike {
   publish(event: Record<string, unknown>): void

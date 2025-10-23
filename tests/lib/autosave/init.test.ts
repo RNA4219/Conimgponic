@@ -57,16 +57,37 @@ scenario('history rotation keeps at most 20 generations', async (_t, { initAutoS
   assert.ok(historyCount <= 20)
 })
 
-scenario('disabled guard returns no-op handle', async (_t: TestContext, { initAutoSave }) => {
-  for (const { flag, options } of [
-    { flag: false, options: { disabled: false } },
-    { flag: true, options: { disabled: true } }
+scenario('disabled guard returns no-op handle', async (t: TestContext, { initAutoSave }) => {
+  const scope = globalThis as typeof globalThis & {
+    __AUTOSAVE_ENABLED__?: boolean
+    Day8Collector?: { publish: (event: Record<string, unknown>) => void }
+  }
+  const events: Record<string, unknown>[] = []
+  Object.defineProperty(scope, 'Day8Collector', {
+    value: { publish: (event: Record<string, unknown>) => { events.push(event) } },
+    configurable: true
+  })
+  t.after(() => {
+    delete scope.Day8Collector
+  })
+
+  for (const { flag, options, reason } of [
+    { flag: false, options: { disabled: false }, reason: 'feature-flag-disabled' as const },
+    { flag: true, options: { disabled: true }, reason: 'options-disabled' as const }
   ]) {
-    const scope = globalThis as typeof globalThis & { __AUTOSAVE_ENABLED__?: boolean }
+    events.length = 0
     scope.__AUTOSAVE_ENABLED__ = flag
     const runner = initAutoSave(() => makeStoryboard([]), options)
     assert.equal(runner.snapshot().phase, 'disabled')
-    await assert.rejects(runner.flushNow(), isAutoSaveError({ code: 'disabled', retryable: false }))
+    await assert.doesNotReject(() => runner.flushNow())
+    assert.doesNotThrow(() => runner.dispose())
+    assert.deepEqual(
+      events.map((event) => ({
+        level: event.level as string,
+        reason: event.reason as string
+      })),
+      [{ level: 'debug', reason }]
+    )
     delete scope.__AUTOSAVE_ENABLED__
   }
 })
