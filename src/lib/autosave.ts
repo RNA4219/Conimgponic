@@ -27,11 +27,13 @@ export interface AutoSaveOptions {
   readonly maxBytes?: never
 }
 
+export const AUTOSAVE_MAX_BYTES = 50 * 1024 * 1024 as const
+
 export interface AutoSavePolicy {
   readonly debounceMs: 500
   readonly idleMs: 2000
   readonly maxGenerations: 20
-  readonly maxBytes: 50 * 1024 * 1024
+  readonly maxBytes: typeof AUTOSAVE_MAX_BYTES
   readonly disabled: false
 }
 
@@ -42,7 +44,7 @@ export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze({
   debounceMs: 500,
   idleMs: 2000,
   maxGenerations: 20,
-  maxBytes: 50 * 1024 * 1024,
+  maxBytes: AUTOSAVE_MAX_BYTES,
   disabled: false
 } as const)
 
