@@ -1,4 +1,5 @@
 import type { Storyboard } from '../types'
+import { loadText } from './opfs'
 
 export type StoryboardProvider = () => Storyboard
 
@@ -718,11 +719,65 @@ export function initAutoSave(
  * 副作用: OPFS 読み出しのみ。
  * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
  */
+const AUTOSAVE_INDEX_PATH = AUTOSAVE_HISTORY_ROTATION_PLAN.indexFile,
+  AUTOSAVE_CURRENT_PATH = AUTOSAVE_HISTORY_ROTATION_PLAN.currentFile,
+  AUTOSAVE_HISTORY_DIR = `${AUTOSAVE_HISTORY_ROTATION_PLAN.targetDirectory}/history`
+
+const encoder = new TextEncoder()
+
+const createAutoSaveError = (
+  code: AutoSaveErrorCode,
+  message: string,
+  options: { retryable?: boolean; cause?: Error; context?: Record<string, unknown> } = {}
+): AutoSaveError =>
+  Object.assign(new Error(message), {
+    name: 'AutoSaveError',
+    code,
+    retryable: options.retryable ?? false,
+    ...(options.cause ? { cause: options.cause } : {}),
+    ...(options.context ? { context: options.context } : {})
+  }) as AutoSaveError
+
+const readOptionalTextFile = (path: string): Promise<string | null> => loadText(path)
+
+const parseIndexEntries = async (): Promise<AutoSaveHistoryEntry[]> => {
+  const content = await readOptionalTextFile(AUTOSAVE_INDEX_PATH)
+  if (content === null) return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch (error) {
+    throw createAutoSaveError('data-corrupted', 'Failed to parse project/autosave/index.json', {
+      retryable: false,
+      cause: error instanceof Error ? error : undefined
+    })
+  }
+  if (!Array.isArray(parsed)) throw createAutoSaveError('data-corrupted', 'Invalid index format')
+  return parsed.map((entry) => {
+    if (!entry || typeof entry !== 'object') throw createAutoSaveError('data-corrupted', 'Invalid index entry')
+    const { ts, bytes, location, retained } = entry as Partial<AutoSaveHistoryEntry>
+    if (typeof ts !== 'string' || typeof bytes !== 'number' || (location !== 'current' && location !== 'history')) {
+      throw createAutoSaveError('data-corrupted', 'Invalid index entry')
+    }
+    return { ts, bytes, location, retained: typeof retained === 'boolean' ? retained : true }
+  })
+}
+
+const historyPath = (ts: string): string => `${AUTOSAVE_HISTORY_DIR}/${ts}.json`
+
 export async function restorePrompt(): Promise<
   | null
   | { ts: string; bytes: number; source: 'current' | 'history'; location: string }
 > {
-  throw new Error('restorePrompt not implemented yet')
+  const entries = await parseIndexEntries()
+  if (entries.length === 0) return null
+  for (const entry of entries) {
+    const location = entry.location === 'current' ? AUTOSAVE_CURRENT_PATH : historyPath(entry.ts)
+    const text = await readOptionalTextFile(location)
+    if (text === null) continue
+    return { ts: entry.ts, bytes: encoder.encode(text).length, source: entry.location, location }
+  }
+  return null
 }
 
 /**
@@ -731,8 +786,19 @@ export async function restorePrompt(): Promise<
  * 副作用: UI ステート更新のみ（永続化書き込みなし）。
  * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
  */
-export async function restoreFromCurrent(): Promise<boolean> {
-  throw new Error('restoreFromCurrent not implemented yet')
+export async function restoreFromCurrent(): Promise<Storyboard> {
+  const text = await readOptionalTextFile(AUTOSAVE_CURRENT_PATH)
+  if (text === null) {
+    throw createAutoSaveError('data-corrupted', 'current.json missing', { retryable: false })
+  }
+  try {
+    return JSON.parse(text) as Storyboard
+  } catch (error) {
+    throw createAutoSaveError('data-corrupted', 'Failed to parse current.json', {
+      retryable: false,
+      cause: error instanceof Error ? error : undefined
+    })
+  }
 }
 
 /**
@@ -741,8 +807,21 @@ export async function restoreFromCurrent(): Promise<boolean> {
  * 副作用: 履歴ファイル読み込み、必要に応じたロック取得、UI ステート更新。
  * 例外: `code='data-corrupted'` または `code='lock-unavailable'` の `AutoSaveError` を throw。
  */
-export async function restoreFrom(ts: string): Promise<boolean> {
-  throw new Error('restoreFrom not implemented yet')
+export async function restoreFrom(ts: string): Promise<Storyboard> {
+  const path = historyPath(ts)
+  const text = await readOptionalTextFile(path)
+  if (text === null) {
+    throw createAutoSaveError('history-overflow', `History ${ts} missing`, { retryable: false, context: { ts } })
+  }
+  try {
+    return JSON.parse(text) as Storyboard
+  } catch (error) {
+    throw createAutoSaveError('data-corrupted', `Failed to parse history ${ts}`, {
+      retryable: false,
+      cause: error instanceof Error ? error : undefined,
+      context: { ts }
+    })
+  }
 }
 
 /**
@@ -754,5 +833,17 @@ export async function restoreFrom(ts: string): Promise<boolean> {
 export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 > {
-  throw new Error('listHistory not implemented yet')
+  const entries = await parseIndexEntries()
+  const results: { ts: string; bytes: number; location: 'history'; retained: boolean }[] = []
+  for (const entry of entries) {
+    if (entry.location !== 'history') continue
+    const path = historyPath(entry.ts)
+    const text = await readOptionalTextFile(path)
+    if (text === null) {
+      results.push({ ts: entry.ts, bytes: entry.bytes, location: 'history', retained: false })
+      continue
+    }
+      results.push({ ts: entry.ts, bytes: encoder.encode(text).length, location: 'history', retained: entry.retained })
+  }
+  return results
 }
