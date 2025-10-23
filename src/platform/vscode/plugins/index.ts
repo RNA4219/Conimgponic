@@ -14,12 +14,20 @@ export enum PluginReloadErrorCode {
   HookRegistrationFailed = 'E_PLUGIN_HOOK_REGISTER_FAILED',
 }
 
+export interface PluginDependencySnapshot {
+  readonly npm: Readonly<Record<string, string>>;
+  readonly workspace: readonly string[];
+}
+
+type PluginManifestDependencies = Partial<PluginDependencySnapshot> | undefined;
+
 export interface PluginManifest {
   readonly id: string;
   readonly version: string;
-  readonly minPlatformVersion: string;
+  readonly engines: { readonly vscode: string };
+  readonly 'conimg-api': string;
   readonly permissions: readonly string[];
-  readonly dependencies: Readonly<Record<string, string>>;
+  readonly dependencies?: PluginManifestDependencies;
   readonly hooks: readonly string[];
 }
 
@@ -28,7 +36,7 @@ export interface PluginReloadRequest {
   readonly pluginId: string;
   readonly manifest: PluginManifest;
   readonly grantedPermissions: readonly string[];
-  readonly dependencySnapshot: Readonly<Record<string, string>>;
+  readonly dependencySnapshot: PluginDependencySnapshot;
 }
 
 export interface PluginReloadCompleteResponse {
@@ -94,20 +102,21 @@ export interface PluginPhaseGuard {
 export interface PluginBridgeBackingState {
   readonly manifests: Map<string, PluginManifest>;
   readonly permissions: Map<string, readonly string[]>;
-  readonly dependencies: Map<string, Readonly<Record<string, string>>>;
+  readonly dependencies: Map<string, PluginDependencySnapshot>;
   readonly hooks: Set<string>;
 }
 
 export interface PluginRuntimeSnapshot {
   manifest: PluginManifest;
   permissions: readonly string[];
-  dependencies: Readonly<Record<string, string>>;
+  dependencies: PluginDependencySnapshot;
   hooksRegistered: boolean;
 }
 
 export interface PluginBridgeConfig {
   readonly enableFlag: boolean;
   readonly platformVersion: string;
+  readonly conimgApiVersion: string;
   readonly collector: PluginCollector;
   readonly phaseGuard: PluginPhaseGuard;
   readonly state: PluginBridgeBackingState;
@@ -128,6 +137,19 @@ type StageContext = {
   readonly previous?: PluginRuntimeSnapshot;
   readonly next: PluginRuntimeSnapshot;
 };
+
+const EMPTY_DEPENDENCIES: PluginDependencySnapshot = { npm: {}, workspace: [] };
+
+function normalizeManifestDependencies(dependencies: PluginManifestDependencies): PluginDependencySnapshot {
+  return {
+    npm: { ...(dependencies?.npm ?? {}) },
+    workspace: [...(dependencies?.workspace ?? [])],
+  };
+}
+
+function cloneDependencySnapshot(snapshot: PluginDependencySnapshot): PluginDependencySnapshot {
+  return { npm: { ...snapshot.npm }, workspace: [...snapshot.workspace] };
+}
 
 const STAGES: readonly StageSpec[] = [
   { name: 'manifest-validation', retryable: false },
@@ -157,10 +179,13 @@ function createPluginBridge(config: PluginBridgeConfig): PluginBridge {
     if (!manifest) {
       return undefined;
     }
+    const storedDependencies = config.state.dependencies.get(pluginId);
     return {
       manifest,
       permissions: config.state.permissions.get(pluginId) ?? [],
-      dependencies: config.state.dependencies.get(pluginId) ?? {},
+      dependencies: storedDependencies
+        ? cloneDependencySnapshot(storedDependencies)
+        : cloneDependencySnapshot(EMPTY_DEPENDENCIES),
       hooksRegistered: config.state.hooks.has(pluginId),
     };
   };
@@ -186,13 +211,13 @@ function createPluginBridge(config: PluginBridgeConfig): PluginBridge {
       ? {
           manifest: previous.manifest,
           permissions: [...previous.permissions],
-          dependencies: { ...previous.dependencies },
+          dependencies: cloneDependencySnapshot(previous.dependencies),
           hooksRegistered: previous.hooksRegistered,
         }
       : {
           manifest: request.manifest,
           permissions: [...request.grantedPermissions],
-          dependencies: { ...request.dependencySnapshot },
+          dependencies: cloneDependencySnapshot(request.dependencySnapshot),
           hooksRegistered: false,
         };
 
@@ -252,14 +277,54 @@ function createPluginBridge(config: PluginBridgeConfig): PluginBridge {
 function runStage(spec: StageSpec, context: StageContext): StageOutcome {
   const { request, config } = context;
   switch (spec.name) {
-    case 'manifest-validation':
-      return request.manifest.id && request.manifest.version && request.manifest.minPlatformVersion
+    case 'manifest-validation': {
+      const manifest = request.manifest;
+      return manifest.id && manifest.version && manifest.engines?.vscode && manifest['conimg-api']
         ? { ok: true }
         : { ok: false, error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true) };
-    case 'compatibility-check':
-      return compareSemver(config.platformVersion, request.manifest.minPlatformVersion) >= 0
-        ? { ok: true }
-        : { ok: false, error: buildError(spec.name, PluginReloadErrorCode.IncompatiblePlatform, `Plugin requires platform ${request.manifest.minPlatformVersion}.`, false, true) };
+    }
+    case 'compatibility-check': {
+      const manifest = request.manifest;
+      const engineMajor = extractMajor(manifest.engines.vscode);
+      const hostMajor = extractMajor(config.platformVersion);
+      if (engineMajor === undefined || hostMajor === undefined || engineMajor !== hostMajor) {
+        return {
+          ok: false,
+          error: buildError(
+            spec.name,
+            PluginReloadErrorCode.IncompatiblePlatform,
+            `Plugin requires VS Code engine ${manifest.engines.vscode} but host is ${config.platformVersion}.`,
+            false,
+            true,
+          ),
+        };
+      }
+      if (compareSemver(config.platformVersion, manifest.engines.vscode) < 0) {
+        return {
+          ok: false,
+          error: buildError(
+            spec.name,
+            PluginReloadErrorCode.IncompatiblePlatform,
+            `Plugin requires VS Code engine ${manifest.engines.vscode} but host is ${config.platformVersion}.`,
+            false,
+            true,
+          ),
+        };
+      }
+      if (!isConimgApiCompatible(manifest['conimg-api'], config.conimgApiVersion)) {
+        return {
+          ok: false,
+          error: buildError(
+            spec.name,
+            PluginReloadErrorCode.IncompatiblePlatform,
+            `Plugin requires conimg-api ${manifest['conimg-api']} but host supports ${config.conimgApiVersion}.`,
+            false,
+            true,
+          ),
+        };
+      }
+      return { ok: true };
+    }
     case 'permission-gate': {
       const required = new Set(request.manifest.permissions);
       const granted = new Set(request.grantedPermissions);
@@ -274,10 +339,20 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
         : { ok: false, error: buildError(spec.name, PluginReloadErrorCode.PermissionMismatch, `Missing permissions: ${missing.join(', ')}`, false, true) };
     }
     case 'dependency-cache': {
-      const mismatches = Object.entries(request.manifest.dependencies).filter(([id, version]) => request.dependencySnapshot[id] !== version);
-      return mismatches.length === 0
+      const manifestDependencies = normalizeManifestDependencies(request.manifest.dependencies);
+      const differences = diffDependencies(manifestDependencies, request.dependencySnapshot);
+      return differences.length === 0
         ? { ok: true }
-        : { ok: false, error: buildError(spec.name, PluginReloadErrorCode.DependencyMismatch, `Dependency mismatch detected: ${mismatches.map(([id]) => id).join(', ')}`, true, false) };
+        : {
+            ok: false,
+            error: buildError(
+              spec.name,
+              PluginReloadErrorCode.DependencyMismatch,
+              `Dependency mismatch detected: ${differences.join(', ')}`,
+              true,
+              false,
+            ),
+          };
     }
     case 'hook-registration':
       return request.manifest.hooks.length > 0
@@ -295,7 +370,7 @@ function applyStage(spec: StageSpec, context: StageContext): void {
       next.permissions = [...request.grantedPermissions];
       break;
     case 'dependency-cache':
-      next.dependencies = { ...request.dependencySnapshot };
+      next.dependencies = cloneDependencySnapshot(request.dependencySnapshot);
       break;
     case 'hook-registration':
       next.hooksRegistered = true;
@@ -312,7 +387,9 @@ function rollbackStage(spec: StageSpec, context: StageContext): PluginBridgeLogM
       next.permissions = previous?.permissions ?? [];
       return undefined;
     case 'dependency-cache':
-      next.dependencies = previous?.dependencies ?? {};
+      next.dependencies = previous
+        ? cloneDependencySnapshot(previous.dependencies)
+        : cloneDependencySnapshot(EMPTY_DEPENDENCIES);
       return logMessage(request.pluginId, 'warn', 'rollback-executed', spec.name);
     case 'hook-registration':
       next.hooksRegistered = previous?.hooksRegistered ?? false;
@@ -325,7 +402,7 @@ function rollbackStage(spec: StageSpec, context: StageContext): PluginBridgeLogM
 function commitSnapshot(config: PluginBridgeConfig, pluginId: string, snapshot: PluginRuntimeSnapshot): void {
   config.state.manifests.set(pluginId, snapshot.manifest);
   config.state.permissions.set(pluginId, [...snapshot.permissions]);
-  config.state.dependencies.set(pluginId, { ...snapshot.dependencies });
+  config.state.dependencies.set(pluginId, cloneDependencySnapshot(snapshot.dependencies));
   if (snapshot.hooksRegistered) {
     config.state.hooks.add(pluginId);
   } else {
@@ -356,6 +433,59 @@ function logMessage(
 
 function logFailure(pluginId: string, stage: PluginReloadStageName, error: PluginReloadError): PluginBridgeLogMessage {
   return logMessage(pluginId, 'error', 'stage-failed', stage, error.notifyUser, { reason: error.message });
+}
+
+function diffDependencies(
+  manifest: PluginDependencySnapshot,
+  snapshot: PluginDependencySnapshot,
+): string[] {
+  const diff: string[] = [];
+  for (const [id, version] of Object.entries(manifest.npm)) {
+    if (snapshot.npm[id] !== version) {
+      diff.push(`npm:${id}`);
+    }
+  }
+  for (const id of Object.keys(snapshot.npm)) {
+    if (!(id in manifest.npm)) {
+      diff.push(`npm:${id}`);
+    }
+  }
+
+  const manifestWorkspace = new Set(manifest.workspace);
+  const snapshotWorkspace = new Set(snapshot.workspace);
+  for (const path of manifestWorkspace) {
+    if (!snapshotWorkspace.has(path)) {
+      diff.push(`workspace:${path}`);
+    }
+  }
+  for (const path of snapshotWorkspace) {
+    if (!manifestWorkspace.has(path)) {
+      diff.push(`workspace:${path}`);
+    }
+  }
+
+  return diff;
+}
+
+function extractMajor(version: string): number | undefined {
+  const match = version.trim().match(/^(\d+)/);
+  if (!match) {
+    return undefined;
+  }
+  const major = Number.parseInt(match[1] ?? '', 10);
+  return Number.isNaN(major) ? undefined : major;
+}
+
+function isConimgApiCompatible(requested: string, supported: string): boolean {
+  const requestedMajor = extractMajor(requested);
+  const supportedMajor = extractMajor(supported);
+  if (requestedMajor === undefined || supportedMajor === undefined || requestedMajor !== supportedMajor) {
+    return false;
+  }
+  if (/\.?(x|\*)$/i.test(requested.trim())) {
+    return true;
+  }
+  return compareSemver(supported, requested) >= 0;
 }
 
 function compareSemver(a: string, b: string): number {

@@ -10,7 +10,11 @@ import {
   type AutoSaveStatusMessage
 } from '../../src/lib/autosave'
 import { resolveFlags } from '../../src/config'
-import { createVscodeAutoSaveBridge, type AutoSaveAtomicWriteResult } from '../../src/platform/vscode/autosave'
+import {
+  createVscodeAutoSaveBridge,
+  type AutoSaveAtomicWriteResult,
+  type AutoSaveTelemetryEvent
+} from '../../src/platform/vscode/autosave'
 
 const guardEnabled: AutoSavePhaseGuardSnapshot = {
   featureFlag: { value: true, source: 'env' },
@@ -148,6 +152,53 @@ describe('createVscodeAutoSaveBridge', () => {
       telemetry.filter((event: any) => event.name === 'autosave.status').length >= 3,
       'telemetry autosave.status should be emitted for each transition'
     )
+  })
+
+  it('Collector telemetry に Phase/Lock/Flag メタデータを付与する', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    let tick = 0
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      now: () => {
+        const ts = new Date('2024-01-01T00:00:00.000Z')
+        ts.setMilliseconds(tick * 250)
+        tick += 1
+        return ts
+      },
+      sendMessage: () => {},
+      atomicWrite: async () => ({
+        ok: true,
+        bytes: 4096,
+        generation: 2,
+        lastSuccessAt: new Date('2024-01-01T00:00:03.000Z').toISOString(),
+        lockStrategy: 'web-lock'
+      }),
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(4096, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-meta', 'corr-meta', guardEnabled, 4096, 2)
+    )
+
+    const dirtyEvent = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'dirty'
+    )
+    assert.ok(dirtyEvent, 'reportDirty の autosave.status telemetry が必要')
+    assert.equal(dirtyEvent.properties?.phaseBefore, 'idle')
+    assert.equal(dirtyEvent.properties?.phaseAfter, 'debouncing')
+    assert.equal(dirtyEvent.properties?.flagSource, guardEnabled.featureFlag.source)
+    assert.equal(dirtyEvent.properties?.lockStrategy, 'none')
+
+    const resultEvent = telemetry.find(
+      (event) => event.name === 'autosave.snapshot.result' && event.properties?.ok === true
+    )
+    assert.ok(resultEvent, 'handleSnapshotRequest の snapshot.result telemetry が必要')
+    assert.equal(resultEvent.properties?.phaseBefore, 'awaiting-lock')
+    assert.equal(resultEvent.properties?.phaseAfter, 'idle')
+    assert.equal(resultEvent.properties?.flagSource, guardEnabled.featureFlag.source)
+    assert.equal(resultEvent.properties?.lockStrategy, 'web-lock')
   })
 
   it('enforces history max generations and size limit', async () => {

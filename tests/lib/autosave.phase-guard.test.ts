@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'; import { dirname, join, resolve } f
 import { fileURLToPath, pathToFileURL } from 'node:url'; import { createRequire } from 'node:module'
 import vm from 'node:vm'; import ts from 'typescript'
 
-type SetupOverrides = { navigator?: any; locks?: any }
+type SetupOverrides = { navigator?: any; locks?: any; opfs?: { beforeWrite?: (path: string) => void } }
 type FlagSnapshot = { readonly autosave: { readonly enabled: boolean; readonly phase: 'phase-a'; readonly source: string } }
 
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)))
@@ -24,13 +24,13 @@ const loadModule = async (path: string) => {
   return mod
 }
 const importTs = async (path: string) => { const mod = await loadModule(path); if (mod.status !== 'evaluated') await mod.evaluate(); return mod.namespace as any }
-const createOpfs = () => {
+const createOpfs = (hooks: SetupOverrides['opfs'] = {}) => {
   const files = new Map<string, string>(), dirs = new Map<string, any>()
   const makeDir = (prefix: string): any => {
     if (dirs.has(prefix)) return dirs.get(prefix)
     const dir = {
       async getDirectoryHandle(name: string){ return makeDir(join(prefix, name)) },
-      async getFileHandle(name: string){ const full = join(prefix, name).replace(/^\/+/, ''); return { async createWritable(){ return { async write(data: string){ files.set(full, data) }, async close(){} } }, async getFile(){ if (!files.has(full)) throw new Error('missing file'); const text = files.get(full)!; return { async text(){ return text } } } } },
+      async getFileHandle(name: string){ const full = join(prefix, name).replace(/^\/+/, ''); return { async createWritable(){ return { async write(data: string){ hooks?.beforeWrite?.(full); files.set(full, data) }, async close(){} } }, async getFile(){ if (!files.has(full)) throw new Error('missing file'); const text = files.get(full)!; return { async text(){ return text } } } } },
       async removeEntry(name: string){ files.delete(join(prefix, name).replace(/^\/+/, '')) },
       async *entries(){ const seen = new Set<string>(); for (const key of files.keys()){ if (!key.startsWith(prefix)) continue; const head = key.slice(prefix.length).replace(/^\//, '').split('/')[0]; if (head && !seen.has(head)){ seen.add(head); yield [head, {}] as const } } }
     }
@@ -42,7 +42,7 @@ const createOpfs = () => {
 const createFlags = (enabled: boolean): FlagSnapshot => ({ autosave: { enabled, phase: 'phase-a', source: enabled ? 'env' : 'config' } })
 const setup = async (t: any, overrides: SetupOverrides = {}) => {
   cache.clear()
-  const opfs = createOpfs()
+  const opfs = createOpfs(overrides.opfs)
   const navigatorValue = { storage: opfs.storage, locks: { async request(_: string, cb: any){ return cb({ async release(){} }) }, ...overrides.locks }, ...overrides.navigator }
   Object.defineProperty(globalThis, 'navigator', { value: navigatorValue, configurable: true })
   t.after(() => delete (globalThis as any).navigator)
@@ -80,3 +80,35 @@ scenario('backoff phase surfaces retryable error when Web Lock fails and .lock f
   assert.equal(runner.snapshot().phase, 'backoff')
   assert.equal(runner.snapshot().lastError?.code, 'lock-unavailable')
 })
+
+scenario('history fifo surfaces retained entries via listHistory metadata', async (_t: any, { initAutoSave, listHistory }: any) => {
+  const flags = createFlags(true)
+  const runner = initAutoSave(() => ({ nodes: [{ id: 'unit' }] } as any), { disabled: false }, flags)
+  for (let i = 0; i < 24; i++) {
+    runner.markDirty({ pendingBytes: 32 })
+    await runner.flushNow()
+  }
+  const history = await listHistory()
+  assert.ok(history.length <= 20)
+  assert.ok(history.every((entry) => entry.location === 'history' && entry.retained))
+  for (let i = 1; i < history.length; i++) {
+    assert.ok(history[i - 1].ts <= history[i].ts)
+  }
+})
+
+scenario(
+  'write failure transitions runner to error phase with retryable AutoSaveError',
+  { opfs: { beforeWrite(path){ if (path.endsWith('current.json.tmp')) throw new Error('disk-full') } } },
+  async (_t: any, { initAutoSave }: any) => {
+    const flags = createFlags(true)
+    const runner = initAutoSave(() => ({ nodes: [{ id: 'x' }] } as any), { disabled: false }, flags)
+    await assert.rejects(
+      runner.flushNow(),
+      (error: any) => error?.code === 'write-failed' && error?.retryable === true
+    )
+    const snap = runner.snapshot()
+    assert.equal(snap.phase, 'error')
+    assert.equal(snap.lastError?.code, 'write-failed')
+    assert.ok(snap.retryCount >= 1)
+  }
+)
