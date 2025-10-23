@@ -129,6 +129,7 @@ export const AUTOSAVE_DISABLED_CONDITIONS = Object.freeze({
 export type AutoSavePhase =
   | 'disabled'
   | 'idle'
+  | 'dirty'
   | 'debouncing'
   | 'awaiting-lock'
   | 'writing-current'
@@ -349,12 +350,91 @@ export interface AutoSaveInitResult {
    */
   flushNow: () => Promise<void>
   /**
+   * Storyboard 側で差分が検出された際に呼び出され、最新スナップショットに dirty 状態を反映する。
+   */
+  markDirty: (input: { readonly reason: string }) => void
+  /**
    * タイマー停止・イベント購読解除・ロック開放を順番に実行する終端処理。
    * フライト中の場合でも完了を待機してから `phase='disabled'` に確定させる。
    */
   dispose: () => void
   /** Phase A UI からの通知を反映して pendingBytes を更新する。 */
   readonly markDirty: (meta?: { readonly pendingBytes?: number }) => void
+}
+
+export type AutoSaveCollectorPhaseStep =
+  | 'disabled'
+  | 'debouncing'
+  | 'awaiting-lock'
+  | 'writing'
+  | 'gc'
+  | 'idle'
+  | 'backoff'
+  | 'error'
+
+export interface AutoSaveCollectorGuardSnapshot {
+  readonly current: AutoSaveEnvelopePhase
+  readonly rollbackTo: AutoSaveEnvelopePhase
+}
+
+export interface AutoSaveCollectorStatusEvent {
+  readonly schema: 'vscode.telemetry.v1'
+  readonly event: 'status.autosave'
+  readonly ts: string
+  readonly correlationId: string
+  readonly phase: AutoSaveEnvelopePhase
+  readonly attempt: number
+  readonly maxAttempts: number
+  readonly backoffMs: readonly number[]
+  readonly payload: {
+    readonly state: AutoSaveStatusState
+    readonly debounce_ms: number
+    readonly latency_ms: number
+    readonly attempt: number
+    readonly phase_step: AutoSaveCollectorPhaseStep
+    readonly guard: AutoSaveCollectorGuardSnapshot
+  }
+}
+
+export interface AutoSaveCollectorSnapshotResultEvent {
+  readonly schema: 'vscode.telemetry.v1'
+  readonly event: 'snapshot.result'
+  readonly ts: string
+  readonly correlationId: string
+  readonly phase: AutoSaveEnvelopePhase
+  readonly attempt: number
+  readonly maxAttempts: number
+  readonly backoffMs: readonly number[]
+  readonly payload: AutoSaveSnapshotResultPayload
+}
+
+export interface AutoSaveCollectorFlagResolutionEvent {
+  readonly schema: 'vscode.telemetry.v1'
+  readonly event: 'flag_resolution'
+  readonly ts: string
+  readonly correlationId: string
+  readonly phase: AutoSaveEnvelopePhase
+  readonly attempt: number
+  readonly maxAttempts: number
+  readonly backoffMs: readonly number[]
+  readonly payload: {
+    readonly flag: 'autosave.enabled'
+    readonly variant: string
+    readonly source: string
+    readonly phase: AutoSaveEnvelopePhase
+    readonly evaluation_ms: number
+  }
+}
+
+export type AutoSaveCollectorEvent =
+  | AutoSaveCollectorStatusEvent
+  | AutoSaveCollectorSnapshotResultEvent
+  | AutoSaveCollectorFlagResolutionEvent
+
+export interface AutoSaveCollectorHooks {
+  readonly collector?: (event: AutoSaveCollectorEvent) => void | Promise<void>
+  readonly clock?: () => Date
+  readonly correlationId?: string
 }
 
 export interface AutoSaveControlResponsibility {
@@ -818,151 +898,277 @@ const clampHistory = async (
  * 例外: `AutoSaveError` を throw。`disabled` 判定時は `code='disabled'` を使用し、Collector への通知は行わない。
  * フラグ `autosave.enabled=false` または `options.disabled=true` の場合は永続化を一切行わず、`phase='disabled'` のスナップショットと no-op な `flushNow` を返す。
  */
+type AutoSaveRunnerState = AutoSaveStatusSnapshot & {
+  readonly guard: AutoSavePhaseGuardSnapshot
+  readonly state: AutoSaveStatusState
+  readonly phaseStep: AutoSaveCollectorPhaseStep
+}
+
+const DEFAULT_BACKOFF_SERIES = [
+  AUTOSAVE_RETRY_POLICY.initialDelayMs,
+  AUTOSAVE_RETRY_POLICY.initialDelayMs * AUTOSAVE_RETRY_POLICY.multiplier,
+  AUTOSAVE_RETRY_POLICY.initialDelayMs * AUTOSAVE_RETRY_POLICY.multiplier ** 2,
+  AUTOSAVE_RETRY_POLICY.maxDelayMs,
+  AUTOSAVE_RETRY_POLICY.maxDelayMs
+] as const
+
+function createError(code: AutoSaveErrorCode, retryable: boolean, cause?: unknown): AutoSaveError {
+  const error = new Error(code) as AutoSaveError
+  error.code = code
+  error.retryable = retryable
+  if (cause instanceof Error) error.cause = cause
+  return error
+}
+
+function mapPhaseToStep(phase: AutoSavePhase): AutoSaveCollectorPhaseStep {
+  switch (phase) {
+    case 'awaiting-lock':
+      return 'awaiting-lock'
+    case 'writing-current':
+    case 'updating-index':
+      return 'writing'
+    case 'gc':
+      return 'gc'
+    case 'error':
+      return 'error'
+    case 'disabled':
+      return 'disabled'
+    case 'dirty':
+    case 'debouncing':
+      return 'debouncing'
+    default:
+      return 'idle'
+  }
+}
+
+function computeState(phase: AutoSavePhase, retryable: boolean): AutoSaveStatusState {
+  if (phase === 'disabled') return 'disabled'
+  if (phase === 'dirty' || phase === 'debouncing') return 'dirty'
+  if (phase === 'awaiting-lock' || phase === 'writing-current' || phase === 'updating-index' || phase === 'gc') {
+    return retryable ? 'backoff' : 'saving'
+  }
+  if (phase === 'error') return retryable ? 'backoff' : 'error'
+  return 'saved'
+}
+
+function bytesOf(value: unknown): number {
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  return new TextEncoder().encode(text).byteLength
+}
+
+interface RunnerInternals {
+  readonly updatePhase: (phase: AutoSavePhase, opts?: { error?: AutoSaveError }) => void
+  readonly emitStatus: (latencyMs: number) => Promise<void>
+  readonly emitSnapshot: (payload: AutoSaveSnapshotResultPayload) => Promise<void>
+}
+
+async function ensureDir(root: any, path: readonly string[]): Promise<any> {
+  let dir = root
+  for (const part of path) dir = await dir.getDirectoryHandle(part)
+  return dir
+}
+
+async function writeFile(handle: any, data: string): Promise<void> {
+  const writable = await handle.createWritable()
+  await writable.write(data)
+  await writable.close()
+}
+
 export function initAutoSave(
   getStoryboard: StoryboardProvider,
-  options?: AutoSaveOptions,
-  flagSnapshot?: AutoSaveFlagSnapshot
+  options: AutoSaveOptions = {},
+  flags?: { readonly autosave: { readonly enabled: boolean; readonly phase?: AutoSaveEnvelopePhase; readonly source: string } },
+  hooks?: AutoSaveCollectorHooks
 ): AutoSaveInitResult {
-  const policy = AUTOSAVE_POLICY
+  const clock = hooks?.clock ?? (() => new Date())
+  const correlationId = hooks?.correlationId ?? `autosave-${Math.random().toString(36).slice(2)}`
+  const phaseTag = flags?.autosave?.phase ?? 'A-0'
   const guard: AutoSavePhaseGuardSnapshot = {
     featureFlag: {
-      value: flagSnapshot?.autosave.enabled ?? true,
-      source:
-        (flagSnapshot?.autosave.source as AutoSavePhaseGuardSnapshot['featureFlag']['source']) ?? 'default'
+      value: flags?.autosave?.enabled ?? true,
+      source: flags?.autosave?.source ?? 'default'
     },
-    optionsDisabled: options?.disabled === true
+    optionsDisabled: options.disabled ?? false
   }
-
-  const featureDisabled = !guard.featureFlag.value || guard.optionsDisabled
-  const state: AutoSaveStatusSnapshot = {
-    phase: featureDisabled ? 'disabled' : 'idle',
+  const disabled = guard.featureFlag.value === false || guard.optionsDisabled
+  const state: AutoSaveRunnerState = {
+    phase: disabled ? 'disabled' : 'idle',
+    state: disabled ? 'disabled' : 'saved',
     retryCount: 0,
-    queuedGeneration: 0
+    guard,
+    phaseStep: disabled ? 'disabled' : 'idle'
   }
+  const history: AutoSaveHistoryEntry[] = []
+  let lastFlushStartedAt = 0
+  let generation = 0
   let disposed = false
-  let fallbackLeaseActive = false
 
-  const snapshot = (): AutoSaveStatusSnapshot => ({ ...state })
-
-  const acquireFallbackLock = async (): Promise<() => Promise<void>> => {
-    if (fallbackLeaseActive) {
-      throw createAutoSaveError('lock-unavailable', 'Fallback lock already held', true)
-    }
-    fallbackLeaseActive = true
-    await atomicWrite(FALLBACK_LOCK_PATH, JSON.stringify({ ts: new Date().toISOString() }))
-    return async () => {
-      fallbackLeaseActive = false
-      await removeFile(FALLBACK_LOCK_PATH)
-    }
+  const emit = async (event: AutoSaveCollectorEvent) => {
+    if (!hooks?.collector) return
+    await hooks.collector(event)
   }
 
-  const withLock = async <T>(executor: () => Promise<T>): Promise<T> => {
-    state.phase = 'awaiting-lock'
-    const locks = (navigator as any)?.locks
-    try {
-      if (locks?.request) {
-        return await locks.request('imgponic:project', async (lock: { release?: () => Promise<void> | void }) => {
-          state.phase = 'writing-current'
-          try {
-            return await executor()
-          } finally {
-            await lock?.release?.()
-          }
-        })
+  if (hooks?.collector && flags) {
+    const started = performance.now?.() ?? 0
+    const ts = clock().toISOString()
+    emit({
+      schema: 'vscode.telemetry.v1',
+      event: 'flag_resolution',
+      ts,
+      correlationId,
+      phase: phaseTag,
+      attempt: 1,
+      maxAttempts: AUTOSAVE_RETRY_POLICY.maxAttempts,
+      backoffMs: DEFAULT_BACKOFF_SERIES,
+      payload: {
+        flag: 'autosave.enabled',
+        variant: guard.featureFlag.value ? 'enabled' : 'disabled',
+        source: guard.featureFlag.source,
+        phase: phaseTag,
+        evaluation_ms: Math.round(performance.now?.() ?? started) - started
       }
-      throw new Error('web lock unavailable')
-    } catch (error) {
-      try {
-        const release = await acquireFallbackLock()
-        state.phase = 'writing-current'
-        try {
-          return await executor()
-        } finally {
-          await release()
-        }
-      } catch (fallbackError) {
-        const autoError = createAutoSaveError(
-          'lock-unavailable',
-          'Failed to acquire AutoSave lock',
-          true,
-          fallbackError instanceof Error ? fallbackError : error
-        )
-        state.lastError = autoError
-        state.retryCount += 1
-        state.phase = 'backoff'
-        throw autoError
+    })
+  }
+
+  const updatePhase = (phase: AutoSavePhase, opts?: { error?: AutoSaveError }) => {
+    state.phase = phase
+    state.phaseStep = mapPhaseToStep(phase)
+    state.state = computeState(phase, Boolean(opts?.error?.retryable))
+    if (opts?.error) state.lastError = opts.error
+    else delete state.lastError
+  }
+
+  const emitStatus = async (latencyMs: number) => {
+    await emit({
+      schema: 'vscode.telemetry.v1',
+      event: 'status.autosave',
+      ts: clock().toISOString(),
+      correlationId,
+      phase: phaseTag,
+      attempt: state.retryCount + 1,
+      maxAttempts: AUTOSAVE_RETRY_POLICY.maxAttempts,
+      backoffMs: DEFAULT_BACKOFF_SERIES,
+      payload: {
+        state: state.state,
+        debounce_ms: AUTOSAVE_POLICY.debounceMs,
+        latency_ms: latencyMs,
+        attempt: state.retryCount + 1,
+        phase_step: state.phaseStep,
+        guard: { current: phaseTag, rollbackTo: phaseTag }
       }
-    }
+    })
+  }
+
+  const emitSnapshot = async (payload: AutoSaveSnapshotResultPayload) => {
+    await emit({
+      schema: 'vscode.telemetry.v1',
+      event: 'snapshot.result',
+      ts: clock().toISOString(),
+      correlationId,
+      phase: phaseTag,
+      attempt: state.retryCount + 1,
+      maxAttempts: AUTOSAVE_RETRY_POLICY.maxAttempts,
+      backoffMs: DEFAULT_BACKOFF_SERIES,
+      payload
+    })
+  }
+
+  const internals: RunnerInternals = { updatePhase, emitStatus, emitSnapshot }
+
+  const snapshot = (): AutoSaveStatusSnapshot => {
+    const { phase, lastSuccessAt, pendingBytes, lastError, retryCount, queuedGeneration } = state
+    return { phase, lastSuccessAt, pendingBytes, lastError, retryCount, queuedGeneration }
+  }
+
+  const markDirty = ({ reason }: { readonly reason: string }) => {
+    if (disposed || disabled) return
+    const storyboard = getStoryboard()
+    state.pendingBytes = bytesOf(storyboard)
+    state.queuedGeneration = generation + 1
+    state.retryCount = 0
+    updatePhase('dirty')
+    internals.emitStatus(0).catch(() => {})
   }
 
   const flushNow = async (): Promise<void> => {
-    if (disposed || featureDisabled) {
-      throw createAutoSaveError('disabled', 'AutoSave disabled', false)
+    if (disposed) return
+    if (disabled) {
+      throw createError('disabled', false)
     }
-    const storyboard = getStoryboard()
-    const payload = JSON.stringify(storyboard)
-    const bytes = encoder.encode(payload).length
-    state.pendingBytes = bytes
-    const ts = new Date().toISOString()
-
-    const applyPersistence = async () => {
-      await atomicWrite(CURRENT_PATH, payload)
-      await atomicWrite(`${HISTORY_DIRECTORY}/${ts}.json`, payload)
-      const index = await loadIndex()
-      const historyEntry: AutoSaveHistoryEntry = {
-        ts,
-        bytes,
-        location: 'history',
-        retained: true
-      }
-      const currentEntry: AutoSaveHistoryEntry = {
-        ts,
-        bytes,
-        location: 'current',
-        retained: true
-      }
-      state.phase = 'gc'
-      const history = await clampHistory([...index.history, historyEntry], policy)
-      state.phase = 'updating-index'
-      await writeIndex({ current: currentEntry, history })
-      state.lastSuccessAt = ts
-      state.retryCount = 0
-      state.lastError = undefined
-      state.pendingBytes = undefined
-      state.phase = 'idle'
-      state.queuedGeneration = history.length
+    const started = clock()
+    lastFlushStartedAt = started.getTime()
+    updatePhase('awaiting-lock')
+    state.state = 'saving'
+    await internals.emitStatus(0)
+    let lock: any
+    try {
+      lock = await navigator.locks.request('conimg.autosave', async (handle: any) => handle)
+    } catch (error) {
+      const autoError = createError('lock-unavailable', true, error instanceof Error ? error : undefined)
+      state.retryCount += 1
+      updatePhase('error', { error: autoError })
+      await internals.emitStatus(clock().getTime() - lastFlushStartedAt)
+      await internals.emitSnapshot({ ok: false, error: autoError })
+      throw autoError
     }
 
     try {
-      await withLock(applyPersistence)
+      updatePhase('writing-current')
+      await internals.emitStatus(0)
+      const storyboard = getStoryboard()
+      const serialized = JSON.stringify(storyboard)
+      const bytes = bytesOf(serialized)
+      const root = await navigator.storage.getDirectory()
+      const autosaveDir = await ensureDir(root, ['project', 'autosave'])
+      const historyDir = await ensureDir(autosaveDir, ['history'])
+      const currentHandle = await autosaveDir.getFileHandle('current.json')
+      await writeFile(currentHandle, serialized)
+      const ts = clock().toISOString()
+      const historyHandle = await historyDir.getFileHandle(`${ts}.json`)
+      await writeFile(historyHandle, serialized)
+      const entry: AutoSaveHistoryEntry = { ts, bytes, location: 'history', retained: true }
+      history.unshift(entry)
+      while (history.length > AUTOSAVE_POLICY.maxGenerations) {
+        const removed = history.pop()
+        if (removed) await historyDir.removeEntry(`${removed.ts}.json`).catch(() => {})
+      }
+      const indexHandle = await autosaveDir.getFileHandle('index.json')
+      const indexPayload = JSON.stringify({ current: { ts, bytes, source: 'current' }, history })
+      await writeFile(indexHandle, indexPayload)
+      generation += 1
+      state.retryCount = 0
+      state.pendingBytes = 0
+      state.lastSuccessAt = ts
+      state.queuedGeneration = generation
+      updatePhase('idle')
+      await internals.emitStatus(clock().getTime() - lastFlushStartedAt)
+      await internals.emitSnapshot({
+        ok: true,
+        bytes,
+        lastSuccessAt: ts,
+        generation,
+        retainedBytes: history.reduce((sum, item) => sum + item.bytes, 0)
+      })
     } catch (error) {
-      if ((error as AutoSaveError)?.code) throw error
-      const autoError = createAutoSaveError(
-        'write-failed',
-        'Failed to persist AutoSave payload',
-        true,
-        error instanceof Error ? error : undefined
-      )
-      state.lastError = autoError
+      const autoError = createError('write-failed', true, error instanceof Error ? error : undefined)
       state.retryCount += 1
-      state.phase = 'error'
+      updatePhase('error', { error: autoError })
+      await internals.emitStatus(clock().getTime() - lastFlushStartedAt)
+      await internals.emitSnapshot({ ok: false, error: autoError })
       throw autoError
+    } finally {
+      if (lock?.release) await lock.release().catch(() => {})
     }
   }
 
-  const dispose = (): void => {
+  const dispose = () => {
     disposed = true
-    state.phase = 'disabled'
-    state.pendingBytes = undefined
+    updatePhase('disabled')
+    state.pendingBytes = 0
+    state.queuedGeneration = undefined
   }
 
-  const markDirty = (meta?: { readonly pendingBytes?: number }) => {
-    if (disposed || featureDisabled) return
-    state.phase = 'dirty'
-    state.pendingBytes = meta?.pendingBytes
-  }
-
-  return { snapshot, flushNow, dispose, markDirty }
+  return { snapshot, flushNow, markDirty, dispose }
 }
 
 /**
@@ -979,22 +1185,17 @@ export async function restorePrompt(): Promise<
   | null
   | { ts: string; bytes: number; source: 'current' | 'history'; location: string }
 > {
-  const index = await loadIndex()
-  if (index.current) {
-    return {
-      ts: index.current.ts,
-      bytes: index.current.bytes,
-      source: 'current',
-      location: CURRENT_PATH
-    }
-  }
-  if (!index.history.length) return null
-  const latest = [...index.history].sort((a, b) => (a.ts < b.ts ? 1 : -1))[0]
-  return {
-    ts: latest.ts,
-    bytes: latest.bytes,
-    source: 'history',
-    location: `${HISTORY_DIRECTORY}/${latest.ts}.json`
+  try {
+    const root = await navigator.storage.getDirectory()
+    const autosaveDir = await ensureDir(root, ['project', 'autosave'])
+    const indexHandle = await autosaveDir.getFileHandle('index.json')
+    const file = await indexHandle.getFile()
+    const text = await file.text()
+    const parsed = JSON.parse(text) as any
+    if (!parsed?.current) return null
+    return { ...parsed.current, location: 'project/autosave/current.json' }
+  } catch {
+    return null
   }
 }
 
@@ -1041,6 +1242,15 @@ export async function restoreFrom(ts: string): Promise<boolean> {
 export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 > {
-  const index = await loadIndex()
-  return [...index.history].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+  try {
+    const root = await navigator.storage.getDirectory()
+    const autosaveDir = await ensureDir(root, ['project', 'autosave'])
+    const indexHandle = await autosaveDir.getFileHandle('index.json')
+    const file = await indexHandle.getFile()
+    const text = await file.text()
+    const parsed = JSON.parse(text) as any
+    return Array.isArray(parsed?.history) ? parsed.history : []
+  } catch {
+    return []
+  }
 }
