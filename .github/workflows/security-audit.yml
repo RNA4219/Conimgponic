@@ -1,0 +1,296 @@
+name: security-audit
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'release/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+  AUDIT_ALLOWLIST: ''
+  RUN_OSV_SCANNER: 'true'
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          else
+            pnpm install --lockfile-only
+          fi
+
+      - name: Run pnpm audit
+        id: pnpm_audit
+        run: |
+          set -euo pipefail
+          set +e
+          pnpm audit --audit-level=moderate --json > audit-report.json
+          status=$?
+          set -e
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -gt 1 ]; then
+            echo "pnpm audit failed with exit code $status" >&2
+            exit "$status"
+          fi
+
+      - name: Evaluate pnpm audit allowlist
+        id: audit_evaluate
+        run: |
+          node <<'NODE'
+          import { promises as fs } from 'fs';
+
+          const main = async () => {
+            const allowlist = new Set((process.env.AUDIT_ALLOWLIST || '')
+              .split(/\s+/)
+              .map((entry) => entry.trim())
+              .filter(Boolean));
+
+            let raw = '{}';
+            try {
+              raw = await fs.readFile('audit-report.json', 'utf8');
+            } catch (error) {
+              console.error('audit-report.json が見つかりません。', error);
+              process.exit(1);
+            }
+
+            let json;
+            try {
+              json = JSON.parse(raw);
+            } catch (error) {
+              console.error('audit-report.json の JSON 解析に失敗しました。', error);
+              process.exit(1);
+            }
+
+            const toKey = (value) => {
+              if (!value || typeof value !== 'object') {
+                return '';
+              }
+              const pieces = [value.id, value.github_advisory_id, value.source, value.url, value.cve, value.name, value.title]
+                .filter(Boolean)
+                .map((item) => item.toString());
+              return pieces[0] || '';
+            };
+
+            const collector = new Map();
+            const register = (entry) => {
+              const id = toKey(entry);
+              if (!id) {
+                return;
+              }
+
+              if (!collector.has(id)) {
+                collector.set(id, {
+                  id,
+                  title: entry.title || entry.name || '',
+                  severity: (entry.severity || '').toString(),
+                  url: entry.url || '',
+                  packages: new Set(),
+                });
+              }
+
+              if (entry.module) {
+                collector.get(id)?.packages.add(entry.module);
+              }
+            };
+
+            if (json && typeof json === 'object') {
+              if (json.advisories && typeof json.advisories === 'object') {
+                for (const advisory of Object.values(json.advisories)) {
+                  register({
+                    id: advisory.github_advisory_id || advisory.id || advisory.cve || advisory.url,
+                    title: advisory.title,
+                    severity: advisory.severity,
+                    url: advisory.url,
+                    module: advisory.module_name,
+                  });
+                }
+              }
+
+              if (json.vulnerabilities && typeof json.vulnerabilities === 'object') {
+                for (const [moduleName, vulnerability] of Object.entries(json.vulnerabilities)) {
+                  const via = Array.isArray(vulnerability.via) ? vulnerability.via : [];
+                  for (const item of via) {
+                    if (typeof item === 'string') {
+                      continue;
+                    }
+                    register({
+                      id: item.id || item.source || item.url || item.name,
+                      title: item.title || item.name,
+                      severity: item.severity || vulnerability.severity,
+                      url: item.url,
+                      module: moduleName,
+                    });
+                  }
+                }
+              }
+            }
+
+            const vulnerabilities = Array.from(collector.values()).map((value) => ({
+              ...value,
+              packages: Array.from(value.packages),
+              allowed: allowlist.has(value.id),
+            }));
+
+            await fs.writeFile(
+              'audit-summary.json',
+              JSON.stringify({ allowlist: Array.from(allowlist), vulnerabilities }, null, 2),
+              'utf8',
+            );
+
+            const blocked = vulnerabilities.filter((value) => !value.allowed);
+            const outputs = [`blocked=${blocked.length}`, `total=${vulnerabilities.length}`];
+            if (process.env.GITHUB_OUTPUT) {
+              await fs.appendFile(process.env.GITHUB_OUTPUT, `${outputs.join('\n')}\n`);
+            }
+
+            if (blocked.length > 0) {
+              console.error(`Allowlist に含まれない脆弱性が ${blocked.length} 件存在します: ${blocked.map((value) => value.id).join(', ')}`);
+              process.exit(1);
+            }
+          };
+
+          main().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Install OSV Scanner
+        if: ${{ env.RUN_OSV_SCANNER != 'false' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          version="1.8.4"
+          archive="$RUNNER_TEMP/osv-scanner.tar.gz"
+          curl -sSL "https://github.com/google/osv-scanner/releases/download/v${version}/osv-scanner_${version}_linux_amd64.tar.gz" -o "$archive"
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          mv "$RUNNER_TEMP/osv-scanner" "$HOME/.local/bin/osv-scanner"
+          chmod +x "$HOME/.local/bin/osv-scanner"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run OSV Scanner
+        if: ${{ env.RUN_OSV_SCANNER != 'false' && hashFiles('pnpm-lock.yaml') != '' }}
+        run: |
+          set -euo pipefail
+          set +e
+          osv-scanner --lockfile pnpm-lock.yaml --format json --output osv-report.json
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            echo "osv-scanner failed with exit code $status" >&2
+            exit "$status"
+          fi
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            audit-report.json
+            audit-summary.json
+            osv-report.json
+          if-no-files-found: warn
+          retention-days: 7
+          overwrite: true
+
+      - name: Annotate pull request with audit summary
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = await import('fs/promises');
+            const path = 'audit-summary.json';
+            let summary;
+            try {
+              summary = JSON.parse(await fs.readFile(path, 'utf8'));
+            } catch (error) {
+              core.warning(`監査サマリの読み込みに失敗しました: ${error.message}`);
+              return;
+            }
+
+            const blocked = summary.vulnerabilities.filter((vulnerability) => !vulnerability.allowed);
+            const summaryTable = [[
+              { data: 'ID', header: true },
+              { data: 'Severity', header: true },
+              { data: 'Packages', header: true },
+              { data: 'Allowlist', header: true },
+            ]];
+            const markdownRows = ['| ID | Severity | Packages | Allowlist |', '| --- | --- | --- | --- |'];
+            if (summary.vulnerabilities.length === 0) {
+              summaryTable.push([
+                { data: '✅' },
+                { data: '対象脆弱性なし' },
+                { data: '-' },
+                { data: '✅' },
+              ]);
+              markdownRows.push('| ✅ | 対象脆弱性なし | - | ✅ |');
+            } else {
+              for (const vulnerability of summary.vulnerabilities) {
+                const packages = Array.isArray(vulnerability.packages) && vulnerability.packages.length > 0
+                  ? vulnerability.packages.join('<br>')
+                  : '-';
+                summaryTable.push([
+                  { data: vulnerability.id || 'N/A' },
+                  { data: vulnerability.severity || 'unknown' },
+                  { data: packages },
+                  { data: vulnerability.allowed ? '✅' : '⚠️' },
+                ]);
+                markdownRows.push(`| ${vulnerability.id || 'N/A'} | ${vulnerability.severity || 'unknown'} | ${packages} | ${vulnerability.allowed ? '✅' : '⚠️'} |`);
+              }
+            }
+
+            const marker = '<!-- security-audit -->';
+            const heading = blocked.length === 0
+              ? '✅ allowlist 済み / 新規検出なし'
+              : `⚠️ allowlist 外の脆弱性が ${blocked.length} 件あります`;
+            const body = `${marker}
+### pnpm audit 結果
+${heading}
+
+${markdownRows.join('\n')}`;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const existing = comments.find((comment) => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+            await core.summary
+              .addHeading('pnpm audit 結果')
+              .addRaw(heading)
+              .addRaw('\n\n')
+              .addTable(summaryTable)
+              .write();
