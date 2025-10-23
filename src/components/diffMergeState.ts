@@ -27,6 +27,7 @@ export type DiffMergeAction =
   | { readonly type: 'openEditor'; readonly hunkId: string }
   | { readonly type: 'commitEdit'; readonly hunkId: string }
   | { readonly type: 'cancelEdit' }
+  | { readonly type: 'syncHunks'; readonly hunks: readonly MergeHunk[] }
   | { readonly type: 'queueMerge'; readonly hunkIds: readonly string[] }
   | { readonly type: 'queueResult'; readonly hunkIds: readonly string[]; readonly result: 'success' | 'conflict' | 'error' }
   | { readonly type: 'override'; readonly hunkId: string }
@@ -37,12 +38,21 @@ const setStatus = (state: DiffMergeState, id: string, status: DiffMergeHunkStatu
   hunkStates: { ...state.hunkStates, [id]: status },
 })
 
+const buildHunkStateMap = (hunks: readonly MergeHunk[]): Record<string, DiffMergeHunkStatus> =>
+  Object.fromEntries(hunks.map((h) => [h.id, 'Unreviewed'] as const)) as Record<string, DiffMergeHunkStatus>
+
 export const createInitialDiffMergeState = (hunks: readonly MergeHunk[]): DiffMergeState => ({
-  hunkStates: Object.fromEntries(hunks.map((h) => [h.id, 'Unreviewed'] as const)) as Record<string, DiffMergeHunkStatus>,
+  hunkStates: buildHunkStateMap(hunks),
   editingHunkId: null,
 })
 
 export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction): DiffMergeState => {
+  if (action.type === 'syncHunks') {
+    return {
+      hunkStates: buildHunkStateMap(action.hunks),
+      editingHunkId: null,
+    }
+  }
   if (action.type === 'toggleSelect') {
     const current = state.hunkStates[action.hunkId] ?? 'Unreviewed'
     const next = current === 'Selected' ? 'Unreviewed' : 'Selected'
@@ -96,21 +106,33 @@ const toQueuePayload = ({
   metadata: { autoSaveRequested: precision !== 'legacy' },
 })
 
+export const retainKnownHunkIds = (
+  candidateIds: readonly string[],
+  knownIds: readonly string[],
+): readonly string[] => {
+  if (!candidateIds.length) return []
+  const known = new Set(knownIds)
+  if (known.size === candidateIds.length && candidateIds.every((id) => known.has(id))) return candidateIds
+  return candidateIds.filter((id) => known.has(id))
+}
+
 export const createDiffMergeController = ({
   precision,
   dispatch,
   queueMergeCommand,
+  getCurrentHunkIds,
   onError,
   resolveLastTab,
 }: {
   readonly precision: MergePrecision
   readonly dispatch: (action: DiffMergeAction) => void
   readonly queueMergeCommand: QueueMergeCommand
+  readonly getCurrentHunkIds: () => readonly string[]
   readonly onError?: (event: MergeDecisionEvent) => void
   readonly resolveLastTab?: () => DiffMergeSubTabKey | null
 }) => ({
   queueMerge: async (hunkIds: readonly string[]) => {
-    const ids = [...hunkIds]
+    const ids = [...retainKnownHunkIds(hunkIds, getCurrentHunkIds())]
     if (!ids.length) return
     dispatch({ type: 'queueMerge', hunkIds: ids })
     try {
