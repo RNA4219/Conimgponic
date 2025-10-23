@@ -28,7 +28,24 @@ type MsgBase = {
 ```ts
 type WvToExt =
   | ({ type: "ready" } & MsgBase & { payload: { uiVersion: string } })
-  | ({ type: "snapshot.request" } & MsgBase & { payload: { doc: any } })
+  | ({
+      type: "snapshot.request"
+    } & MsgBase & {
+      payload: {
+        storyboard: any
+        pendingBytes: number
+        queuedGeneration: number
+        debounceMs: 500
+        idleMs: 2000
+        historyLimit: 20
+        sizeLimit: 50 * 1024 * 1024
+        guard: {
+          featureFlag: { value: boolean; source: "env" | "workspace" | "localStorage" | "default" }
+          optionsDisabled: boolean
+        }
+        reason: "change" | "flushNow"
+      }
+    })
   | ({ type: "fs.read" } & MsgBase & { payload: { uri: string } })
   | ({ type: "fs.write" } & MsgBase & { payload: { uri: string, dataBase64: string } })
   | ({ type: "fs.list" } & MsgBase & { payload: { dir: string } })
@@ -44,12 +61,32 @@ type WvToExt =
 ```ts
 type ExtToWv =
   | ({ type: "bootstrap" } & MsgBase & { payload: { doc: any, settings: Record<string, any> } })
-  | ({ type: "snapshot.result" } & MsgBase & { ok: boolean, error?: { code: string, message: string, details?: any } })
+  | ({
+      type: "snapshot.result"
+    } & MsgBase & {
+      payload:
+        | { ok: true; bytes: number; lastSuccessAt: string; generation: number; retainedBytes: number }
+        | { ok: false; error: { code: string; message: string; retryable: boolean; details?: any } }
+    })
   | ({ type: "fs.read.result" } & MsgBase & { ok: boolean, dataBase64?: string, error?: any })
   | ({ type: "fs.list.result" } & MsgBase & { ok: boolean, entries?: string[], error?: any })
   | ({ type: "merge.result" } & MsgBase & { ok: boolean, result?: any, trace?: any, error?: any })
   | ({ type: "export.result" } & MsgBase & { ok: boolean, uri?: string, error?: any })
-  | ({ type: "status.autosave" } & MsgBase & { payload: { state: "idle"|"dirty"|"saving"|"saved" } })
+  | ({
+      type: "status.autosave"
+    } & MsgBase & {
+      payload: {
+        state: "disabled" | "dirty" | "saving" | "saved" | "error" | "backoff"
+        phase: "disabled" | "idle" | "debouncing" | "awaiting-lock" | "writing-current" | "updating-index" | "gc" | "error"
+        retryCount: number
+        lastSuccessAt?: string
+        pendingBytes?: number
+        guard: {
+          featureFlag: { value: boolean; source: "env" | "workspace" | "localStorage" | "default" }
+          optionsDisabled: boolean
+        }
+      }
+    })
   | ({ type: "gen.chunk" } & MsgBase & { payload: { text: string } })   // 将来
   | ({ type: "gen.done" } & MsgBase )
   | ({ type: "gen.error" } & MsgBase & { error: { code: string, message: string } })
@@ -71,10 +108,12 @@ Webview   ：描画、state復元、保存インジケータ=○
 ```
 Webview   ：編集開始 → dirty
 Webview   ：デバウンス(~500ms)、アイドル(~2s)
-Webview → Extension: "snapshot.request" {doc}
-Extension ：atomicWrite(tmp→rename)、historyへ世代保存(N=20/50MB)
-Extension → Webview: "snapshot.result" {ok:true}
-Extension → Webview: "status.autosave" {state:"saved"}
+Webview → Extension: "snapshot.request" {storyboard, pendingBytes, guard, queuedGeneration}
+Extension ：Web Lock→`.lock` 取得 / atomicWrite(tmp→rename) / history FIFO (20世代/50MB)
+Extension → Webview: "status.autosave" {state:"saving", phase:"awaiting-lock", pendingBytes, retryCount:0}
+Extension → Webview: "snapshot.result" {payload:{ok:true, generation, retainedBytes, lastSuccessAt}}
+Extension → Webview: "status.autosave" {state:"saved", phase:"idle", lastSuccessAt}
+Extension ：フォールバックで `.lock` を使用した場合は `warn(autosave.lock.fallback)` を Collector へ送信
 ```
 
 ### 5.3 精緻マージ（3-way）
@@ -95,6 +134,7 @@ Extension → Webview: "export.result" {ok:true, uri}
 ## 6. エラーと再試行（方針）
 - 失敗は**応答メッセージで通知**（throw禁止）。
 - 再試行は**指数バックオフ**（100/300/900ms 目安）。
+- `snapshot.result.payload.error.retryable=false` の場合は Readonly 降格を行い、`status.autosave(state="disabled", guard.optionsDisabled=true)` を続けて送る。
 - `E_FS_ATOMIC` はユーザー提示（保存できない場合は復旧ダイアログへ）。
 
 ## 7. セキュリティ境界

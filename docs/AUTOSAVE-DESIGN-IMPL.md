@@ -111,6 +111,58 @@ sequenceDiagram
   end
 ```
 
+## 3) VS Code 拡張ホストブリッジ設計
+
+### 3.1 `createVscodeAutoSaveBridge` 状態機械
+
+- 実装場所: `src/platform/vscode/autosave.ts`。拡張ホスト内で Webview ↔ 永続化ランナーの仲介を担う。
+- 内部状態: `{ status: AutoSaveStatusState, guard: AutoSavePhaseGuardSnapshot, retryCount, history[] }` を保持し、`reportDirty()` → `handleSnapshotRequest()` の順で遷移する。
+- 状態遷移:
+  | 現在 | 入力 | 出力 | 次状態 | 備考 |
+  | --- | --- | --- | --- | --- |
+  | `idle/dirty` | `reportDirty(pendingBytes, guard)` | `status.autosave(state='dirty')` | `dirty` | Phase ガードが無効 (`featureFlag=false` or `optionsDisabled=true`) の場合は `status.autosave(state='disabled')` を即時送信し、フライトを抑止。 |
+  | `dirty` | `handleSnapshotRequest(snapshot.request)` | `status.autosave(state='saving')` | `saving` | `reqId` を固定化し、`pendingBytes` を UI に投影。 |
+  | `saving` | `atomicWrite` 成功 | `snapshot.result(ok=true)` → `status.autosave(state='saved')` | `saved` | `current.json.tmp→rename→history/index` の成功後に FIFO/容量ガードを適用し、`retainedBytes` を算出。 |
+  | `saving` | `atomicWrite` 失敗(retryable=true) | `snapshot.result(ok=false)` → `status.autosave(state='backoff')` | `backoff` | バックオフ中も `reqId` と `retryCount` を引き継ぎ、UI がリトライ中であることを示す。 |
+  | `saving/backoff` | `atomicWrite` 失敗(retryable=false) | `snapshot.result(ok=false)` → `status.autosave(state='error')` → `status.autosave(state='disabled')` | `disabled` | Readonly 降格。`guard.optionsDisabled=true` を強制し、UI へ即時通知。 |
+
+`AutoSavePhase` は `status.autosave` メッセージで `debouncing` / `awaiting-lock` / `idle` 等を反映し、`AutoSaveIndicator` 側が Phase A の UI と同期できる。`snapshot.result` は常に `reqId` を一致させることで、Webview 側の状態機械（`docs/autosave/ui/AUTOSAVE-INDICATOR-STATE.md`）と整合する。
+
+### 3.2 `snapshot.request/result` メッセージ契約
+
+- 要求 (`snapshot.request`):
+  - `payload.guard` に Phase ガードの実効値（feature flag 優先順位: env → workspace → localStorage → default）を含める。
+  - `pendingBytes` / `queuedGeneration` / `sizeLimit` / `historyLimit` を固定値（500ms / 2s / 20 世代 / 50MB）で共有し、拡張ホストがアトミック書込と GC 判定を行えるようにする。
+- 成功応答 (`snapshot.result.ok=true`):
+  - `retainedBytes` は拡張ホスト側が履歴 FIFO / 容量制限を適用した後の値を返却する。
+  - `generation` は `queuedGeneration` を採用し、index.json と history/<ISO>.json の双方に整合させる。
+- 失敗応答 (`snapshot.result.ok=false`):
+  - `error.retryable=true` の場合は Webview 側でバックオフ継続を選択できるようにする。`retryable=false` の場合は Readonly 降格をトリガーし、`status.autosave(state='disabled', guard.optionsDisabled=true)` を送る。
+  - `code='disabled'` は拡張ホストが Phase ガードで保存自体を拒否したことを意味し、永続化は試行しない。
+
+### 3.3 ロック優先順位と Collector 連携
+
+- `atomicWrite()` 依存は Web Lock（`navigator.locks`）→ `.lock` ファイルの順で取得する。フォールバックを使用した場合は `warn({ code: 'autosave.lock.fallback', details: { reqId, strategy: 'file-lock' } })` を Collector へ送信し、UI 側には `status.autosave(state='saving')` のまま表示する。
+- ロック取得失敗で `retryable=true` のエラーを返した場合、`status.autosave(state='backoff')` を送信し、Collector へ `autosave.snapshot.result(ok=false, code='lock-unavailable')` テレメトリを送信する。
+- Readonly 降格時は `autosave.snapshot.result(ok=false, code=<error.code>, retryable=false)` を 1 度だけ送信し、重複ログを抑止する。
+
+### 3.4 履歴ディレクトリ設計と衝突回避
+
+- 履歴は `project/autosave/history/<ISO8601>.json` に保存し、`runs/<timestamp>` 等の VS Code 既定ディレクトリと衝突しないよう拡張コンテナ直下ではなくワークスペース内に限定する。
+- `clampHistory()` が 20 世代 / 50MB を超えないよう FIFO 削除と合計バイト再計算を行い、削除対象の `.tmp` / `.lock` ファイルは GC 完了後にクリーンアップする。
+- `snapshot.result` の `retainedBytes` は `current.json` + `history/` の合計で、UI/Collector が容量メトリクスを一貫して参照できるようにする。
+
+### 3.5 テスト戦略
+
+- `tests/webview/autosave.vscode.test.ts` に `node:test` ベースの RED→GREEN シナリオを追加し、以下を保証する:
+  1. `dirty→saving→saved` の状態遷移とテレメトリ発火回数。
+  2. 20 世代 / 50MB ガードの FIFO / 容量制御。
+  3. 非 retryable エラー時の Readonly 降格（`status.autosave` → `disabled`）。
+  4. `.lock` フォールバック利用時の warn テレメトリ送出。
+  5. Phase ガード無効化時に永続化をショートサーキットする。
+- これらは `docs/src-1.35_addon/TEST-PLAN.md` の VS Code ブリッジ節と整合し、Collector/Telemetry の最小イベント集合（`autosave.status` / `autosave.snapshot.result` / `autosave.lock.fallback`）を検証する。
+
+
 #### 状態遷移
 
 ```mermaid
