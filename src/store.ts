@@ -1,6 +1,17 @@
 import { create } from 'zustand'
-import { nanoid } from 'nanoid'
 import type { Storyboard, Scene } from './types'
+
+const urlAlphabet = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
+
+const createSceneId = (): string => {
+  const buffer = new Uint8Array(8)
+  crypto.getRandomValues(buffer)
+  let id = ''
+  for (const byte of buffer) {
+    id += urlAlphabet[byte & 63]
+  }
+  return id
+}
 
 type State = {
   sb: Storyboard
@@ -18,7 +29,7 @@ export const useSB = create<State>((set, get)=> ({
     anime: "anime storyboard style, vibrant colors, dynamic action lines"
   }},
   addScene(){
-    const id = nanoid(8)
+    const id = createSceneId()
     set(state => {
       const newScene: Scene = { id, manual: '', ai: '', status: 'idle', assets: [] }
       return {
