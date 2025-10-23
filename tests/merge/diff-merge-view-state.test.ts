@@ -86,6 +86,33 @@ test('queueMerge success', async () => {
   assert.equal(state.hunkStates.h1, 'Merged')
 })
 
+test('queueMerge ignores removed hunks after sync', async () => {
+  let resolveQueue: ((event: MergeDecisionEvent) => void) | undefined
+  let hunks = [createMergeHunk('h1')]
+  let state: DiffMergeState = createInitialDiffMergeState(hunks)
+  const dispatch: Dispatch = (action) => {
+    state = diffMergeReducer(state, action)
+    if (action.type === 'syncHunks') hunks = [...action.hunks]
+  }
+  const controller = createDiffMergeController({
+    precision: 'stable',
+    dispatch,
+    queueMergeCommand: async () =>
+      await new Promise<MergeDecisionEvent>((resolve) => {
+        resolveQueue = resolve
+      }),
+    getCurrentHunkIds: () => hunks.map((hunk) => hunk.id),
+  })
+
+  const queuePromise = controller.queueMerge(['h1'])
+  dispatch({ type: 'syncHunks', hunks: [createMergeHunk('h2')] })
+  if (!resolveQueue) throw new Error('queue resolve missing')
+  resolveQueue(successEvent)
+  await queuePromise
+
+  assert.deepEqual(state.hunkStates, { h2: 'Unreviewed' })
+})
+
 test('syncHunks resets selection and queues latest hunks', async () => {
   const payloads: DiffMergeQueueCommandPayload[] = []
   let hunks = [createMergeHunk('h1'), createMergeHunk('h2')]

@@ -24,6 +24,7 @@ export type DiffMergeAction =
   | { readonly type: 'toggleSelect'; readonly hunkId: string }
   | { readonly type: 'markSkipped'; readonly hunkId: string }
   | { readonly type: 'reset'; readonly hunkId: string }
+  | { readonly type: 'resetMany'; readonly hunkIds: readonly string[] }
   | { readonly type: 'openEditor'; readonly hunkId: string }
   | { readonly type: 'commitEdit'; readonly hunkId: string }
   | { readonly type: 'cancelEdit' }
@@ -41,6 +42,9 @@ const setStatus = (state: DiffMergeState, id: string, status: DiffMergeHunkStatu
 const buildHunkStateMap = (hunks: readonly MergeHunk[]): Record<string, DiffMergeHunkStatus> =>
   Object.fromEntries(hunks.map((h) => [h.id, 'Unreviewed'] as const)) as Record<string, DiffMergeHunkStatus>
 
+const hasHunkState = (state: DiffMergeState, id: string): boolean =>
+  Object.prototype.hasOwnProperty.call(state.hunkStates, id)
+
 export const createInitialDiffMergeState = (hunks: readonly MergeHunk[]): DiffMergeState => ({
   hunkStates: buildHunkStateMap(hunks),
   editingHunkId: null,
@@ -53,7 +57,22 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
       editingHunkId: null,
     }
   }
+  if (action.type === 'resetMany') {
+    if (!action.hunkIds.length) return state
+    const updates: Record<string, DiffMergeHunkStatus> = {}
+    let changed = false
+    let editingHunkId = state.editingHunkId
+    for (const id of action.hunkIds) {
+      if (!hasHunkState(state, id)) continue
+      updates[id] = 'Unreviewed'
+      changed = true
+      if (editingHunkId === id) editingHunkId = null
+    }
+    if (!changed) return state
+    return { ...state, hunkStates: { ...state.hunkStates, ...updates }, editingHunkId }
+  }
   if (action.type === 'toggleSelect') {
+    if (!hasHunkState(state, action.hunkId)) return state
     const current = state.hunkStates[action.hunkId] ?? 'Unreviewed'
     const next = current === 'Selected' ? 'Unreviewed' : 'Selected'
     return setStatus(
@@ -62,24 +81,48 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
       next,
     )
   }
-  if (action.type === 'markSkipped') return setStatus(state, action.hunkId, 'Skipped')
-  if (action.type === 'reset') return setStatus(state, action.hunkId, 'Unreviewed')
-  if (action.type === 'openEditor') return { ...setStatus(state, action.hunkId, 'Editing'), editingHunkId: action.hunkId }
-  if (action.type === 'commitEdit') return { ...setStatus(state, action.hunkId, 'Selected'), editingHunkId: null }
+  if (action.type === 'markSkipped') {
+    if (!hasHunkState(state, action.hunkId)) return state
+    return setStatus(state, action.hunkId, 'Skipped')
+  }
+  if (action.type === 'reset') {
+    if (!hasHunkState(state, action.hunkId)) return state
+    return setStatus(state, action.hunkId, 'Unreviewed')
+  }
+  if (action.type === 'openEditor') {
+    if (!hasHunkState(state, action.hunkId)) return state
+    return { ...setStatus(state, action.hunkId, 'Editing'), editingHunkId: action.hunkId }
+  }
+  if (action.type === 'commitEdit') {
+    if (!hasHunkState(state, action.hunkId)) return state
+    return { ...setStatus(state, action.hunkId, 'Selected'), editingHunkId: null }
+  }
   if (action.type === 'cancelEdit') return { ...state, editingHunkId: null }
   if (action.type === 'queueMerge') {
+    const knownIds = Object.keys(state.hunkStates)
+    const ids = retainKnownHunkIds(action.hunkIds, knownIds)
+    if (!ids.length) return state
     const updates: Record<string, DiffMergeHunkStatus> = {}
-    for (const id of action.hunkIds) updates[id] = 'Queued'
+    for (const id of ids) updates[id] = 'Queued'
     return { ...state, hunkStates: { ...state.hunkStates, ...updates } }
   }
   if (action.type === 'queueResult') {
+    const knownIds = Object.keys(state.hunkStates)
+    const ids = retainKnownHunkIds(action.hunkIds, knownIds)
+    if (!ids.length) return state
     const updates: Record<string, DiffMergeHunkStatus> = {}
     const status: DiffMergeHunkStatus = action.result === 'success' ? 'Merged' : action.result === 'conflict' ? 'Conflict' : 'Selected'
-    for (const id of action.hunkIds) updates[id] = status
+    for (const id of ids) updates[id] = status
     return { ...state, hunkStates: { ...state.hunkStates, ...updates } }
   }
-  if (action.type === 'override') return setStatus(state, action.hunkId, 'Merged')
-  if (action.type === 'reopen') return setStatus(state, action.hunkId, 'Selected')
+  if (action.type === 'override') {
+    if (!hasHunkState(state, action.hunkId)) return state
+    return setStatus(state, action.hunkId, 'Merged')
+  }
+  if (action.type === 'reopen') {
+    if (!hasHunkState(state, action.hunkId)) return state
+    return setStatus(state, action.hunkId, 'Selected')
+  }
   return state
 }
 
