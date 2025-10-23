@@ -58,11 +58,9 @@ describe('ci workflow build job', () => {
       const steps = build.steps;
       assertStepArray(steps, 'workflow.jobs.build.steps must be an array');
 
-      const runCommands = steps
-        .map((step) => (typeof step.run === 'string' ? step.run : null))
-        .filter((command): command is string => command !== null);
+      const pnpmCommands = extractPnpmCommands(steps);
 
-      const expectedSequence = [
+      assertCommandSequence(pnpmCommands, [
         'pnpm -s lint',
         'pnpm -s typecheck',
         'pnpm test --filter autosave',
@@ -145,6 +143,35 @@ function assertArtifactStep(
     expectedPath,
     `artifact "${expectedName}" must target path "${expectedPath}"`,
   );
+}
+
+function extractPnpmCommands(steps: StepConfig[]): string[] {
+  return steps.flatMap((step) => {
+    if (typeof step.run !== 'string') {
+      return [];
+    }
+
+    return step.run
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('pnpm '));
+  });
+}
+
+function assertCommandSequence(commands: string[], expected: string[]): void {
+  let cursor = -1;
+
+  for (const command of expected) {
+    const nextIndex = commands.findIndex((entry, index) => index > cursor && entry.includes(command));
+
+    assert.notStrictEqual(
+      nextIndex,
+      -1,
+      `build job must include a pnpm command containing "${command}" after index ${cursor}`,
+    );
+
+    cursor = nextIndex;
+  }
 }
 
 function assertStepArray(value: unknown, message: string): asserts value is StepConfig[] {
