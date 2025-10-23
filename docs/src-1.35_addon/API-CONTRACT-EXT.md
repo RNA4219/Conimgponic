@@ -13,15 +13,22 @@
 - **封筒型**（Envelope）: すべてのメッセージに共通のヘッダを付与。Phase ガードが `phase` と `correlationId` を用いて監視する。
 ```ts
 type MsgBase = {
-  type: string              // 例: "snapshot.request"
-  apiVersion: 1             // メッセージ契約のバージョン
-  reqId: string             // 要求→応答の相関ID（応答はreqIdをエコー）
-  ts: string                // ISO8601（送信側で付与）
-  correlationId: string     // Telemetry JSONL と共有
-  phase: 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1'
+  type: string                // 例: "snapshot.request"
+  apiVersion: 1               // メッセージ契約のバージョン
+  reqId: string               // 要求→応答の相関ID（応答はreqIdをエコー）
+  correlationId: string       // Telemetry JSONL と共有
+  ts: string                  // ISO8601（送信側で付与）
+  phase: 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1'  // Phase ガード用ステージ
+  bridgePhase:
+    | 'bootstrap'
+    | 'ready'
+    | 'snapshot.request'
+    | 'snapshot.result'
+    | 'status.autosave'
 }
 ```
-- **相関**: 要求は `reqId` と `correlationId` を必須。応答は同値を返却し、Collector は `correlationId` で JSONL に変換する。
+- **相関**: 要求は `reqId` と `correlationId` を必須。応答は同値を返却し、Collector は `correlationId` で JSONL に変換する。`bridgePhase`
+  は UI/拡張間の状態機械を追跡するサブフェーズで、`phase='A-2'` の保存フロー内で `status.autosave` と `snapshot.result` を同期させる。
 - **エラー契約**: 応答系は `{ ok: false, error: { code, message, retryable, details? } }` を返却。`retryable=false` は Phase ガードに即通知。
 
 ## 4. 型定義（抜粋）
@@ -102,12 +109,15 @@ type ExtToWv =
       type: "status.autosave"
     } & MsgBase & {
       payload: {
-        state: "idle"|"dirty"|"saving"|"saved"
-        debounceMs: number
-        latencyMs: number
-        attempt: number
-        phaseStep: "disabled"|"debouncing"|"awaiting-lock"|"writing"|"gc"|"idle"|"backoff"|"error"
-        guard: { current: "A-0"|"A-1"|"A-2"|"B-0"|"B-1"; rollbackTo: "A-0"|"A-1"|"A-2"|"B-0"|"B-1" }
+        state: "disabled" | "dirty" | "saving" | "saved" | "error" | "backoff"
+        phase: "disabled" | "idle" | "debouncing" | "awaiting-lock" | "error"
+        retryCount: number
+        lastSuccessAt?: string
+        pendingBytes?: number
+        guard: {
+          featureFlag: { value: boolean; source: "env" | "workspace" | "localStorage" | "default" }
+          optionsDisabled: boolean
+        }
       }
     })
   | ({ type: "plugins.lifecycle" } & MsgBase & { payload: { pluginId: string, action: "invoked"|"completed"|"failed", durationMs: number, sandboxViolation?: boolean } })
@@ -134,10 +144,10 @@ Webview   ：編集開始 → dirty
 Webview   ：デバウンス(~500ms)、アイドル(~2s)
 Webview → Extension: "snapshot.request" {storyboard, pendingBytes, guard, queuedGeneration}
 Extension ：Web Lock→`.lock` 取得 / atomicWrite(tmp→rename) / history FIFO (20世代/50MB)
-Extension → Webview: "status.autosave" {state:"saving", phase:"awaiting-lock", pendingBytes, retryCount:0}
-Extension → Webview: "snapshot.result" {payload:{ok:true, generation, retainedBytes, lastSuccessAt}}
-Extension → Webview: "status.autosave" {state:"saved", phase:"idle", lastSuccessAt}
-Extension ：フォールバックで `.lock` を使用した場合は `warn(autosave.lock.fallback)` を Collector へ送信
+Extension → Webview: "status.autosave" {phase:"A-2", bridgePhase:"status.autosave", payload:{state:"saving", phase:"awaiting-lock", pendingBytes, retryCount:0}}
+Extension → Webview: "snapshot.result" {phase:"A-2", bridgePhase:"snapshot.result", payload:{ok:true, generation, retainedBytes, lastSuccessAt}}
+Extension → Webview: "status.autosave" {phase:"A-2", bridgePhase:"status.autosave", payload:{state:"saved", phase:"idle", lastSuccessAt}}
+Extension ：フォールバックで `.lock` を使用した場合は `warn(autosave.lock.fallback)` を Collector へ送信（details に `correlationId`/`strategy` を含む）
 ```
 
 ### 5.3 精緻マージ（3-way）

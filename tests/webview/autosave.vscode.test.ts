@@ -23,14 +23,18 @@ const guardReadonly: AutoSavePhaseGuardSnapshot = {
 
 const createRequest = (
   reqId: string,
+  correlationId: string,
   guard: AutoSavePhaseGuardSnapshot,
   pendingBytes: number,
   generation: number
 ): AutoSaveSnapshotRequestMessage => ({
   type: 'snapshot.request',
-  phase: 'snapshot.request',
+  apiVersion: 1,
+  phase: 'A-2',
+  bridgePhase: 'snapshot.request',
   reqId,
-  issuedAt: new Date('2024-01-01T00:00:01.000Z').toISOString(),
+  correlationId,
+  ts: new Date('2024-01-01T00:00:01.000Z').toISOString(),
   payload: {
     reason: 'change',
     storyboard: { nodes: [] } as any,
@@ -70,7 +74,8 @@ describe('createVscodeAutoSaveBridge', () => {
     })
 
     bridge.reportDirty(2048, guardEnabled)
-    await bridge.handleSnapshotRequest(createRequest('req-1', guardEnabled, 2048, 1))
+    const request = createRequest('req-1', 'corr-1', guardEnabled, 2048, 1)
+    await bridge.handleSnapshotRequest(request)
 
     const statuses = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave')
     assert.deepEqual(
@@ -78,11 +83,19 @@ describe('createVscodeAutoSaveBridge', () => {
       ['dirty', 'saving', 'saved'],
       'status state progression should follow dirty→saving→saved'
     )
+    const savingStatus = statuses.find((msg) => msg.payload.state === 'saving')
+    assert.equal(savingStatus?.reqId, request.reqId)
+    assert.equal(savingStatus?.correlationId, request.correlationId)
+    assert.equal(savingStatus?.phase, 'A-2')
+    assert.equal(savingStatus?.apiVersion, 1)
     const result = sent.find((msg) => msg.type === 'snapshot.result') as AutoSaveSnapshotResultMessage | undefined
     assert.ok(result, 'snapshot.result message must be sent')
     if (result.payload.ok !== true) {
       assert.fail('snapshot.result should be ok=true')
     }
+    assert.equal(result.correlationId, request.correlationId)
+    assert.equal(result.phase, 'A-2')
+    assert.equal(result.apiVersion, 1)
     assert.equal(result.payload.retainedBytes, 2048)
     assert.ok(
       telemetry.filter((event: any) => event.name === 'autosave.status').length >= 3,
@@ -108,7 +121,9 @@ describe('createVscodeAutoSaveBridge', () => {
 
     for (let i = 0; i < 25; i++) {
       bridge.reportDirty(3 * 1024 * 1024, guardEnabled)
-      await bridge.handleSnapshotRequest(createRequest(`req-${i}`, guardEnabled, 3 * 1024 * 1024, i + 1))
+      await bridge.handleSnapshotRequest(
+        createRequest(`req-${i}`, `corr-${i}`, guardEnabled, 3 * 1024 * 1024, i + 1)
+      )
     }
 
     const history = bridge.inspectHistory()
@@ -136,7 +151,7 @@ describe('createVscodeAutoSaveBridge', () => {
     })
 
     bridge.reportDirty(1024, guardEnabled)
-    await bridge.handleSnapshotRequest(createRequest('req-error', guardEnabled, 1024, 1))
+    await bridge.handleSnapshotRequest(createRequest('req-error', 'corr-error', guardEnabled, 1024, 1))
 
     const result = sent.find((msg) => msg.type === 'snapshot.result') as AutoSaveSnapshotResultMessage | undefined
     assert.ok(result, 'snapshot.result must exist on failure')
@@ -167,9 +182,10 @@ describe('createVscodeAutoSaveBridge', () => {
     })
 
     bridge.reportDirty(4096, guardEnabled)
-    await bridge.handleSnapshotRequest(createRequest('req-fallback', guardEnabled, 4096, 1))
+    await bridge.handleSnapshotRequest(createRequest('req-fallback', 'corr-fallback', guardEnabled, 4096, 1))
     assert.equal(warns.length, 1)
     assert.equal(warns[0].code, 'autosave.lock.fallback')
+    assert.equal(warns[0].details?.correlationId, 'corr-fallback')
   })
 
   it('short-circuits snapshot when guard disables autosave', async () => {
@@ -185,7 +201,7 @@ describe('createVscodeAutoSaveBridge', () => {
     })
 
     bridge.reportDirty(512, guardReadonly)
-    await bridge.handleSnapshotRequest(createRequest('req-disabled', guardReadonly, 512, 1))
+    await bridge.handleSnapshotRequest(createRequest('req-disabled', 'corr-disabled', guardReadonly, 512, 1))
 
     const result = sent.find((msg) => msg.type === 'snapshot.result') as AutoSaveSnapshotResultMessage | undefined
     assert.ok(result, 'disabled snapshot should emit snapshot.result')

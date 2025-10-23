@@ -159,6 +159,8 @@ export type AutoSaveBridgePhase =
   | 'snapshot.result'
   | 'status.autosave'
 
+export type AutoSaveEnvelopePhase = 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1'
+
 export interface AutoSavePhaseGuardSnapshot {
   readonly featureFlag: {
     readonly value: boolean
@@ -169,9 +171,12 @@ export interface AutoSavePhaseGuardSnapshot {
 
 export interface AutoSaveBridgeEnvelope<TType extends string, TPayload> {
   readonly type: TType
-  readonly phase: AutoSaveBridgePhase
+  readonly apiVersion: 1
+  readonly phase: AutoSaveEnvelopePhase
+  readonly bridgePhase: AutoSaveBridgePhase
   readonly reqId: string
-  readonly issuedAt: string
+  readonly correlationId: string
+  readonly ts: string
   readonly payload: TPayload
 }
 
