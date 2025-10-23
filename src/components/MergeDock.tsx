@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { FlagSnapshot } from '../config'
+import { resolveFlags, type FlagSnapshot } from '../config'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
@@ -128,6 +128,42 @@ const MERGE_DOCK_TAB_PLAN: Record<MergePrecision, MergeDockTabPlan> = Object.fre
 
 const isBaseTabId = (value: unknown): value is BaseTabId => typeof value === 'string' && (BASE_TAB_IDS as readonly string[]).includes(value)
 
+const MERGE_THRESHOLD_STORAGE_KEY = 'conimg.merge.threshold'
+
+const parseMergeThreshold = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim())
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+interface MergeThresholdOptions {
+  readonly precision?: MergePrecision | null
+  readonly threshold?: number | null
+}
+
+interface MergeThresholdSnapshot {
+  readonly precision: MergePrecision
+  readonly threshold: number | undefined
+}
+
+const useMergeThreshold = (options: MergeThresholdOptions = {}): MergeThresholdSnapshot => {
+  const snapshot = useMemo(() => resolveFlags(), [])
+  const storage = typeof window !== 'undefined' ? window.localStorage : undefined
+
+  return useMemo(() => {
+    const precision = options.precision ?? snapshot.merge.precision
+    const overrideThreshold = parseMergeThreshold(options.threshold)
+    if (overrideThreshold !== undefined) {
+      return { precision, threshold: overrideThreshold }
+    }
+    const storedThreshold = parseMergeThreshold(storage?.getItem(MERGE_THRESHOLD_STORAGE_KEY))
+    return { precision, threshold: storedThreshold }
+  }, [options.precision, options.threshold, snapshot, storage])
+}
+
 export const planMergeDockTabs = (precision: MergePrecision, lastTab?: MergeDockTabId): MergeDockTabPlan => {
   const plan = MERGE_DOCK_TAB_PLAN[precision]
   const requested = lastTab && (lastTab === 'diff' || isBaseTabId(lastTab)) ? lastTab : undefined
@@ -196,15 +232,33 @@ export const resolveMergeDockPhasePlan = ({
   const diffEnabled = !!rawPlan.diff && phaseBRequired
   const effectiveTabs = diffEnabled ? rawPlan.tabs : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
   const effectiveInitial = diffEnabled || rawPlan.initialTab !== 'diff' ? rawPlan.initialTab : effectiveTabs[0]?.id ?? rawPlan.initialTab
-  const sanitizedInitial = effectiveInitial && (effectiveTabs.some((entry) => entry.id === effectiveInitial) ? effectiveInitial : effectiveTabs[0]?.id ?? rawPlan.initialTab)
+  const sanitizedInitial =
+    effectiveInitial && effectiveTabs.some((entry) => entry.id === effectiveInitial)
+      ? effectiveInitial
+      : effectiveTabs[0]?.id ?? rawPlan.initialTab
+  const diffExposure = diffEnabled
+    ? rawPlan.diff?.exposure ?? 'hidden'
+    : rawPlan.diff
+      ? rawPlan.diff.exposure === 'default'
+        ? 'opt-in'
+        : rawPlan.diff.exposure ?? 'hidden'
+      : 'hidden'
+  const diffTabsPlan = rawPlan.diff
+    ? {
+        exposure: diffEnabled ? rawPlan.diff.exposure : 'opt-in',
+        ...(diffEnabled && rawPlan.diff.backupAfterMs
+          ? { backupAfterMs: rawPlan.diff.backupAfterMs }
+          : {}),
+      }
+    : undefined
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
 
   return {
     precision,
     phase: rule.phase,
-    tabs: { tabs: effectiveTabs, initialTab: sanitizedInitial, diff: diffEnabled ? rawPlan.diff : undefined },
-    diff: { exposure: rawPlan.diff?.exposure ?? 'hidden', enabled: diffEnabled, initialTab: rawPlan.initialTab },
+    tabs: { tabs: effectiveTabs, initialTab: sanitizedInitial, diff: diffTabsPlan },
+    diff: { exposure: diffExposure, enabled: diffEnabled, initialTab: sanitizedInitial },
     threshold: thresholdPlan,
     autoApplied: { rate: normalizedRate, target: thresholdPlan.autoTarget, meetsTarget },
     guard: { phaseBRequired, reviewBandCount, conflictBandCount },
@@ -260,41 +314,28 @@ interface MergeDockProps {
 export function MergeDock(props?: MergeDockProps){
   const { sb } = useSB()
   const flags = props?.flags
-  const mergeThreshold = props?.mergeThreshold ?? null
   const autoAppliedRate = props?.autoAppliedRate ?? null
   const phaseStats = props?.phaseStats ?? null
   const storage = typeof window !== 'undefined' ? window.localStorage : undefined
   const autoSaveInterop = typeof window !== 'undefined' ? (window as typeof window & { __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }; __mergeDockFlushNow?: () => void }) : undefined
-  const flagPrecision = flags?.merge.precision
-  const precision = useMemo<MergePrecision>(()=>{
-    if (flagPrecision) return flagPrecision
-    const candidates = [(import.meta as any)?.env?.VITE_MERGE_PRECISION, storage?.getItem('merge.precision'), storage?.getItem('flag:merge.precision')]
-    for (const value of candidates){ if (typeof value === 'string'){ const lower = value.toLowerCase(); if (lower==='legacy'||lower==='beta'||lower==='stable') return lower as MergePrecision } }
-    return 'legacy'
-  }, [flagPrecision, storage])
-  const thresholdSetting = useMemo(()=>{
-    if (typeof mergeThreshold === 'number' && Number.isFinite(mergeThreshold)) return mergeThreshold
-    const storedThreshold = storage?.getItem('conimg.merge.threshold')
-    if (typeof storedThreshold === 'string'){
-      const parsed = Number(storedThreshold)
-      if (Number.isFinite(parsed)) return parsed
-    }
-    return undefined
-  }, [mergeThreshold, storage])
+  const { precision, threshold } = useMergeThreshold({
+    precision: flags?.merge.precision ?? null,
+    threshold: props?.mergeThreshold ?? null,
+  })
   const storedTabKey = storage?.getItem('merge.lastTab')
   const lastTab = storedTabKey && (storedTabKey === 'diff' || isBaseTabId(storedTabKey)) ? (storedTabKey as MergeDockTabId) : undefined
   const phasePlan = useMemo(
     () =>
       resolveMergeDockPhasePlan({
         precision,
-        threshold: thresholdSetting,
+        threshold,
         lastTab,
         autoAppliedRate,
         phaseStats,
       }),
     [
       precision,
-      thresholdSetting,
+      threshold,
       lastTab,
       autoAppliedRate,
       phaseStats?.reviewBandCount ?? null,
@@ -322,7 +363,14 @@ export function MergeDock(props?: MergeDockProps){
   }, [phasePlan.diff.enabled, precision, pref])
   const setTab = (next: MergeDockTabId)=>{ setTabState(next); storage?.setItem('merge.lastTab', next) }
   const flushNow = autoSaveInterop?.__mergeDockFlushNow
-  const showBackupCTA = (()=>{ if (!flushNow) return false; const last = autoSaveInterop?.__mergeDockAutoSaveSnapshot?.lastSuccessAt; return shouldShowDiffBackupCTA(diffBackupPolicy, precision, tab, last, Date.now()) })()
+  const showBackupCTA = (() => {
+    if (!flushNow || !phasePlan.diff.enabled || phasePlan.diff.exposure !== 'default') return false
+    const last = autoSaveInterop?.__mergeDockAutoSaveSnapshot?.lastSuccessAt
+    const policy = phasePlan.tabs.diff
+      ? { ...diffBackupPolicy, thresholdMs: phasePlan.tabs.diff.backupAfterMs ?? diffBackupPolicy.thresholdMs }
+      : diffBackupPolicy
+    return shouldShowDiffBackupCTA(policy, precision, tab, last, Date.now())
+  })()
 
   const compiled = useMemo(()=>{
     const lines:string[] = []
