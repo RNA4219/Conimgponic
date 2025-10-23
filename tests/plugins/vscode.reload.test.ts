@@ -17,6 +17,20 @@ const stageOrder: PluginReloadStageName[] = [
   'hook-registration',
 ];
 
+interface StageFailureLog {
+  readonly event: 'stage-failed';
+  readonly stage: string;
+  readonly notifyUser?: boolean;
+  readonly pluginId?: string;
+  readonly detail?: { readonly code?: string; readonly retryable?: boolean };
+}
+
+const isStageFailureLog = (log: unknown): log is StageFailureLog => {
+  if (!log || typeof log !== 'object') return false;
+  const candidate = log as { event?: unknown; stage?: unknown };
+  return candidate.event === 'stage-failed' && typeof candidate.stage === 'string';
+};
+
 function createBridge(): PluginBridge {
   const bridge = maybeCreatePluginBridge({
     enableFlag: true,
@@ -53,7 +67,7 @@ test('reload success updates registry and emits logs', async () => {
     'conimg-api': '1',
     permissions: ['fs'],
     dependencies: { npm: { 'dep-alpha': '1.0.0' }, workspace: ['packages/alpha'] },
-    hooks: ['workspace.didOpen'],
+    hooks: ['onCompile'],
   } as const;
 
   const request: PluginReloadRequest = {
@@ -178,7 +192,7 @@ test('permission delta fails gate and produces non-retryable error', async () =>
     'conimg-api': '1',
     permissions: ['fs'],
     dependencies: { npm: { 'dep-alpha': '1.0.0' }, workspace: ['packages/alpha'] },
-    hooks: ['workspace.didOpen'],
+    hooks: ['onCompile'],
   } as const;
 
   await bridge.reload({
@@ -227,7 +241,7 @@ test('dependency mismatch triggers rollback and retryable error', async () => {
     'conimg-api': '1',
     permissions: ['fs'],
     dependencies: { npm: { 'dep-beta': '2.0.0' }, workspace: ['packages/beta'] },
-    hooks: ['workspace.didOpen'],
+    hooks: ['onCompile'],
   } as const;
 
   await bridge.reload({
@@ -282,7 +296,7 @@ test('dependency mismatch triggers rollback and retryable error', async () => {
     'conimg-api': '1',
     permissions: ['fs'],
     dependencies: workspaceDependencies,
-    hooks: ['workspace.didOpen'],
+    hooks: ['onCompile'],
   } as const;
 
   await bridge.reload({
@@ -330,6 +344,53 @@ test('dependency mismatch triggers rollback and retryable error', async () => {
   assert.equal(workspaceLog.notifyUser, false);
 });
 
+test('invalid hook names fail registration without user notification', async () => {
+  const bridge = createBridge();
+  const manifest = {
+    id: 'hook-invalid',
+    version: '1.0.0',
+    engines: { vscode: '1.35.0' },
+    'conimg-api': '1',
+    permissions: ['fs'],
+    dependencies: { npm: {}, workspace: [] },
+    hooks: ['unknown.hook'],
+  } as const;
+
+  const result = await bridge.reload({
+    kind: 'plugins.reload',
+    pluginId: 'hook-invalid',
+    manifest,
+    grantedPermissions: ['fs'],
+    dependencySnapshot: { npm: {}, workspace: [] },
+  });
+
+  assert.equal(result.response.kind, 'reload-error');
+  const { error } = result.response;
+  assert.equal(error.code, PluginReloadErrorCode.HookRegistrationFailed);
+  assert.equal(error.stage, 'hook-registration');
+  assert.equal(error.retryable, true);
+  assert.equal(error.notifyUser, false);
+  assert.deepEqual(error.detail?.invalidHooks, ['unknown.hook']);
+
+  const statuses = new Map(result.stages.map((stage) => [stage.name, stage]));
+  assert.equal(statuses.get('manifest-validation')?.status, 'success');
+  assert.equal(statuses.get('compatibility-check')?.status, 'success');
+  assert.equal(statuses.get('permission-gate')?.status, 'success');
+  assert.equal(statuses.get('dependency-cache')?.status, 'success');
+  const hookStage = statuses.get('hook-registration');
+  assert.ok(hookStage && hookStage.status === 'failed');
+  assert.equal(hookStage.retryable, true);
+  assert.deepEqual(hookStage.error?.detail?.invalidHooks, ['unknown.hook']);
+
+  const failureLog = bridge
+    .getCollectorMessages()
+    .find((log) => log.pluginId === 'hook-invalid' && log.event === 'stage-failed' && log.stage === 'hook-registration');
+
+  assert.ok(failureLog);
+  assert.equal(failureLog.notifyUser, false);
+  assert.deepEqual(failureLog.detail?.invalidHooks, ['unknown.hook']);
+});
+
 
 test('conimg-api mismatch fails compatibility check with notifyUser log', async () => {
   const bridge = createBridge();
@@ -340,7 +401,7 @@ test('conimg-api mismatch fails compatibility check with notifyUser log', async 
     'conimg-api': '2',
     permissions: [],
     dependencies: { npm: {}, workspace: [] },
-    hooks: ['workspace.didOpen'],
+    hooks: ['onCompile'],
   } as const;
 
   const result = await bridge.reload({
@@ -372,7 +433,7 @@ test('conimg-api mismatch logs incompatibility metadata for collector', async ()
     'conimg-api': '2',
     permissions: [],
     dependencies: { npm: {}, workspace: [] },
-    hooks: ['workspace.didOpen'],
+    hooks: ['onCompile'],
   } as const;
 
   await bridge.reload({
@@ -452,7 +513,7 @@ test('phase guard blocked emits notifyUser log with E_PLUGIN_PHASE_BLOCKED', asy
     'conimg-api': '1',
     permissions: [],
     dependencies: { npm: {}, workspace: [] },
-    hooks: ['workspace.didOpen'],
+    hooks: ['onCompile'],
   } as const;
 
   const result = await bridge.reload({
@@ -468,8 +529,9 @@ test('phase guard blocked emits notifyUser log with E_PLUGIN_PHASE_BLOCKED', asy
   assert.equal(result.response.error.notifyUser, true);
 
   const failureLog = collectorMessages.find(
-    (log: any) => log.event === 'stage-failed' && log.stage === 'manifest-validation',
-  ) as { notifyUser: boolean } | undefined;
+    (log): log is StageFailureLog =>
+      isStageFailureLog(log) && log.stage === 'manifest-validation',
+  );
   assert.ok(failureLog);
   assert.equal(failureLog.notifyUser, true);
 });
@@ -510,15 +572,16 @@ test('phase guard blocked log includes error code for collector analysis', async
       'conimg-api': '1',
       permissions: [],
       dependencies: { npm: {}, workspace: [] },
-      hooks: ['workspace.didOpen'],
+      hooks: ['onCompile'],
     },
     grantedPermissions: [],
     dependencySnapshot: { npm: {}, workspace: [] },
   });
 
   const failureLog = collectorMessages.find(
-    (log: any) => log.pluginId === 'theta' && log.event === 'stage-failed' && log.stage === 'manifest-validation',
-  ) as { detail?: { code?: string; retryable?: boolean } } | undefined;
+    (log): log is StageFailureLog =>
+      isStageFailureLog(log) && log.pluginId === 'theta' && log.stage === 'manifest-validation',
+  );
 
   assert.ok(failureLog);
   assert.equal(failureLog?.detail?.code, PluginReloadErrorCode.PhaseGuardBlocked);
@@ -535,7 +598,7 @@ test('workspace dependency diff is surfaced in collector detail snapshot', async
     'conimg-api': '1',
     permissions: ['fs'],
     dependencies: baseDependencies,
-    hooks: ['workspace.didOpen'],
+    hooks: ['onCompile'],
   } as const;
 
   await bridge.reload({
