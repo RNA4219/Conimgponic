@@ -54,7 +54,9 @@ const setup = async (t: any, overrides: SetupOverrides = {}) => {
     ...overrides.navigator
   }
   Object.defineProperty(globalThis, 'navigator', { value: navigatorValue, configurable: true })
+  Object.defineProperty(globalThis as any, '__AUTOSAVE_ENABLED__', { value: true, configurable: true, writable: true })
   t.after(() => delete (globalThis as any).navigator)
+  t.after(() => delete (globalThis as any).__AUTOSAVE_ENABLED__)
   return { ...(await importTs(join(root, 'src/lib/autosave.ts'))), opfs }
 }
 
@@ -69,8 +71,12 @@ scenario('flushNow persists storyboard and restorePrompt exposes metadata', asyn
   await runner.flushNow()
   const meta = await restorePrompt()
   assert.equal(runner.snapshot().phase, 'idle')
-  assert.ok(opfs.files.has('project/autosave/current.json'))
-  assert.ok(opfs.files.has('project/autosave/index.json'))
+  assert.ok(opfs.files.has('project/autosave/current.json')); assert.ok(opfs.files.has('project/autosave/index.json'))
+  assert.ok(!opfs.files.has('project/autosave/current.json.tmp')); assert.ok(!opfs.files.has('project/autosave/index.json.tmp'))
+  assert.ok(Array.from(opfs.files.keys()).some((key) => key.startsWith('project/autosave/history/')))
+  const index = JSON.parse(opfs.files.get('project/autosave/index.json')!)
+  assert.ok(Array.isArray(index.entries)); assert.equal(runner.snapshot().retryCount, 0); assert.equal(runner.snapshot().pendingBytes, 0)
+  assert.ok(typeof runner.snapshot().lastSuccessAt === 'string'); for (const key of opfs.files.keys()) assert.ok(!key.endsWith('.tmp'))
   assert.equal(meta?.source, 'current')
 })
 
@@ -78,6 +84,17 @@ scenario('history rotation keeps at most 20 generations', async (_t: any, { init
   const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false })
   for (let i = 0; i < 22; i++) await runner.flushNow()
   assert.ok(Array.from(opfs.files.keys()).filter((k) => k.startsWith('project/autosave/history/')).length <= 20)
+})
+
+scenario('disabled guard returns no-op handle', async (_t: any, { initAutoSave }: any) => {
+  for (const { flag, options } of [
+    { flag: false, options: { disabled: false } },
+    { flag: true, options: { disabled: true } }
+  ]) {
+    ;(globalThis as any).__AUTOSAVE_ENABLED__ = flag; const runner = initAutoSave(() => ({ nodes: [] } as any), options)
+    assert.equal(runner.snapshot().phase, 'disabled')
+    await assert.rejects(runner.flushNow(), (error: any) => error?.code === 'disabled' && error?.retryable === false)
+  }
 })
 
 scenario(
