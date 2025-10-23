@@ -159,13 +159,13 @@ test('merge-ui: stable precision diff tab renders DiffMergeView with backup CTA 
 
   try {
     const html = renderToStaticMarkup(
-      <MergeDock
-        flags={{
+      React.createElement(MergeDock, {
+        flags: {
           ...stableFlags,
           merge: { ...stableFlags.merge, value: 'stable', precision: 'stable' },
-        }}
-        phaseStats={{ reviewBandCount: 1, conflictBandCount: 1 }}
-      />,
+        },
+        phaseStats: { reviewBandCount: 1, conflictBandCount: 1 },
+      }),
     )
 
     assert.match(html, /data-component="diff-merge-view"/)
@@ -219,13 +219,13 @@ test('merge-ui: beta precision diff tab reflects phase plan and keeps backup CTA
 
   try {
     const html = renderToStaticMarkup(
-      <MergeDock
-        flags={{
+      React.createElement(MergeDock, {
+        flags: {
           ...stableFlags,
           merge: { ...stableFlags.merge, value: 'beta', precision: 'beta' },
-        }}
-        phaseStats={{ reviewBandCount: 2, conflictBandCount: 0 }}
-      />,
+        },
+        phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+      }),
     )
 
     assert.match(html, /data-component="diff-merge-view"/)
