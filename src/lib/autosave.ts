@@ -917,19 +917,32 @@ export function initAutoSave(
     }
     return null
   })()
-  const flagEnabled = guardSnapshot?.featureFlag.value ?? snapshotFlagValue ?? resolveFlag()
+  const normalizedFlagValue = guardSnapshot?.featureFlag.value ?? snapshotFlagValue
+  const flagEnabled = normalizedFlagValue ?? resolveFlag()
   if (effectiveOptionsDisabled || !flagEnabled) {
     const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
+    const noopAsync = async (): Promise<void> => {}
     return {
       snapshot: () => ({ ...snapshot }),
-      flushNow: async () => { throw disabledError() },
+      flushNow: noopAsync,
       dispose: () => {},
       markDirty: () => {}
     }
   }
   const encoder = new TextEncoder()
   const pendingQueue: AutoSaveQueueEntry[] = []
-  const phaseGuardEnabled = flagSnapshot?.autosave?.phase === 'phase-a'
+  const phaseGuardEnabled = (() => {
+    if (!flagSnapshot || typeof flagSnapshot !== 'object') return false
+    if ('autosave' in flagSnapshot && flagSnapshot.autosave && typeof flagSnapshot.autosave === 'object') {
+      const candidate = flagSnapshot.autosave as { readonly phase?: unknown }
+      return candidate?.phase === 'phase-a'
+    }
+    if ('phase' in flagSnapshot) {
+      const candidate = flagSnapshot as { readonly phase?: unknown }
+      return candidate?.phase === 'phase-a'
+    }
+    return false
+  })()
   let phase: AutoSavePhase = 'idle'
   let retryCount = 0
   let lastSuccessAt: string | undefined
