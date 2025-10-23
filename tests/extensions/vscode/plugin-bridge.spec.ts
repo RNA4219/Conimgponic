@@ -1,9 +1,10 @@
-import test from 'node:test';
+import { describe, test } from 'node:test';
 
-// Day8 Collector/Analyzer/Reporter パイプラインと AUTOSAVE エラーポリシーを踏まえた RED ケース一覧。
-
-test.todo('権限未宣言の hook 呼び出しは PluginPermissionError(retryable=false) で中断される (RED)');
-
-test.todo('plugins.reload 失敗時に旧バンドルへロールバックし PluginReloadError(retryable=true) を Collector へ送る (RED)');
-
-test.todo('log メッセージが extension:plugin-bridge タグ付きで Collector へ流れない場合に再試行する (RED)');
+// RED フェーズ: 未実装シナリオを列挙するためのスケルトン。
+describe('plugin bridge failure handling (RED)', () => {
+  test.todo('権限追加が未承認のまま reload を試行した場合に E_PLUGIN_PERMISSION_PENDING を返す');
+  test.todo('権限拒否で E_PLUGIN_PERMISSION_DENIED を返し旧版へロールバックする');
+  test.todo('依存解決失敗で E_PLUGIN_DEP_RESOLVE を返し再試行をスケジュールする');
+  test.todo('reload シーケンスで Webview ack を受け取らずタイムアウトした際に E_PLUGIN_RELOAD_FAILED を返す');
+  test.todo('log(level=error, retryable=false) を受信した際に Collector へ転送し UI 通知する');
+});
