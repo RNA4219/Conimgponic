@@ -66,8 +66,8 @@ describe('ci workflow build job', () => {
         'pnpm -s lint',
         'pnpm -s typecheck',
         'pnpm test --filter autosave',
-        'pnpm test -- --coverage',
-        'pnpm test -- --reporter junit',
+        'pnpm test -- --test-coverage',
+        'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml',
       ];
 
       let cursor = -1;

@@ -150,13 +150,13 @@ jobs:
       - name: Test with coverage
         run: |
           set -euo pipefail
-          pnpm test -- --coverage
+          pnpm test -- --test-coverage
 
       - name: Generate JUnit report
         run: |
           set -euo pipefail
           mkdir -p reports
-          pnpm test -- --reporter junit --reporter-destination reports/junit.xml
+          pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml
 
       - name: Build
         run: |
