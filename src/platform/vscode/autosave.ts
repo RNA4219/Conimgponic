@@ -28,6 +28,10 @@ type AutoSaveTelemetryLockStrategy = Extract<
   { readonly ok: true }
 >['lockStrategy']
 
+/**
+ * Collector テレメトリに付与される拡張プロパティ。
+ * Bridge 側で state 遷移の `phaseBefore`/`phaseAfter` と Guard/Lock メタデータを注入する。
+ */
 export interface AutoSaveTelemetryEventProperties {
   readonly phaseBefore: AutoSavePhase
   readonly phaseAfter: AutoSavePhase
@@ -72,9 +76,9 @@ export interface AutoSaveHostBridgeOptions {
   readonly sendMessage: (message: AutoSaveBridgeMessage) => void
   readonly atomicWrite: (input: AutoSaveAtomicWriteInput) => Promise<AutoSaveAtomicWriteResult>
   /**
-   * Collector 向けテレメトリ転送。`properties` には `phaseBefore`/`phaseAfter`/`flagSource`/`lockStrategy`
-   * (`'web-lock' | 'file-lock' | 'none'`) が常に含まれ、Phase ロールバック判定
-   * （docs/AUTOSAVE-DESIGN-IMPL.md §5）に利用できる。
+   * Collector 向けテレメトリ転送。`properties` には state 遷移前後の `phaseBefore`/`phaseAfter`
+   * と Guard 出典(`flagSource`)、ロック戦略(`lockStrategy` = `'web-lock' | 'file-lock' | 'none'`)
+   * を常に含め、Phase ロールバック判定（docs/AUTOSAVE-DESIGN-IMPL.md §5）へ活用できる。
    */
   readonly telemetry?: (event: AutoSaveTelemetryEvent) => void
   readonly warn?: (event: AutoSaveWarnEvent) => void
@@ -205,12 +209,14 @@ const emitTelemetry = (
   event: AutoSaveTelemetryEvent,
   context: AutoSaveTelemetryContext
 ): void => {
+  const phaseBefore = statusPhaseForState(context.before)
+  const phaseAfter = statusPhaseForState(context.after)
   options.telemetry?.({
     ...event,
     properties: {
       ...event.properties,
-      phaseBefore: context.before === 'saved' ? 'idle' : statusPhaseForState(context.before),
-      phaseAfter: context.after === 'saved' ? 'idle' : statusPhaseForState(context.after),
+      phaseBefore,
+      phaseAfter,
       flagSource: context.guard.featureFlag.source,
       lockStrategy: context.lockStrategy ?? 'none'
     }
