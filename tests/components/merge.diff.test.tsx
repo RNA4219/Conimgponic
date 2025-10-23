@@ -77,3 +77,16 @@ test('stable precision clamps threshold upper bound and keeps diff initial tab w
   assert.equal(plan.tabs.initialTab, 'diff')
   assert.equal(plan.autoApplied.meetsTarget, true)
 })
+
+test('stable precision sourced from workspace threshold stays opt-in without review bands', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.88,
+    phaseStats: { reviewBandCount: 0, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.threshold.request, 0.88)
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.guard.phaseBRequired, false)
+})
