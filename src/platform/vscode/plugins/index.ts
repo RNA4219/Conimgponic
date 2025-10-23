@@ -51,6 +51,7 @@ export interface PluginReloadError {
   readonly message: string;
   readonly retryable: boolean;
   readonly notifyUser: boolean;
+  readonly detail?: Readonly<Record<string, unknown>>;
 }
 
 export interface PluginReloadErrorResponse {
@@ -279,9 +280,34 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
   switch (spec.name) {
     case 'manifest-validation': {
       const manifest = request.manifest;
-      return manifest.id && manifest.version && manifest.engines?.vscode && manifest['conimg-api']
-        ? { ok: true }
-        : { ok: false, error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true) };
+      const engines = manifest.engines;
+      const vscodeEngine = engines?.vscode;
+      const conimgApi = manifest['conimg-api'];
+      if (typeof manifest.id !== 'string' || manifest.id.trim() === '') {
+        return {
+          ok: false,
+          error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true),
+        };
+      }
+      if (typeof manifest.version !== 'string' || manifest.version.trim() === '') {
+        return {
+          ok: false,
+          error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true),
+        };
+      }
+      if (!engines || typeof vscodeEngine !== 'string' || vscodeEngine.trim() === '') {
+        return {
+          ok: false,
+          error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true),
+        };
+      }
+      if (typeof conimgApi !== 'string' || conimgApi.trim() === '') {
+        return {
+          ok: false,
+          error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true),
+        };
+      }
+      return { ok: true };
     }
     case 'compatibility-check': {
       const manifest = request.manifest;
@@ -341,18 +367,25 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
     case 'dependency-cache': {
       const manifestDependencies = normalizeManifestDependencies(request.manifest.dependencies);
       const differences = diffDependencies(manifestDependencies, request.dependencySnapshot);
-      return differences.length === 0
-        ? { ok: true }
-        : {
-            ok: false,
-            error: buildError(
-              spec.name,
-              PluginReloadErrorCode.DependencyMismatch,
-              `Dependency mismatch detected: ${differences.join(', ')}`,
-              true,
-              false,
-            ),
-          };
+      if (!dependencyDiffHasChanges(differences)) {
+        return { ok: true };
+      }
+      const formatted = formatDependencyDiff(differences);
+      const message =
+        formatted.length > 0
+          ? `Dependency mismatch detected: ${formatted.join(', ')}`
+          : 'Dependency mismatch detected.';
+      return {
+        ok: false,
+        error: buildError(
+          spec.name,
+          PluginReloadErrorCode.DependencyMismatch,
+          message,
+          true,
+          false,
+          { diff: differences },
+        ),
+      };
     }
     case 'hook-registration':
       return request.manifest.hooks.length > 0
@@ -416,8 +449,9 @@ function buildError(
   message: string,
   retryable: boolean,
   notifyUser: boolean,
+  detail?: Readonly<Record<string, unknown>>,
 ): PluginReloadError {
-  return { stage, code, message, retryable, notifyUser };
+  return detail ? { stage, code, message, retryable, notifyUser, detail } : { stage, code, message, retryable, notifyUser };
 }
 
 function logMessage(
@@ -432,39 +466,92 @@ function logMessage(
 }
 
 function logFailure(pluginId: string, stage: PluginReloadStageName, error: PluginReloadError): PluginBridgeLogMessage {
-  return logMessage(pluginId, 'error', 'stage-failed', stage, error.notifyUser, { reason: error.message });
+  const detail: Record<string, unknown> = {
+    code: error.code,
+    retryable: error.retryable,
+    reason: error.message,
+  };
+  if (error.detail) {
+    Object.assign(detail, error.detail);
+  }
+  const level: PluginBridgeLogMessage['level'] = error.retryable ? 'warn' : 'error';
+  return logMessage(pluginId, level, 'stage-failed', stage, error.notifyUser, detail);
 }
 
-function diffDependencies(
-  manifest: PluginDependencySnapshot,
-  snapshot: PluginDependencySnapshot,
-): string[] {
-  const diff: string[] = [];
+type DependencyDiff = {
+  readonly npm: { readonly added: readonly string[]; readonly removed: readonly string[]; readonly changed: readonly string[] };
+  readonly workspace: { readonly added: readonly string[]; readonly removed: readonly string[] };
+};
+
+function diffDependencies(manifest: PluginDependencySnapshot, snapshot: PluginDependencySnapshot): DependencyDiff {
+  const npmAdded: string[] = [];
+  const npmRemoved: string[] = [];
+  const npmChanged: string[] = [];
+
   for (const [id, version] of Object.entries(manifest.npm)) {
-    if (snapshot.npm[id] !== version) {
-      diff.push(`npm:${id}`);
-    }
-  }
-  for (const id of Object.keys(snapshot.npm)) {
-    if (!(id in manifest.npm)) {
-      diff.push(`npm:${id}`);
+    const snapshotVersion = snapshot.npm[id];
+    if (snapshotVersion === undefined) {
+      npmAdded.push(id);
+    } else if (snapshotVersion !== version) {
+      npmChanged.push(id);
     }
   }
 
+  for (const id of Object.keys(snapshot.npm)) {
+    if (!(id in manifest.npm)) {
+      npmRemoved.push(id);
+    }
+  }
+
+  const workspaceAdded: string[] = [];
+  const workspaceRemoved: string[] = [];
   const manifestWorkspace = new Set(manifest.workspace);
   const snapshotWorkspace = new Set(snapshot.workspace);
   for (const path of manifestWorkspace) {
     if (!snapshotWorkspace.has(path)) {
-      diff.push(`workspace:${path}`);
+      workspaceAdded.push(path);
     }
   }
   for (const path of snapshotWorkspace) {
     if (!manifestWorkspace.has(path)) {
-      diff.push(`workspace:${path}`);
+      workspaceRemoved.push(path);
     }
   }
 
-  return diff;
+  return {
+    npm: { added: npmAdded, removed: npmRemoved, changed: npmChanged },
+    workspace: { added: workspaceAdded, removed: workspaceRemoved },
+  };
+}
+
+function dependencyDiffHasChanges(diff: DependencyDiff): boolean {
+  return (
+    diff.npm.added.length > 0 ||
+    diff.npm.removed.length > 0 ||
+    diff.npm.changed.length > 0 ||
+    diff.workspace.added.length > 0 ||
+    diff.workspace.removed.length > 0
+  );
+}
+
+function formatDependencyDiff(diff: DependencyDiff): string[] {
+  const formatted: string[] = [];
+  for (const id of diff.npm.added) {
+    formatted.push(`npm:+${id}`);
+  }
+  for (const id of diff.npm.removed) {
+    formatted.push(`npm:-${id}`);
+  }
+  for (const id of diff.npm.changed) {
+    formatted.push(`npm:~${id}`);
+  }
+  for (const path of diff.workspace.added) {
+    formatted.push(`workspace:+${path}`);
+  }
+  for (const path of diff.workspace.removed) {
+    formatted.push(`workspace:-${path}`);
+  }
+  return formatted;
 }
 
 function extractMajor(version: string): number | undefined {
