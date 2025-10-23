@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   AUTOSAVE_POLICY,
   type AutoSaveBridgeMessage,
+  type AutoSaveBridgeBootstrapMessage,
   type AutoSavePhaseGuardSnapshot,
   type AutoSaveSnapshotRequestMessage,
   type AutoSaveSnapshotResultMessage,
@@ -14,8 +15,10 @@ import {
   createVscodeAutoSaveBridge,
   type AutoSaveAtomicWriteResult,
   type AutoSaveTelemetryEvent,
-  type AutoSaveTelemetryEventProperties
+  type AutoSaveTelemetryEventProperties,
+  type AutoSaveWarnEvent
 } from '../../src/platform/vscode/autosave'
+import type { Storyboard } from '../../src/types'
 
 const guardEnabled: AutoSavePhaseGuardSnapshot = {
   featureFlag: { value: true, source: 'env' },
@@ -26,6 +29,18 @@ const guardReadonly: AutoSavePhaseGuardSnapshot = {
   featureFlag: { value: true, source: 'env' },
   optionsDisabled: true
 }
+
+const emptyStoryboard: Storyboard = {
+  id: 'sb-empty',
+  title: 'Empty Storyboard',
+  scenes: [],
+  selection: [],
+  version: 1
+}
+
+const isBootstrapMessage = (
+  message: AutoSaveBridgeMessage
+): message is AutoSaveBridgeBootstrapMessage => message.type === 'bridge.bootstrap'
 
 const createRequest = (
   reqId: string,
@@ -43,7 +58,7 @@ const createRequest = (
   ts: new Date('2024-01-01T00:00:01.000Z').toISOString(),
   payload: {
     reason: 'change',
-    storyboard: { nodes: [] } as any,
+    storyboard: emptyStoryboard,
     pendingBytes,
     queuedGeneration: generation,
     debounceMs: AUTOSAVE_POLICY.debounceMs,
@@ -92,7 +107,7 @@ describe('createVscodeAutoSaveBridge', () => {
       }
     })
 
-    const bootstrap = sent.find((message) => message.type === 'bridge.bootstrap') as any
+    const bootstrap = sent.find(isBootstrapMessage)
     assert.ok(bootstrap, 'workspace 由来の FlagSnapshot を含む bootstrap メッセージが必要')
     assert.equal(bootstrap.payload.guard.featureFlag.value, expectedGuard.featureFlag.value)
     assert.equal(bootstrap.payload.guard.featureFlag.source, expectedGuard.featureFlag.source)
@@ -103,7 +118,7 @@ describe('createVscodeAutoSaveBridge', () => {
 
   it('emits dirty→saving→saved status transitions with atomic write', async () => {
     const sent: AutoSaveBridgeMessage[] = []
-    const telemetry: any[] = []
+    const telemetry: AutoSaveTelemetryEvent[] = []
     let tick = 0
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
@@ -150,7 +165,7 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(result.apiVersion, 1)
     assert.equal(result.payload.retainedBytes, 2048)
     assert.ok(
-      telemetry.filter((event: any) => event.name === 'autosave.status').length >= 3,
+      telemetry.filter((event) => event.name === 'autosave.status').length >= 3,
       'telemetry autosave.status should be emitted for each transition'
     )
   })
@@ -324,7 +339,7 @@ describe('createVscodeAutoSaveBridge', () => {
 
   it('emits warn telemetry when file-lock fallback is used', async () => {
     const sent: AutoSaveBridgeMessage[] = []
-    const warns: any[] = []
+    const warns: AutoSaveWarnEvent[] = []
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
