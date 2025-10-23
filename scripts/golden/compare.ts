@@ -1,19 +1,23 @@
 /// <reference types="node" />
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join, relative, sep } from 'node:path'
 
 import type { Storyboard } from '../../src/types'
-import type {
-  ExportFormat,
-  NormalizedOutputs,
-  PackageArtifacts,
-  TelemetryCollector,
-} from '../../src/lib/exporters'
+import type { ExportFormat, TelemetryCollector } from '../../src/lib/exporters'
+import {
+  compareNormalizedOutputs,
+  createTelemetryEvent,
+  formatComparisonSummary,
+  type GoldenArtifacts,
+  type GoldenComparisonEntry,
+} from '../../src/lib/golden/compare'
 
 type ExporterModule = typeof import('../../src/lib/exporters')
 
 let exporterModulePromise: Promise<ExporterModule> | null = null
+
+const EXPORT_DIR = 'export'
 
 async function loadExporterModule(): Promise<ExporterModule> {
   if (!exporterModulePromise) {
@@ -50,8 +54,6 @@ export interface CompareResult {
   }
 }
 
-const EXPORT_DIR = 'export'
-
 function toPosix(pathname: string): string {
   return pathname.split(sep).join('/')
 }
@@ -62,16 +64,6 @@ async function writeActualFile(pathname: string, payload: string): Promise<void>
 
 function ensureDiffPath(outputDir: string): string {
   return join(outputDir, 'golden-diff.txt')
-}
-
-function summarizeResult(entries: CompareEntry[]): string {
-  return entries
-    .map((entry) =>
-      entry.status === 'matched'
-        ? `${entry.format}: OK`
-        : `${entry.format}: diff -> ${entry.diff ?? 'mismatch'}`,
-    )
-    .join('\n')
 }
 
 async function readExpected(pathname: string): Promise<string> {
@@ -115,60 +107,11 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
 
   const normalized = createNormalizedOutputs(storyboard)
 
-  const expectedPaths: Record<Exclude<ExportFormat, 'package'>, string> = {
-    markdown: join(options.goldenDir, 'markdown', 'storyboard.md'),
-    csv: join(options.goldenDir, 'csv', 'storyboard.csv'),
-    jsonl: join(options.goldenDir, 'jsonl', 'storyboard.jsonl'),
-  }
-
   await mkdir(baseDir, { recursive: true })
 
   await writeActualFile(join(baseDir, 'markdown', 'storyboard.md'), normalized.markdown)
   await writeActualFile(join(baseDir, 'csv', 'storyboard.csv'), normalized.csv)
   await writeActualFile(join(baseDir, 'jsonl', 'storyboard.jsonl'), normalized.jsonl)
-
-  const diffLines: string[] = []
-
-  for (const format of ['markdown', 'csv', 'jsonl'] as const) {
-    const actualPath = join(baseDir, format, `storyboard.${format === 'markdown' ? 'md' : format}`)
-    const expectedPath = expectedPaths[format]
-    let expected: string
-    try {
-      expected = await readExpected(expectedPath)
-    } catch (error) {
-      const diff = `missing golden at ${expectedPath}`
-      entries.push({
-        format,
-        expectedPath,
-        actualPath,
-        status: 'diff',
-        diff,
-      })
-      diffLines.push(`${format}: ${diff}`)
-      continue
-    }
-    const expectedNormalized =
-      format === 'jsonl' ? normalizeJsonl(expected) : trimLines(expected)
-    if (expectedNormalized === normalized[format]) {
-      entries.push({
-        format,
-        expectedPath,
-        actualPath,
-        status: 'matched',
-      })
-      diffLines.push(`${format}: OK`)
-    } else {
-      const diff = firstLineDiff(normalized[format], expectedNormalized)
-      entries.push({
-        format,
-        expectedPath,
-        actualPath,
-        status: 'diff',
-        diff,
-      })
-      diffLines.push(`${format}: ${diff}`)
-    }
-  }
 
   const packageDir = join(options.goldenDir, 'package')
   const actualPackageDir = join(baseDir, 'package')
@@ -178,78 +121,74 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
     await writeActualFile(join(actualPackageDir, name), payload)
   }
 
-  const expectedPackage: PackageArtifacts = {}
+  const goldenArtifacts: GoldenArtifacts = { package: {} }
+
+  const expectedPaths: Record<Exclude<ExportFormat, 'package'>, string> = {
+    markdown: join(options.goldenDir, 'markdown', 'storyboard.md'),
+    csv: join(options.goldenDir, 'csv', 'storyboard.csv'),
+    jsonl: join(options.goldenDir, 'jsonl', 'storyboard.jsonl'),
+  }
+
+  for (const format of ['markdown', 'csv', 'jsonl'] as const) {
+    const expectedPath = expectedPaths[format]
+    if (existsSync(expectedPath)) {
+      goldenArtifacts[format] = await readExpected(expectedPath)
+    }
+  }
+
   if (existsSync(packageDir)) {
-    for (const [name] of pkgEntries) {
+    for (const name of await readdir(packageDir)) {
       const target = join(packageDir, name)
       if (existsSync(target)) {
-        expectedPackage[name] = normalizeJson(await readExpected(target))
+        goldenArtifacts.package[name] = await readExpected(target)
       }
     }
   }
 
-  for (const [name, payload] of pkgEntries) {
-    const actualPath = join(actualPackageDir, name)
-    const expectedPath = join(packageDir, name)
-    const expectedPayload = expectedPackage[name]
-    if (expectedPayload && expectedPayload === payload) {
-      entries.push({
-        format: 'package',
-        expectedPath,
-        actualPath,
-        status: 'matched',
-      })
-      diffLines.push(`package:${name}: OK`)
-    } else if (!expectedPayload) {
-      const diff = `missing golden at ${expectedPath}`
-      entries.push({
-        format: 'package',
-        expectedPath,
-        actualPath,
-        status: 'diff',
-        diff,
-      })
-      diffLines.push(`package:${name}: ${diff}`)
-    } else {
-      const diff = firstLineDiff(payload, expectedPayload)
-      entries.push({
-        format: 'package',
-        expectedPath,
-        actualPath,
-        status: 'diff',
-        diff,
-      })
-      diffLines.push(`package:${name}: ${diff}`)
+  const comparison = compareNormalizedOutputs(normalized, goldenArtifacts)
+
+  const toCompareEntry = (entry: GoldenComparisonEntry): CompareEntry => {
+    const expectedPath =
+      entry.format === 'package' && entry.name
+        ? join(packageDir, entry.name)
+        : expectedPaths[entry.format as Exclude<ExportFormat, 'package'>]
+    const actualPath =
+      entry.format === 'package' && entry.name
+        ? join(actualPackageDir, entry.name)
+        : join(baseDir, entry.format, `storyboard.${entry.format === 'markdown' ? 'md' : entry.format}`)
+    return {
+      format: entry.format,
+      expectedPath,
+      actualPath,
+      status: entry.status,
+      diff: entry.diff,
     }
   }
 
+  entries.push(...comparison.entries.map(toCompareEntry))
+
   const diffPath = ensureDiffPath(options.outputDir)
-  const summary = summarizeResult(entries)
+  const summary = formatComparisonSummary(comparison.entries)
   await writeFile(diffPath, `${summary}\n`, 'utf8')
 
-  const ok = entries.every((entry) => entry.status === 'matched')
-  const normalizedPath = ok ? toPosix(relative(process.cwd(), baseDir)) : ''
-  const runUri = ok ? `file://${normalizedPath}` : ''
+  const normalizedPath = comparison.ok ? toPosix(relative(process.cwd(), baseDir)) : ''
+  const runUri = comparison.ok ? `file://${normalizedPath}` : ''
 
-  if (ok) {
-    options.telemetry?.track('export.success', { runId, formats: ['markdown', 'csv', 'jsonl', 'package'] })
-  } else {
-    options.telemetry?.track('export.failed', { runId, retryable: false })
+  const telemetryEvent = createTelemetryEvent(comparison, runId)
+  if (telemetryEvent) {
+    options.telemetry?.track(telemetryEvent.event, telemetryEvent.payload)
   }
 
   const result: CompareResult = {
-    ok,
+    ok: comparison.ok,
     runUri,
     normalizedPath,
     diffPath,
     entries,
   }
 
-  if (!ok) {
-    result.error = {
-      message: 'Golden comparison failed',
-      retryable: false,
-    }
+  if (!comparison.ok && comparison.error) {
+    result.error = comparison.error
   }
 
   return result
