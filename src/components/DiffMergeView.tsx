@@ -1,4 +1,6 @@
-import React from 'react'
+import React, { useEffect, useMemo, useReducer, useState } from 'react'
+
+import { createDiffMergeController, createInitialDiffMergeState, diffMergeReducer } from './diffMergeState.js'
 
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 
@@ -25,12 +27,6 @@ export interface DiffMergeSubTabPlan {
 
 export const SUB_TAB_LABELS: Record<DiffMergeSubTabKey, string> = Object.freeze({ diff: 'Diff', merged: 'Merged', review: 'Review' })
 
-export interface PrecisionTabDesign {
-  readonly visibleTabs: readonly DiffMergeSubTabKey[]
-  readonly initialTab: DiffMergeSubTabKey
-  readonly navigationBadge?: 'beta'
-}
-
 export interface PrecisionPhaseGuard {
   readonly phase: 'phase-a' | 'phase-b'
   readonly allowedTabs: readonly DiffMergeSubTabKey[]
@@ -42,21 +38,6 @@ export const PRECISION_PHASE_GUARD: Record<MergePrecision, PrecisionPhaseGuard> 
   beta: { phase: 'phase-b', allowedTabs: ['review', 'merged', 'diff'], initialTab: 'review' },
   stable: { phase: 'phase-b', allowedTabs: ['diff', 'merged', 'review'], initialTab: 'diff' },
 })
-
-export const DIFF_MERGE_SUB_TAB_PLAN: Record<MergePrecision, PrecisionTabDesign> = Object.freeze({
-  legacy: { visibleTabs: PRECISION_PHASE_GUARD.legacy.allowedTabs, initialTab: PRECISION_PHASE_GUARD.legacy.initialTab },
-  beta: {
-    visibleTabs: PRECISION_PHASE_GUARD.beta.allowedTabs,
-    initialTab: PRECISION_PHASE_GUARD.beta.initialTab,
-    navigationBadge: 'beta',
-  },
-  stable: { visibleTabs: PRECISION_PHASE_GUARD.stable.allowedTabs, initialTab: PRECISION_PHASE_GUARD.stable.initialTab },
-})
-
-export const planDiffMergeSubTabs = (precision: MergePrecision): DiffMergeSubTabPlan => {
-  const design = DIFF_MERGE_SUB_TAB_PLAN[precision]
-  return { tabs: design.visibleTabs, initialTab: design.initialTab, navigationBadge: design.navigationBadge }
-}
 
 export interface DiffMergePaneTransition {
   readonly from: 'idle' | 'selected' | 'editing' | 'queued' | 'resolved'
@@ -152,6 +133,16 @@ const panes = Object.freeze<DiffMergePaneSpec[]>([
   { key: 'edit-modal', title: 'EditModal', description: 'Inline editor for manual overrides with commit/cancel operations.', renderedWithin: 'DiffMergeTabs', transitions: hunkTransitions.filter((transition) => transition.surface === 'EditModal'), visibility: { type: 'conditional', when: 'editing-hunk-open' }, telemetrySurface: 'collector' },
 ])
 
+type DiffMergePaneKey = DiffMergePaneSpec['key']
+export interface DiffMergeSubTabLayout{readonly key:DiffMergeSubTabKey;readonly label:string;readonly panes:readonly DiffMergePaneKey[];readonly badge?:'beta'}
+export interface DiffMergeViewPlan{readonly precision:MergePrecision;readonly phase:PrecisionPhaseGuard['phase'];readonly tabs:readonly DiffMergeSubTabLayout[];readonly initialTab:DiffMergeSubTabKey;readonly navigationBadge?:'beta'}
+const SUB_TAB_LAYOUTS:Record<DiffMergeSubTabKey,{readonly label:string;readonly panes:readonly DiffMergePaneKey[]}> = Object.freeze({diff:{label:SUB_TAB_LABELS.diff,panes:['hunk-list'] as const},merged:{label:SUB_TAB_LABELS.merged,panes:['operation-pane'] as const},review:{label:SUB_TAB_LABELS.review,panes:['hunk-list','operation-pane'] as const}})
+const PRECISION_SUB_TAB_ORDER:Record<MergePrecision,readonly DiffMergeSubTabKey[]> = Object.freeze({legacy:['review'],beta:['review','merged','diff'],stable:['diff','merged','review']})
+const buildDiffMergeViewPlan=(precision:MergePrecision):DiffMergeViewPlan=>{const guard=PRECISION_PHASE_GUARD[precision];const order=PRECISION_SUB_TAB_ORDER[precision];const navigationBadge=precision==='beta'?'beta':undefined;const tabs=order.map((key)=>{const layout=SUB_TAB_LAYOUTS[key];const panesForPrecision:readonly DiffMergePaneKey[]=precision==='legacy'&&key==='review'?(['hunk-list'] as const):layout.panes;const badge=precision==='beta'&&key==='diff'?('beta' as const):undefined;return{key,label:layout.label,panes:panesForPrecision,badge}});return{precision,phase:guard.phase,tabs,initialTab:guard.initialTab,navigationBadge}}
+const DIFF_MERGE_VIEW_PLAN:Record<MergePrecision,DiffMergeViewPlan> = Object.freeze({legacy:buildDiffMergeViewPlan('legacy'),beta:buildDiffMergeViewPlan('beta'),stable:buildDiffMergeViewPlan('stable')})
+export const planDiffMergeView=(precision:MergePrecision):DiffMergeViewPlan=>DIFF_MERGE_VIEW_PLAN[precision]
+export const planDiffMergeSubTabs=(precision:MergePrecision):DiffMergeSubTabPlan=>{const plan=planDiffMergeView(precision);return{tabs:plan.tabs.map((tab)=>tab.key),initialTab:plan.initialTab,navigationBadge:plan.navigationBadge}}
+
 const flowDiagrams = Object.freeze<Record<MergePrecision, string>>({
   legacy: 'mermaid\nstateDiagram-v2\n  [*] --> Review\n  Review --> Review: toggle-select | mark-skipped\n  Review --> Review: override | reopen\n  Review --> [*]: queue-merge\n',
   beta: 'mermaid\nstateDiagram-v2\n  [*] --> Review\n  Review --> Merged: queue-merge\n  Review --> Edit: open-editor\n  Edit --> Review: commit-edit\n  Edit --> Review: cancel-edit\n  Merged --> Review: reopen | queue-result-conflict | queue-result-error\n  Merged --> Done: queue-result-success\n  Done --> Review: reopen\n  Review --> Diff: select-tab(diff)\n  Diff --> Review: select-tab(review)\n',
@@ -171,7 +162,7 @@ export const diffMergeViewDesign: DiffMergeViewDesign = Object.freeze({
   tabs: [
     { key: 'summary', panes: [panes[0]], defaultFocusPane: 'hunk-list', precisionRules: ['legacy'] },
     { key: 'hunks', panes, defaultFocusPane: 'hunk-list', precisionRules: ['beta', 'stable'] },
-  ],
+  ] as const satisfies readonly DiffMergeTabSpec[],
   queueContract: {
     request: {
       type: 'queue-merge',
@@ -180,12 +171,12 @@ export const diffMergeViewDesign: DiffMergeViewDesign = Object.freeze({
       hunkIds: [],
       telemetryContext: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', lastTab: 'review' },
       metadata: { autoSaveRequested: false },
-    },
+    } satisfies DiffMergeQueueCommandPayload,
     response: {
       status: 'success',
       hunkIds: [],
       telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: false },
-    },
+    } satisfies MergeDecisionEvent,
   },
   flowDiagrams,
   componentResponsibilities: diffMergeComponentResponsibilities,
@@ -197,4 +188,4 @@ export interface DiffMergeViewProps {
   readonly queueMergeCommand: QueueMergeCommand
 }
 
-export const DiffMergeView: React.FC<DiffMergeViewProps> = () => null
+export const DiffMergeView:React.FC<DiffMergeViewProps>=({precision,hunks,queueMergeCommand})=>{const plan=useMemo(()=>planDiffMergeView(precision),[precision]);const [activeTab,setActiveTab]=useState(plan.initialTab);useEffect(()=>{setActiveTab(plan.initialTab)},[plan.initialTab]);const [state,dispatch]=useReducer(diffMergeReducer,hunks,createInitialDiffMergeState);const controller=useMemo(()=>createDiffMergeController({precision,dispatch,queueMergeCommand}),[precision,dispatch,queueMergeCommand]);const activeLayout=useMemo(()=>plan.tabs.find((tab)=>tab.key===activeTab)??plan.tabs[0]!,[plan,activeTab]);const selectedHunkIds=useMemo(()=>Object.entries(state.hunkStates).filter(([,status])=>status==='Selected'||status==='Editing').map(([id])=>id),[state.hunkStates]);const queueHunkIds=selectedHunkIds.length>0?selectedHunkIds:hunks.map((hunk)=>hunk.id);const queueHunksJson=JSON.stringify(queueHunkIds);const editingHunkId=state.editingHunkId;const editingHunk=editingHunkId?hunks.find((hunk)=>hunk.id===editingHunkId):undefined;const navChildren=plan.tabs.map((tab)=>React.createElement('button',{key:tab.key,type:'button',role:'tab','data-testid':`diff-merge-tab-${tab.key}`,'data-tab':tab.key,'aria-selected':tab.key===activeTab,onClick:()=>setActiveTab(tab.key)},tab.label,tab.badge?React.createElement('span',{'data-badge':tab.badge},tab.badge.toUpperCase()):null));const hunkChildren=hunks.map((hunk)=>{const status=state.hunkStates[hunk.id]??'Unreviewed';const isSelected=status==='Selected'||status==='Editing';return React.createElement('article',{key:hunk.id,'data-testid':`diff-merge-hunk-${hunk.id}`,'data-hunk':hunk.id,'data-status':status},React.createElement('header',null,hunk.section??hunk.id),React.createElement('div',null,React.createElement('button',{type:'button','data-testid':`diff-merge-hunk-${hunk.id}-toggle`,'data-hunk':hunk.id,'aria-pressed':isSelected,onClick:()=>controller.toggleSelect(hunk.id)},'Toggle'),React.createElement('button',{type:'button','data-testid':`diff-merge-hunk-${hunk.id}-edit`,onClick:()=>controller.openEditor(hunk.id)},'Edit')))});const hunkList=activeLayout.panes.includes('hunk-list')?React.createElement('section',{'data-testid':'diff-merge-hunk-list'},...hunkChildren):null;const operationPane=activeLayout.panes.includes('operation-pane')?React.createElement('section',{'data-testid':'diff-merge-operation-pane','data-visible':selectedHunkIds.length>0?'true':'false'},React.createElement('button',{type:'button','data-testid':'diff-merge-queue-selected','data-command':'queue-merge','data-hunks':queueHunksJson,onClick:()=>{void controller.queueMerge(queueHunkIds)}},'Queue Selected')):null;const editModal=editingHunkId&&editingHunk?React.createElement('section',{role:'dialog','data-testid':'diff-merge-edit-modal','data-hunk':editingHunkId},React.createElement('header',null,editingHunk.section??editingHunk.id),React.createElement('button',{type:'button','data-action':'commit-edit',onClick:()=>controller.commitEdit(editingHunkId)},'Commit'),React.createElement('button',{type:'button','data-action':'cancel-edit',onClick:()=>controller.cancelEdit()},'Cancel')):null;return React.createElement('section',{'data-component':'diff-merge-view','data-precision':precision,'data-phase':plan.phase},React.createElement('nav',{role:'tablist','data-precision':precision,'data-navigation-badge':plan.navigationBadge??undefined},...navChildren),hunkList,operationPane,editModal)}
