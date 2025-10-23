@@ -171,6 +171,37 @@ export interface AutoSavePhaseGuardSnapshot {
   readonly optionsDisabled: boolean
 }
 
+interface Day8CollectorLike {
+  publish(event: Record<string, unknown>): void
+}
+
+type AutoSaveDisabledReason = 'feature-flag-disabled' | 'options-disabled'
+
+const resolveDay8Collector = (): Day8CollectorLike | undefined => {
+  const scope = globalThis as { Day8Collector?: unknown }
+  const candidate = scope.Day8Collector as { publish?: unknown } | undefined
+  return candidate && typeof candidate.publish === 'function'
+    ? (candidate as Day8CollectorLike)
+    : undefined
+}
+
+const publishDisabledCollectorEvent = (
+  guard: AutoSavePhaseGuardSnapshot,
+  reason: AutoSaveDisabledReason
+): void => {
+  const collector = resolveDay8Collector()
+  if (!collector) return
+  collector.publish({
+    feature: 'autosave-diff-merge',
+    event: 'autosave.disabled',
+    level: 'debug',
+    phase: 'disabled',
+    reason,
+    guard,
+    ts: new Date().toISOString()
+  })
+}
+
 interface AutoSaveFlagSnapshot {
   readonly autosave: {
     readonly enabled: boolean
@@ -921,7 +952,17 @@ export function initAutoSave(
   const flagEnabled = normalizedFlagValue ?? resolveFlag()
   if (effectiveOptionsDisabled || !flagEnabled) {
     const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
-    const noopAsync = async (): Promise<void> => {}
+    const guardForLog: AutoSavePhaseGuardSnapshot =
+      guardSnapshot ?? {
+        featureFlag: { value: flagEnabled, source: 'default' },
+        optionsDisabled: effectiveOptionsDisabled
+      }
+    publishDisabledCollectorEvent(
+      guardForLog,
+      effectiveOptionsDisabled ? 'options-disabled' : 'feature-flag-disabled'
+    )
+    const resolvedPromise: Promise<void> = Promise.resolve()
+    const noopAsync = (): Promise<void> => resolvedPromise
     return {
       snapshot: () => ({ ...snapshot }),
       flushNow: noopAsync,
