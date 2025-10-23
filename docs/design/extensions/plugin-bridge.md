@@ -23,20 +23,43 @@
 
 ## 3. リロードとロールバック
 1. Extension Host が `plugins.reload` を送信し、現行 Runtime を `paused` へ遷移させる。
-2. §2 のキャッシュ無効化を順に適用。途中で `E_PLUGIN_* (retryable=true)` が返った場合は指数バックオフ後に再試行。
-3. `retryable=false` を受け取った場合、即座に旧キャッシュへロールバックし、UI へトースト通知 (`error`) を表示する。
+2. Runtime Manager は下記ステージを順番に実行する共通ステートマシンを走査する。各ステージは `docs/AUTOSAVE-DESIGN-IMPL.md` と同じ `retryable` セマンティクスで例外を分類する。
+
+   | Stage | 主処理 | 失敗コード | retryable | 備考 |
+   | --- | --- | --- | --- | --- |
+   | `manifest:validate` | `conimg-plugin.json` の構文検証と必須フィールド確認 | `E_PLUGIN_MANIFEST_INVALID` | false | `FlagSnapshot.source=env` 時でも失敗は即時ロールバック。
+   | `compat:check` | `engines.vscode` と Bridge バージョンの major を比較 | `E_PLUGIN_VERSION_INCOMPATIBLE` | false | 将来 `conimg-api` も併用。 |
+   | `permissions:gate` | 新規権限差分を承認セットと比較 | `E_PLUGIN_PERMISSION_PENDING` / `E_PLUGIN_PERMISSION_DENIED` | false | `pending` は UI から承認されるまで再試行しない。 |
+   | `dependencies:cache` | npm/workspace キャッシュの整合性確認 | `E_PLUGIN_DEP_RESOLVE` | true | `retryable=true` は指数バックオフ。 |
+   | `hooks:register` | Webview フック登録・差し替え | `E_PLUGIN_RELOAD_FAILED` | true | Webview ack で成功確定。 |
+
+3. `retryable=false` を受け取った場合は承認待ちまたは互換性エラーとみなし、即座に旧キャッシュへロールバックし UI へトースト通知 (`error`) を表示する。
 4. ロールバック時は以下を順番に復元する:
    - Worker バンドル (`dist/worker.js`)
    - フック登録 (`commands`, `widgets`, `on*`)
    - 権限ゲート状態（承認済みセット）
-   - 監視対象ハッシュ
-5. ロールバックが成功したら、Collector へ `log(level=warn, code=E_PLUGIN_ROLLBACK_APPLIED)` を転送し、Day8 パイプラインで追跡可能にする。
+   - 監視対象ハッシュと `FlagSnapshot.source`（`env` 優先のまま AutoSave 指標を維持）
+5. 成否にかかわらず `extension:plugin-bridge` タグ付きで Collector へ `PluginReload` ログを転送し、Day8 パイプラインの `result:<success|rollback|denied>` 指標を更新する。
+
+### 3.1 メッセージフローと通知条件
+- `plugins.reload`
+  - 要求: `{ type: "plugins.reload", manifestHash, attempt }`。Webview は即時 `ack(reload-started)` を返し、Host は `paused` 状態を維持する。
+  - 応答: `reload-complete`（成功）か `reload-error`（失敗）。`reload-error` には `E_PLUGIN_*` と `retryable` を必ず含め、`retryable=false` は UI へ即時トーストを表示して再試行を停止する。
+  - 再試行: `retryable=true` のみ指数バックオフ（1s→4s→9s）。AutoSave と同様、連続 3 回失敗で UI/Collector に `error` を送出する。
+- `log`
+  - フック/Runtime から発火される任意ログ。`level=error` かつ `retryable=false` のメッセージは `PluginReload` 連鎖と同様にロールバックを誘発する。
+  - Collector には JSONL 形式で `scope=extension:plugin-bridge`、`plugin:<id>`, `result:<success|rollback>`、`retryable:<bool>` をタグとして付与し、Day8/Analyzer が Day8/docs/day8/design/03_architecture.md の Pipeline 指標を更新できるようにする。
+- UI 通知
+  - `E_PLUGIN_PERMISSION_PENDING` は権限承認ダイアログを表示し、承認が入るまで追加リクエストを抑止する。
+  - `E_PLUGIN_PERMISSION_DENIED` は `FlagSnapshot.source` を `env` 優先で維持したまま Safe Mode を案内し、Collector へ `result=denied` を記録する。
 
 ## 4. 例外と通知
 | 例外コード | 説明 | retryable | UI 通知 | Collector ログ |
 | --- | --- | --- | --- | --- |
 | `E_PLUGIN_MANIFEST_INVALID` | Manifest がスキーマに不一致 | false | 即時トースト + 問題パネル | `error` + `extension:plugin-bridge` |
-| `E_PLUGIN_PERMISSION_PENDING` | 新規権限承認待ち | true | ダイアログで承認要求、拒否時は `error` | `warn` |
+| `E_PLUGIN_VERSION_INCOMPATIBLE` | `engines.vscode` major が Bridge と乖離 | false | 設定/バージョン確認の CTA | `error` |
+| `E_PLUGIN_PERMISSION_PENDING` | 新規権限承認待ち | false | ダイアログで承認要求、承認まで再試行停止 | `warn` |
+| `E_PLUGIN_PERMISSION_DENIED` | ユーザが権限を拒否 | false | 再度有効化手順をガイド | `error` |
 | `E_PLUGIN_DEP_RESOLVE` | npm 依存解決失敗 | true | 再試行 3 回失敗後にトースト | `warn` |
 | `E_PLUGIN_RELOAD_FAILED` | Runtime 初期化失敗 | true | 3 回失敗で `error` 通知 | `error` |
 | `E_PLUGIN_ROLLBACK_APPLIED` | 旧版へ復旧 | false | 状況に応じて `info` バナー | `info` |
