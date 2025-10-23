@@ -168,3 +168,56 @@ jobs:
           name: build-log
           path: build.log
           if-no-files-found: ignore
+
+  golden:
+    needs:
+      - build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@9.12.3 --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Ensure lockfile
+        run: |
+          if [ ! -f pnpm-lock.yaml ]; then
+            pnpm install --lockfile-only
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run golden comparison
+        id: golden
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          rm -rf runs golden-diff.txt golden.log
+          pnpm -s golden:ci |& tee golden.log
+
+      - name: Upload golden artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-artifacts
+          path: |
+            golden.log
+            golden-diff.txt
+            runs
+          if-no-files-found: ignore
+
+      - name: Assert golden comparison passed
+        if: steps.golden.outcome == 'failure'
+        run: exit 1
