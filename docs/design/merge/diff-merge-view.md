@@ -2,8 +2,8 @@
 intent_id: INT-MERGE-DIFFVIEW
 owner: platform-merge
 status: draft
-last_reviewed_at: 2025-02-17
-next_review_due: 2025-03-17
+last_reviewed_at: 2025-03-04
+next_review_due: 2025-04-04
 ---
 
 # DiffMergeView / MergeDock 設計テンプレート
@@ -11,10 +11,11 @@ next_review_due: 2025-03-17
 ## メタデータ
 
 ```yaml
-task_id: 20250217-diff-merge-view
+task_id: 20250304-diff-merge-view
 repo: https://github.com/imgponic/Conimgponic
 base_branch: main
 work_branch: feat/diff-merge-view
+author: platform-merge
 priority: P1
 langs: [typescript, react]
 ```
@@ -22,30 +23,25 @@ langs: [typescript, react]
 ## 1. 対象モジュール
 - `src/components/MergeDock.tsx`
 - `src/components/DiffMergeView.tsx`
+- `src/components/DiffMergeTabs.tsx`
 - `src/lib/merge.ts`
+- `tests/merge/diff-merge-view.spec.ts`
 
 ## 2. precision フラグ別タブ設計
 
+`docs/MERGE-DESIGN-IMPL.md` §5 と `docs/IMPLEMENTATION-PLAN.md` §0.3 の指針を継承し、`merge.precision` ごとのタブ構成・初期表示・AutoSave 協調要件を下表に整理する。
+
 | precision | タブ配列 (`MergeDock`) | 初期タブ | DiffMergeView マウント条件 | AutoSave/Lock 協調 | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| `legacy` | `Compiled`, `Shot`, `Assets`, `Import`, `Golden` | `Compiled` | 常にアンマウント。`activeTab==='diff-merge'` は `compiled` へフォールバック。 | AutoSave ロックは `merge` スコープを要求しない。`queueMergeCommand` は noop。 | 既存 UI を維持し Diff タブへのショートカットも非表示。
-| `beta` | 既存 5 タブ + `Diff Merge` (末尾) | `Compiled` | `queueMergeCommand('hydrate')` 成功時に遅延マウント。 | AutoSave `locks.isShared('project')` が true の場合、Diff タブを読み取り専用にし `aria-live` で警告。 | `Diff Merge (Beta)` バナーと再試行 CTA を表示し、`queueMergeCommand` はリトライ可能。
-| `stable` | `Diff Merge`, `Compiled`, `Shot`, `Assets`, `Import`, `Golden` | `Diff Merge` | 常時マウント。`MergeDock` がタブスナップショットを `merge.lastTab` に保持。 | AutoSave が `project` ロックを独占するときは `MergeDock` がタブ変更をロックし、解除直後に `queueMergeCommand` キューを drain。 | CTA を主要ボタンへ昇格し、AutoSave `flushNow()` を確定実行。
+| `legacy` | `Compiled`, `Shot`, `Assets`, `Import`, `Golden` | `Compiled` | 常にアンマウント。`activeTab==='diff-merge'` は `compiled` へフォールバック。 | AutoSave は `merge` スコープの共有ロックを要求しない。`queueMergeCommand` は noop。 | 従来 UI を維持し Diff ショートカット非表示。 |
+| `beta` | 上記 5 タブ + `Diff Merge (Beta)` (末尾) | `Compiled` | `queueMergeCommand('hydrate')` 成功時に遅延マウント。 | AutoSave `locks.isShared('project')` が true の間は読み取り専用モード。警告バナーを `aria-live` 表示。 | `queueMergeCommand` はリトライ可、AutoSave `flushNow()` を成功時に非同期発行。【F:docs/MERGE-DESIGN-IMPL.md†L168-L206】 |
+| `stable` | `Diff Merge`, `Compiled`, `Shot`, `Assets`, `Import`, `Golden` | `Diff Merge` | 常時マウント。`MergeDock` がタブスナップショットを `merge.lastTab` に保持。 | AutoSave が `project` ロックを独占するときはタブ変更・CTA をロックし、解除後に `queueMergeCommand` キューを drain。 | CTA を主要ボタンへ昇格し、AutoSave `flushNow()` を即時実行。【F:docs/IMPLEMENTATION-PLAN.md†L56-L104】 |
 
-- precision 降格時 (`stable→beta→legacy`) は `MergeDock` が Diff タブの DOM を破棄し、未完了キューをキャンセルする。
-- AutoSave と同時編集を防ぐため、`DiffMergeView` は `locks.onChange` を購読し、ロック中は `queueMergeCommand` を enqueue のみに制限する。
+precision 降格時 (`stable→beta→legacy`) は Diff タブ DOM を破棄し、未完了コマンドをキャンセルする。AutoSave ロック中の降格は `queueMergeCommand` キューを保持したまま `retryable` エラーで UI に通知する。【F:docs/MERGE-DESIGN-IMPL.md†L188-L205】
 
-## 3. コンポーネント構造と状態遷移
+## 3. コンポーネントツリー
 
-### 3.1 Component Tree
-## 1. 目的と対象モジュール
-### 1.1 目的
-`merge.precision` フラグ（`legacy` → `beta` → `stable`）に応じた Diff Merge タブ制御と `queueMergeCommand` 起点の操作フローを `MergeDock` に統合し、AutoSave 連携を前提に UI/ステートの責務を整理する。
-
-### 1.2 対象モジュール
-- `src/components/MergeDock.tsx`
-- `src/components/DiffMergeView.tsx`
-- `src/lib/merge.ts`
+`docs/MERGE-DESIGN-IMPL.md` §5.1 の構造を図化し、各ノードの責務と対象モジュールを列挙する。
 
 ```mermaid
 flowchart TD
@@ -61,10 +57,19 @@ flowchart TD
     DiffMergeView --> TelemetryBridge[queueMergeCommand]
 ```
 
-- `MergeDock` が precision に応じたタブ露出と初期化を制御し、Diff タブのみ `DiffMergeView` をマウントする。
-- `DiffMergeView` は `useReducer` ベースのストアでハンク状態・ロック状態・AutoSave ステータスを集約する。
+| ノード | 役割 | 実装ポイント | precision 依存 | AutoSave 連携 |
+| --- | --- | --- | --- | --- |
+| `MergeDock` | タブ構成と初期タブを precision で切替。 | `src/components/MergeDock.tsx` | `legacy` で Diff タブ非表示。 | AutoSave 独占ロック時はタブ遷移を抑止。 |
+| `DiffMergeTabs` | タブ見出しレンダリングとキーボードナビゲーション。 | `src/components/DiffMergeTabs.tsx` | `beta/stable` のみ。 | AutoSave バナー発火時に `tabIndex` を制御。 |
+| `DiffMergeView` | ハンク状態・ロック状態ストアを集約。 | `src/components/DiffMergeView.tsx` | `beta/stable` のみマウント。 | `locks.onChange` を購読し CTA を制御。 |
+| `HunkListPane` | ハンク一覧とフィルタ。 | `DiffMergeView.tsx` 内部 | `legacy` 非表示。 | AutoSave ロック中は `aria-disabled`。 |
+| `OperationPane` | 個別/一括操作 UI。 | `DiffMergeView.tsx` 内部 | `beta/stable` | AutoSave ロック中は操作無効化。 |
+| `BannerStack` | バナー/トースト制御。 | `DiffMergeView.tsx` 内部 | 全 precision | AutoSave・`retryable` を集約表示。 |
+| `TelemetryBridge` | `queueMergeCommand` 送出とイベント購読。 | `src/lib/merge.ts` | 全 precision | AutoSave `flushNow()` 呼出順を保証。 |
 
-### 3.2 Hunk 状態機械
+## 4. タブ状態機械
+
+`docs/MERGE-DESIGN-IMPL.md` §5.2 と実装計画の precision 遷移図を反映し、タブ状態と Diff ハンク状態を統合したステートマシンを定義する。
 
 ```mermaid
 stateDiagram-v2
@@ -81,75 +86,27 @@ stateDiagram-v2
     Ready --> ReadOnly: autosave.lock('project')
     ReadOnly --> Ready: autosave.release('project')
     Error --> Ready: retryCommand
+
+    state Precision {
+        [*] --> Legacy
+        Legacy --> Beta: setPrecision('beta')
+        Beta --> Stable: setPrecision('stable')
+        Stable --> Beta: downgrade('beta')
+        Beta --> Legacy: downgrade('legacy')
+    }
+
+    Ready --> Precision.Beta: precisionChange
+    Precision.Beta --> Hydrating: mountDiff
+    Precision.Stable --> Ready: hydrateComplete
+    Precision.Beta --> Precision.Legacy: rollbackLegacy
 ```
-    [*] --> Legacy
-    [*] --> Beta
-    [*] --> Stable
 
-    state Legacy {
-        [*] --> Compiled
-        Compiled --> Shot: tabClick('shot')
-        Compiled --> Assets: tabClick('assets')
-        Compiled --> Import: tabClick('import')
-        Compiled --> Golden: tabClick('golden')
-        Shot --> Assets: tabClick('assets')
-        Assets --> Import: tabClick('import')
-        Import --> Golden: tabClick('golden')
-        Shot --> Compiled
-        Assets --> Compiled
-        Import --> Compiled
-        Golden --> Compiled
-    }
+- `Precision` サブマシンは `MergeDock` のタブ露出を制御し、`setPrecision`/`downgrade` でタブ DOM を追加・破棄する。【F:docs/IMPLEMENTATION-PLAN.md†L56-L104】
+- `Ready` から `Precision.Beta` への遷移は Diff タブ表示後の `hydrate` 処理と同期し、ロールバック時 (`rollbackLegacy`) は Diff 状態・テレメトリを破棄する。【F:docs/MERGE-DESIGN-IMPL.md†L170-L206】
 
-    state Beta {
-        [*] --> Compiled
-        Compiled --> Shot: tabClick('shot')
-        Compiled --> Assets: tabClick('assets')
-        Compiled --> Import: tabClick('import')
-        Compiled --> Golden: tabClick('golden')
-        Compiled --> Diff: tabClick('diff-merge')
-        Shot --> Compiled
-        Assets --> Compiled
-        Import --> Compiled
-        Golden --> Compiled
-        Diff --> Compiled: tabClick('compiled')
-        Diff --> Operation: selectHunk
-        Operation --> Diff: commandResolved
-    }
+## 5. `queueMergeCommand` フロー
 
-    state Stable {
-        [*] --> Diff
-        Diff --> Compiled: tabClick('compiled')
-        Compiled --> Shot: tabClick('shot')
-        Shot --> Assets: tabClick('assets')
-        Assets --> Import: tabClick('import')
-        Import --> Golden: tabClick('golden')
-        Golden --> Compiled: tabClick('compiled')
-        Diff --> Operation: selectHunk
-        Operation --> Edit: openEditModal
-        Edit --> Operation: closeModal
-        Operation --> Bulk: openBulkActions
-        Bulk --> Operation: bulkResolved
-        Compiled --> Diff: tabClick('diff-merge')
-    }
-```
-- `Legacy` フェーズでは Diff Merge UI を生成せず、既存 5 タブが往復する。
-- `Beta` フェーズは `Diff` タブを末尾に追加し、操作完了で `Diff` へ復帰する単純ループ。
-- `Stable` フェーズは Diff Merge を初期表示とし、編集・一括操作・レガシータブ往復まで含めた遷移を保証する。
-- 出典: [docs/IMPLEMENTATION-PLAN.md §0.3.1-§0.3.3](../../IMPLEMENTATION-PLAN.md#03-mergedock--diffmergeview-タブ棚卸し)
-
-| 状態 | UI 表示 | トリガー | Exit 条件 |
-| --- | --- | --- | --- |
-| `Unloaded` | Diff ペイン非表示 | precision が `beta/stable` | `queueMergeCommand('hydrate')` |
-| `Hydrating` | スケルトン表示 + CTA ローディング | 初期データフェッチ | `commandResolved(success/error)` |
-| `Ready` | ハンク一覧 + 操作バー | 正常ロード済み | AutoSave 独占ロック or ユーザ操作 |
-| `Inspecting` | ハンク詳細 / 操作ボタン | `selectHunk` | `commandResolved`, `openBulk`, `openEditModal` |
-| `Editing` | 編集モーダル + focus trap | `openEditModal` | `closeModal`, `commandResolved` |
-| `BulkSelecting` | 一括操作バー固定 | `openBulk` | `bulkResolved`, `closeBulk` |
-| `ReadOnly` | バナー `「AutoSave により保存中…」` | AutoSave がロックを保持 | `autosave.release('project')` |
-| `Error` | バナー `「再試行してください」` | `commandResolved(error)` | `retryCommand` |
-
-### 3.3 `queueMergeCommand` フロー
+`docs/MERGE-DESIGN-IMPL.md` §5.3 の手順をベースに、AutoSave 共有ロックとの協調を図示する。
 
 ```mermaid
 sequenceDiagram
@@ -158,75 +115,50 @@ sequenceDiagram
     participant AutoSave as AutoSave Lock Manager
     UI->>Hub: queueMergeCommand(payload)
     Hub->>AutoSave: requestSharedLock('project')
-    AutoSave-->>Hub: lockGranted | lockPending
+    AutoSave-->>Hub: lockGranted / lockPending
     alt lockGranted
         Hub->>Hub: execute merge3 / legacy pipeline
         Hub-->>UI: commandResolved({ status, retryable })
     else lockPending
-        UI->>UI: show "保存中…" banner, disable CTA
+        UI->>UI: show "保存中…" banner
         AutoSave-->>Hub: lockReleased
-        Hub->>Hub: resume command queue
+        Hub->>Hub: resume queued commands
         Hub-->>UI: commandResolved({ status, retryable })
     end
-    UI->>AutoSave: flushNow() (success && precision in {beta,stable})
+    opt success && precision in {beta, stable}
+        UI->>AutoSave: flushNow()
+    end
 ```
 
-| ステップ | 説明 | precision 依存 | AutoSave 連携 |
+| 手順 | 詳細 | precision 影響 | AutoSave 協調 | リスク緩和 |
+| --- | --- | --- | --- | --- |
+| 1. enqueue | UI から `queueMergeCommand` を発行し、`payload` をストアにバッファ。 | 全 precision | ロック中は enqueue のみ許可。 | `merge.lastTab` を保持し UI 復帰を保証。 |
+| 2. lock 交渉 | `merge.ts` が AutoSave 共有ロックを取得。 | `legacy` はスキップ。 | `lockPending` 時にローディングバナー表示。 | 5 秒超過で `retryable` エラーとし UI へ警告。 |
+| 3. 実行 | ロック取得後に `merge3` または従来処理を実行。 | `beta/stable` で Diff ハンク更新。 | ロック解除まで結果適用を遅延。 | 失敗時は `retryable` 判定でリトライ経路を分岐。 |
+| 4. 結果通知 | `commandResolved` を発火し UI ステータス更新。 | 全 precision | `retryable=false` で `MergeDock` を `compiled` へ戻す。 | Diff 状態破棄で不整合防止。 |
+| 5. AutoSave flush | 成功時に `flushNow()` を連携。 | `beta/stable` のみ | ロック解除直後に実行。 | Telemetry でロック時間を追跡。 |
+
+## 6. AutoSave ロック協調要件
+
+- `AutoSave` の共有ロック (`requestSharedLock('project')`) が未取得の場合、Diff タブ操作はバナー表示と CTA 無効化で待機する。
+- 独占ロック (`lockExclusive`) を検出した場合は `ReadOnly` 状態へ遷移し、タブ切替を封止。解除後に `queueMergeCommand` の未処理エントリを再実行する。
+- AutoSave が `saved` を発火するまで `persistMergeTrace` を保留し、`merge:trace:persisted` と AutoSave 証跡の順序を固定する。【F:docs/MERGE-DESIGN-IMPL.md†L205-L222】
+
+## 7. テスト設計 (`tests/merge/diff-merge-view.spec.ts`)
+
+TDD を前提に、`node:test` で実装するユニット/結合テストの観点を整理する。
+
+| カテゴリ | ケース | シナリオ | 期待挙動 |
 | --- | --- | --- | --- |
-| 1. enqueue | UI から `queueMergeCommand` を発行。payload は `type`, `hunkId`, `context`. | 全 precision | `ReadOnly` 時は enqueue のみで遅延実行。 |
-| 2. lock 交渉 | `merge.ts` が AutoSave 共有ロック (`isShared`) を試行。 | `legacy` はスキップ。`beta/stable` は必須。 | `lockPending` 時は UI にローディングバナー。 |
-| 3. 実行 | ロック取得後に `merge3` or レガシーパイプラインを実行。 | `beta/stable` は Diff ハンク更新、`legacy` は従来処理。 | 実行時間が SLA 超過なら `retryable=true` を付与。 |
-| 4. 結果通知 | `commandResolved` を UI へ通知しステータス更新。 | 全 precision | `retryable` の場合 UI がリトライ CTA を露出。 |
-| 5. AutoSave flush | 成功かつ Diff タブ有効時は AutoSave `flushNow()`。 | `beta/stable` のみ | ロック解除タイミングを Telemetry へ送信。 |
+| キーボード操作 | タブ左右移動 | `precision='beta'` で `ArrowRight` を送出すると Diff タブへ移動し、AutoSave ロック中は `tabIndex=-1` でスキップ。 | タブフォーカスが `diff-merge` に遷移し、ロック時は `compiled` に留まる。 |
+| キーボード操作 | ハンクリストショートカット | `Alt+J/K` でハンク選択を前後移動。 | `selectHunk` アクションが発火し、`Inspecting` 状態へ遷移。 |
+| バナー表示 | AutoSave 待機 | `lockPending` イベントで「保存中…」バナーを表示。 | バナー DOM が `aria-live=polite` で描画され、CTA が disabled。 |
+| バナー表示 | `retryable` エラー | `commandResolved({retryable:true})` を受信。 | バナーに再試行 CTA が表示され、`retryCommand` 送出で閉じる。 |
+| コマンド送出 | `queueMergeCommand('hydrate')` | Diff タブ初回表示時。 | `requestSharedLock` → `merge3` 呼出をモック検証。 |
+| コマンド送出 | AutoSave flush | 成功時 (`status==='success'`)。 | `flushNow()` が precision `beta/stable` のみ呼ばれる。 |
 
-## 4. リスクとロック協調要件
-- AutoSave 独占ロック (`exclusive`) 発生時は `MergeDock` がタブ操作を無効化し、解除後に `merge.lastTab` を復元する。
-- Diff タブが `legacy` へ降格した際は `queueMergeCommand` キューを破棄し、AutoSave へ `releaseShared('project')` を明示送信する。
-- `retryable=false` のエラーでは `MergeDock` が `Compiled` タブへ遷移し、Diff 状態を再初期化する。
+## 8. リスク / ロールバック条件
 
-## 5. `tests/merge/diff-merge-view.spec.ts` TDD チェックリスト
-
-### 5.1 キーボード操作
-- [ ] `ArrowLeft/Right` で `role="tab"` が precision ごとのタブ配列順に移動する。
-- [ ] `ArrowUp/Down` でハンクリストのフォーカスが移動し、`Enter` で詳細パネルへ遷移する。
-- [ ] `Esc` で編集モーダルが閉じ、フォーカスが元のハンクへ戻る。
-
-### 5.2 バナー表示
-- [ ] AutoSave ロック中に `"保存中…"` バナーが `aria-live="polite"` で表示される。
-- [ ] `retryable` エラー時に警告バナーが `aria-live="assertive"` で読み上げられる。
-- [ ] precision 降格 (`stable→beta`) 後に Diff 特有バナーが DOM から除去される。
-
-### 5.3 コマンド送出
-- [ ] `queueMergeCommand('hydrate')` 成功後に `commandResolved` が `Ready` 状態へ遷移させる。
-- [ ] AutoSave 独占ロック中でもコマンドがエンキューされ、解除後にまとめて実行される。
-- [ ] `retryable=false` エラーで `MergeDock` が `Compiled` タブへ戻り、Diff ステートが破棄される。
-
-### 5.4 リスク / ロールバック条件
-- [ ] AutoSave ロック解除イベントが 5 秒以内に届かない場合は Diff タブを自動で隠蔽する。
-- [ ] precision を `legacy` へ戻した際に未処理コマンドが全てドロップされる。
-- [ ] Telemetry が `merge.precision.blocked` を受信した場合、Diff タブを非表示にして既存 UI へロールバックする。
-
-- `legacy` では Diff Merge UI を描画しない。
-- `beta` ではタブにベータラベルを付与し、CTA は従来ボタンを保持しつつ警告表示を追加する。
-- `stable` では Diff Merge CTA を主要アクションへ昇格し、タブ初期表示も Diff Merge に切り替える。
-- 出典: [docs/MERGE-DESIGN-IMPL.md §5](../../MERGE-DESIGN-IMPL.md#5-ui--インタラクション)
-
-## 3. TDD ケース集約（予定: `tests/merge/diff-merge-view.spec.ts`）
-1. **`queueMergeCommand` フローと AutoSave 連携**
-   - ハンク選択→`queueMergeCommand` 呼び出し→`commandResolved` 受信で `HunkListPane` の `statusMap` が同期される。
-   - `queueMergeCommand` が `error: { retryable: true }` を返した場合、OperationPane がリトライ CTA をフォーカスし `aria-live="assertive"` で通知する。
-   - `queueMergeCommand` 実行中に AutoSave が `project` ロックを保持していても CTA 文言が `「保存中…」` へ更新され、ロック解放と同時に `「結果を採用」` へ復帰する（ロック共存）。
-   - AutoSave が `readonly` へ遷移したとき、操作ボタンが `disabled` となり `queueMergeCommand` 呼び出しが抑止される。
-2. **タブ制御と精度フェーズ**
-   - `precision='legacy'` では `Diff Merge` タブが DOM へ描画されず、`activeTab='diff-merge'` 指定時は `compiled` へフォールバックする。
-   - `precision` を `legacy`→`beta`→`stable` に変更すると、タブ配列・初期選択が Implementation Plan §0.3 の遷移と一致する。
-   - `stable` フェーズで `pref` が `diff-merge` に保存され、`beta` へ降格するとレガシータブ構成へロールバックされる。
-3. **CTA 更新とロールバック**
-   - `precision` を `stable` から `beta` へ降格すると Diff Merge 固有 CTA が DOM から除去され、ハンクペインが `hidden` となる。
-   - 降格後に `queueMergeCommand` を発火しても noop が返り AutoSave 状態へ副作用が生じない。
-
-## 4. リスクと対応策
-- **アクセシビリティ / キーボード操作**: タブボタンへ `role="tab"` と `aria-controls` を付与し、`Tab` と `Arrow` ナビゲーションを保証。ハンク行は `aria-activedescendant` で示し、`Enter` / `Space` による CTA 実行とモーダルのフォーカストラップを強制する。
-- **ARIA ライブリージョン**: `queueMergeCommand` 成功/失敗・AutoSave ロック取得/解除を `aria-live="assertive"` で告知し、スクリーンリーダー利用者への遅延を防ぐ。
-- **仮想スクロール性能**: `HunkListPane` は `react-window` 等の仮想化を必須とし、ハンク 500 件規模でも 16ms 以内のフレームを維持するため Telemetry にスクロール Jank メトリクスを追加する。
-- **ロールバック戦略**: `precision` 降格時は Diff Merge UI/CTA を完全非表示とし、`localStorage.mergePref` を `compiled` へリセット。旧 CTA と統計表示のみ残し、利用者へ段階的案内を提供する。
+- **AutoSave ロック遅延**: 共有ロックが 5 秒超過で未取得の場合、UI は `retryable` バナーを継続表示し、`queueMergeCommand` キューを維持する。ロールバック時は Diff タブ DOM を破棄し、未処理コマンドをキャンセルする。【F:docs/MERGE-DESIGN-IMPL.md†L188-L206】
+- **precision 降格**: `stable` から `beta/legacy` へ降格する際、`merge.lastTab` を `compiled` に設定し Diff 状態・テレメトリを破棄する。ロック中は降格を保留し、解除後に再評価する。【F:docs/IMPLEMENTATION-PLAN.md†L74-L104】
+- **`retryable=false` エラー**: `queueMergeCommand` が非再試行エラーを返した場合、Diff タブを非表示に戻し `MergeDock` を従来 UI にフォールバック。AutoSave には `releaseShared('project')` を送信し整合性を確保する。【F:docs/MERGE-DESIGN-IMPL.md†L205-L222】
