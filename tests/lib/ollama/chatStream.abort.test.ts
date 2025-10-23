@@ -11,9 +11,13 @@ import ts from 'typescript'
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const req = createRequire(import.meta.url)
 const cache = new Map<string, vm.SourceTextModule>()
-const withExt = (spec: string) => (spec.endsWith('.ts') || spec.endsWith('.js') ? spec : `${spec}.ts`)
-const resolveImport = (spec: string, parent: string) => (spec.startsWith('.') || spec.startsWith('/') ? resolve(dirname(parent), withExt(spec)) : req.resolve(spec, { paths: [dirname(parent)] }))
-const loadModule = async (path: string) => {
+interface ResponseLike {
+  readonly body: ReadableStream<Uint8Array> | null
+}
+const withExt = (spec: string): string => (spec.endsWith('.ts') || spec.endsWith('.js') ? spec : `${spec}.ts`)
+const resolveImport = (spec: string, parent: string): string =>
+  spec.startsWith('.') || spec.startsWith('/') ? resolve(dirname(parent), withExt(spec)) : req.resolve(spec, { paths: [dirname(parent)] })
+const loadModule = async (path: string): Promise<vm.SourceTextModule> => {
   if (cache.has(path)) return cache.get(path)!
   const { outputText } = ts.transpileModule(await readFile(path, 'utf8'), {
     compilerOptions: {
@@ -33,14 +37,20 @@ const loadModule = async (path: string) => {
   await mod.link(async (spec) => loadModule(resolveImport(spec, path)))
   return mod
 }
-const importTs = async (path: string) => { const mod = await loadModule(path); if (mod.status !== 'evaluated') await mod.evaluate(); return mod.namespace as any }
+const importTs = async <TModule = Record<string, unknown>>(path: string): Promise<TModule> => {
+  const mod = await loadModule(path)
+  if (mod.status !== 'evaluated') await mod.evaluate()
+  return mod.namespace as TModule
+}
+
+const isAbortError = (error: unknown): error is Error => error instanceof Error && error.message === 'aborted'
 
 test('chatStream propagates abort from external controller', async (t) => {
   const originalFetch = globalThis.fetch
-  const cancelReasons: Array<unknown> = []
+  const cancelReasons: unknown[] = []
   const encoder = new TextEncoder()
   const controller = new AbortController()
-  const { chatStream } = await importTs(join(root, 'src/lib/ollama.ts'))
+  const { chatStream } = await importTs<typeof import('../../../src/lib/ollama')>(join(root, 'src/lib/ollama.ts'))
 
   globalThis.fetch = async (_url: string, init?: { signal?: AbortSignal }) => {
     assert.ok(init?.signal, 'signal is required')
@@ -61,9 +71,11 @@ test('chatStream propagates abort from external controller', async (t) => {
       cancelReasons.push(error)
       controllerRef?.error(error)
     }, { once: true })
-    return { body: stream } as any
+    return { body: stream } as ResponseLike
   }
-  t.after(() => { globalThis.fetch = originalFetch })
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
 
   const iterator = chatStream('llama3.1', 'prompt', { controller })[Symbol.asyncIterator]()
   const first = await iterator.next()
@@ -72,6 +84,6 @@ test('chatStream propagates abort from external controller', async (t) => {
   const pending = iterator.next()
   controller.abort()
 
-  await assert.rejects(pending, (error: any) => error?.message === 'aborted')
-  assert.ok(cancelReasons.some((reason) => (reason as any)?.message === 'aborted'))
+  await assert.rejects(pending, isAbortError)
+  assert.ok(cancelReasons.some((reason) => isAbortError(reason)))
 })
