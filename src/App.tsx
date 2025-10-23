@@ -105,7 +105,7 @@ export default function App(){
       {
         disabled: decision.guard.optionsDisabled
       },
-      decision.guard
+      autoSavePlan.snapshot.autosave
     )
     autoSaveRunner.current = runner
 

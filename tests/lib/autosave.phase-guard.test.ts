@@ -60,6 +60,54 @@ scenario('phase guard stops runner when flag disabled', async (_t: any, { initAu
 })
 
 scenario(
+  'flushNow resolves without error when disabled by workspace flag snapshot',
+  async (_t: any, { initAutoSave }: any) => {
+    const flags = createFlags(false)
+    const workspaceFlag = {
+      ...flags.autosave,
+      enabled: false,
+      source: 'workspace'
+    }
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, workspaceFlag)
+    assert.equal(runner.snapshot().phase, 'disabled')
+    await assert.doesNotReject(async () => runner.flushNow())
+    assert.equal(runner.snapshot().phase, 'disabled')
+    assert.doesNotThrow(() => runner.dispose())
+  }
+)
+
+scenario(
+  'flushNow resolves without error when options disable autosave',
+  async (_t: any, { initAutoSave }: any) => {
+    const flags = createFlags(true)
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: true }, flags)
+    assert.equal(runner.snapshot().phase, 'disabled')
+    await assert.doesNotReject(async () => runner.flushNow())
+    assert.equal(runner.snapshot().phase, 'disabled')
+    assert.doesNotThrow(() => runner.dispose())
+  }
+)
+
+scenario(
+  'workspace source takes precedence over global overrides',
+  async (t: any, { initAutoSave }: any) => {
+    const flags = createFlags(false)
+    const workspaceFlag = {
+      ...flags.autosave,
+      enabled: false,
+      source: 'workspace'
+    }
+    Object.defineProperty(globalThis, '__AUTOSAVE_ENABLED__', { value: true, configurable: true })
+    t.after(() => delete (globalThis as any).__AUTOSAVE_ENABLED__)
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, workspaceFlag)
+    assert.equal(runner.snapshot().phase, 'disabled')
+    await assert.doesNotReject(async () => runner.flushNow())
+    assert.equal(runner.snapshot().phase, 'disabled')
+    assert.doesNotThrow(() => runner.dispose())
+  }
+)
+
+scenario(
   'phase guard no-ops flush and dispose when disabled by flag and options',
   async (_t: any, { initAutoSave }: any) => {
     const flags = createFlags(false)
