@@ -19,11 +19,24 @@ export const useSB = create<State>((set, get)=> ({
   }},
   addScene(){
     const id = nanoid(8)
-    set(s => { s.sb.scenes.push({ id, manual: '', ai: '', status:'idle', assets: [] }) as any })
+    set(state => {
+      const newScene: Scene = { id, manual: '', ai: '', status: 'idle', assets: [] }
+      return {
+        sb: {
+          ...state.sb,
+          scenes: [...state.sb.scenes, newScene],
+        },
+      }
+    })
     return id
   },
   removeScene(id){
-    set(s => { s.sb.scenes = s.sb.scenes.filter(x => x.id !== id) })
+    set(state => ({
+      sb: {
+        ...state.sb,
+        scenes: state.sb.scenes.filter(x => x.id !== id),
+      },
+    }))
   },
   moveScene(id, dir){
     const s = get().sb.scenes
