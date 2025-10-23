@@ -33,7 +33,7 @@
 ### 4.1 推奨コマンドシーケンス
 1. `pnpm lint` — Node 環境で ruff 等価の静的解析を実施。【F:tests/autosave/TEST_PLAN.md†L74-L78】
 2. `pnpm typecheck` — `tsc --noEmit` により型安全性を担保。【F:tests/autosave/TEST_PLAN.md†L74-L78】
-3. `pnpm test --filter autosave` — AutoSave フラグ ON/OFF のユニット/統合を検証。【F:tests/autosave/TEST_PLAN.md†L74-L78】
+3. `pnpm test --filter autosave` — AutoSave フラグ ON/OFF のユニット/統合を検証。ピンポイントでの再現には `pnpm test -- tests/lib/autosave/init.test.ts tests/lib/autosave/scheduler.test.ts` を利用。【F:tests/autosave/TEST_PLAN.md†L74-L78】
 4. `pnpm test --filter merge` — Diff Merge タブとスコアリングの差分を確認。【F:tests/merge/TEST_PLAN.md†L54-L60】
 5. `pnpm test --filter cli` → `pnpm test --filter collector` — CLI 出力と Collector 経路をフラグ行列別にチェック。【F:tests/cli/TEST_PLAN.md†L62-L80】
 6. `pnpm test --filter telemetry` — JSONL から SLO 判定までを再現。【F:tests/telemetry/TEST_PLAN.md†L8-L55】
