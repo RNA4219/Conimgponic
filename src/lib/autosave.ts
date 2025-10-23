@@ -179,6 +179,8 @@ interface AutoSaveFlagSnapshot {
   }
 }
 
+type AutoSaveInitGuardInput = AutoSaveFlagSnapshot | AutoSaveFlagSnapshot['autosave'] | AutoSavePhaseGuardSnapshot
+
 export interface AutoSaveBridgeEnvelope<TType extends string, TPayload> {
   readonly type: TType
   readonly apiVersion: 1
@@ -823,7 +825,7 @@ const clampHistory = async (
 export function initAutoSave(
   getStoryboard: StoryboardProvider,
   options?: AutoSaveOptions,
-  flagSnapshot?: AutoSaveFlagSnapshot
+  flagSnapshot?: AutoSaveInitGuardInput
 ): AutoSaveInitResult {
   const truthy = /^(1|true)$/i, falsy = /^(0|false)$/i
   const asBool = (value: unknown) => (typeof value === 'string' && truthy.test(value) ? true : typeof value === 'string' && falsy.test(value) ? false : null)
@@ -834,6 +836,48 @@ export function initAutoSave(
     if (storage != null) return storage
     const env = asBool(g?.process?.env?.VITE_AUTOSAVE_ENABLED ?? g?.import?.meta?.env?.VITE_AUTOSAVE_ENABLED)
     return env ?? !AUTOSAVE_POLICY.disabled
+  }
+  const guardSource = (value: unknown): AutoSavePhaseGuardSnapshot['featureFlag']['source'] =>
+    value === 'env' || value === 'workspace' || value === 'localStorage' || value === 'default' ? value : 'default'
+  const normalizeGuard = (
+    candidate: AutoSaveInitGuardInput | undefined,
+    fallbackOptionsDisabled: boolean
+  ): AutoSavePhaseGuardSnapshot | null => {
+    if (!candidate || typeof candidate !== 'object') return null
+    if ('featureFlag' in candidate && candidate.featureFlag && typeof candidate.featureFlag === 'object') {
+      const guard = candidate as AutoSavePhaseGuardSnapshot
+      if (typeof guard.featureFlag?.value === 'boolean') {
+        return {
+          featureFlag: {
+            value: guard.featureFlag.value,
+            source: guardSource(guard.featureFlag.source)
+          },
+          optionsDisabled: !!guard.optionsDisabled
+        }
+      }
+    }
+    const record = candidate as Record<string, unknown>
+    if ('autosave' in record && record.autosave && typeof record.autosave === 'object') {
+      const auto = record.autosave as { enabled?: unknown; source?: unknown }
+      return {
+        featureFlag: {
+          value: !!auto?.enabled,
+          source: guardSource(auto?.source)
+        },
+        optionsDisabled: fallbackOptionsDisabled
+      }
+    }
+    if ('enabled' in record) {
+      const auto = record as { enabled?: unknown; source?: unknown }
+      return {
+        featureFlag: {
+          value: !!auto.enabled,
+          source: guardSource(auto.source)
+        },
+        optionsDisabled: fallbackOptionsDisabled
+      }
+    }
+    return null
   }
   const makeError = (
     code: AutoSaveErrorCode,
@@ -853,9 +897,35 @@ export function initAutoSave(
     if (data == null) throw makeError('write-failed', `Missing artefact ${tmp}`, true)
     await saveText(target, data); await removeFile(tmp)
   }
-  if (options?.disabled === true || !resolveFlag()) {
+  const fallbackOptionsDisabled = options?.disabled === true
+  const guardSnapshot = normalizeGuard(flagSnapshot, fallbackOptionsDisabled)
+  const effectiveOptionsDisabled = guardSnapshot?.optionsDisabled ?? fallbackOptionsDisabled
+  const snapshotFlagValue = (() => {
+    if (!flagSnapshot || typeof flagSnapshot !== 'object') return null
+    if ('featureFlag' in flagSnapshot && flagSnapshot.featureFlag && typeof flagSnapshot.featureFlag === 'object') {
+      const guard = flagSnapshot as AutoSavePhaseGuardSnapshot
+      return typeof guard.featureFlag?.value === 'boolean' ? guard.featureFlag.value : null
+    }
+    const record = flagSnapshot as Record<string, unknown>
+    if ('autosave' in record && record.autosave && typeof record.autosave === 'object') {
+      const auto = record.autosave as { enabled?: unknown }
+      return typeof auto?.enabled === 'boolean' ? auto.enabled : null
+    }
+    if ('enabled' in record) {
+      const auto = record as { enabled?: unknown }
+      return typeof auto.enabled === 'boolean' ? auto.enabled : null
+    }
+    return null
+  })()
+  const flagEnabled = guardSnapshot?.featureFlag.value ?? snapshotFlagValue ?? resolveFlag()
+  if (effectiveOptionsDisabled || !flagEnabled) {
     const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
-    return { snapshot: () => ({ ...snapshot }), flushNow: async () => { throw disabledError() }, dispose: () => {} }
+    return {
+      snapshot: () => ({ ...snapshot }),
+      flushNow: async () => {},
+      dispose: () => {},
+      markDirty: () => {}
+    }
   }
   const encoder = new TextEncoder()
   let phase: AutoSavePhase = 'idle'
@@ -935,7 +1005,8 @@ export function initAutoSave(
     dispose: () => {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
       disposed = true; phase = 'disabled'; pendingBytes = 0
-    }
+    },
+    markDirty: () => {}
   }
 }
 
