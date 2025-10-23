@@ -419,6 +419,7 @@ export function MergeDock(props?: MergeDockProps){
     ],
   )
   const plan = phasePlan.tabs
+  const diffPlan = phasePlan.diff
   const defaultPreference = getDefaultPreference(precision, phasePlan.diff.enabled)
   const storeRef = useRef<MergeDockViewStore>()
   if (!storeRef.current) {
@@ -494,12 +495,11 @@ export function MergeDock(props?: MergeDockProps){
   }, [sb, preference])
   const compiledDisplay = compiledOverride ?? compiled
 
-  const backupPolicy = plan.diff
-    ? { ...diffBackupPolicy, thresholdMs: plan.diff.backupAfterMs ?? diffBackupPolicy.thresholdMs }
-    : diffBackupPolicy
+  const diffBackupThresholdMs = plan.diff?.backupAfterMs ?? diffBackupPolicy.thresholdMs
+  const backupPolicy = { ...diffBackupPolicy, thresholdMs: diffBackupThresholdMs }
   const showBackupCTA =
-    phasePlan.diff.enabled &&
-    phasePlan.diff.exposure === 'default' &&
+    diffPlan.enabled &&
+    diffPlan.exposure === 'default' &&
     !!autoSave.flushNow &&
     shouldShowDiffBackupCTA(backupPolicy, precision, activeTab, autoSave.lastSuccessAt, Date.now())
 
@@ -535,7 +535,12 @@ export function MergeDock(props?: MergeDockProps){
   )
 
   return (
-    <div>
+    <div
+      data-merge-phase={phasePlan.phase}
+      data-merge-diff-enabled={diffPlan.enabled ? 'true' : 'false'}
+      data-merge-diff-exposure={diffPlan.exposure}
+      data-merge-diff-initial-tab={diffPlan.initialTab}
+    >
       <div className="tabs">
         {plan.tabs.map((entry) => (
           <button
@@ -563,7 +568,12 @@ export function MergeDock(props?: MergeDockProps){
       ) : null}
 
       {activeTab === 'diff' && (
-        <div style={{ padding: 8, display: 'grid', gap: 8 }}>
+        <div
+          style={{ padding: 8, display: 'grid', gap: 8 }}
+          data-merge-diff-enabled={diffPlan.enabled ? 'true' : 'false'}
+          data-merge-diff-exposure={diffPlan.exposure}
+          data-merge-diff-initial-tab={diffPlan.initialTab}
+        >
           {showBackupCTA ? (
             <button
               type="button"

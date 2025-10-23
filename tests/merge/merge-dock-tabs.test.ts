@@ -179,3 +179,64 @@ test('merge-ui: stable precision diff tab renders DiffMergeView with backup CTA 
     Date.now = originalDateNow
   }
 })
+
+test('merge-ui: beta precision diff tab reflects phase plan and keeps backup CTA gated', () => {
+  const originalWindow = globalThis.window
+  const originalDateNow = Date.now
+  const store = new Map<string, string>()
+  store.set('merge.lastTab', 'diff')
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const mockWindow = {
+    localStorage: storage,
+    __mergeDockAutoSaveSnapshot: { lastSuccessAt: '2024-05-01T00:00:00.000Z' },
+  } as typeof window & {
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+  Date.now = () => new Date('2024-05-01T00:10:01.000Z').getTime()
+
+  try {
+    const html = renderToStaticMarkup(
+      <MergeDock
+        flags={{
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'beta', precision: 'beta' },
+        }}
+        phaseStats={{ reviewBandCount: 2, conflictBandCount: 0 }}
+      />,
+    )
+
+    assert.match(html, /data-component="diff-merge-view"/)
+    assert.match(html, /data-merge-diff-enabled="true"/)
+    assert.match(html, /data-merge-diff-exposure="opt-in"/)
+    assert.doesNotMatch(html, /data-testid="merge-dock-backup-cta"/)
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+    Date.now = originalDateNow
+  }
+})
