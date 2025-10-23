@@ -119,7 +119,9 @@ export default function App(){
         } else if (e.ctrlKey && e.key === 'Enter'){
           // noop: LeftRight component handles generation
         }
-      }catch{}
+      }catch (error){
+        console.error('Keyboard shortcut handler failed', error)
+      }
     }
     window.addEventListener('keydown', onKey)
     return ()=> window.removeEventListener('keydown', onKey)

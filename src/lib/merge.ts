@@ -689,53 +689,6 @@ function assembleMergedText(hunks: readonly SectionDecision[]): string {
   return hunks.map((entry) => entry.hunk.merged).join('\n\n');
 }
 
-function buildPlan(decisions: readonly SectionDecision[], profile: ResolvedMergeProfile): MergePlan {
-  const entries: MergePlanEntry[] = decisions.map((decision) => ({
-    hunkId: decision.hunk.id,
-    section: decision.hunk.section,
-    decision: decision.hunk.decision,
-    similarity: decision.hunk.similarity,
-    locked: decision.locked,
-    band: decision.band,
-    phase: decision.band === 'auto' ? 'phase-a' : 'phase-b',
-    recommendedCommand: decision.recommendedCommand,
-  }));
-  const phaseA = entries.filter((entry) => entry.phase === 'phase-a').length;
-  const reviewBand = entries.filter((entry) => entry.band === 'review').length;
-  const locked = entries.filter((entry) => entry.locked).length;
-  const phaseBCount = entries.length - phaseA;
-  const reasons = new Set<MergePlanPhaseBReason>();
-  entries.forEach((entry) => {
-    if (entry.locked) {
-      reasons.add('locked-conflict');
-      return;
-    }
-    if (entry.band === 'review') {
-      reasons.add('review-band');
-      return;
-    }
-    if (entry.phase === 'phase-b') {
-      reasons.add('low-similarity');
-    }
-  });
-  const required = profile.precision !== 'legacy' && phaseBCount > 0;
-  return {
-    precision: profile.precision,
-    entries,
-    summary: {
-      total: entries.length,
-      phaseA,
-      phaseB: phaseBCount,
-      reviewBand,
-      locked,
-    },
-    phaseB: {
-      required,
-      reasons: Array.from(reasons),
-    },
-  };
-}
-
 function buildTrace(
   sceneId: string | undefined,
   stages: readonly MergeTraceEntry[],
@@ -856,7 +809,6 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
     stages.push({ stage: 'decide', startedAt: scoreStart, durationMs: now() - scoreStart, metadata: { hunks: decisions.length } });
 
     const stats = aggregateStats(decisions);
-    const plan = buildPlan(decisions, profile);
     const mergedText = assembleMergedText(decisions);
     const processingMillis = now() - startedAt;
     const finalStats: MergeStats = { ...stats, processingMillis };
