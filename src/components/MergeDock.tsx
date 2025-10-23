@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useStore } from 'zustand'
+import { createStore, type StoreApi } from 'zustand/vanilla'
 
 import { resolveFlags, type FlagSnapshot } from '../config'
 import { useSB } from '../store'
@@ -7,7 +9,11 @@ import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importe
 import { saveText, loadText, ensureDir } from '../lib/opfs'
 import { sha256Hex } from '../lib/hash'
 import { GoldenCompare } from './GoldenCompare'
-import { planDiffMergeView } from './DiffMergeView'
+import {
+  DiffMergeView,
+  type MergeHunk,
+  type QueueMergeCommand,
+} from './DiffMergeView'
 
 type MergePrecision = FlagSnapshot['merge']['precision']
 
@@ -26,6 +32,28 @@ type MergeDockTabPlan = {
   readonly initialTab: MergeDockTabId
   readonly diff?: MergeDockDiffPlan
 }
+
+type MergeDockPreference = 'manual-first' | 'ai-first' | 'diff-merge'
+
+interface MergeDockViewState {
+  readonly activeTab: MergeDockTabId
+  readonly preference: MergeDockPreference
+  readonly setActiveTab: (tab: MergeDockTabId) => void
+  readonly setPreference: (preference: MergeDockPreference) => void
+}
+
+type MergeDockViewStore = StoreApi<MergeDockViewState>
+
+const createMergeDockViewStore = (
+  initialTab: MergeDockTabId,
+  preference: MergeDockPreference,
+): MergeDockViewStore =>
+  createStore<MergeDockViewState>((set) => ({
+    activeTab: initialTab,
+    preference,
+    setActiveTab: (tab) => set({ activeTab: tab }),
+    setPreference: (next) => set({ preference: next }),
+  }))
 
 type MergePhaseKey = 'phase-a' | 'phase-b'
 
@@ -129,6 +157,53 @@ const MERGE_DOCK_TAB_PLAN: Record<MergePrecision, MergeDockTabPlan> = Object.fre
 const isBaseTabId = (value: unknown): value is BaseTabId => typeof value === 'string' && (BASE_TAB_IDS as readonly string[]).includes(value)
 
 const MERGE_THRESHOLD_STORAGE_KEY = 'conimg.merge.threshold'
+
+const getDefaultPreference = (precision: MergePrecision, diffEnabled: boolean): MergeDockPreference =>
+  precision === 'stable' && diffEnabled ? 'diff-merge' : 'manual-first'
+
+const sanitizePreference = (
+  preference: MergeDockPreference,
+  precision: MergePrecision,
+  diffEnabled: boolean,
+): MergeDockPreference => {
+  if (precision === 'stable' && diffEnabled) return preference
+  return preference === 'diff-merge' ? 'manual-first' : preference
+}
+
+const sanitizeActiveTab = (
+  tab: MergeDockTabId,
+  plan: MergeDockTabPlan,
+  diffEnabled: boolean,
+): MergeDockTabId => {
+  if (!plan.tabs.some((entry) => entry.id === tab)) return plan.initialTab
+  if (tab === 'diff' && !diffEnabled) return plan.initialTab
+  return tab
+}
+
+interface MergeDockAutoSaveState {
+  readonly flushNow?: () => void
+  readonly lastSuccessAt?: string
+}
+
+type MergeDockWindow = Window & {
+  __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+  __mergeDockFlushNow?: () => void
+}
+
+const readAutoSaveState = (target: MergeDockWindow | undefined): MergeDockAutoSaveState => ({
+  flushNow: typeof target?.__mergeDockFlushNow === 'function' ? target.__mergeDockFlushNow : undefined,
+  lastSuccessAt: target?.__mergeDockAutoSaveSnapshot?.lastSuccessAt,
+})
+
+const emptyDiffHunks: readonly MergeHunk[] = []
+
+const diffMergeNoopCommand: QueueMergeCommand = async () => ({
+  status: 'success',
+  hunkIds: [],
+  telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: false },
+})
+
+type MergeDockNotice = { readonly level: 'info' | 'error'; readonly message: string }
 
 const parseMergeThreshold = (value: unknown): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -317,7 +392,8 @@ export function MergeDock(props?: MergeDockProps){
   const autoAppliedRate = props?.autoAppliedRate ?? null
   const phaseStats = props?.phaseStats ?? null
   const storage = typeof window !== 'undefined' ? window.localStorage : undefined
-  const autoSaveInterop = typeof window !== 'undefined' ? (window as typeof window & { __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }; __mergeDockFlushNow?: () => void }) : undefined
+  const mergeWindow = typeof window !== 'undefined' ? (window as MergeDockWindow) : undefined
+  const autoSave = readAutoSaveState(mergeWindow)
   const { precision, threshold } = useMergeThreshold({
     precision: flags?.merge.precision ?? null,
     threshold: props?.mergeThreshold ?? null,
@@ -343,162 +419,280 @@ export function MergeDock(props?: MergeDockProps){
     ],
   )
   const plan = phasePlan.tabs
-  const [tab, setTabState] = useState<MergeDockTabId>(plan.initialTab)
-  const [pref, setPref] = useState<'manual-first'|'ai-first'|'diff-merge'>(()=> precision==='stable' && phasePlan.diff.enabled ? 'diff-merge' : 'manual-first')
-  const precisionRef = useRef(precision)
-  useEffect(()=>{
-    if (precisionRef.current !== precision){
-      precisionRef.current = precision
-      setTabState(plan.initialTab)
-      storage?.setItem('merge.lastTab', plan.initialTab)
-      return
-    }
-    if (!plan.tabs.some(entry=>entry.id===tab) || (tab==='diff' && !phasePlan.diff.enabled)){
-      setTabState(plan.initialTab)
-      storage?.setItem('merge.lastTab', plan.initialTab)
-    }
-  }, [phasePlan.diff.enabled, plan, precision, storage, tab])
-  useEffect(()=>{
-    if ((precision !== 'stable' || !phasePlan.diff.enabled) && pref === 'diff-merge'){ setPref('manual-first') }
-  }, [phasePlan.diff.enabled, precision, pref])
-  const setTab = (next: MergeDockTabId)=>{ setTabState(next); storage?.setItem('merge.lastTab', next) }
-  const flushNow = autoSaveInterop?.__mergeDockFlushNow
-  const showBackupCTA = (() => {
-    if (!flushNow || !phasePlan.diff.enabled || phasePlan.diff.exposure !== 'default') return false
-    const last = autoSaveInterop?.__mergeDockAutoSaveSnapshot?.lastSuccessAt
-    const policy = phasePlan.tabs.diff
-      ? { ...diffBackupPolicy, thresholdMs: phasePlan.tabs.diff.backupAfterMs ?? diffBackupPolicy.thresholdMs }
-      : diffBackupPolicy
-    return shouldShowDiffBackupCTA(policy, precision, tab, last, Date.now())
-  })()
-
-  const compiled = useMemo(()=>{
-    const lines:string[] = []
-    for (let i=0;i<sb.scenes.length;i++){
-      const s = sb.scenes[i]
-      const pick = s.lock ? (s.lock==='manual'? s.manual: s.ai) :
-                   (pref==='manual-first' ? (s.manual || s.ai) :
-                    pref==='ai-first' ? (s.ai || s.manual) : (s.manual || s.ai))
-      lines.push(`## Cut ${i+1}\n${pick}`)
-    }
-    return lines.join("\n\n")
-  }, [sb, pref])
-
-  async function onImport(file: File, mode: ImportMode){
-    const text = await readFileAsText(file)
-    if (file.name.endsWith('.jsonl')){
-      mergeJSONL(sb, text, mode)
-    }else if (file.name.endsWith('.csv')){
-      mergeCSV(sb, text, mode)
-    }else if (file.name.endsWith('.md')){
-      const blocks = text.split(/\n##\s*Cut\s+\d+/).slice(1)
-      blocks.forEach((b, i)=>{
-        const body = b.replace(/<!--.*?-->/g,'').trim()
-        if (sb.scenes[i]){
-          (sb.scenes[i] as any)[mode] = body
-        }
-      })
-    }else{
-      alert('Unsupported file type. Use .jsonl / .csv / .md')
-      return
-    }
-    alert('Imported (merged).')
+  const defaultPreference = getDefaultPreference(precision, phasePlan.diff.enabled)
+  const storeRef = useRef<MergeDockViewStore>()
+  if (!storeRef.current) {
+    storeRef.current = createMergeDockViewStore(plan.initialTab, defaultPreference)
   }
+  const store = storeRef.current
+  const activeTab = useStore(store, (state) => state.activeTab)
+  const preference = useStore(store, (state) => state.preference)
+  const previousPrecisionRef = useRef(precision)
+  useEffect(() => {
+    const precisionChanged = previousPrecisionRef.current !== precision
+    previousPrecisionRef.current = precision
+    const nextTab = precisionChanged
+      ? plan.initialTab
+      : sanitizeActiveTab(activeTab, plan, phasePlan.diff.enabled)
+    const basePreference = precisionChanged ? defaultPreference : preference
+    const nextPreference = sanitizePreference(basePreference, precision, phasePlan.diff.enabled)
+    if (nextTab !== activeTab || nextPreference !== preference) {
+      store.setState({
+        ...(nextTab !== activeTab ? { activeTab: nextTab } : {}),
+        ...(nextPreference !== preference ? { preference: nextPreference } : {}),
+      })
+    }
+  }, [activeTab, plan, phasePlan.diff.enabled, precision, preference, defaultPreference, store])
+  useEffect(() => {
+    if (!storage) return
+    storage.setItem('merge.lastTab', activeTab)
+  }, [activeTab, storage])
+
+  const [compiledOverride, setCompiledOverride] = useState<string | null>(null)
+  const [notice, setNotice] = useState<MergeDockNotice | null>(null)
+  const [importMode, setImportMode] = useState<ImportMode>('manual')
+  const notify = useCallback((level: MergeDockNotice['level'], message: string) => {
+    setNotice({ level, message })
+  }, [])
+
+  const onTabChange = useCallback(
+    (next: MergeDockTabId) => {
+      const sanitized = sanitizeActiveTab(next, plan, phasePlan.diff.enabled)
+      store.getState().setActiveTab(sanitized)
+    },
+    [phasePlan.diff.enabled, plan, store],
+  )
+
+  const onPreferenceChange = useCallback(
+    (next: MergeDockPreference) => {
+      const sanitized = sanitizePreference(next, precision, phasePlan.diff.enabled)
+      store.getState().setPreference(sanitized)
+    },
+    [phasePlan.diff.enabled, precision, store],
+  )
+
+  useEffect(() => {
+    setCompiledOverride(null)
+  }, [preference])
+
+  const compiled = useMemo(() => {
+    const lines: string[] = []
+    for (let i = 0; i < sb.scenes.length; i++) {
+      const s = sb.scenes[i]
+      const pick = s.lock
+        ? s.lock === 'manual'
+          ? s.manual
+          : s.ai
+        : preference === 'manual-first'
+          ? s.manual || s.ai
+          : preference === 'ai-first'
+            ? s.ai || s.manual
+            : s.manual || s.ai
+      lines.push(`## Cut ${i + 1}\n${pick}`)
+    }
+    return lines.join('\n\n')
+  }, [sb, preference])
+  const compiledDisplay = compiledOverride ?? compiled
+
+  const backupPolicy = plan.diff
+    ? { ...diffBackupPolicy, thresholdMs: plan.diff.backupAfterMs ?? diffBackupPolicy.thresholdMs }
+    : diffBackupPolicy
+  const showBackupCTA =
+    phasePlan.diff.enabled &&
+    phasePlan.diff.exposure === 'default' &&
+    !!autoSave.flushNow &&
+    shouldShowDiffBackupCTA(backupPolicy, precision, activeTab, autoSave.lastSuccessAt, Date.now())
+
+  const onImport = useCallback(
+    async (file: File, mode: ImportMode) => {
+      try {
+        const text = await readFileAsText(file)
+        if (file.name.endsWith('.jsonl')) {
+          mergeJSONL(sb, text, mode)
+        } else if (file.name.endsWith('.csv')) {
+          mergeCSV(sb, text, mode)
+        } else if (file.name.endsWith('.md')) {
+          const blocks = text.split(/\n##\s*Cut\s+\d+/).slice(1)
+          blocks.forEach((b, i) => {
+            const body = b.replace(/<!--.*?-->/g, '').trim()
+            const scene = sb.scenes[i]
+            if (scene) {
+              const target = scene as { [key in ImportMode]?: string }
+              target[mode] = body
+            }
+          })
+        } else {
+          notify('error', 'Unsupported file type. Use .jsonl / .csv / .md')
+          return
+        }
+        notify('info', 'Imported storyboard updates.')
+      } catch (error) {
+        console.error(error)
+        notify('error', 'Import failed. See console for details.')
+      }
+    },
+    [notify, sb],
+  )
 
   return (
     <div>
       <div className="tabs">
-        {plan.tabs.map(entry=>(
+        {plan.tabs.map((entry) => (
           <button
             key={entry.id}
-            className={"tab "+(tab===entry.id?'active':'')}
-            onClick={()=>setTab(entry.id)}
+            className={"tab " + (activeTab === entry.id ? 'active' : '')}
+            type="button"
+            onClick={() => onTabChange(entry.id)}
           >
             {entry.label}
-            {entry.badge ? <span style={{marginLeft:4, fontSize:'0.75em', color:'#2563eb'}}>{entry.badge}</span> : null}
+            {entry.badge ? <span style={{ marginLeft: 4, fontSize: '0.75em', color: '#2563eb' }}>{entry.badge}</span> : null}
           </button>
         ))}
-        <div style={{marginLeft:'auto'}}><Checks/></div>
+        <div style={{ marginLeft: 'auto' }}><Checks/></div>
       </div>
 
-      {tab==='diff' && <div style={{padding:8, display:'grid', gap:8}}>
-        {showBackupCTA && <button className="btn" onClick={()=>flushNow?.()}>バックアップを今すぐ実行</button>}
-        <p style={{margin:'4px 0'}}>Diff Merge ビューは準備中です。</p>
-      </div>}
+      {notice ? (
+        <div
+          role="status"
+          data-testid="merge-dock-notice"
+          data-level={notice.level}
+          style={{ margin: '8px', padding: '8px', borderRadius: 4, background: notice.level === 'error' ? '#fee2e2' : '#e0f2fe', color: '#111827' }}
+        >
+          {notice.message}
+        </div>
+      ) : null}
 
-      {tab==='compiled' && (
+      {activeTab === 'diff' && (
+        <div style={{ padding: 8, display: 'grid', gap: 8 }}>
+          {showBackupCTA ? (
+            <button
+              type="button"
+              className="btn"
+              data-testid="merge-dock-backup-cta"
+              onClick={() => {
+                if (autoSave.flushNow) {
+                  autoSave.flushNow()
+                  notify('info', 'バックアップを実行しました。')
+                } else {
+                  notify('error', 'バックアップ操作を利用できません。')
+                }
+              }}
+            >
+              バックアップを今すぐ実行
+            </button>
+          ) : null}
+          <DiffMergeView precision={precision} hunks={emptyDiffHunks} queueMergeCommand={diffMergeNoopCommand} />
+        </div>
+      )}
+
+      {activeTab === 'compiled' && (
         <div>
-          <div style={{display:'flex', gap:8, padding:8, alignItems:'center'}}>
+          <div style={{ display: 'flex', gap: 8, padding: 8, alignItems: 'center' }}>
             <label>統合ルール:</label>
-            <select value={pref} onChange={e=>setPref(e.target.value as any)}>
+            <select value={preference} onChange={(e) => onPreferenceChange(e.target.value as MergeDockPreference)}>
               <option value="manual-first">Manual優先</option>
               <option value="ai-first">AI優先</option>
               <option value="diff-merge">差分マージ（暫定）</option>
             </select>
           </div>
-          <pre>{compiled}</pre>
+          <pre>{compiledDisplay}</pre>
         </div>
       )}
 
-      {tab==='shot' && (
-        <div style={{padding:8, display:'grid', gap:8}}>
-          <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-            <button className="btn" onClick={()=>downloadText('shotlist.md', toMarkdown(sb))}>Export MD</button>
-            <button className="btn" onClick={()=>downloadText('shotlist.csv', toCSV(sb))}>Export CSV</button>
-            <button className="btn" onClick={()=>downloadText('shotlist.jsonl', toJSONL(sb))}>Export JSONL</button>
-            <button className="btn" onClick={async()=>{
-              const ts = new Date().toISOString().replace(/[:.]/g,'-')
-              const dir = `runs/${ts}`
-              await ensureDir(dir)
-              const md = toMarkdown(sb)
-              const csv = toCSV(sb)
-              const jsonl = toJSONL(sb)
-              const h = await sha256Hex(md + '\n' + csv + '\n' + jsonl)
-              await saveText(`${dir}/shotlist.md`, md)
-              await saveText(`${dir}/shotlist.csv`, csv)
-              await saveText(`${dir}/shotlist.jsonl`, jsonl)
-              await saveText(`${dir}/meta.json`, JSON.stringify({ hash: h, title: sb.title }, null, 2))
-              await saveText('runs/latest.txt', ts)
-              alert(`Saved snapshot to OPFS: ${dir}`)
-            }}>Save Snapshot (OPFS)</button>
-            <button className="btn" onClick={async()=>{
-              const latest = await loadText('runs/latest.txt')
-              if (!latest){ alert('No snapshot'); return }
-              const md = await loadText(`runs/${latest}/shotlist.md`)
-              if (md==null){ alert('Missing compiled MD'); return }
-              const pre = document.querySelector('pre')
-              if (pre) pre.textContent = md
-              alert('Restored last compiled MD into preview (not scenes).')
-            }}>Restore Last Compiled</button>
+      {activeTab === 'shot' && (
+        <div style={{ padding: 8, display: 'grid', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn" type="button" onClick={() => downloadText('shotlist.md', toMarkdown(sb))}>
+              Export MD
+            </button>
+            <button className="btn" type="button" onClick={() => downloadText('shotlist.csv', toCSV(sb))}>
+              Export CSV
+            </button>
+            <button className="btn" type="button" onClick={() => downloadText('shotlist.jsonl', toJSONL(sb))}>
+              Export JSONL
+            </button>
+            <button
+              className="btn"
+              type="button"
+              onClick={async () => {
+                try {
+                  const ts = new Date().toISOString().replace(/[:.]/g, '-')
+                  const dir = `runs/${ts}`
+                  await ensureDir(dir)
+                  const md = toMarkdown(sb)
+                  const csv = toCSV(sb)
+                  const jsonl = toJSONL(sb)
+                  const h = await sha256Hex(md + '\n' + csv + '\n' + jsonl)
+                  await saveText(`${dir}/shotlist.md`, md)
+                  await saveText(`${dir}/shotlist.csv`, csv)
+                  await saveText(`${dir}/shotlist.jsonl`, jsonl)
+                  await saveText(`${dir}/meta.json`, JSON.stringify({ hash: h, title: sb.title }, null, 2))
+                  await saveText('runs/latest.txt', ts)
+                  notify('info', `Saved snapshot to OPFS: ${dir}`)
+                } catch (error) {
+                  console.error(error)
+                  notify('error', 'Failed to save snapshot to OPFS.')
+                }
+              }}
+            >
+              Save Snapshot (OPFS)
+            </button>
+            <button
+              className="btn"
+              type="button"
+              onClick={async () => {
+                try {
+                  const latest = await loadText('runs/latest.txt')
+                  if (!latest) {
+                    notify('error', 'No snapshot available.')
+                    return
+                  }
+                  const md = await loadText(`runs/${latest}/shotlist.md`)
+                  if (md == null) {
+                    notify('error', 'Missing compiled MD in the snapshot.')
+                    return
+                  }
+                  setCompiledOverride(md)
+                  notify('info', `Restored compiled snapshot from ${latest}.`)
+                } catch (error) {
+                  console.error(error)
+                  notify('error', 'Failed to restore compiled snapshot.')
+                }
+              }}
+            >
+              Restore Last Compiled
+            </button>
           </div>
           <pre>{toCSV(sb)}</pre>
         </div>
       )}
 
-      {tab==='assets' && (
-        <div style={{padding:8}}>
-          <p style={{margin:'4px 0'}}>登場人物/小道具/背景のカタログ（OPFS保存対応）。</p>
+      {activeTab === 'assets' && (
+        <div style={{ padding: 8 }}>
+          <p style={{ margin: '4px 0' }}>登場人物/小道具/背景のカタログ（OPFS保存対応）。</p>
         </div>
       )}
 
-      {tab==='golden' && (
-        <GoldenCompare />
-      )}
+      {activeTab === 'golden' && <GoldenCompare />}
 
-      {tab==='import' && (
-        <div style={{padding:8, display:'grid', gap:8}}>
+      {activeTab === 'import' && (
+        <div style={{ padding: 8, display: 'grid', gap: 8 }}>
           <div>
             <label>Import JSONL/CSV/MD → 反映先: </label>
-            <select id="importMode">
+            <select value={importMode} onChange={(event) => setImportMode(event.target.value as ImportMode)}>
               <option value="manual">manual</option>
               <option value="ai">ai</option>
             </select>
           </div>
-          <input type="file" onChange={async e=>{
-            const f = e.target.files?.[0]; if (!f) return
-            const mode = (document.getElementById('importMode') as HTMLSelectElement).value as any
-            await onImport(f, mode)
-          }}/>
+          <input
+            type="file"
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              if (!file) return
+              await onImport(file, importMode)
+              event.target.value = ''
+            }}
+          />
         </div>
       )}
     </div>
