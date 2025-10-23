@@ -100,6 +100,75 @@ test('reload success updates registry and emits logs', async () => {
   );
 });
 
+test('reload success normalizes optional manifest fields and logs stage lifecycle', async () => {
+  const bridge = createBridge();
+  const manifest = {
+    id: 'omega',
+    version: '1.0.0',
+    engines: { vscode: '1.35.0' },
+    'conimg-api': '1',
+    dependencies: { npm: {}, workspace: [] },
+  } as const;
+
+  const result = await bridge.reload({
+    kind: 'plugins.reload',
+    pluginId: 'omega',
+    manifest,
+    grantedPermissions: [],
+    dependencySnapshot: { npm: {}, workspace: [] },
+  });
+
+  assert.equal(result.response.kind, 'reload-complete');
+  assert.equal(result.response.pluginId, 'omega');
+
+  const pluginState = bridge.getPluginState('omega');
+  assert.ok(pluginState);
+  assert.deepEqual(pluginState.manifest.permissions, []);
+  assert.deepEqual(pluginState.manifest.hooks, []);
+
+  const logsByStage = new Map<PluginReloadStageName, { start?: PluginBridgeLogMessage; complete?: PluginBridgeLogMessage }>();
+  for (const log of bridge.getCollectorMessages().filter((entry) => entry.pluginId === 'omega' && entry.stage)) {
+    const stage = log.stage!;
+    const current = logsByStage.get(stage) ?? {};
+    if (log.event === 'stage-start') {
+      current.start = log;
+    }
+    if (log.event === 'stage-complete') {
+      current.complete = log;
+    }
+    logsByStage.set(stage, current);
+  }
+
+  for (const stage of stageOrder) {
+    const entry = logsByStage.get(stage);
+    assert.ok(entry, `expected lifecycle logs for ${stage}`);
+    assert.ok(entry.start, `missing stage-start log for ${stage}`);
+    assert.ok(entry.complete, `missing stage-complete log for ${stage}`);
+  }
+
+  const permissionStart = logsByStage.get('permission-gate')?.start;
+  assert.deepEqual(permissionStart?.detail, {
+    requiredPermissions: [],
+    grantedPermissions: [],
+  });
+
+  const permissionComplete = logsByStage.get('permission-gate')?.complete;
+  assert.deepEqual(permissionComplete?.detail, {
+    appliedPermissions: [],
+  });
+
+  const hookStart = logsByStage.get('hook-registration')?.start;
+  assert.deepEqual(hookStart?.detail, {
+    declaredHooks: [],
+  });
+
+  const hookComplete = logsByStage.get('hook-registration')?.complete;
+  assert.deepEqual(hookComplete?.detail, {
+    registeredHooks: [],
+    hooksRegistered: false,
+  });
+});
+
 test('permission delta fails gate and produces non-retryable error', async () => {
   const bridge = createBridge();
   const baseManifest = {
