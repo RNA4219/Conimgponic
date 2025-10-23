@@ -7,20 +7,41 @@ import { createRequire } from 'node:module'
 import vm from 'node:vm'
 import ts from 'typescript'
 
-export type SetupOverrides = { navigator?: any; locks?: any }
+import type * as AutoSaveModule from '../../../src/lib/autosave'
+
+interface LockHandleLike {
+  release(): Promise<void>
+}
+
+type LockRequestCallback = (lock: LockHandleLike) => Promise<unknown> | unknown
+
+interface LockManagerLike {
+  request(name: string, callback: LockRequestCallback): Promise<unknown>
+}
+
+interface NavigatorOverrides {
+  readonly storage?: { getDirectory(): Promise<DirectoryHandleLike> }
+  readonly locks?: Partial<LockManagerLike>
+  readonly [key: string]: unknown
+}
+
+export interface SetupOverrides {
+  readonly navigator?: NavigatorOverrides
+  readonly locks?: Partial<LockManagerLike>
+}
 
 const root = resolve(fileURLToPath(new URL('../../../', import.meta.url)))
 const req = createRequire(import.meta.url)
 const cache = new Map<string, vm.SourceTextModule>()
 
-const withExt = (spec: string) => (spec.endsWith('.ts') || spec.endsWith('.js') ? spec : `${spec}.ts`)
+const withExt = (spec: string): string => (spec.endsWith('.ts') || spec.endsWith('.js') ? spec : `${spec}.ts`)
 
-const resolveImport = (spec: string, parent: string) =>
+const resolveImport = (spec: string, parent: string): string =>
   spec.startsWith('.') || spec.startsWith('/')
     ? resolve(dirname(parent), withExt(spec))
     : req.resolve(spec, { paths: [dirname(parent)] })
 
-const loadModule = async (path: string) => {
+const loadModule = async (path: string): Promise<vm.SourceTextModule> => {
   if (cache.has(path)) return cache.get(path)!
   const { outputText } = ts.transpileModule(await readFile(path, 'utf8'), {
     compilerOptions: {
@@ -43,18 +64,40 @@ const loadModule = async (path: string) => {
   return mod
 }
 
-export const importTs = async (path: string) => {
+export const importTs = async <TModule = Record<string, unknown>>(path: string): Promise<TModule> => {
   const mod = await loadModule(path)
   if (mod.status !== 'evaluated') await mod.evaluate()
-  return mod.namespace as any
+  return mod.namespace as TModule
 }
 
-export const createOpfs = () => {
+interface WritableLike {
+  write(data: string): Promise<void>
+  close(): Promise<void>
+}
+
+interface FileHandleLike {
+  createWritable(): Promise<WritableLike>
+  getFile(): Promise<{ text(): Promise<string> }>
+}
+
+interface DirectoryHandleLike {
+  getDirectoryHandle(name: string): Promise<DirectoryHandleLike>
+  getFileHandle(name: string): Promise<FileHandleLike>
+  removeEntry(name: string): Promise<void>
+  entries(): AsyncGenerator<readonly [string, Record<string, never>], void, unknown>
+}
+
+export interface OpfsMock {
+  readonly files: Map<string, string>
+  readonly storage: { getDirectory(): Promise<DirectoryHandleLike> }
+}
+
+export const createOpfs = (): OpfsMock => {
   const files = new Map<string, string>()
-  const dirs = new Map<string, any>()
-  const makeDir = (prefix: string): any => {
-    if (dirs.has(prefix)) return dirs.get(prefix)
-    const dir = {
+  const dirs = new Map<string, DirectoryHandleLike>()
+  const makeDir = (prefix: string): DirectoryHandleLike => {
+    if (dirs.has(prefix)) return dirs.get(prefix)!
+    const dir: DirectoryHandleLike = {
       async getDirectoryHandle(name: string){
         return makeDir(join(prefix, name))
       },
@@ -95,26 +138,38 @@ export const createOpfs = () => {
   return { files, storage: { async getDirectory(){ return makeDir('') } } }
 }
 
-export const setup = async (t: TestContext, overrides: SetupOverrides = {}) => {
+type AutoSaveTestModule = AutoSaveModule & { opfs: OpfsMock }
+
+export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Promise<AutoSaveTestModule> => {
   cache.clear()
   const opfs = createOpfs()
   const navigatorValue = {
     storage: opfs.storage,
-    locks: { async request(_: string, cb: any){ return cb({ async release(){} }) }, ...overrides.locks },
+    locks: {
+      async request(_: string, cb: LockRequestCallback){
+        return cb({ async release(){} })
+      },
+      ...overrides.locks
+    },
     ...overrides.navigator
   }
   Object.defineProperty(globalThis, 'navigator', { value: navigatorValue, configurable: true })
-  t.after(() => delete (globalThis as any).navigator)
-  return { ...(await importTs(join(root, 'src/lib/autosave.ts'))), opfs }
+  t.after(() => {
+    delete (globalThis as { navigator?: unknown }).navigator
+  })
+  return { ...(await importTs<AutoSaveModule>(join(root, 'src/lib/autosave.ts'))), opfs }
 }
 
-type ScenarioHandler = (t: TestContext, ctx: Awaited<ReturnType<typeof setup>>) => unknown | Promise<unknown>
+type ScenarioContext = Awaited<ReturnType<typeof setup>>
 
-type ScenarioOverrides = SetupOverrides | ScenarioHandler
+type ScenarioHandler = (t: TestContext, ctx: ScenarioContext) => unknown | Promise<unknown>
 
-export const scenario = (name: string, overrides: ScenarioOverrides, handler?: ScenarioHandler) =>
+export function scenario(name: string, handler: ScenarioHandler): void
+export function scenario(name: string, overrides: SetupOverrides, handler: ScenarioHandler): void
+export function scenario(name: string, overridesOrHandler: SetupOverrides | ScenarioHandler, handler?: ScenarioHandler): void {
   test(name, async (t) => {
-    const actualHandler = typeof overrides === 'function' ? overrides : handler!
-    const ctx = await setup(t, typeof overrides === 'function' ? {} : overrides)
+    const actualHandler = typeof overridesOrHandler === 'function' ? overridesOrHandler : handler!
+    const ctx = await setup(t, typeof overridesOrHandler === 'function' ? {} : overridesOrHandler)
     await actualHandler(t, ctx)
   })
+}
