@@ -1,5 +1,7 @@
+/// <reference types="node" />
+
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
@@ -19,7 +21,7 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'security-audit.yml');
 const require = createRequire(import.meta.url);
-const { load } = require('js-yaml') as JsYamlModule;
+const { load } = await importJsYaml();
 
 type JsYamlModule = {
   load: (input: string) => unknown;
@@ -32,17 +34,28 @@ describe('security-audit workflow schedule', () => {
       const onSection = extractOnSection(source);
       const parsed = load(onSection) as unknown;
 
-      assert.ok(parsed && typeof parsed === 'object', 'on section should parse into an object');
+      if (!parsed || typeof parsed !== 'object') {
+        assert.fail('on section should parse into an object');
+      }
 
       const workflow = parsed as WorkflowYaml;
-      assert.ok(workflow.on && typeof workflow.on === 'object', 'workflow.on must be defined');
+      if (!workflow.on || typeof workflow.on !== 'object') {
+        assert.fail('workflow.on must be defined');
+      }
 
       const schedule = workflow.on.schedule;
-      assert.ok(Array.isArray(schedule), 'workflow.on.schedule must be an array');
-      assert.ok(schedule.length > 0, 'workflow.on.schedule must include at least one entry');
+      if (!Array.isArray(schedule)) {
+        assert.fail('workflow.on.schedule must be an array');
+      }
+
+      if (schedule.length === 0) {
+        assert.fail('workflow.on.schedule must include at least one entry');
+      }
 
       schedule.forEach((entry, index) => {
-        assert.ok(isRecord(entry), `schedule entry #${index + 1} must be an object`);
+        if (!isRecord(entry)) {
+          assert.fail(`schedule entry #${index + 1} must be an object`);
+        }
 
         if (typeof entry.cron !== 'string') {
           assert.fail(`schedule entry #${index + 1} must set cron`);
@@ -92,4 +105,34 @@ function extractOnSection(source: string): string {
 
 function isRecord(value: unknown): value is ScheduleEntry {
   return typeof value === 'object' && value !== null;
+}
+
+async function importJsYaml(): Promise<JsYamlModule> {
+  try {
+    return require('js-yaml') as JsYamlModule;
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== 'MODULE_NOT_FOUND') {
+      throw error;
+    }
+  }
+
+  const pnpmDir = resolve(repoRoot, 'node_modules', '.pnpm');
+  const entries = await readdir(pnpmDir, { withFileTypes: true });
+  const match = entries.find((entry) => entry.isDirectory() && entry.name.startsWith('js-yaml@'));
+
+  if (!match) {
+    assert.fail('js-yaml must be present in pnpm store');
+  }
+
+  const moduleDir = resolve(pnpmDir, match.name, 'node_modules', 'js-yaml');
+  const moduleRequire = createRequire(resolve(moduleDir, 'index.js'));
+  return moduleRequire('.') as JsYamlModule;
+}
+
+type NodeError = Error & {
+  code?: string;
+};
+
+function isNodeError(error: unknown): error is NodeError {
+  return error instanceof Error && 'code' in error;
 }
