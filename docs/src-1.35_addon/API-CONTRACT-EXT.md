@@ -51,7 +51,7 @@ type WvToExt =
   | ({ type: "fs.list" } & MsgBase & { payload: { dir: string } })
   | ({ type: "fs.atomicWrite" } & MsgBase & { payload: { uri: string, dataBase64: string } })
   | ({ type: "merge.request" } & MsgBase & { payload: { base: any, ours: any, theirs: any, threshold?: number } })
-  | ({ type: "export.request" } & MsgBase & { payload: { format: "md" | "csv" | "jsonl" } })
+  | ({ type: "export.request" } & MsgBase & { payload: { format: "markdown" | "csv" | "jsonl" | "package" } })
   | ({ type: "plugins.reload" } & MsgBase )
   | ({ type: "log" } & MsgBase & { payload: { level: "debug"|"info"|"warn"|"error", message: string } })
   | ({ type: "gen.request" } & MsgBase & { payload: { prompt: string, opts?: Record<string, any> } }) // 将来
@@ -71,22 +71,9 @@ type ExtToWv =
   | ({ type: "fs.read.result" } & MsgBase & { ok: boolean, dataBase64?: string, error?: any })
   | ({ type: "fs.list.result" } & MsgBase & { ok: boolean, entries?: string[], error?: any })
   | ({ type: "merge.result" } & MsgBase & { ok: boolean, result?: any, trace?: any, error?: any })
-  | ({ type: "export.result" } & MsgBase & { ok: boolean, uri?: string, error?: any })
-  | ({
-      type: "status.autosave"
-    } & MsgBase & {
-      payload: {
-        state: "disabled" | "dirty" | "saving" | "saved" | "error" | "backoff"
-        phase: "disabled" | "idle" | "debouncing" | "awaiting-lock" | "writing-current" | "updating-index" | "gc" | "error"
-        retryCount: number
-        lastSuccessAt?: string
-        pendingBytes?: number
-        guard: {
-          featureFlag: { value: boolean; source: "env" | "workspace" | "localStorage" | "default" }
-          optionsDisabled: boolean
-        }
-      }
-    })
+  | ({ type: "export.result" } & MsgBase & { ok: true, uri: string, normalizedUri?: string })
+  | ({ type: "export.result" } & MsgBase & { ok: false, error: { code: string, message: string, retryable: boolean, details?: any } })
+  | ({ type: "status.autosave" } & MsgBase & { payload: { state: "idle"|"dirty"|"saving"|"saved" } })
   | ({ type: "gen.chunk" } & MsgBase & { payload: { text: string } })   // 将来
   | ({ type: "gen.done" } & MsgBase )
   | ({ type: "gen.error" } & MsgBase & { error: { code: string, message: string } })
@@ -131,8 +118,8 @@ Webview   ：UIへ反映、採用/衝突分岐
 ### 5.4 Export（MD/CSV/JSONL）
 ```
 Webview → Extension: "export.request" {format}
-Extension: 正規化→ファイル生成→Uri返却
-Extension → Webview: "export.result" {ok:true, uri}
+Extension: 正規化→ファイル生成→Uri返却 (`uri` + `normalizedUri`)
+Extension → Webview: "export.result" {ok:true, uri, normalizedUri}
 ```
 
 ## 6. エラーと再試行（方針）
