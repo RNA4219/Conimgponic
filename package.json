@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint \"{src,tests}/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --loader ts-node/esm --test tests/**/*.test.ts",
+    "test": "node --loader ts-node/esm scripts/test/run-selected.ts",
     "test:autosave": "pnpm test --filter autosave",
     "test:merge": "pnpm test --filter merge",
     "test:cli": "pnpm test --filter cli",
