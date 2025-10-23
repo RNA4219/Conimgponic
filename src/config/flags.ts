@@ -1,4 +1,4 @@
-export type FlagSource = 'env' | 'localStorage' | 'default'
+export type FlagSource = 'env' | 'workspace' | 'localStorage' | 'default'
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 export type FlagRolloutPhase = 'phase-a0' | 'phase-a1' | 'phase-b0'
 
@@ -68,6 +68,7 @@ export interface FlagDefinition<T> {
   readonly legacyStorageKeys?: readonly string[]
   readonly defaultValue: T
   readonly coerce?: FlagCoercer<T>
+  readonly workspaceKey?: string
 }
 
 export type FlagCoerceResult<T> =
@@ -79,8 +80,13 @@ export type FlagCoercer<T> = (raw: string) => FlagCoerceResult<T>
 export interface ResolveOptions {
   readonly env?: Record<string, unknown>
   readonly storage?: Pick<Storage, 'getItem'> | null
+  readonly workspace?: WorkspaceConfiguration | null
   readonly clock?: () => Date
 }
+
+export type WorkspaceConfiguration =
+  | { readonly get: (key: string) => unknown }
+  | Record<string, unknown>
 
 export interface FlagResolution<T> extends FlagValueSnapshot<T> {}
 
@@ -101,6 +107,34 @@ const defaultEnv = (() => {
 })()
 const defaultStorage: Pick<Storage, 'getItem'> | null =
   typeof localStorage !== 'undefined' ? localStorage : null
+
+function readWorkspaceValue(
+  workspace: WorkspaceConfiguration | null | undefined,
+  key: string
+): unknown {
+  if (!workspace) {
+    return undefined
+  }
+
+  const withGetter = workspace as { readonly get?: (key: string) => unknown }
+  if (typeof withGetter.get === 'function') {
+    return withGetter.get(key)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(workspace, key)) {
+    return (workspace as Record<string, unknown>)[key]
+  }
+
+  return key.split('.').reduce<unknown>(
+    (current, segment) =>
+      current &&
+      typeof current === 'object' &&
+      segment in (current as Record<string, unknown>)
+        ? (current as Record<string, unknown>)[segment]
+        : undefined,
+    workspace
+  )
+}
 
 function coerceValue<T>(
   raw: string,
@@ -135,6 +169,23 @@ function attemptResolve<T>(
   return null
 }
 
+function attemptResolveFromWorkspace<T>(
+  workspace: WorkspaceConfiguration | null | undefined,
+  def: FlagDefinition<T>,
+  errors: FlagValidationError[]
+): T | null {
+  if (!def.workspaceKey) {
+    return null
+  }
+
+  const rawValue = readWorkspaceValue(workspace, def.workspaceKey)
+  if (rawValue == null) {
+    return null
+  }
+
+  return attemptResolve(rawValue, 'workspace', def, errors)
+}
+
 /**
  * env → localStorage → docs/CONFIG_FLAGS.md 既定値の優先順位でフラグ値を解決する。
  * `docs/IMPLEMENTATION-PLAN.md` §0.2 の設定ソースマッピングと `FlagSnapshot` の
@@ -151,11 +202,21 @@ export function resolveFlag<T>(
 ): FlagResolution<T> {
   const env = options.env ?? defaultEnv
   const storage = options.storage ?? defaultStorage
+  const workspace = options.workspace ?? null
   const errors: FlagValidationError[] = []
 
   const envResolved = attemptResolve(env[def.envKey], 'env', def, errors)
   if (envResolved !== null) {
     return { value: envResolved, source: 'env', errors: [...errors] }
+  }
+
+  const workspaceResolved = attemptResolveFromWorkspace(
+    workspace,
+    def,
+    errors
+  )
+  if (workspaceResolved !== null) {
+    return { value: workspaceResolved, source: 'workspace', errors: [...errors] }
   }
 
   if (storage) {
@@ -211,13 +272,31 @@ function coerceMergePrecision(flag: string): FlagCoercer<MergePrecision> {
     if (allowed.includes(normalized as MergePrecision)) {
       return { ok: true, value: normalized as MergePrecision }
     }
+    const numeric = Number.parseFloat(normalized)
+    if (Number.isFinite(numeric)) {
+      if (numeric < 0 || numeric > 1) {
+        return {
+          ok: false,
+          error: {
+            code: 'invalid-precision',
+            flag,
+            raw,
+            message: `${flag} must be within [0, 1] range`,
+            retryable: false
+          }
+        }
+      }
+      const value: MergePrecision =
+        numeric >= 0.82 ? 'stable' : numeric >= 0.75 ? 'beta' : 'legacy'
+      return { ok: true, value }
+    }
     return {
       ok: false,
       error: {
         code: 'invalid-precision',
         flag,
         raw,
-        message: `${flag} expects one of: ${allowed.join(', ')}`,
+        message: `${flag} expects one of: ${allowed.join(', ')} or a numeric threshold`,
         retryable: false
       }
     }
@@ -231,7 +310,8 @@ export const FEATURE_FLAG_DEFINITIONS = {
     storageKey: 'autosave.enabled',
     legacyStorageKeys: ['flag:autoSave.enabled'],
     defaultValue: DEFAULT_FLAGS.autosave.enabled,
-    coerce: coerceBoolean('autosave.enabled')
+    coerce: coerceBoolean('autosave.enabled'),
+    workspaceKey: 'conimg.autosave.enabled'
   },
   'merge.precision': {
     name: 'Merge Precision Mode',
@@ -239,7 +319,8 @@ export const FEATURE_FLAG_DEFINITIONS = {
     storageKey: 'merge.precision',
     legacyStorageKeys: ['flag:merge.precision'],
     defaultValue: DEFAULT_FLAGS.merge.precision,
-    coerce: coerceMergePrecision('merge.precision')
+    coerce: coerceMergePrecision('merge.precision'),
+    workspaceKey: 'conimg.merge.threshold'
   }
 } as const satisfies {
   readonly 'autosave.enabled': FlagDefinition<boolean>

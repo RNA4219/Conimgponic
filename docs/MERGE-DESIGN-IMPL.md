@@ -225,6 +225,10 @@ sequenceDiagram
 | `stable → beta` | Diff 特有 CTA を DOM から除去。 | `BulkSelecting` を終了させ `Ready` に戻す。 | AutoSave 独占ロック中は遷移禁止。 | 未完了コマンドをキャンセル。 |
 | `beta → legacy` | Diff タブを非表示にし `activeTab` を `compiled` にフォールバック。 | `ReadOnly` / `Error` 状態を破棄。 | `releaseShared('project')` を送信。 | Diff 状態と Telemetry キューを消去。 |
 
+- Phase ガード表は `PRECISION_PHASE_GUARD` として実装され、precision ごとの初期タブ・露出順序を `DiffMergeView.planDiffMergeSubTabs` で固定化する。Phase A (`legacy`) では Review タブのみを許容し、Phase B (`beta`/`stable`) は Diff/Merged/Review の順序を Day8 パイプライン集計と合わせる。【F:src/components/DiffMergeView.tsx†L25-L52】【F:Day8/docs/day8/design/03_architecture.md†L3-L27】
+- 拡張ブリッジは `createVsCodeMergeBridge` を介し、VS Code 設定 `conimg.merge.threshold` を core へ上書き伝搬する。`merge.precision` 切替と同時にハンドラが `MergeProfile.threshold` をクランプし、AutoSave 設計のフラグ協調要件（共有ロック/flushNow 手順）と矛盾しないようにする。【F:src/platform/vscode/merge/bridge.ts†L1-L67】【F:docs/AUTOSAVE-DESIGN-IMPL.md†L61-L209】
+- `MergeTrace.summary` に `threshold` と `autoAdoptionRate` を追加し、Collector で自動採用率 80% 監視を行う。trace.decisions には各ハンクの `decision` と `similarity` を保持し、Analyzer が Phase B ガード判定を再現できる。【F:src/lib/merge.ts†L204-L237】【F:docs/design/extensions/telemetry.md†L24-L35】
+
 ### 5.5 テスト & ロールバック観点
 - React テスト (`tests/merge/diff-merge-view.spec.ts`) ではタブキーボード操作・バナー表示・`queueMergeCommand` フロー・AutoSave ロック遷移を網羅する。【F:docs/design/merge/diff-merge-view.md†L91-L154】
 - リスクシナリオは AutoSave ロック解除遅延・precision 降格・`retryable=false` エラーで Diff タブをロールバックする条件を維持する。【F:docs/design/merge/diff-merge-view.md†L157-L175】
