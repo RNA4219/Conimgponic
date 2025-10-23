@@ -54,8 +54,8 @@ scenario('phase guard stops runner when flag disabled', async (_t: any, { initAu
   const flags = createFlags(false)
   const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, flags)
   assert.equal(runner.snapshot().phase, 'disabled')
-  await runner.flushNow()
-  runner.dispose()
+  await assert.doesNotReject(() => runner.flushNow())
+  assert.doesNotThrow(() => runner.dispose())
   assert.equal(runner.snapshot().phase, 'disabled')
 })
 
@@ -113,8 +113,8 @@ scenario(
     const flags = createFlags(false)
     const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: true }, flags)
     assert.equal(runner.snapshot().phase, 'disabled')
-    await runner.flushNow()
-    runner.dispose()
+    await assert.doesNotReject(() => runner.flushNow())
+    assert.doesNotThrow(() => runner.dispose())
     assert.equal(runner.snapshot().phase, 'disabled')
   }
 )
