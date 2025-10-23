@@ -6,7 +6,18 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "pnpm exec eslint \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" --max-warnings=0",
+    "typecheck": "pnpm exec tsc --noEmit",
+    "prepare:reports": "node -e \"const fs=require('fs');for (const dir of ['reports','reports/junit','reports/coverage']) fs.mkdirSync(dir,{recursive:true});\"",
+    "test": "pnpm run prepare:reports && pnpm exec c8 --reporter=lcov --reporter=text --reports-dir reports/coverage/all node --loader ts-node/esm --test --test-reporter=junit --test-reporter-destination reports/junit/all.junit.xml",
+    "test:autosave": "pnpm run prepare:reports && pnpm exec c8 --reporter=lcov --reporter=text --reports-dir reports/coverage/autosave node --loader ts-node/esm --test --test-name-pattern autosave --test-reporter=junit --test-reporter-destination reports/junit/autosave.junit.xml",
+    "test:merge": "pnpm run prepare:reports && pnpm exec c8 --reporter=lcov --reporter=text --reports-dir reports/coverage/merge node --loader ts-node/esm --test --test-name-pattern merge --test-reporter=junit --test-reporter-destination reports/junit/merge.junit.xml",
+    "test:cli": "pnpm run prepare:reports && pnpm exec c8 --reporter=lcov --reporter=text --reports-dir reports/coverage/cli node --loader ts-node/esm --test --test-name-pattern cli --test-reporter=junit --test-reporter-destination reports/junit/cli.junit.xml",
+    "test:telemetry": "pnpm run prepare:reports && pnpm exec c8 --reporter=lcov --reporter=text --reports-dir reports/coverage/telemetry node --loader ts-node/esm --test --test-name-pattern telemetry --test-reporter=junit --test-reporter-destination reports/junit/telemetry.junit.xml",
+    "test:ci": "pnpm run test:autosave && pnpm run test:merge && pnpm run test:cli && pnpm run test:telemetry",
+    "test:export": "pnpm run prepare:reports && pnpm exec c8 --reporter=lcov --reporter=text --reports-dir reports/coverage/export node --loader ts-node/esm --test --test-name-pattern export --test-reporter=junit --test-reporter-destination reports/junit/export.junit.xml",
+    "golden:diff": "pnpm run test:export && cat golden-diff.txt"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -15,10 +26,41 @@
     "nanoid": "^5.0.7"
   },
   "devDependencies": {
+    "@types/node": "^22.7.5",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.11.0",
+    "@typescript-eslint/parser": "^8.11.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "c8": "^9.1.0",
+    "eslint": "^9.13.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.6.3",
     "vite": "^5.4.8"
+  },
+  "eslintConfig": {
+    "root": true,
+    "env": {
+      "browser": true,
+      "es2023": true,
+      "node": true
+    },
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+      "ecmaVersion": "latest",
+      "sourceType": "module"
+    },
+    "plugins": [
+      "@typescript-eslint"
+    ],
+    "extends": [
+      "eslint:recommended",
+      "plugin:@typescript-eslint/recommended"
+    ],
+    "ignorePatterns": [
+      "dist/",
+      "node_modules/",
+      "reports/"
+    ]
   }
 }
