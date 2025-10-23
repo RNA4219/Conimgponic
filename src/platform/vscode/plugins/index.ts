@@ -160,6 +160,8 @@ const STAGES: readonly StageSpec[] = [
   { name: 'hook-registration', retryable: true },
 ];
 
+const HOOK_ALLOWLIST = new Set<string>(['onCompile', 'onExport', 'onMerge', 'commands', 'widgets']);
+
 export function maybeCreatePluginBridge(config: PluginBridgeConfig): PluginBridge | undefined {
   if (!config.enableFlag) {
     return undefined;
@@ -387,10 +389,37 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
         ),
       };
     }
-    case 'hook-registration':
-      return request.manifest.hooks.length > 0
-        ? { ok: true }
-        : { ok: false, error: buildError(spec.name, PluginReloadErrorCode.HookRegistrationFailed, 'No hooks declared by plugin.', true, false) };
+    case 'hook-registration': {
+      if (request.manifest.hooks.length === 0) {
+        return {
+          ok: false,
+          error: buildError(
+            spec.name,
+            PluginReloadErrorCode.HookRegistrationFailed,
+            'No hooks declared by plugin.',
+            true,
+            false,
+          ),
+        };
+      }
+
+      const invalidHooks = request.manifest.hooks.filter((hook) => !HOOK_ALLOWLIST.has(hook));
+      if (invalidHooks.length > 0) {
+        return {
+          ok: false,
+          error: buildError(
+            spec.name,
+            PluginReloadErrorCode.HookRegistrationFailed,
+            `Unsupported hooks declared: ${invalidHooks.join(', ')}`,
+            true,
+            false,
+            { invalidHooks: [...invalidHooks] },
+          ),
+        };
+      }
+
+      return { ok: true };
+    }
     default:
       return { ok: true };
   }
