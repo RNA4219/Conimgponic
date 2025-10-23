@@ -100,9 +100,13 @@ export default function App(){
       return
     }
 
-    const runner = initAutoSave(() => useSB.getState().sb, {
-      disabled: decision.guard.optionsDisabled
-    })
+    const runner = initAutoSave(
+      () => useSB.getState().sb,
+      {
+        disabled: decision.guard.optionsDisabled
+      },
+      decision.guard
+    )
     autoSaveRunner.current = runner
 
     return ()=>{
