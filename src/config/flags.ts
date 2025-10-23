@@ -59,6 +59,7 @@ export type PluginEnableFlagSnapshot = FlagValueSnapshot<boolean> & {
 
 export type MergePrecisionFlagSnapshot = FlagValueSnapshot<MergePrecision> & {
   readonly precision: MergePrecision
+  readonly threshold: number
 }
 
 /**
@@ -317,6 +318,68 @@ function coerceMergePrecision(flag: string): FlagCoercer<MergePrecision> {
   }
 }
 
+function coerceMergeThresholdValue(rawValue: unknown): number | null {
+  if (rawValue == null) {
+    return null
+  }
+
+  if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+    return rawValue
+  }
+
+  const normalized = String(rawValue).trim()
+  if (!normalized) {
+    return null
+  }
+
+  const numeric = Number.parseFloat(normalized)
+  if (Number.isFinite(numeric)) {
+    return numeric
+  }
+
+  const lowered = normalized.toLowerCase()
+  if (lowered === 'legacy' || lowered === 'beta' || lowered === 'stable') {
+    return DEFAULT_FLAGS.merge.profile.threshold
+  }
+
+  return null
+}
+
+function resolveMergeThreshold(options: ResolveOptions | undefined): number {
+  const env = options?.env ?? defaultEnv
+  const storage = options?.storage ?? defaultStorage
+  const workspace = options?.workspace ?? null
+  const definition = FEATURE_FLAG_DEFINITIONS['merge.precision']
+
+  const envThreshold = coerceMergeThresholdValue(env[definition.envKey])
+  if (envThreshold !== null) {
+    return envThreshold
+  }
+
+  if (definition.workspaceKey) {
+    const workspaceValue = readWorkspaceValue(workspace, definition.workspaceKey)
+    const workspaceThreshold = coerceMergeThresholdValue(workspaceValue)
+    if (workspaceThreshold !== null) {
+      return workspaceThreshold
+    }
+  }
+
+  if (storage) {
+    const storageKeys = [
+      definition.storageKey,
+      ...(definition.legacyStorageKeys ?? [])
+    ]
+    for (const key of storageKeys) {
+      const storageThreshold = coerceMergeThresholdValue(storage.getItem(key))
+      if (storageThreshold !== null) {
+        return storageThreshold
+      }
+    }
+  }
+
+  return DEFAULT_FLAGS.merge.profile.threshold
+}
+
 export const FEATURE_FLAG_DEFINITIONS = {
   'autosave.enabled': {
     name: 'AutoSave Enabled',
@@ -385,7 +448,8 @@ export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
     value: DEFAULT_FLAGS.merge.precision,
     source: 'default',
     errors: [],
-    precision: DEFAULT_FLAGS.merge.precision
+    precision: DEFAULT_FLAGS.merge.precision,
+    threshold: DEFAULT_FLAGS.merge.profile.threshold
   },
   updatedAt: new Date(0).toISOString()
 }
@@ -408,6 +472,7 @@ export function resolveFlags(
   const plugins = resolveFeatureFlag('plugins.enable', options)
   const merge = resolveFeatureFlag('merge.precision', options)
   const clock = options?.clock ?? (() => new Date())
+  const mergeThreshold = resolveMergeThreshold(options)
 
   // Phase A 移行中は既存 UI の `localStorage` 直読フェールセーフが残るため、
   // resolveFlags() だけでは値が届かないケースも想定する。App/Merge 側で
@@ -429,7 +494,8 @@ export function resolveFlags(
       value: merge.value,
       source: merge.source,
       errors: merge.errors,
-      precision: merge.value
+      precision: merge.value,
+      threshold: mergeThreshold
     },
     updatedAt: clock().toISOString()
   }

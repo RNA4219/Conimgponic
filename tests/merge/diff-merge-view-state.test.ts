@@ -142,3 +142,29 @@ const sampleHunks:readonly MergeHunk[]=[createMergeHunk('h1')]
 const renderView=(precision:MergePrecision)=>renderToStaticMarkup(createElement(DiffMergeView,{precision,hunks:sampleHunks,queueMergeCommand:async()=>({status:'success',hunkIds:[],telemetry:{collectorSurface:'diff-merge.hunk-list',analyzerSurface:'diff-merge.queue',retryable:false}})}))
 
 test('DiffMergeView initial tab follows plan for beta/stable precisions',()=>{const betaHtml=renderView('beta');assert.match(betaHtml,/data-testid="diff-merge-tab-review"[^>]*aria-selected="true"/);assert.match(betaHtml,/data-navigation-badge="beta"/);const stableHtml=renderView('stable');assert.match(stableHtml,/data-testid="diff-merge-tab-diff"[^>]*aria-selected="true"/);assert.doesNotMatch(stableHtml,/data-navigation-badge=/)})
+
+class MemoryStorage implements DiffMergeTabStorage {
+  #map = new Map<string, string>()
+
+  getItem(key: string): string | null {
+    return this.#map.has(key) ? this.#map.get(key)! : null
+  }
+
+  setItem(key: string, value: string): void {
+    this.#map.set(key, value)
+  }
+
+  removeItem(key: string): void {
+    this.#map.delete(key)
+  }
+}
+
+test('resolveDiffMergeStoredTab restores stable precision selection across mounts', () => {
+  const storage = new MemoryStorage()
+  storage.setItem('diff-merge.lastTab.stable', 'merged')
+  const plan = planDiffMergeView('stable')
+  assert.equal(
+    resolveDiffMergeStoredTab({ plan, precision: 'stable', storage }),
+    'merged',
+  )
+})

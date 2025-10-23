@@ -386,7 +386,7 @@ export interface AutoSaveInitResult {
    * タイマー停止・イベント購読解除・ロック開放を順番に実行する終端処理。
    * フライト中の場合でも完了を待機してから `phase='disabled'` に確定させる。
    */
-  dispose: () => void
+  dispose: () => Promise<void>
   /** Phase A UI からの通知を反映して pendingBytes を更新する。 */
   readonly markDirty: (meta?: { readonly pendingBytes?: number }) => void
 }
@@ -966,7 +966,7 @@ export function initAutoSave(
     return {
       snapshot: () => ({ ...snapshot }),
       flushNow: noopAsync,
-      dispose: () => {},
+      dispose: noopAsync,
       markDirty: () => {}
     }
   }
@@ -1073,7 +1073,7 @@ export function initAutoSave(
       }
       await runFlush(0)
     },
-    dispose: () => {
+    dispose: async () => {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
       disposed = true; phase = 'disabled'; pendingBytes = 0; pendingQueue.length = 0; queuedGeneration = 0
     },
