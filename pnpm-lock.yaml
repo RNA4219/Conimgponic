@@ -5,9 +5,6 @@ settings:
 importers:
   .:
     dependencies:
-      nanoid:
-        specifier: ^5.0.7
-        version: 5.1.6
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -49,7 +46,6 @@ importers:
       react: ^18.3.1
       react-dom: ^18.3.1
       zustand: ^4.5.2
-      nanoid: ^5.0.7
       '@typescript-eslint/eslint-plugin': ^8.10.0
       '@typescript-eslint/parser': ^8.10.0
       eslint: ^9.11.1
@@ -1687,13 +1683,6 @@ packages:
     engines:
       node: '^10 || ^12 || ^13.7 || ^14 || >=15.0.1'
     dev: true
-    hasBin: true
-  'nanoid@5.1.6':
-    resolution:
-      integrity: sha512-c7+7RQ+dMB5dPwwCp4ee1/iV/q2P6aK1mTZcfr1BTuVlyW9hJYiMPybJCcnBlQtuSmTIWNeazm/zqNoZSSElBg==
-      tarball: 'https://registry.npmjs.org/nanoid/-/nanoid-5.1.6.tgz'
-    engines:
-      node: '^18 || >=20'
     hasBin: true
   'natural-compare@1.4.0':
     resolution:
