@@ -144,6 +144,110 @@ export interface AutoSaveStatusSnapshot {
   queuedGeneration?: number
 }
 
+export type AutoSaveStatusState =
+  | 'disabled'
+  | 'dirty'
+  | 'saving'
+  | 'saved'
+  | 'error'
+  | 'backoff'
+
+export type AutoSaveBridgePhase =
+  | 'bootstrap'
+  | 'ready'
+  | 'snapshot.request'
+  | 'snapshot.result'
+  | 'status.autosave'
+
+export interface AutoSavePhaseGuardSnapshot {
+  readonly featureFlag: {
+    readonly value: boolean
+    readonly source: 'env' | 'workspace' | 'localStorage' | 'default'
+  }
+  readonly optionsDisabled: boolean
+}
+
+export interface AutoSaveBridgeEnvelope<TType extends string, TPayload> {
+  readonly type: TType
+  readonly phase: AutoSaveBridgePhase
+  readonly reqId: string
+  readonly issuedAt: string
+  readonly payload: TPayload
+}
+
+export interface AutoSaveSnapshotRequestPayload {
+  readonly reason: 'change' | 'flushNow'
+  readonly storyboard: Storyboard
+  readonly pendingBytes: number
+  readonly queuedGeneration: number
+  readonly debounceMs: AutoSavePolicy['debounceMs']
+  readonly idleMs: AutoSavePolicy['idleMs']
+  readonly historyLimit: AutoSavePolicy['maxGenerations']
+  readonly sizeLimit: AutoSavePolicy['maxBytes']
+  readonly guard: AutoSavePhaseGuardSnapshot
+}
+
+export type AutoSaveSnapshotRequestMessage = AutoSaveBridgeEnvelope<
+  'snapshot.request',
+  AutoSaveSnapshotRequestPayload
+>
+
+export type AutoSaveSnapshotResultPayload =
+  | {
+      readonly ok: true
+      readonly bytes: number
+      readonly lastSuccessAt: string
+      readonly generation: number
+      readonly retainedBytes: number
+    }
+  | {
+      readonly ok: false
+      readonly error: AutoSaveError
+    }
+
+export type AutoSaveSnapshotResultMessage = AutoSaveBridgeEnvelope<
+  'snapshot.result',
+  AutoSaveSnapshotResultPayload
+>
+
+export interface AutoSaveStatusPayload {
+  readonly state: AutoSaveStatusState
+  readonly phase: AutoSavePhase
+  readonly retryCount: number
+  readonly lastSuccessAt?: string
+  readonly pendingBytes?: number
+  readonly guard: AutoSavePhaseGuardSnapshot
+}
+
+export type AutoSaveStatusMessage = AutoSaveBridgeEnvelope<
+  'status.autosave',
+  AutoSaveStatusPayload
+>
+
+export type AutoSaveBridgeBootstrapMessage = AutoSaveBridgeEnvelope<
+  'bridge.bootstrap',
+  {
+    readonly version: 1
+    readonly policy: AutoSavePolicy
+    readonly guard: AutoSavePhaseGuardSnapshot
+  }
+>
+
+export type AutoSaveBridgeReadyMessage = AutoSaveBridgeEnvelope<
+  'bridge.ready',
+  {
+    readonly accepted: boolean
+    readonly reason?: string
+  }
+>
+
+export type AutoSaveBridgeMessage =
+  | AutoSaveBridgeBootstrapMessage
+  | AutoSaveBridgeReadyMessage
+  | AutoSaveSnapshotRequestMessage
+  | AutoSaveSnapshotResultMessage
+  | AutoSaveStatusMessage
+
 export interface AutoSaveRetryPolicy {
   readonly initialDelayMs: number
   readonly multiplier: number
