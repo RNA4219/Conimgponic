@@ -26,29 +26,50 @@
 #### 0.2.1 フラグ解決シーケンス
 ```mermaid
 sequenceDiagram
-    participant App as App.tsx
+    participant App as App.tsx bootstrap
+    participant Legacy as localStorage direct read
     participant Flags as resolveFlags()
-    participant Env as import.meta.env
+    participant Env as import.meta.env / process.env
     participant Storage as localStorage
     participant Defaults as DEFAULT_FLAGS
 
-    App->>Flags: 初期化時にフラグ読み込み
-    Flags->>Env: VITE_AUTOSAVE_ENABLED / VITE_MERGE_PRECISION を取得
+    App->>Flags: resolveFlags(options)
+    Flags->>Env: pull VITE_* values
     alt Env が有効値
         Env-->>Flags: 正規化済み値
     else Env 未設定
         Flags->>Storage: autosave.enabled / merge.precision を参照
         alt Storage が有効値
-            Storage-->>Flags: 文字列値
+            Storage-->>Flags: 正規化対象の文字列値
         else Storage 無効値
             Flags->>Defaults: JSON 既定値を読込
             Defaults-->>Flags: 既定値スナップショット
         end
     end
     Flags-->>App: FlagSnapshot (source 情報付き)
+    opt Phase-a0 フェールセーフ
+        App->>Legacy: 既存 localStorage 参照を保持
+        Legacy-->>App: 未移行時は直接値を返す
+    end
 ```
 - `docs/CONFIG_FLAGS.md` で定義された優先順位（env → localStorage → 既定値）を `src/config/flags.ts` が忠実に再現することをレビュー観点として固定する。【F:docs/CONFIG_FLAGS.md†L57-L90】
 - `FlagSnapshot.source` によって、後方互換のための `localStorage` 直接参照を段階的に排除しながらも既存 UI の動作確認が容易になる前提を保持する。
+- `Phase-a0` の間は `App.tsx` 側でフェールセーフとして `localStorage` 直読を残しつつ、`FLAG_MIGRATION_PLAN` に従い `FlagSnapshot` 経由へ移行する。
+
+#### 0.2.2 tests/config/flags.resolve.test.ts (RED) 観点
+- env 優先（`VITE_AUTOSAVE_ENABLED` / `VITE_MERGE_PRECISION`）が真偽・精度ごとに正規化されること。
+- env 未設定時、`localStorage` 模擬オブジェクトを介して最新のキーとレガシーキー (`flag:*`) が順に評価されること。
+- `localStorage` が `null` の場合でも既定値へフォールバックし、`source='default'` となること。
+- 正規化失敗（`invalid-boolean` / `invalid-precision`）時にエラーが蓄積され、次順位の値で決定されること。
+- `ResolveOptions.clock` を注入した際に `updatedAt` が ISO8601 文字列で固定されること。
+- `FlagSnapshot.autosave.enabled` / `merge.precision` の型安全なエイリアスが `value` と同期していること。
+
+#### 0.2.3 `src/config/index.ts` 統合ポイントと段階的導入
+1. **エクスポート整備**: `src/config/index.ts` が `resolveFlags`・`FlagSnapshot` などを透過公開している現状を維持しつつ、Phase-a0 では既存呼び出しファイルへ新関数を案内する。
+2. **App.tsx 適用**: AutoSave 初期化前に `resolveFlags()` を呼び出し、`autosave.enabled` を `FlagSnapshot.autosave.enabled` から参照する。従来の `localStorage` 直読はフェールセーフとして残す（`FLAG_MIGRATION_PLAN.phase-a0`）。【F:src/config/index.ts†L1-L23】
+3. **MergeDock 適用**: `merge.precision` を `FlagSnapshot.merge.precision` へ差し替え、`precision` フラグで Diff Merge タブの露出を制御する（Phase-b0）。後方互換のため `legacyStorageKeys` を監視し、削除タイミングをテレメトリで検証する。
+4. **Collector 連携**: `FlagValidationError` と `FlagSnapshot.source` をテレメトリに送出し、Day8/Collector の JSONL に `flag_resolution` イベントを追加する。`docs/AUTOSAVE-DESIGN-IMPL.md` の保存ポリシーと整合すること。
+5. **段階的差分**: Phase-a1 で AutoSave ランナーへ `FlagSnapshot` を渡し、Phase-b0 でレガシー参照を除去する。各段階は小粒な PR とし、既存読者が差分で追えるよう `FLAG_MIGRATION_PLAN` の exit criteria をレビュー checklist に転記する。
 
 ### 0.3 MergeDock / DiffMergeView タブ棚卸し
 | コンポーネント | 露出タブ / ペイン | 補足 | 出典 |
