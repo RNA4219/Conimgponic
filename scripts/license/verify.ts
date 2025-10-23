@@ -1,10 +1,14 @@
-import { execFile } from 'node:child_process'
-import { writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import { promisify } from 'node:util'
+/// <reference path="./node-shim.d.ts" />
 
-const execFileAsync = promisify(execFile)
+import { execFile } from 'child_process'
+import { writeFile } from 'fs/promises'
+import { resolve } from 'path'
+import { pathToFileURL } from 'url'
+import { promisify } from 'util'
+
+type ExecFileAsync = (file: string, args: readonly string[], options: ExecFileOptions) => Promise<ExecFileResult>
+
+const execFileAsync = promisify(execFile) as ExecFileAsync
 
 export interface LicenseEntry {
   readonly name: string
