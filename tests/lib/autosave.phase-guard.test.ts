@@ -143,6 +143,16 @@ scenario('phase guard keeps dirty snapshot when enabled and generation queued', 
   assert.equal(runner.snapshot().retryCount, 0)
 })
 
+scenario('phase guard treats guard snapshot as phase-a when feature flag enabled', async (_t: any, { initAutoSave }: any) => {
+  const guard = {
+    featureFlag: { value: true, source: 'env' },
+    optionsDisabled: false
+  }
+  const runner = initAutoSave(() => ({ nodes: [{ id: 'guarded' }] } as any), { disabled: false }, guard)
+  runner.markDirty({ reason: 'direct-guard' })
+  assert.equal(runner.snapshot().phase, 'dirty')
+})
+
 scenario('saving phase holds lock before history write', async (_t: any, { initAutoSave }: any) => {
   const flags = createFlags(true)
   const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, flags)

@@ -931,18 +931,21 @@ export function initAutoSave(
   }
   const encoder = new TextEncoder()
   const pendingQueue: AutoSaveQueueEntry[] = []
-  const phaseGuardEnabled = (() => {
-    if (!flagSnapshot || typeof flagSnapshot !== 'object') return false
-    if ('autosave' in flagSnapshot && flagSnapshot.autosave && typeof flagSnapshot.autosave === 'object') {
-      const candidate = flagSnapshot.autosave as { readonly phase?: unknown }
-      return candidate?.phase === 'phase-a'
-    }
-    if ('phase' in flagSnapshot) {
-      const candidate = flagSnapshot as { readonly phase?: unknown }
-      return candidate?.phase === 'phase-a'
-    }
-    return false
-  })()
+  const phaseGuardEnabled =
+    guardSnapshot?.featureFlag.value === true && guardSnapshot.optionsDisabled !== true
+      ? true
+      : (() => {
+          if (!flagSnapshot || typeof flagSnapshot !== 'object') return false
+          if ('autosave' in flagSnapshot && flagSnapshot.autosave && typeof flagSnapshot.autosave === 'object') {
+            const candidate = flagSnapshot.autosave as { readonly phase?: unknown }
+            return candidate?.phase === 'phase-a'
+          }
+          if ('phase' in flagSnapshot) {
+            const candidate = flagSnapshot as { readonly phase?: unknown }
+            return candidate?.phase === 'phase-a'
+          }
+          return false
+        })()
   let phase: AutoSavePhase = 'idle'
   let retryCount = 0
   let lastSuccessAt: string | undefined
