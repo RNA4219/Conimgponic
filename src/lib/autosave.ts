@@ -1,4 +1,5 @@
 import type { Storyboard } from '../types'
+import { FLAG_MIGRATION_PLAN } from '../config/flags'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
 
@@ -172,6 +173,8 @@ export interface AutoSavePhaseGuardSnapshot {
   }
   readonly optionsDisabled: boolean
 }
+
+const PHASE_GUARD_ROLLOUT_ACTIVE = FLAG_MIGRATION_PLAN.some((step) => step.phase.startsWith('phase-a'))
 
 interface Day8CollectorLike {
   publish(event: Record<string, unknown>): void
@@ -836,6 +839,42 @@ export function initAutoSave(
   }
   const guardSource = (value: unknown): AutoSavePhaseGuardSnapshot['featureFlag']['source'] =>
     value === 'env' || value === 'workspace' || value === 'localStorage' || value === 'default' ? value : 'default'
+  const resolveGuardFromEnvironment = (
+    fallbackOptionsDisabled: boolean
+  ): AutoSavePhaseGuardSnapshot => {
+    const scope = globalThis as typeof globalThis & {
+      __AUTOSAVE_ENABLED__?: boolean
+      localStorage?: { getItem?: (key: string) => string | null }
+      process?: { env?: Record<string, unknown> }
+      import?: { meta?: { env?: Record<string, unknown> } }
+    }
+    if (typeof scope.__AUTOSAVE_ENABLED__ === 'boolean') {
+      return {
+        featureFlag: { value: scope.__AUTOSAVE_ENABLED__, source: 'env' },
+        optionsDisabled: fallbackOptionsDisabled
+      }
+    }
+    const storage = asBool(scope.localStorage?.getItem?.('autosave.enabled'))
+    if (storage != null) {
+      return {
+        featureFlag: { value: storage, source: 'localStorage' },
+        optionsDisabled: fallbackOptionsDisabled
+      }
+    }
+    const env = asBool(
+      scope.process?.env?.VITE_AUTOSAVE_ENABLED ?? scope.import?.meta?.env?.VITE_AUTOSAVE_ENABLED
+    )
+    if (env != null) {
+      return {
+        featureFlag: { value: env, source: 'env' },
+        optionsDisabled: fallbackOptionsDisabled
+      }
+    }
+    return {
+      featureFlag: { value: !AUTOSAVE_POLICY.disabled, source: 'default' },
+      optionsDisabled: fallbackOptionsDisabled
+    }
+  }
   const normalizeGuard = (
     candidate: AutoSaveInitGuardInput | undefined,
     fallbackOptionsDisabled: boolean
@@ -906,35 +945,13 @@ export function initAutoSave(
   }
   const fallbackOptionsDisabled = options?.disabled === true
   const guardSnapshot = normalizeGuard(flagSnapshot, fallbackOptionsDisabled)
-  const effectiveOptionsDisabled = guardSnapshot?.optionsDisabled ?? fallbackOptionsDisabled
-  const snapshotFlagValue = (() => {
-    if (!flagSnapshot || typeof flagSnapshot !== 'object') return null
-    if ('featureFlag' in flagSnapshot && flagSnapshot.featureFlag && typeof flagSnapshot.featureFlag === 'object') {
-      const guard = flagSnapshot as AutoSavePhaseGuardSnapshot
-      return typeof guard.featureFlag?.value === 'boolean' ? guard.featureFlag.value : null
-    }
-    const record = flagSnapshot as Record<string, unknown>
-    if ('autosave' in record && record.autosave && typeof record.autosave === 'object') {
-      const auto = record.autosave as { enabled?: unknown }
-      return typeof auto?.enabled === 'boolean' ? auto.enabled : null
-    }
-    if ('enabled' in record) {
-      const auto = record as { enabled?: unknown }
-      return typeof auto.enabled === 'boolean' ? auto.enabled : null
-    }
-    return null
-  })()
-  const normalizedFlagValue = guardSnapshot?.featureFlag.value ?? snapshotFlagValue
-  const flagEnabled = normalizedFlagValue ?? resolveFlag()
+  const guard = guardSnapshot ?? resolveGuardFromEnvironment(fallbackOptionsDisabled)
+  const flagEnabled = guard.featureFlag.value
+  const effectiveOptionsDisabled = guard.optionsDisabled
   if (effectiveOptionsDisabled || !flagEnabled) {
     const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
-    const guardForLog: AutoSavePhaseGuardSnapshot =
-      guardSnapshot ?? {
-        featureFlag: { value: flagEnabled, source: 'default' },
-        optionsDisabled: effectiveOptionsDisabled
-      }
     publishGuardCollectorEvent(
-      guardForLog,
+      guard,
       effectiveOptionsDisabled ? 'options-disabled' : 'feature-flag-disabled'
     )
     const resolvedPromise: Promise<void> = Promise.resolve()
@@ -949,7 +966,7 @@ export function initAutoSave(
   const encoder = new TextEncoder()
   const pendingQueue: AutoSaveQueueEntry[] = []
   const phaseGuardEnabled =
-    guardSnapshot?.featureFlag.value === true && guardSnapshot.optionsDisabled !== true
+    guard.featureFlag.value === true && guard.optionsDisabled !== true
       ? true
       : (() => {
           if (!flagSnapshot || typeof flagSnapshot !== 'object') return false
