@@ -13,18 +13,21 @@ export function LeftRight(){
     if (busy) return
     if (left.length > MAX_INPUT){ alert('入力が長すぎます（50,000文字上限）'); return }
     setBusy(true); setRight('')
-    abortRef.current = new AbortController()
+    const controller = new AbortController()
+    abortRef.current = controller
     const prompt = left
     try{
-      for await (const chunk of chatStream('llama3.1', prompt, { timeoutMs: 60_000, maxChars: 20000 })){
+      for await (const chunk of chatStream('llama3.1', prompt, { timeoutMs: 60_000, maxChars: 20000, controller })){ 
         if (chunk.message?.content) setRight(r=> r + chunk.message!.content)
       }
     }finally{
+      abortRef.current = null
       setBusy(false)
     }
   }
   function onStop(){
     abortRef.current?.abort()
+    abortRef.current = null
     setBusy(false)
   }
 
