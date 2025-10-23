@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   resolveMergeDockPhasePlan,
+  resolveMergeThresholdSnapshot,
   type MergeDockPhasePlan,
 } from '../../src/components/MergeDock.tsx'
 
@@ -89,4 +90,29 @@ test('stable precision sourced from workspace threshold stays opt-in without rev
   assert.equal(plan.diff.enabled, false)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.guard.phaseBRequired, false)
+})
+
+test('workspace threshold from resolveFlags updates diff exposure and clamp', () => {
+  const workspace = {
+    get: (key: string): unknown => {
+      if (key === 'conimg.merge.threshold') {
+        return 0.97
+      }
+      return undefined
+    },
+  }
+
+  const { precision, threshold } = resolveMergeThresholdSnapshot({ workspace, storage: null })
+  const plan = resolveMergeDockPhasePlan({
+    precision,
+    threshold,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 1 },
+  })
+
+  assert.equal(precision, 'stable')
+  assert.equal(plan.threshold.request, 0.94)
+  assert.equal(plan.threshold.autoTarget, 0.97)
+  assert.equal(plan.diff.enabled, true)
+  assert.equal(plan.diff.exposure, 'default')
+  assert.equal(plan.autoApplied.target, 0.97)
 })

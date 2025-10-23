@@ -148,7 +148,11 @@ const MERGE_DOCK_TAB_PLAN: Record<MergePrecision, MergeDockTabPlan> = Object.fre
     diff: { exposure: 'opt-in' },
   },
   stable: {
-    tabs: [...BASE_TABS.slice(0, -1), { id: 'diff', label: 'Diff' }, BASE_TABS.at(-1)!],
+    tabs: [
+      ...BASE_TABS.slice(0, -1),
+      { id: 'diff', label: 'Diff' },
+      BASE_TABS[BASE_TABS.length - 1]!,
+    ],
     initialTab: 'diff',
     diff: { exposure: 'default', backupAfterMs: DIFF_BACKUP_THRESHOLD_MS },
   },
@@ -224,19 +228,99 @@ interface MergeThresholdSnapshot {
   readonly threshold: number | undefined
 }
 
-const useMergeThreshold = (options: MergeThresholdOptions = {}): MergeThresholdSnapshot => {
-  const snapshot = useMemo(() => resolveFlags(), [])
-  const storage = typeof window !== 'undefined' ? window.localStorage : undefined
+type WorkspaceConfiguration =
+  | { readonly get: <T = unknown>(key: string) => T | undefined }
+  | Record<string, unknown>
 
-  return useMemo(() => {
-    const precision = options.precision ?? snapshot.merge.precision
-    const overrideThreshold = parseMergeThreshold(options.threshold)
-    if (overrideThreshold !== undefined) {
-      return { precision, threshold: overrideThreshold }
+type MergeThresholdStorage = Pick<Storage, 'getItem'> | null
+
+interface MergeThresholdSourceOptions extends MergeThresholdOptions {
+  readonly workspace?: WorkspaceConfiguration | null
+  readonly storage?: MergeThresholdStorage
+  readonly flags?: FlagSnapshot | null
+}
+
+const readWorkspaceSetting = (
+  workspace: WorkspaceConfiguration | null | undefined,
+  key: string,
+): unknown => {
+  if (!workspace) {
+    return undefined
+  }
+
+  const accessor = workspace as { readonly get?: <T = unknown>(target: string) => T | undefined }
+  if (typeof accessor.get === 'function') {
+    return accessor.get(key)
+  }
+
+  if (typeof workspace === 'object' && workspace) {
+    if (Object.prototype.hasOwnProperty.call(workspace, key)) {
+      return (workspace as Record<string, unknown>)[key]
     }
-    const storedThreshold = parseMergeThreshold(storage?.getItem(MERGE_THRESHOLD_STORAGE_KEY))
-    return { precision, threshold: storedThreshold }
-  }, [options.precision, options.threshold, snapshot, storage])
+
+    return key.split('.').reduce<unknown>((current, segment) => {
+      if (!current || typeof current !== 'object') {
+        return undefined
+      }
+      if (!(segment in (current as Record<string, unknown>))) {
+        return undefined
+      }
+      return (current as Record<string, unknown>)[segment]
+    }, workspace as Record<string, unknown>)
+  }
+
+  return undefined
+}
+
+export const resolveMergeThresholdSnapshot = (
+  options: MergeThresholdSourceOptions = {},
+): MergeThresholdSnapshot => {
+  const workspace = options.workspace ?? null
+  const storage = options.storage ?? null
+  const flags = options.flags ?? null
+  const precision =
+    options.precision ??
+    flags?.merge.precision ??
+    resolveFlags({ workspace, storage }).merge.precision
+
+  const overrideThreshold = parseMergeThreshold(options.threshold)
+  if (overrideThreshold !== undefined) {
+    return { precision, threshold: overrideThreshold }
+  }
+
+  const workspaceThreshold = parseMergeThreshold(
+    readWorkspaceSetting(workspace, MERGE_THRESHOLD_STORAGE_KEY),
+  )
+  if (workspaceThreshold !== undefined) {
+    return { precision, threshold: workspaceThreshold }
+  }
+
+  const storedThreshold = parseMergeThreshold(storage?.getItem(MERGE_THRESHOLD_STORAGE_KEY))
+  return { precision, threshold: storedThreshold }
+}
+
+type MergeThresholdHookOptions = Omit<MergeThresholdSourceOptions, 'flags'>
+
+const useMergeThreshold = (
+  options: MergeThresholdHookOptions = {},
+): MergeThresholdSnapshot => {
+  const fallbackStorage: MergeThresholdStorage =
+    typeof window !== 'undefined' ? window.localStorage : null
+  const storage = options.storage ?? fallbackStorage
+  const workspace = options.workspace ?? null
+  const snapshot = useMemo(() => resolveFlags({ workspace, storage }), [workspace, storage])
+
+  return useMemo(
+    () =>
+      resolveMergeThresholdSnapshot({
+        ...options,
+        precision: options.precision ?? snapshot.merge.precision,
+        workspace,
+        storage,
+        flags: snapshot,
+      }),
+    [options.precision, options.threshold, workspace, storage, snapshot],
+  )
 }
 
 export const planMergeDockTabs = (precision: MergePrecision, lastTab?: MergeDockTabId): MergeDockTabPlan => {
@@ -384,6 +468,7 @@ interface MergeDockProps {
   readonly mergeThreshold?: number | null
   readonly autoAppliedRate?: number | null
   readonly phaseStats?: MergeDockPhaseStats | null
+  readonly workspace?: WorkspaceConfiguration | null
 }
 
 export function MergeDock(props?: MergeDockProps){
@@ -397,6 +482,7 @@ export function MergeDock(props?: MergeDockProps){
   const { precision, threshold } = useMergeThreshold({
     precision: flags?.merge.precision ?? null,
     threshold: props?.mergeThreshold ?? null,
+    workspace: props?.workspace ?? null,
   })
   const storedTabKey = storage?.getItem('merge.lastTab')
   const lastTab = storedTabKey && (storedTabKey === 'diff' || isBaseTabId(storedTabKey)) ? (storedTabKey as MergeDockTabId) : undefined
