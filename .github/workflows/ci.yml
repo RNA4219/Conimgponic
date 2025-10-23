@@ -64,9 +64,53 @@ jobs:
           path: sbom.log
           if-no-files-found: ignore
 
+  license:
+    needs:
+      - sbom
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@9.12.3 --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Ensure lockfile
+        run: |
+          if [ ! -f pnpm-lock.yaml ]; then
+            pnpm install --lockfile-only
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify licenses
+        run: pnpm -s license:check
+
+      - name: Upload license reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-artifacts
+          path: |
+            license-report.json
+            license-summary.json
+          if-no-files-found: error
+
   build:
     needs:
       - sbom
+      - license
     runs-on: ubuntu-latest
 
     steps:

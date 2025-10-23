@@ -54,7 +54,37 @@ scenario('phase guard stops runner when flag disabled', async (_t: any, { initAu
   const flags = createFlags(false)
   const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, flags)
   assert.equal(runner.snapshot().phase, 'disabled')
-  await assert.rejects(runner.flushNow(), (error: any) => error?.code === 'disabled' && error?.retryable === false)
+  await runner.flushNow()
+  runner.dispose()
+  assert.equal(runner.snapshot().phase, 'disabled')
+})
+
+scenario(
+  'phase guard no-ops flush and dispose when disabled by flag and options',
+  async (_t: any, { initAutoSave }: any) => {
+    const flags = createFlags(false)
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: true }, flags)
+    assert.equal(runner.snapshot().phase, 'disabled')
+    await runner.flushNow()
+    runner.dispose()
+    assert.equal(runner.snapshot().phase, 'disabled')
+  }
+)
+
+scenario('phase guard returns to idle when re-enabled', async (_t: any, { initAutoSave }: any) => {
+  const disabledGuard = {
+    featureFlag: { value: false, source: 'env' },
+    optionsDisabled: true
+  }
+  const disabledRunner = initAutoSave(() => ({ nodes: [] } as any), { disabled: true }, disabledGuard)
+  assert.equal(disabledRunner.snapshot().phase, 'disabled')
+
+  const enabledGuard = {
+    featureFlag: { value: true, source: 'env' },
+    optionsDisabled: false
+  }
+  const enabledRunner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, enabledGuard)
+  assert.equal(enabledRunner.snapshot().phase, 'idle')
 })
 
 scenario('phase guard keeps dirty snapshot when enabled and generation queued', async (_t: any, { initAutoSave }: any) => {
