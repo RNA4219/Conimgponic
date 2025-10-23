@@ -64,6 +64,21 @@ test('workspace configuration resolves plugin enable flag before storage and def
   assert.equal(fromDefaults.plugins.source, 'default')
 })
 
+test('resolveFlags falls back to default autosave and merge threshold when all sources unset', () => {
+  const snapshot = resolveFlags({
+    env: {},
+    workspace: null,
+    storage: null,
+    clock: () => new Date('2025-01-08T00:00:00.000Z')
+  })
+
+  assert.equal(snapshot.autosave.enabled, true)
+  assert.equal(snapshot.autosave.source, 'default')
+  assert.equal(snapshot.merge.threshold, 0.72)
+  assert.equal(snapshot.merge.source, 'default')
+  assert.equal(snapshot.updatedAt, '2025-01-08T00:00:00.000Z')
+})
+
 test('collector fallback applies default autosave and merge threshold when no inputs', () => {
   const resolution = resolveFlags(
     { storage: null },

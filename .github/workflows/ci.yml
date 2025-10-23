@@ -160,15 +160,16 @@ jobs:
         run: pnpm test --filter telemetry
 
       - name: Test with coverage
-        run: |
-          set -euo pipefail
-          pnpm test -- --test-coverage
+        run: pnpm test -- --test-coverage
+
+      - name: Prepare reports directory
+        run: mkdir -p reports
 
       - name: Generate JUnit report
         run: |
           set -euo pipefail
           mkdir -p reports
-          pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml
+          pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml
 
       - name: Build
         run: |
