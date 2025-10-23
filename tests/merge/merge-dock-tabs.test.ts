@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { MergeDock, planMergeDockTabs } from '../../src/components/MergeDock.tsx'
 import type { FlagSnapshot } from '../../src/config/flags.ts'
+import { useSB } from '../../src/store.ts'
 
 type MergePrecision = Parameters<typeof planMergeDockTabs>[0]
 type MergeDockTabPlan = ReturnType<typeof planMergeDockTabs>
@@ -238,5 +239,86 @@ test('merge-ui: beta precision diff tab reflects phase plan and keeps backup CTA
       value: originalWindow,
     })
     Date.now = originalDateNow
+  }
+})
+
+test('merge-ui: checks surface storyboard warnings when scenes are incomplete', () => {
+  const original = useSB.getState()
+  const warningStoryboard = {
+    ...original.sb,
+    scenes: [{ id: 'scene-1', manual: '', ai: '', status: 'idle' as const, assets: [] }],
+  }
+  useSB.setState({ ...original, sb: warningStoryboard })
+
+  try {
+    const html = renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags: {
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'stable', precision: 'stable' },
+        },
+        phaseStats: { reviewBandCount: 1, conflictBandCount: 0 },
+      }),
+    )
+
+    assert.match(html, /Warnings: 2/); assert.match(html, /#1 text empty/)
+    assert.match(html, /#1 tone missing/)
+  } finally {
+    useSB.setState(original)
+  }
+})
+test('merge-ui: shot tab exposes OPFS snapshot controls', () => {
+  const original = useSB.getState()
+  const storyboard = {
+    ...original.sb,
+    scenes: [{ id: 'scene-1', manual: 'Manual cut', ai: 'AI cut', status: 'idle' as const, assets: [] }],
+  }
+  const store = new Map<string, string>()
+  store.set('merge.lastTab', 'shot')
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const originalWindow = globalThis.window
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { localStorage: storage },
+  })
+  useSB.setState({ ...original, sb: storyboard })
+
+  try {
+    const html = renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags: {
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'beta', precision: 'beta' },
+        },
+        phaseStats: { reviewBandCount: 0, conflictBandCount: 0 },
+      }),
+    )
+
+    assert.match(html, />Save Snapshot \(OPFS\)</); assert.match(html, />Restore Last Compiled/)
+  } finally {
+    useSB.setState(original)
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
   }
 })
