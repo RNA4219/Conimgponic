@@ -4,11 +4,11 @@ import type { AssetRef } from '../types'
 import { saveJSON, loadJSON } from '../lib/opfs'
 
 export function AssetsTab(){
-  const { sb } = useSB()
+  const { sb, setAssetsCatalog } = useSB()
   const [items, setItems] = useState<AssetRef[]>(sb.assetsCatalog || [])
 
   useEffect(()=>{ (async()=>{
-    const saved = await loadJSON('project/assets.json')
+    const saved = await loadJSON<AssetRef[]>('project/assets.json')
     if (saved) setItems(saved)
   })() }, [])
 
@@ -17,7 +17,7 @@ export function AssetsTab(){
   }
   async function save(){
     await saveJSON('project/assets.json', items)
-    ;(useSB.getState() as any).sb.assetsCatalog = items
+    setAssetsCatalog(items)
     alert('Assets saved to OPFS')
   }
   return (
@@ -29,9 +29,15 @@ export function AssetsTab(){
       {items.map((a,i)=> (
         <div key={a.id} className="card" style={{padding:8}}>
           <div style={{display:'grid', gridTemplateColumns:'120px 1fr 1fr 1fr', gap:8}}>
-            <select value={a.kind} onChange={e=>{
-              const v = e.target.value as any; const ns=[...items]; ns[i] = {...a, kind:v}; setItems(ns)
-            }}>
+            <select
+              value={a.kind}
+              onChange={e=>{
+                const value = e.target.value as AssetRef['kind']
+                const ns=[...items]
+                ns[i] = {...a, kind:value}
+                setItems(ns)
+              }}
+            >
               <option value="character">character</option>
               <option value="prop">prop</option>
               <option value="background">background</option>

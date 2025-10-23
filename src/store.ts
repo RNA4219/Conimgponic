@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Storyboard, Scene } from './types'
+import type { Storyboard, Scene, AssetRef } from './types'
 
 const urlAlphabet = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
 
@@ -20,6 +20,7 @@ type State = {
   moveScene(id: string, dir: -1|1): void
   updateScene(id: string, patch: Partial<Scene>): void
   setSBTitle(title: string): void
+  setAssetsCatalog(assets: AssetRef[]): void
 }
 
 export const useSB = create<State>((set, get)=> ({
@@ -64,7 +65,10 @@ export const useSB = create<State>((set, get)=> ({
       return { sb: {...ss.sb, scenes: ns} }
     })
   },
-  setSBTitle(title){ set(ss => ({ sb: {...ss.sb, title} })) }
+  setSBTitle(title){ set(ss => ({ sb: {...ss.sb, title} })) },
+  setAssetsCatalog(assets){
+    set(ss => ({ sb: { ...ss.sb, assetsCatalog: assets } }))
+  }
 }))
 
 export const useSBMeta = () => {

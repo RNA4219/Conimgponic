@@ -101,10 +101,11 @@ export type WorkspaceConfiguration =
   | { readonly get: <T = unknown>(key: string) => T | undefined }
   | Record<string, unknown>
 
-export interface FlagResolution<T> extends FlagValueSnapshot<T> {}
+export type FlagResolution<T> = FlagValueSnapshot<T>
 
 const defaultEnv = (() => {
-  const metaEnv = ((import.meta as any)?.env ?? {}) as Record<string, unknown>
+  type ImportMetaWithEnv = ImportMeta & { readonly env?: Record<string, unknown> }
+  const metaEnv = ((import.meta as ImportMetaWithEnv).env ?? {}) as Record<string, unknown>
   const nodeProcess =
     typeof globalThis === 'object'
       ? ((globalThis as unknown as { process?: { env?: Record<string, unknown> } })

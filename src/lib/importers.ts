@@ -1,4 +1,4 @@
-import type { Storyboard } from '../types'
+import type { Scene, Storyboard } from '../types'
 
 export async function readFileAsText(file: File): Promise<string>{
   return new Promise((res, rej)=>{
@@ -20,8 +20,20 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
       const i = idx.get(o.id)
       if (i != null){
         const sc = sb.scenes[i]
-        const patch: any = { seed: o.seed ?? sc.seed, tone: o.tone ?? sc.tone, slate: o.slate ?? sc.slate, shot: o.shot ?? sc.shot, take: (Number.isFinite(o.take)? o.take: sc.take) }
-        patch[mode] = String(o.text||'')
+        const nextSeed = typeof o.seed === 'number' && Number.isFinite(o.seed) ? o.seed : sc.seed
+        const nextTake = typeof o.take === 'number' && Number.isFinite(o.take) ? o.take : sc.take
+        const patch: Partial<Scene> = {
+          seed: nextSeed,
+          tone: o.tone ?? sc.tone,
+          slate: o.slate ?? sc.slate,
+          shot: o.shot ?? sc.shot,
+          take: nextTake
+        }
+        if (mode === 'manual') {
+          patch.manual = String(o.text || '')
+        } else {
+          patch.ai = String(o.text || '')
+        }
         sb.scenes[i] = { ...sc, ...patch }
       }else{
         sb.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed:o.seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take:o.take })
@@ -56,8 +68,20 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
     const j = idx.get(id)
     if (j != null){
       const sc = sb.scenes[j]
-      const patch: any = { seed: (Number.isFinite(seed)? seed: sc.seed), tone: tone ?? sc.tone, slate: slate ?? sc.slate, shot: shot ?? sc.shot, take: (Number.isFinite(take)? take: sc.take) }
-      patch[mode] = text
+      const nextSeed = typeof seed === 'number' && Number.isFinite(seed) ? seed : sc.seed
+      const nextTake = typeof take === 'number' && Number.isFinite(take) ? take : sc.take
+      const patch: Partial<Scene> = {
+        seed: nextSeed,
+        tone: tone ?? sc.tone,
+        slate: slate ?? sc.slate,
+        shot: shot ?? sc.shot,
+        take: nextTake
+      }
+      if (mode === 'manual') {
+        patch.manual = text
+      } else {
+        patch.ai = text
+      }
       sb.scenes[j] = { ...sc, ...patch }
     }else{
       sb.scenes.push({ id, manual: mode==='manual'? text:'', ai: mode==='ai'? text:'', status:'idle', seed: (Number.isFinite(seed)? seed: undefined), tone, assets: [], slate, shot, take })

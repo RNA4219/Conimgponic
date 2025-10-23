@@ -8,7 +8,8 @@ export async function* chatStream(model: string, prompt: string, opts: ChatStrea
   const signal = opts.signal ?? controller?.signal
   if (!signal) throw new Error('chatStream requires an AbortSignal')
   const abort = () => { if (controller) controller.abort() }
-  const t = opts.timeoutMs && controller ? setTimeout(() => abort(), opts.timeoutMs) : null as any;
+  const timeout: ReturnType<typeof setTimeout> | null =
+    opts.timeoutMs && controller ? setTimeout(() => abort(), opts.timeoutMs) : null
   let stop = false
   try {
     const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
@@ -45,7 +46,9 @@ export async function* chatStream(model: string, prompt: string, opts: ChatStrea
       if (stop) break
     }
     if (buf.trim()){
-      try{ yield JSON.parse(buf) as Chunk }catch{}
+      try{ yield JSON.parse(buf) as Chunk }catch{/* ignore trailing chunk */}
     }
-  } finally { if (opts.timeoutMs && (t as any)) clearTimeout(t) }
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
 }

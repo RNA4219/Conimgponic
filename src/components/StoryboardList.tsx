@@ -21,7 +21,14 @@ export function StoryboardList(){
             <label style={{marginLeft:8}}>tone:</label>
             <input style={{width:140}} value={sc.tone ?? ''} onChange={e=>updateScene(sc.id, { tone: e.target.value || undefined })} placeholder="cinematic / noir / anime"/>
             <label style={{marginLeft:8}}>lock:</label>
-            <select value={sc.lock ?? ''} onChange={e=>updateScene(sc.id, { lock: (e.target.value||null) as any })}>
+            <select
+              value={sc.lock ?? ''}
+              onChange={e=>{
+                const raw = e.target.value
+                const lockValue: 'manual' | 'ai' | null = raw === '' ? null : raw === 'manual' ? 'manual' : 'ai'
+                updateScene(sc.id, { lock: lockValue })
+              }}
+            >
               <option value="">(none)</option>
               <option value="manual">manual</option>
               <option value="ai">ai</option>

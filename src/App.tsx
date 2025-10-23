@@ -101,25 +101,25 @@ export default function App(){
 
   useEffect(()=>{
     function onKey(e: KeyboardEvent){
-      try{
-        if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase()==='s'){
-          e.preventDefault(); (async()=>{ await saveJSON('project/storyboard.json', useSB.getState().sb) })();
-        } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase()==='s'){
-          e.preventDefault(); (async()=>{
-            const { ensureDir, saveText } = await import('./lib/opfs');
-            const { toMarkdown, toCSV, toJSONL } = await import('./lib/exporters');
-            const { sha256Hex } = await import('./lib/hash');
-            const sb = useSB.getState().sb
-            const ts = new Date().toISOString().replace(/[:.]/g,'-'); const dir = `runs/${ts}`; await ensureDir(dir)
-            const md = toMarkdown(sb), csv = toCSV(sb), jsonl=toJSONL(sb), h = await sha256Hex(md + '\n' + csv + '\n' + jsonl)
-            await saveText(`${dir}/shotlist.md`, md); await saveText(`${dir}/shotlist.csv`, csv); await saveText(`${dir}/shotlist.jsonl`, jsonl); await saveText(`${dir}/meta.json`, JSON.stringify({hash:h,title:sb.title},null,2)); await saveText('runs/latest.txt', ts)
-          })();
-        } else if (e.ctrlKey && e.altKey && e.key.toLowerCase()==='n'){
-          e.preventDefault(); useSB.getState().addScene()
-        } else if (e.ctrlKey && e.key === 'Enter'){
-          // noop: LeftRight component handles generation
-        }
-      }catch{}
+      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase()==='s'){
+        e.preventDefault()
+        void (async()=>{ await saveJSON('project/storyboard.json', useSB.getState().sb) })()
+      } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase()==='s'){
+        e.preventDefault()
+        void (async()=>{
+          const { ensureDir, saveText } = await import('./lib/opfs')
+          const { toMarkdown, toCSV, toJSONL } = await import('./lib/exporters')
+          const { sha256Hex } = await import('./lib/hash')
+          const sb = useSB.getState().sb
+          const ts = new Date().toISOString().replace(/[:.]/g,'-'); const dir = `runs/${ts}`; await ensureDir(dir)
+          const md = toMarkdown(sb), csv = toCSV(sb), jsonl=toJSONL(sb), h = await sha256Hex(md + '\n' + csv + '\n' + jsonl)
+          await saveText(`${dir}/shotlist.md`, md); await saveText(`${dir}/shotlist.csv`, csv); await saveText(`${dir}/shotlist.jsonl`, jsonl); await saveText(`${dir}/meta.json`, JSON.stringify({hash:h,title:sb.title},null,2)); await saveText('runs/latest.txt', ts)
+        })()
+      } else if (e.ctrlKey && e.altKey && e.key.toLowerCase()==='n'){
+        e.preventDefault(); useSB.getState().addScene()
+      } else if (e.ctrlKey && e.key === 'Enter'){
+        // noop: LeftRight component handles generation
+      }
     }
     window.addEventListener('keydown', onKey)
     return ()=> window.removeEventListener('keydown', onKey)

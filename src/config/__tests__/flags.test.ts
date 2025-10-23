@@ -108,10 +108,8 @@ test('legacy storage keys are checked when modern key is absent', () => {
 for (const { name, run } of cases) {
   try {
     run()
-    // eslint-disable-next-line no-console
     console.log(`✓ ${name}`)
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.error(`✗ ${name}`)
     throw error
   }
