@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { planMergeDockTabs } from '../../src/components/MergeDock.tsx'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+
+import { MergeDock, planMergeDockTabs } from '../../src/components/MergeDock.tsx'
+import type { FlagSnapshot } from '../../src/config/flags.ts'
 
 type MergePrecision = Parameters<typeof planMergeDockTabs>[0]
 type MergeDockTabPlan = ReturnType<typeof planMergeDockTabs>
@@ -102,5 +106,137 @@ test('merge-ui: diff exposure plan', async (t) => {
       assert.equal(plan.diff.exposure, expected.exposure)
       assert.equal(plan.diff.backupAfterMs, expected.backupAfterMs)
     })
+  }
+})
+
+const stableFlags: FlagSnapshot = {
+  autosave: { value: true, enabled: true, source: 'default', errors: [] },
+  plugins: { value: false, enabled: false, source: 'default', errors: [] },
+  merge: { value: 'stable', precision: 'stable', source: 'default', errors: [] },
+  updatedAt: '2024-05-01T00:00:00.000Z',
+}
+
+test('merge-ui: stable precision diff tab renders DiffMergeView with backup CTA when autosave is stale', () => {
+  const originalWindow = globalThis.window
+  const originalDateNow = Date.now
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const flushLog: string[] = []
+  const mockWindow = {
+    localStorage: storage,
+    __mergeDockAutoSaveSnapshot: { lastSuccessAt: '2024-05-01T00:00:00.000Z' },
+    __mergeDockFlushNow: () => {
+      flushLog.push('flush')
+    },
+  } as typeof window & {
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+    __mergeDockFlushNow?: () => void
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+  Date.now = () => new Date('2024-05-01T00:10:01.000Z').getTime()
+
+  try {
+    const html = renderToStaticMarkup(
+      <MergeDock
+        flags={{
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'stable', precision: 'stable' },
+        }}
+        phaseStats={{ reviewBandCount: 1, conflictBandCount: 1 }}
+      />,
+    )
+
+    assert.match(html, /data-component="diff-merge-view"/)
+    assert.match(html, /data-testid="merge-dock-backup-cta"/)
+    assert.equal(flushLog.length, 0)
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+    Date.now = originalDateNow
+  }
+})
+
+test('merge-ui: beta precision diff tab reflects phase plan and keeps backup CTA gated', () => {
+  const originalWindow = globalThis.window
+  const originalDateNow = Date.now
+  const store = new Map<string, string>()
+  store.set('merge.lastTab', 'diff')
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const mockWindow = {
+    localStorage: storage,
+    __mergeDockAutoSaveSnapshot: { lastSuccessAt: '2024-05-01T00:00:00.000Z' },
+  } as typeof window & {
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+  Date.now = () => new Date('2024-05-01T00:10:01.000Z').getTime()
+
+  try {
+    const html = renderToStaticMarkup(
+      <MergeDock
+        flags={{
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'beta', precision: 'beta' },
+        }}
+        phaseStats={{ reviewBandCount: 2, conflictBandCount: 0 }}
+      />,
+    )
+
+    assert.match(html, /data-component="diff-merge-view"/)
+    assert.match(html, /data-merge-diff-enabled="true"/)
+    assert.match(html, /data-merge-diff-exposure="opt-in"/)
+    assert.doesNotMatch(html, /data-testid="merge-dock-backup-cta"/)
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+    Date.now = originalDateNow
   }
 })

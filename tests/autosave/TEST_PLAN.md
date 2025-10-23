@@ -94,7 +94,7 @@ export interface AutoSaveExpectation {
 1. `pnpm lint` — ruff 相当の静的解析（※Node 環境で ESLint 代替として設定予定）。
 2. `pnpm typecheck` — `tsc --noEmit` を想定。
 3. `pnpm test --filter autosave` — Node Test Runner で AutoSave 系のユニット/統合を順次実行。
-4. `pnpm test -- --coverage` — 回帰時のスナップショット更新前に全体の差分を確認。
+4. `pnpm test -- --test-coverage` — 回帰時のスナップショット更新前に全体の差分を確認。
 
 ## 7. 状態遷移カバレッジ
 

@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint \"{src,tests}/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --loader ts-node/esm --test tests/**/*.test.ts",
+    "test": "node scripts/run-tests.mjs",
     "license:check": "node --loader ts-node/esm scripts/license/verify.ts",
     "golden": "pnpm -s ts-node --files scripts/golden/compare.ts",
     "golden:ci": "pnpm -s ts-node --files scripts/golden/compare.ts tests/fixtures/case-mini-03/project.storyboard.json tests/fixtures/case-mini-03 ."
