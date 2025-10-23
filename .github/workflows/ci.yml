@@ -33,9 +33,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Syft CLI
-        uses: anchore/syft-action@v1
+        uses: anchore/sbom-action/download-syft@v0
         with:
-          command: version
+          syft-version: latest
 
       - name: Generate SBOM
         run: |
