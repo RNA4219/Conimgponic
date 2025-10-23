@@ -4,7 +4,16 @@
 Day8 パイプラインでは Collector → Analyzer → Reporter が 15 分バッチで JSONL を授受し、AutoSave/精緻マージのメトリクスからロールバック可否を判断する。【F:Day8/docs/day8/design/03_architecture.md†L3-L44】【F:docs/IMPLEMENTATION-PLAN.md†L321-L400】
 VS Code 拡張経由で送出するイベントを既存パイプラインへ統合するため、`docs/IMPLEMENTATION-PLAN.md` の Collector 連携要件と Day8 アーキテクチャを踏まえて設計を固定する。【F:docs/IMPLEMENTATION-PLAN.md†L67-L88】
 
-## 2. イベントマッピング
+## 2. Collector / Analyzer / Reporter の責務と評価指標
+Day8 パイプラインの 3 レイヤは以下の責務境界と指標を維持する。【F:Day8/docs/day8/design/03_architecture.md†L3-L44】【F:docs/IMPLEMENTATION-PLAN.md†L321-L400】
+
+| レイヤ | 主責務 | 取り扱うイベント | 核となる評価指標 | ロールバック判断材料 |
+| --- | --- | --- | --- | --- |
+| Collector | 拡張からの JSONL を取り込み、15 分窓でメトリクス化。冪等性と再試行制御を担当。 | `snapshot.result`, `status.autosave`, `merge.result`, `error`, `flag_resolution` | P95, 成功率、再試行回数、UI 達成率 | `retryable=false` 検出、イベント欠損、閾値超過の原データ |
+| Analyzer | Collector 出力を SLO 判定し、段階ロールアウトの継続可否を決定。Why-Why 草案も下書き。 | Collector 15 分バッチ | `autosave_p95`, `merge_auto_success_rate`, `ui_saved_rate`, `incident_ref` | `rollback_required`, `rollbackTo`、閾値逸脱の種類 |
+| Reporter | Analyzer 判定を通知テンプレートに整形し、Slack/PagerDuty/レポートへ配信。 | Analyzer 判定結果 | 通知送信 SLA、Runbook 反映状況 | Incident エスカレーション有無、Runbook 実行結果 |
+
+## 3. イベントマッピング
 既存の Collector チャネルと拡張メッセージ (`ExtToWv`) の対応を次表に定義する。【F:docs/TELEMETRY-COLLECTOR-AUTOSAVE.md†L10-L51】【F:docs/src-1.35_addon/API-CONTRACT-EXT.md†L45-L85】
 
 | Collector イベント (既存) | 目的 / 計測指標 | 拡張イベント (Extension → Webview) | 伝搬メタデータ | 備考 |
@@ -16,7 +25,7 @@ VS Code 拡張経由で送出するイベントを既存パイプラインへ統
 | `merge.failure` (`status="failure"` or `warning`) | 衝突率、リトライ判定 | `merge.result { ok: false, error }` および `error` ブロードキャスト | `error.retryable` を Collector の `status` 変換 (`warning` / `failure`) に使用。 | `retryable=true` は Collector で最大 3 回再試行。【F:docs/IMPLEMENTATION-PLAN.md†L403-L408】 |
 | `flag_resolution` (`feature="flags"`) | フラグ正規化失敗監視 | `error { code:"flag-validation", details: FlagSnapshot }` | `details.source` を `tags` へ転記し、Analyzer が配信経路ごとに SLO を確認。 | Phase 移行時の rollback 判定資料。【F:docs/IMPLEMENTATION-PLAN.md†L67-L72】 |
 
-## 3. 15 分バッチ変換方針
+## 4. 15 分バッチ変換方針
 `snapshot.result` / `status.autosave` / `merge.result` / `error` 系を Collector の 15 分サイクルへ集約する際のキーとロールバック閾値を定義する。【F:docs/IMPLEMENTATION-PLAN.md†L324-L395】
 
 | 対象イベント | 集約キー (`groupBy`) | 15 分指標 | 警告 / ロールバック閾値 | 根拠 |
@@ -28,15 +37,27 @@ VS Code 拡張経由で送出するイベントを既存パイプラインへ統
 
 `tenant`/`client_version` は既存 Collector メタデータと揃え、フェーズ別のロールアウト判定を 15 分単位で可視化する。【F:docs/IMPLEMENTATION-PLAN.md†L323-L335】
 
-## 4. RED テストケース（`tests/monitoring/extensions-telemetry.spec.ts`）
+```mermaid
+flowchart LR
+    subgraph Window[15分ウィンドウ]
+        A[Extension Events<br/>snapshot.result / status.autosave / merge.result / error]
+        A --> B[Collector<br/>groupBy + 指標算出]
+        B --> C[Analyzer<br/>SLO 判定 / rollback_required]
+        C --> D[Reporter
+Slack / PagerDuty / reports/alerts]
+    end
+    C -- incident_ref / rollbackTo --> B
+    D -- フィードバック --> B
+```
+
+## 5. RED テストケース（`tests/monitoring/extensions-telemetry.spec.ts`）
 以下の RED ケースを起点に TDD を行い、Collector モックが 15 分サイクルの整合性を確認できるようにする。【F:docs/IMPLEMENTATION-PLAN.md†L403-L408】
 
 1. **イベント欠損**: `snapshot.result` が 15 分窓で 0 件の場合、Analyzer が `autosave_p95` を `null` として扱い、Reporter が "データ未収集" 通知を生成する。
 2. **閾値超過通知**: `merge.result` 成功率が 0.78 に低下したフィクスチャを投入し、Analyzer が `rollback_required=true` で Phase B-0 ロールバックを指示する経路を検証する。
-3. **リトライ連鎖**: `error` イベントで `retryable=true` が 3 連続発生した後に `retryable=false` が続くシナリオを構築し、Collector が再試行尽きで `degraded` → Reporter PagerDuty 通知まで到達することを確認する。
-4. **UI 状態異常**: `status.autosave` の `state="saved"` 達成率が 0.94 に落ちたケースで、Analyzer が Phase A-1 の警告とロールバック推奨を返すことを確認する。
+3. **再試行枯渇**: `error` イベントで `retryable=true` が 3 連続発生した後に `retryable=false` が続くシナリオを構築し、Collector が再試行尽きで `degraded` → Reporter PagerDuty 通知まで到達することを確認する。
 
-## 5. Collector / Analyzer / Reporter 契約
+## 6. Collector / Analyzer / Reporter 契約
 拡張イベントを取り込む際の I/O 契約を下表に整理する。【F:docs/TELEMETRY-COLLECTOR-AUTOSAVE.md†L53-L126】
 
 | レイヤ | 入力 | 出力 | 主な処理 | 注意点 |
@@ -80,7 +101,25 @@ Collector 出力は以下の JSON Schema をベースに拡張する。【F:docs
 
 `workspace_id`/`tenant`/`client_version` は既存 Day8 Collector のフィルタ条件と揃え、Analyzer がフェーズ別スライスで集計できるようにする。【F:docs/IMPLEMENTATION-PLAN.md†L323-L335】
 
-## 6. 運用チェックリスト
+### 通知経路
+Reporter が出力する通知は次の経路を辿る。
+
+1. Analyzer 判定 (`breach=true`) を受信すると `monitor:notify` が Slack Incident チャンネルへ投稿し、`reports/alerts/<timestamp>.md` を添付。
+2. `rollback_required=true` の場合は PagerDuty v3 API を呼び、`incident_ref` と `rollbackTo` を payload に含める。
+3. フェーズ変更が発生すると `pnpm run flags:rollback --phase <prev>` のログを Incident チケットにリンクし、Collector の再集計完了を待ってフォローアップを投稿する。
+
+### ロールバック手順
+1. Analyzer から `rollback_required=true` を受け取った時点で Reporter が自動で `flags:rollback` を実行。
+2. 実行ログを `reports/alerts/<timestamp>.md` に追記し、Incident チケットへリンク。
+3. Collector が次バッチで `phase` 差分を検知できなかった場合は即時手動ロールバック（UI フラグを既定値に戻す）を Runbook に沿って行い、Analyzer の次サイクルを検証する。
+
+### SLO チェック
+- `autosave_p95` と `autosave_success_rate` が Phase A-1 の基準（P95 ≤ 750ms, 成功率 ≥ 0.95）を満たしているか。
+- `merge_auto_success_rate` が Phase B-0 基準（≥ 0.85）を維持し、`trace.processing_ms` P95 が 5000ms 未満か。
+- `ui_saved_rate` が 0.98 未満になった場合に Analyzer が警告を出しているか。
+- `retryable=false` が連続 3 バッチで発生した場合に Reporter が PagerDuty Incident を確実に送付しているか。
+
+## 7. 運用チェックリスト
 15 分サイクルの運用で確認すべき項目を整理する。【F:docs/IMPLEMENTATION-PLAN.md†L367-L420】
 
 1. `pnpm ts-node scripts/monitor/collect-metrics.ts --window=15m` が成功し、最新バッチに `snapshot.result`/`merge.result` の両方が含まれているかを確認する。
