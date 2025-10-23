@@ -1,4 +1,5 @@
 import type { Storyboard } from '../types'
+import { ensureDir, getRoot, loadText } from './opfs'
 
 export type StoryboardProvider = () => Storyboard
 
@@ -167,6 +168,14 @@ export interface AutoSavePhaseGuardSnapshot {
     readonly source: 'env' | 'workspace' | 'localStorage' | 'default'
   }
   readonly optionsDisabled: boolean
+}
+
+interface AutoSaveFlagSnapshot {
+  readonly autosave: {
+    readonly enabled: boolean
+    readonly phase?: string
+    readonly source?: string
+  }
 }
 
 export interface AutoSaveBridgeEnvelope<TType extends string, TPayload> {
@@ -344,6 +353,8 @@ export interface AutoSaveInitResult {
    * フライト中の場合でも完了を待機してから `phase='disabled'` に確定させる。
    */
   dispose: () => void
+  /** Phase A UI からの通知を反映して pendingBytes を更新する。 */
+  readonly markDirty: (meta?: { readonly pendingBytes?: number }) => void
 }
 
 export interface AutoSaveControlResponsibility {
@@ -698,6 +709,108 @@ export const AUTOSAVE_ERROR_TEST_MATRIX: readonly AutoSaveErrorScenario[] = Obje
   }
 ])
 
+const AUTOSAVE_DIRECTORY = 'project/autosave'
+const CURRENT_PATH = `${AUTOSAVE_DIRECTORY}/current.json`
+const INDEX_PATH = `${AUTOSAVE_DIRECTORY}/index.json`
+const HISTORY_DIRECTORY = `${AUTOSAVE_DIRECTORY}/history`
+const FALLBACK_LOCK_PATH = `${AUTOSAVE_DIRECTORY}/.lock`
+const encoder = new TextEncoder()
+
+interface AutoSaveIndexPayload {
+  readonly current: AutoSaveHistoryEntry | null
+  readonly history: readonly AutoSaveHistoryEntry[]
+}
+
+const createAutoSaveError = (
+  code: AutoSaveErrorCode,
+  message: string,
+  retryable: boolean,
+  cause?: unknown,
+  context?: Record<string, unknown>
+): AutoSaveError => {
+  const error = new Error(message) as AutoSaveError
+  error.name = 'AutoSaveError'
+  error.code = code
+  error.retryable = retryable
+  if (cause instanceof Error) error.cause = cause
+  if (context) error.context = context
+  return error
+}
+
+const parseIndexFile = (value: unknown): AutoSaveIndexPayload => {
+  if (!value || typeof value !== 'object') return { current: null, history: [] }
+  const input = value as Record<string, unknown>
+  const current = input.current as AutoSaveHistoryEntry | null | undefined
+  const history = Array.isArray(input.history) ? (input.history as AutoSaveHistoryEntry[]) : []
+  return {
+    current: current && current.location === 'current' ? { ...current, retained: current.retained !== false } : null,
+    history: history
+      .filter((entry) => entry?.location === 'history')
+      .map((entry) => ({ ...entry, retained: entry.retained !== false }))
+  }
+}
+
+const loadIndex = async (): Promise<AutoSaveIndexPayload> => {
+  const text = await loadText(INDEX_PATH)
+  if (!text) return { current: null, history: [] }
+  try {
+    return parseIndexFile(JSON.parse(text))
+  } catch (error) {
+    throw createAutoSaveError('data-corrupted', 'Failed to parse autosave index', false, error)
+  }
+}
+
+const atomicWrite = async (path: string, data: string): Promise<void> => {
+  const segments = path.split('/').filter(Boolean)
+  const fileName = segments.pop()
+  if (!fileName) throw new Error('invalid path')
+  const dirPath = segments.join('/')
+  const dir = await ensureDir(dirPath)
+  const tmpHandle = await dir.getFileHandle(`${fileName}.tmp`, { create: true })
+  const tmpWritable = await tmpHandle.createWritable()
+  await tmpWritable.write(data)
+  await tmpWritable.close()
+  const finalHandle = await dir.getFileHandle(fileName, { create: true })
+  const finalWritable = await finalHandle.createWritable()
+  await finalWritable.write(data)
+  await finalWritable.close()
+  try {
+    await dir.removeEntry(`${fileName}.tmp`)
+  } catch {}
+}
+
+const writeIndex = async (payload: AutoSaveIndexPayload): Promise<void> => {
+  await atomicWrite(INDEX_PATH, JSON.stringify(payload, null, 2))
+}
+
+const removeFile = async (path: string): Promise<void> => {
+  const segments = path.split('/').filter(Boolean)
+  const name = segments.pop()
+  if (!name) return
+  let dir = await getRoot()
+  for (const segment of segments) {
+    dir = await dir.getDirectoryHandle(segment, { create: true })
+  }
+  try {
+    await dir.removeEntry(name)
+  } catch {}
+}
+
+const clampHistory = async (
+  entries: readonly AutoSaveHistoryEntry[],
+  policy: AutoSavePolicy
+): Promise<readonly AutoSaveHistoryEntry[]> => {
+  const next = [...entries].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+  let total = next.reduce((sum, entry) => sum + (entry.bytes || 0), 0)
+  while (next.length > policy.maxGenerations || total > policy.maxBytes) {
+    const removed = next.shift()
+    if (!removed) break
+    await removeFile(`${HISTORY_DIRECTORY}/${removed.ts}.json`)
+    total -= removed.bytes
+  }
+  return next
+}
+
 /**
  * AutoSave スケジューラを初期化する。
  *
@@ -707,9 +820,149 @@ export const AUTOSAVE_ERROR_TEST_MATRIX: readonly AutoSaveErrorScenario[] = Obje
  */
 export function initAutoSave(
   getStoryboard: StoryboardProvider,
-  options?: AutoSaveOptions
+  options?: AutoSaveOptions,
+  flagSnapshot?: AutoSaveFlagSnapshot
 ): AutoSaveInitResult {
-  throw new Error('initAutoSave not implemented yet')
+  const policy = AUTOSAVE_POLICY
+  const guard: AutoSavePhaseGuardSnapshot = {
+    featureFlag: {
+      value: flagSnapshot?.autosave.enabled ?? true,
+      source:
+        (flagSnapshot?.autosave.source as AutoSavePhaseGuardSnapshot['featureFlag']['source']) ?? 'default'
+    },
+    optionsDisabled: options?.disabled === true
+  }
+
+  const featureDisabled = !guard.featureFlag.value || guard.optionsDisabled
+  const state: AutoSaveStatusSnapshot = {
+    phase: featureDisabled ? 'disabled' : 'idle',
+    retryCount: 0,
+    queuedGeneration: 0
+  }
+  let disposed = false
+  let fallbackLeaseActive = false
+
+  const snapshot = (): AutoSaveStatusSnapshot => ({ ...state })
+
+  const acquireFallbackLock = async (): Promise<() => Promise<void>> => {
+    if (fallbackLeaseActive) {
+      throw createAutoSaveError('lock-unavailable', 'Fallback lock already held', true)
+    }
+    fallbackLeaseActive = true
+    await atomicWrite(FALLBACK_LOCK_PATH, JSON.stringify({ ts: new Date().toISOString() }))
+    return async () => {
+      fallbackLeaseActive = false
+      await removeFile(FALLBACK_LOCK_PATH)
+    }
+  }
+
+  const withLock = async <T>(executor: () => Promise<T>): Promise<T> => {
+    state.phase = 'awaiting-lock'
+    const locks = (navigator as any)?.locks
+    try {
+      if (locks?.request) {
+        return await locks.request('imgponic:project', async (lock: { release?: () => Promise<void> | void }) => {
+          state.phase = 'writing-current'
+          try {
+            return await executor()
+          } finally {
+            await lock?.release?.()
+          }
+        })
+      }
+      throw new Error('web lock unavailable')
+    } catch (error) {
+      try {
+        const release = await acquireFallbackLock()
+        state.phase = 'writing-current'
+        try {
+          return await executor()
+        } finally {
+          await release()
+        }
+      } catch (fallbackError) {
+        const autoError = createAutoSaveError(
+          'lock-unavailable',
+          'Failed to acquire AutoSave lock',
+          true,
+          fallbackError instanceof Error ? fallbackError : error
+        )
+        state.lastError = autoError
+        state.retryCount += 1
+        state.phase = 'backoff'
+        throw autoError
+      }
+    }
+  }
+
+  const flushNow = async (): Promise<void> => {
+    if (disposed || featureDisabled) {
+      throw createAutoSaveError('disabled', 'AutoSave disabled', false)
+    }
+    const storyboard = getStoryboard()
+    const payload = JSON.stringify(storyboard)
+    const bytes = encoder.encode(payload).length
+    state.pendingBytes = bytes
+    const ts = new Date().toISOString()
+
+    const applyPersistence = async () => {
+      await atomicWrite(CURRENT_PATH, payload)
+      await atomicWrite(`${HISTORY_DIRECTORY}/${ts}.json`, payload)
+      const index = await loadIndex()
+      const historyEntry: AutoSaveHistoryEntry = {
+        ts,
+        bytes,
+        location: 'history',
+        retained: true
+      }
+      const currentEntry: AutoSaveHistoryEntry = {
+        ts,
+        bytes,
+        location: 'current',
+        retained: true
+      }
+      state.phase = 'gc'
+      const history = await clampHistory([...index.history, historyEntry], policy)
+      state.phase = 'updating-index'
+      await writeIndex({ current: currentEntry, history })
+      state.lastSuccessAt = ts
+      state.retryCount = 0
+      state.lastError = undefined
+      state.pendingBytes = undefined
+      state.phase = 'idle'
+      state.queuedGeneration = history.length
+    }
+
+    try {
+      await withLock(applyPersistence)
+    } catch (error) {
+      if ((error as AutoSaveError)?.code) throw error
+      const autoError = createAutoSaveError(
+        'write-failed',
+        'Failed to persist AutoSave payload',
+        true,
+        error instanceof Error ? error : undefined
+      )
+      state.lastError = autoError
+      state.retryCount += 1
+      state.phase = 'error'
+      throw autoError
+    }
+  }
+
+  const dispose = (): void => {
+    disposed = true
+    state.phase = 'disabled'
+    state.pendingBytes = undefined
+  }
+
+  const markDirty = (meta?: { readonly pendingBytes?: number }) => {
+    if (disposed || featureDisabled) return
+    state.phase = 'dirty'
+    state.pendingBytes = meta?.pendingBytes
+  }
+
+  return { snapshot, flushNow, dispose, markDirty }
 }
 
 /**
@@ -717,12 +970,32 @@ export function initAutoSave(
  *
  * 副作用: OPFS 読み出しのみ。
  * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
+ *
+ * Phase A の API 契約（`docs/src-1.35_addon/API-CONTRACT-EXT.md`）で規定される
+ * `AutoSavePhaseGuardSnapshot` 連携に基づき、復元 UI が location/source を判断できる
+ * メタデータを返却する。【docs/AUTOSAVE-DESIGN-IMPL.md §2.2】
  */
 export async function restorePrompt(): Promise<
   | null
   | { ts: string; bytes: number; source: 'current' | 'history'; location: string }
 > {
-  throw new Error('restorePrompt not implemented yet')
+  const index = await loadIndex()
+  if (index.current) {
+    return {
+      ts: index.current.ts,
+      bytes: index.current.bytes,
+      source: 'current',
+      location: CURRENT_PATH
+    }
+  }
+  if (!index.history.length) return null
+  const latest = [...index.history].sort((a, b) => (a.ts < b.ts ? 1 : -1))[0]
+  return {
+    ts: latest.ts,
+    bytes: latest.bytes,
+    source: 'history',
+    location: `${HISTORY_DIRECTORY}/${latest.ts}.json`
+  }
 }
 
 /**
@@ -732,7 +1005,14 @@ export async function restorePrompt(): Promise<
  * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
  */
 export async function restoreFromCurrent(): Promise<boolean> {
-  throw new Error('restoreFromCurrent not implemented yet')
+  const text = await loadText(CURRENT_PATH)
+  if (!text) return false
+  try {
+    JSON.parse(text)
+    return true
+  } catch (error) {
+    throw createAutoSaveError('data-corrupted', 'Corrupted current autosave payload', false, error)
+  }
 }
 
 /**
@@ -742,7 +1022,14 @@ export async function restoreFromCurrent(): Promise<boolean> {
  * 例外: `code='data-corrupted'` または `code='lock-unavailable'` の `AutoSaveError` を throw。
  */
 export async function restoreFrom(ts: string): Promise<boolean> {
-  throw new Error('restoreFrom not implemented yet')
+  const text = await loadText(`${HISTORY_DIRECTORY}/${ts}.json`)
+  if (!text) return false
+  try {
+    JSON.parse(text)
+    return true
+  } catch (error) {
+    throw createAutoSaveError('data-corrupted', 'Corrupted autosave history payload', false, error)
+  }
 }
 
 /**
@@ -754,5 +1041,6 @@ export async function restoreFrom(ts: string): Promise<boolean> {
 export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 > {
-  throw new Error('listHistory not implemented yet')
+  const index = await loadIndex()
+  return [...index.history].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
 }
