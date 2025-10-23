@@ -1,4 +1,5 @@
 import type { Storyboard } from '../types'
+import { ensureDir, getRoot, loadText } from './opfs'
 
 export type StoryboardProvider = () => Storyboard
 
@@ -168,6 +169,14 @@ export interface AutoSavePhaseGuardSnapshot {
     readonly source: 'env' | 'workspace' | 'localStorage' | 'default'
   }
   readonly optionsDisabled: boolean
+}
+
+interface AutoSaveFlagSnapshot {
+  readonly autosave: {
+    readonly enabled: boolean
+    readonly phase?: string
+    readonly source?: string
+  }
 }
 
 export interface AutoSaveBridgeEnvelope<TType extends string, TPayload> {
@@ -349,6 +358,8 @@ export interface AutoSaveInitResult {
    * フライト中の場合でも完了を待機してから `phase='disabled'` に確定させる。
    */
   dispose: () => void
+  /** Phase A UI からの通知を反映して pendingBytes を更新する。 */
+  readonly markDirty: (meta?: { readonly pendingBytes?: number }) => void
 }
 
 export type AutoSaveCollectorPhaseStep =
@@ -778,6 +789,108 @@ export const AUTOSAVE_ERROR_TEST_MATRIX: readonly AutoSaveErrorScenario[] = Obje
   }
 ])
 
+const AUTOSAVE_DIRECTORY = 'project/autosave'
+const CURRENT_PATH = `${AUTOSAVE_DIRECTORY}/current.json`
+const INDEX_PATH = `${AUTOSAVE_DIRECTORY}/index.json`
+const HISTORY_DIRECTORY = `${AUTOSAVE_DIRECTORY}/history`
+const FALLBACK_LOCK_PATH = `${AUTOSAVE_DIRECTORY}/.lock`
+const encoder = new TextEncoder()
+
+interface AutoSaveIndexPayload {
+  readonly current: AutoSaveHistoryEntry | null
+  readonly history: readonly AutoSaveHistoryEntry[]
+}
+
+const createAutoSaveError = (
+  code: AutoSaveErrorCode,
+  message: string,
+  retryable: boolean,
+  cause?: unknown,
+  context?: Record<string, unknown>
+): AutoSaveError => {
+  const error = new Error(message) as AutoSaveError
+  error.name = 'AutoSaveError'
+  error.code = code
+  error.retryable = retryable
+  if (cause instanceof Error) error.cause = cause
+  if (context) error.context = context
+  return error
+}
+
+const parseIndexFile = (value: unknown): AutoSaveIndexPayload => {
+  if (!value || typeof value !== 'object') return { current: null, history: [] }
+  const input = value as Record<string, unknown>
+  const current = input.current as AutoSaveHistoryEntry | null | undefined
+  const history = Array.isArray(input.history) ? (input.history as AutoSaveHistoryEntry[]) : []
+  return {
+    current: current && current.location === 'current' ? { ...current, retained: current.retained !== false } : null,
+    history: history
+      .filter((entry) => entry?.location === 'history')
+      .map((entry) => ({ ...entry, retained: entry.retained !== false }))
+  }
+}
+
+const loadIndex = async (): Promise<AutoSaveIndexPayload> => {
+  const text = await loadText(INDEX_PATH)
+  if (!text) return { current: null, history: [] }
+  try {
+    return parseIndexFile(JSON.parse(text))
+  } catch (error) {
+    throw createAutoSaveError('data-corrupted', 'Failed to parse autosave index', false, error)
+  }
+}
+
+const atomicWrite = async (path: string, data: string): Promise<void> => {
+  const segments = path.split('/').filter(Boolean)
+  const fileName = segments.pop()
+  if (!fileName) throw new Error('invalid path')
+  const dirPath = segments.join('/')
+  const dir = await ensureDir(dirPath)
+  const tmpHandle = await dir.getFileHandle(`${fileName}.tmp`, { create: true })
+  const tmpWritable = await tmpHandle.createWritable()
+  await tmpWritable.write(data)
+  await tmpWritable.close()
+  const finalHandle = await dir.getFileHandle(fileName, { create: true })
+  const finalWritable = await finalHandle.createWritable()
+  await finalWritable.write(data)
+  await finalWritable.close()
+  try {
+    await dir.removeEntry(`${fileName}.tmp`)
+  } catch {}
+}
+
+const writeIndex = async (payload: AutoSaveIndexPayload): Promise<void> => {
+  await atomicWrite(INDEX_PATH, JSON.stringify(payload, null, 2))
+}
+
+const removeFile = async (path: string): Promise<void> => {
+  const segments = path.split('/').filter(Boolean)
+  const name = segments.pop()
+  if (!name) return
+  let dir = await getRoot()
+  for (const segment of segments) {
+    dir = await dir.getDirectoryHandle(segment, { create: true })
+  }
+  try {
+    await dir.removeEntry(name)
+  } catch {}
+}
+
+const clampHistory = async (
+  entries: readonly AutoSaveHistoryEntry[],
+  policy: AutoSavePolicy
+): Promise<readonly AutoSaveHistoryEntry[]> => {
+  const next = [...entries].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+  let total = next.reduce((sum, entry) => sum + (entry.bytes || 0), 0)
+  while (next.length > policy.maxGenerations || total > policy.maxBytes) {
+    const removed = next.shift()
+    if (!removed) break
+    await removeFile(`${HISTORY_DIRECTORY}/${removed.ts}.json`)
+    total -= removed.bytes
+  }
+  return next
+}
+
 /**
  * AutoSave スケジューラを初期化する。
  *
@@ -1063,6 +1176,10 @@ export function initAutoSave(
  *
  * 副作用: OPFS 読み出しのみ。
  * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
+ *
+ * Phase A の API 契約（`docs/src-1.35_addon/API-CONTRACT-EXT.md`）で規定される
+ * `AutoSavePhaseGuardSnapshot` 連携に基づき、復元 UI が location/source を判断できる
+ * メタデータを返却する。【docs/AUTOSAVE-DESIGN-IMPL.md §2.2】
  */
 export async function restorePrompt(): Promise<
   | null
@@ -1089,7 +1206,14 @@ export async function restorePrompt(): Promise<
  * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
  */
 export async function restoreFromCurrent(): Promise<boolean> {
-  throw new Error('restoreFromCurrent not implemented yet')
+  const text = await loadText(CURRENT_PATH)
+  if (!text) return false
+  try {
+    JSON.parse(text)
+    return true
+  } catch (error) {
+    throw createAutoSaveError('data-corrupted', 'Corrupted current autosave payload', false, error)
+  }
 }
 
 /**
@@ -1099,7 +1223,14 @@ export async function restoreFromCurrent(): Promise<boolean> {
  * 例外: `code='data-corrupted'` または `code='lock-unavailable'` の `AutoSaveError` を throw。
  */
 export async function restoreFrom(ts: string): Promise<boolean> {
-  throw new Error('restoreFrom not implemented yet')
+  const text = await loadText(`${HISTORY_DIRECTORY}/${ts}.json`)
+  if (!text) return false
+  try {
+    JSON.parse(text)
+    return true
+  } catch (error) {
+    throw createAutoSaveError('data-corrupted', 'Corrupted autosave history payload', false, error)
+  }
 }
 
 /**
