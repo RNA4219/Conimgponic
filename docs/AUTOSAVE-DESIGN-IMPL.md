@@ -347,7 +347,7 @@ interface AutoSaveOptions {
 interface AutoSaveInitResult {
   readonly snapshot: () => AutoSaveStatusSnapshot;
   flushNow: () => Promise<void>;
-  dispose: () => void;
+  dispose: () => Promise<void>;
 }
 
 type AutoSaveErrorCode =
