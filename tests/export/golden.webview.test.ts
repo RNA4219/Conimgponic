@@ -11,6 +11,15 @@ const compareModulePromise = import(
   pathToFileURL(join(process.cwd(), 'scripts/golden/compare.ts')).href
 ) as Promise<CompareModule>
 
+type ExportersModule = typeof import('../../src/lib/exporters')
+const exportersModulePromise = import(
+  pathToFileURL(join(process.cwd(), 'src/lib/exporters.ts')).href
+) as Promise<ExportersModule>
+
+async function loadExporters(): Promise<ExportersModule> {
+  return exportersModulePromise
+}
+
 type NormalizedOutputs = {
   markdown: string
   csv: string
@@ -50,10 +59,11 @@ async function setupGolden(mutate?: Mutator): Promise<{
   cleanup: () => void
   compare: CompareModule
 }> {
+  const exporters = await loadExporters()
   const goldenDir = createTempDir('golden-fixture-')
   const outputDir = createTempDir('golden-output-')
   const compare = await loadCompareModule()
-  const outputs = compare.createNormalizedOutputs(baseStoryboard) as NormalizedOutputs
+  const outputs = exporters.createNormalizedOutputs(baseStoryboard)
   mutate?.(outputs)
   writeOutputs(goldenDir, outputs)
   return {
@@ -81,6 +91,14 @@ function makeTelemetryCollector(): {
 }
 
 describe('export bridge golden comparison', () => {
+  test('UI 側エクスポート結果が createNormalizedOutputs と同一の正規化結果を返す', async () => {
+    const exporters = await loadExporters()
+    const normalized = exporters.createNormalizedOutputs(baseStoryboard)
+    assert.equal(exporters.toMarkdown(baseStoryboard), normalized.markdown)
+    assert.equal(exporters.toCSV(baseStoryboard), normalized.csv)
+    assert.equal(exporters.toJSONL(baseStoryboard), normalized.jsonl)
+  })
+
   test('Markdown エクスポートを正規化し runs/<runId>/export/markdown/storyboard.md とゴールデンを厳密比較する', async () => {
     const ctx = await setupGolden()
     try {
