@@ -112,3 +112,32 @@ scenario(
     assert.ok(snap.retryCount >= 1)
   }
 )
+
+scenario(
+  'non-retryable history overflow downgrades snapshot to disabled',
+  {
+    opfs: {
+      beforeWrite(path){
+        if (path.endsWith('index.json.tmp')){
+          const error = Object.assign(new Error('history overflow'), {
+            code: 'history-overflow',
+            retryable: false
+          })
+          throw error
+        }
+      }
+    }
+  },
+  async (_t: any, { initAutoSave }: any) => {
+    const flags = createFlags(true)
+    const runner = initAutoSave(() => ({ nodes: [{ id: 'overflow' }] } as any), { disabled: false }, flags)
+    await assert.rejects(
+      runner.flushNow(),
+      (error: any) => error?.code === 'history-overflow' && error?.retryable === false
+    )
+    const snap = runner.snapshot()
+    assert.equal(snap.phase, 'disabled')
+    assert.equal(snap.lastError?.code, 'history-overflow')
+    assert.equal(snap.retryCount, 0)
+  }
+)
