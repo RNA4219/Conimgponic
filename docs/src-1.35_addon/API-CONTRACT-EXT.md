@@ -51,9 +51,33 @@ type WvToExt =
   | ({ type: "fs.list" } & MsgBase & { payload: { dir: string } })
   | ({ type: "fs.atomicWrite" } & MsgBase & { payload: { uri: string, dataBase64: string } })
   | ({ type: "merge.request" } & MsgBase & { payload: { base: any, ours: any, theirs: any, threshold?: number } })
-  | ({ type: "export.request" } & MsgBase & { payload: { format: "markdown" | "csv" | "jsonl" | "package" } })
-  | ({ type: "plugins.reload" } & MsgBase )
-  | ({ type: "log" } & MsgBase & { payload: { level: "debug"|"info"|"warn"|"error", message: string } })
+  | ({ type: "export.request" } & MsgBase & { payload: { format: "md" | "csv" | "jsonl" } })
+  | ({ type: "plugins.reload" } & MsgBase & {
+      payload: {
+        pluginId: string,
+        manifest: {
+          id: string,
+          version: string,
+          minPlatformVersion: string,
+          permissions: string[],
+          dependencies: Record<string, string>,
+          hooks: string[],
+        },
+        grantedPermissions: string[],
+        dependencySnapshot: Record<string, string>,
+      }
+    })
+  | ({ type: "log" } & MsgBase & {
+      payload: {
+        level: "debug"|"info"|"warn"|"error",
+        message: string,
+        tag?: string,
+        stage?: "manifest-validation"|"compatibility-check"|"permission-gate"|"dependency-cache"|"hook-registration",
+        notifyUser?: boolean,
+        retryable?: boolean,
+        detail?: Record<string, any>,
+      }
+    })
   | ({ type: "gen.request" } & MsgBase & { payload: { prompt: string, opts?: Record<string, any> } }) // 将来
 ```
 
@@ -74,6 +98,30 @@ type ExtToWv =
   | ({ type: "export.result" } & MsgBase & { ok: true, uri: string, normalizedUri?: string })
   | ({ type: "export.result" } & MsgBase & { ok: false, error: { code: string, message: string, retryable: boolean, details?: any } })
   | ({ type: "status.autosave" } & MsgBase & { payload: { state: "idle"|"dirty"|"saving"|"saved" } })
+  | ({ type: "plugins.reload.result" } & MsgBase & {
+      ok: boolean,
+      payload?: {
+        pluginId: string,
+        manifestVersion: string,
+        stages: {
+          name: "manifest-validation"|"compatibility-check"|"permission-gate"|"dependency-cache"|"hook-registration",
+          status: "pending"|"success"|"failed",
+          retryable: boolean,
+          error?: {
+            code: "E_PLUGIN_MANIFEST_INVALID"|"E_PLUGIN_INCOMPATIBLE"|"E_PLUGIN_PERMISSION_MISMATCH"|"E_PLUGIN_DEPENDENCY_MISMATCH"|"E_PLUGIN_HOOK_REGISTER_FAILED"|"E_PLUGIN_PHASE_BLOCKED",
+            message: string,
+            retryable: boolean,
+            notifyUser: boolean,
+          }
+        }[]
+      },
+      error?: {
+        code: "E_PLUGIN_MANIFEST_INVALID"|"E_PLUGIN_INCOMPATIBLE"|"E_PLUGIN_PERMISSION_MISMATCH"|"E_PLUGIN_DEPENDENCY_MISMATCH"|"E_PLUGIN_HOOK_REGISTER_FAILED"|"E_PLUGIN_PHASE_BLOCKED",
+        message: string,
+        retryable: boolean,
+        notifyUser: boolean,
+      }
+    })
   | ({ type: "gen.chunk" } & MsgBase & { payload: { text: string } })   // 将来
   | ({ type: "gen.done" } & MsgBase )
   | ({ type: "gen.error" } & MsgBase & { error: { code: string, message: string } })
@@ -127,6 +175,10 @@ Extension → Webview: "export.result" {ok:true, uri, normalizedUri}
 - 再試行は**指数バックオフ**（100/300/900ms 目安）。
 - `snapshot.result.payload.error.retryable=false` の場合は Readonly 降格を行い、`status.autosave(state="disabled", guard.optionsDisabled=true)` を続けて送る。
 - `E_FS_ATOMIC` はユーザー提示（保存できない場合は復旧ダイアログへ）。
+
+### 6.1 plugins.reload メッセージ契約
+- Webview→Extension: `plugins.reload` 要求は manifest/権限/依存スナップショットを含む。`tag=extension:plugin-bridge` の `log` をセットで送信し、`notifyUser` の有無で UI 通知を制御する。
+- Extension→Webview: `plugins.reload.result` は `ok=false` の場合でも `stages` 配列を返し、Collector ログと同期できるようにする。`retryable=true` の場合は Extension 側で指数バックオフ制御を行い、UI には通知しない。
 
 ## 7. セキュリティ境界
 - Webviewは**外部fetch禁止**。ネットは拡張側ゲートのみ。
