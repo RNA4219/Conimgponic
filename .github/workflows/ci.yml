@@ -111,6 +111,7 @@ jobs:
     needs:
       - sbom
       - license
+      - quality
     runs-on: ubuntu-latest
 
     steps:
@@ -138,39 +139,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm -s lint
-
-      - name: Type check
-        run: pnpm -s typecheck
-
-      - name: Autosave tests
-        run: pnpm test --filter autosave
-
-      - name: Merge tests
-        run: pnpm test --filter merge
-
-      - name: CLI tests
-        run: pnpm test --filter cli
-
-      - name: Collector tests
-        run: pnpm test --filter collector
-
-      - name: Telemetry tests
-        run: pnpm test --filter telemetry
-
-      - name: Test with coverage
-        run: pnpm test -- --test-coverage
-
-      - name: Prepare reports directory
-        run: mkdir -p reports
-
-      - name: Generate JUnit report
-        run: |
-          set -euo pipefail
-          mkdir -p reports
-          pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml
-
       - name: Build
         run: |
           set -euo pipefail
@@ -192,6 +160,149 @@ jobs:
           name: build-log
           path: build.log
           if-no-files-found: ignore
+
+  quality:
+    needs:
+      - sbom
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: lint
+            command: pnpm -s lint
+            collect_failures: false
+          - suite: typecheck
+            command: pnpm -s typecheck
+            collect_failures: false
+          - suite: autosave
+            command: pnpm -s test:autosave
+            collect_failures: true
+          - suite: merge
+            command: pnpm -s test:merge
+            collect_failures: true
+          - suite: cli
+            command: pnpm -s test:cli
+            collect_failures: true
+          - suite: collector
+            command: pnpm -s test:collector
+            collect_failures: true
+          - suite: telemetry
+            command: pnpm -s test:telemetry
+            collect_failures: true
+    name: Quality (${{ matrix.suite }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@9.12.3 --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Ensure lockfile
+        run: |
+          if [ ! -f pnpm-lock.yaml ]; then
+            pnpm install --lockfile-only
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ${{ matrix.suite }} suite
+        id: run_suite
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          ${{ matrix.command }} |& tee "logs/${{ matrix.suite }}.log"
+
+      - name: Extract failed test output
+        if: steps.run_suite.outcome == 'failure' && matrix.collect_failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          grep -E ':[0-9]+:[0-9]+: |not ok|FAIL|Error' "logs/${{ matrix.suite }}.log" > "logs/${{ matrix.suite }}-failures.log" || true
+
+      - name: Upload suite logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-${{ matrix.suite }}
+          path: |
+            logs/${{ matrix.suite }}.log
+            logs/${{ matrix.suite }}-failures.log
+          if-no-files-found: ignore
+
+      - name: Report suite failure
+        if: steps.run_suite.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::${{ matrix.suite }} suite failure log"
+          if [[ -f "logs/${{ matrix.suite }}.log" ]]; then
+            cat "logs/${{ matrix.suite }}.log"
+          else
+            echo "suite log not found"
+          fi
+          echo "::endgroup::"
+          if [[ -f "logs/${{ matrix.suite }}-failures.log" ]]; then
+            while IFS= read -r line; do
+              if [[ -n "$line" ]]; then
+                echo "::error::${line}"
+              fi
+            done < "logs/${{ matrix.suite }}-failures.log"
+          fi
+          exit 1
+
+  reports:
+    needs:
+      - quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@9.12.3 --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Ensure lockfile
+        run: |
+          if [ ! -f pnpm-lock.yaml ]; then
+            pnpm install --lockfile-only
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test with coverage
+        run: pnpm test -- --test-coverage
+
+      - name: Generate JUnit report
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml
 
       - name: Upload coverage artifact
         if: always()
