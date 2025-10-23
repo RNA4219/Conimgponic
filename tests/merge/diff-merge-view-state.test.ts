@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+
 import {createDiffMergeController,createInitialDiffMergeState,diffMergeReducer,DiffMergeAction,DiffMergeState,MergeDecisionEvent} from '../../src/components/diffMergeState'
-import { planDiffMergeView } from '../../src/components/DiffMergeView'
-import type { MergePrecision } from '../../src/components/DiffMergeView'
+import { DiffMergeView, planDiffMergeView } from '../../src/components/DiffMergeView'
+import type { MergeHunk, MergePrecision } from '../../src/components/DiffMergeView'
 
 type Dispatch=(action:DiffMergeAction)=>void
 const harness=(precision:MergePrecision='stable')=>{let state:DiffMergeState=createInitialDiffMergeState([{id:'h1',title:'H1',original:'',incoming:'',status:'pending'} as any]);const dispatch:Dispatch=(action)=>{state=diffMergeReducer(state,action)};const controller=createDiffMergeController({precision,dispatch,queueMergeCommand:async()=>({status:'success',hunkIds:['h1']})});return{state:()=>state,dispatch,controller}}
@@ -18,3 +21,10 @@ test('openEditor/commitEdit',()=>{const h=harness();h.controller.openEditor('h1'
 test('planDiffMergeView legacy restricts panes to review hunk list',()=>{const plan=planDiffMergeView('legacy');assert.deepEqual(plan.tabs.map((tab)=>tab.key),['review']);assert.equal(plan.initialTab,'review');assert.deepEqual(plan.tabs[0]?.panes,['hunk-list']);assert.equal(plan.phase,'phase-a')})
 
 test('planDiffMergeView stable exposes diff workflow panes',()=>{const plan=planDiffMergeView('stable');assert.deepEqual(plan.tabs.map((tab)=>tab.key),['diff','merged','review']);assert.equal(plan.initialTab,'diff');const diffTab=plan.tabs[0];if(!diffTab)throw new Error('diff tab missing');assert.deepEqual(diffTab.panes,['hunk-list']);const review=plan.tabs.find((tab)=>tab.key==='review');if(!review)throw new Error('review tab missing');assert.deepEqual(review.panes,['hunk-list','operation-pane']);assert.equal(plan.navigationBadge,undefined);assert.equal(plan.phase,'phase-b')})
+
+test('planDiffMergeView beta orders review, diff, merged with beta badges',()=>{const plan=planDiffMergeView('beta');assert.deepEqual(plan.tabs.map((tab)=>tab.key),['review','diff','merged']);assert.equal(plan.initialTab,'review');assert.equal(plan.navigationBadge,'beta');const diffTab=plan.tabs.find((tab)=>tab.key==='diff');if(!diffTab)throw new Error('diff tab missing');assert.equal(diffTab.badge,'beta');assert.deepEqual(diffTab.panes,['hunk-list']);const mergedTab=plan.tabs.find((tab)=>tab.key==='merged');if(!mergedTab)throw new Error('merged tab missing');assert.deepEqual(mergedTab.panes,['operation-pane'])})
+
+const sampleHunks:readonly MergeHunk[]=[{id:'h1',section:'scene-001',decision:'conflict',similarity:0.5,merged:'<merged />',manual:'<manual />',ai:'<ai />',base:'<base />',prefer:'none'}]
+const renderView=(precision:MergePrecision)=>renderToStaticMarkup(createElement(DiffMergeView,{precision,hunks:sampleHunks,queueMergeCommand:async()=>({status:'success',hunkIds:[],telemetry:{collectorSurface:'diff-merge.hunk-list',analyzerSurface:'diff-merge.queue',retryable:false}})}))
+
+test('DiffMergeView initial tab follows plan for beta/stable precisions',()=>{const betaHtml=renderView('beta');assert.match(betaHtml,/data-testid="diff-merge-tab-review"[^>]*aria-selected="true"/);assert.match(betaHtml,/data-navigation-badge="beta"/);const stableHtml=renderView('stable');assert.match(stableHtml,/data-testid="diff-merge-tab-diff"[^>]*aria-selected="true"/);assert.doesNotMatch(stableHtml,/data-navigation-badge=/)})
