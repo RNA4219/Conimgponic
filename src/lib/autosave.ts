@@ -1,4 +1,5 @@
 import type { Storyboard } from '../types'
+import { FLAG_MIGRATION_PLAN } from '../config/flags'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
 
@@ -172,6 +173,8 @@ export interface AutoSavePhaseGuardSnapshot {
   }
   readonly optionsDisabled: boolean
 }
+
+const PHASE_GUARD_ROLLOUT_ACTIVE = FLAG_MIGRATION_PLAN.some((step) => step.phase.startsWith('phase-a'))
 
 interface Day8CollectorLike {
   publish(event: Record<string, unknown>): void
@@ -976,20 +979,10 @@ export function initAutoSave(
   const encoder = new TextEncoder()
   const pendingQueue: AutoSaveQueueEntry[] = []
   const phaseGuardEnabled =
-    guardSnapshot?.featureFlag.value === true && guardSnapshot.optionsDisabled !== true
-      ? true
-      : (() => {
-          if (!flagSnapshot || typeof flagSnapshot !== 'object') return false
-          if ('autosave' in flagSnapshot && flagSnapshot.autosave && typeof flagSnapshot.autosave === 'object') {
-            const candidate = flagSnapshot.autosave as { readonly phase?: unknown }
-            return candidate?.phase === 'phase-a'
-          }
-          if ('phase' in flagSnapshot) {
-            const candidate = flagSnapshot as { readonly phase?: unknown }
-            return candidate?.phase === 'phase-a'
-          }
-          return false
-        })()
+    PHASE_GUARD_ROLLOUT_ACTIVE &&
+    !!guardSnapshot &&
+    guardSnapshot.featureFlag.value === true &&
+    guardSnapshot.optionsDisabled !== true
   let phase: AutoSavePhase = 'idle'
   let retryCount = 0
   let lastSuccessAt: string | undefined
