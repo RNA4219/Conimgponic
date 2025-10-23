@@ -1,10 +1,15 @@
 import { OLLAMA_BASE } from '../config'
 
 export type Chunk = { model?: string; message?: { role:string; content:string }; done?: boolean }
+export type ChatStreamOptions = { timeoutMs?: number; maxChars?: number; controller?: AbortController; signal?: AbortSignal }
 
-export async function* chatStream(model: string, prompt: string, opts: {timeoutMs?: number, maxChars?: number} = {}){
-  const ac = new AbortController();
-  const t = opts.timeoutMs ? setTimeout(()=> ac.abort(), opts.timeoutMs) : null as any;
+export async function* chatStream(model: string, prompt: string, opts: ChatStreamOptions = {}){
+  const controller = opts.controller ?? (opts.signal ? null : new AbortController())
+  const signal = opts.signal ?? controller?.signal
+  if (!signal) throw new Error('chatStream requires an AbortSignal')
+  const abort = () => { if (controller) controller.abort() }
+  const t = opts.timeoutMs && controller ? setTimeout(() => abort(), opts.timeoutMs) : null as any;
+  let stop = false
   try {
     const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
       method: 'POST',
@@ -13,7 +18,7 @@ export async function* chatStream(model: string, prompt: string, opts: {timeoutM
         model, stream: true,
         messages: [{role:'user', content: prompt}]
       }),
-      signal: ac.signal
+      signal
     })
     const reader = res.body!.getReader()
     const td = new TextDecoder()
@@ -32,11 +37,12 @@ export async function* chatStream(model: string, prompt: string, opts: {timeoutM
           const c = JSON.parse(line) as Chunk
           if (c.message?.content){
             total += c.message.content.length
-            if (total > max){ ac.abort(); break }
+            if (total > max){ abort(); stop = true; break }
           }
           yield c
         }catch{ /* ignore broken chunk */ }
       }
+      if (stop) break
     }
     if (buf.trim()){
       try{ yield JSON.parse(buf) as Chunk }catch{}
