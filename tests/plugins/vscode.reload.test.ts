@@ -23,9 +23,8 @@ function createBridge(): PluginBridge {
     platformVersion: '1.35.2',
     conimgApiVersion: '1',
     collector: {
-      published: [],
-      publish(message) {
-        this.published.push(message);
+      publish() {
+        // noop: bridge#getCollectorMessages provides captured logs for assertions
       },
     },
     phaseGuard: {
@@ -295,6 +294,36 @@ test('conimg-api mismatch fails compatibility check with notifyUser log', async 
   assert.equal(failureLog.notifyUser, true);
 });
 
+test('conimg-api mismatch logs incompatibility metadata for collector', async () => {
+  const bridge = createBridge();
+  const manifest = {
+    id: 'zeta',
+    version: '1.0.0',
+    engines: { vscode: '1.35.0' },
+    'conimg-api': '2',
+    permissions: [],
+    dependencies: { npm: {}, workspace: [] },
+    hooks: ['workspace.didOpen'],
+  } as const;
+
+  await bridge.reload({
+    kind: 'plugins.reload',
+    pluginId: 'zeta',
+    manifest,
+    grantedPermissions: [],
+    dependencySnapshot: { npm: {}, workspace: [] },
+  });
+
+  const failureLog = bridge
+    .getCollectorMessages()
+    .find((log) => log.pluginId === 'zeta' && log.event === 'stage-failed' && log.stage === 'compatibility-check');
+
+  assert.ok(failureLog, 'expected compatibility failure log');
+  assert.equal(failureLog?.detail?.code, PluginReloadErrorCode.IncompatiblePlatform);
+  assert.equal(failureLog?.detail?.retryable, false);
+  assert.equal(typeof failureLog?.detail?.reason, 'string');
+});
+
 test('bridge creation is skipped when disabled flag is false', () => {
   const bridge = maybeCreatePluginBridge({
     enableFlag: false,
@@ -374,4 +403,104 @@ test('phase guard blocked emits notifyUser log with E_PLUGIN_PHASE_BLOCKED', asy
   ) as { notifyUser: boolean } | undefined;
   assert.ok(failureLog);
   assert.equal(failureLog.notifyUser, true);
+});
+
+test('phase guard blocked log includes error code for collector analysis', async () => {
+  const collectorMessages: unknown[] = [];
+  const bridge = maybeCreatePluginBridge({
+    enableFlag: true,
+    platformVersion: '1.35.2',
+    conimgApiVersion: '1',
+    collector: {
+      publish(message) {
+        collectorMessages.push(message);
+      },
+    },
+    phaseGuard: {
+      ensureReloadAllowed() {
+        return false;
+      },
+    },
+    state: {
+      manifests: new Map(),
+      permissions: new Map(),
+      dependencies: new Map(),
+      hooks: new Set(),
+    },
+  });
+
+  assert.ok(bridge);
+
+  await bridge.reload({
+    kind: 'plugins.reload',
+    pluginId: 'theta',
+    manifest: {
+      id: 'theta',
+      version: '1.0.0',
+      engines: { vscode: '1.35.0' },
+      'conimg-api': '1',
+      permissions: [],
+      dependencies: { npm: {}, workspace: [] },
+      hooks: ['workspace.didOpen'],
+    },
+    grantedPermissions: [],
+    dependencySnapshot: { npm: {}, workspace: [] },
+  });
+
+  const failureLog = collectorMessages.find(
+    (log: any) => log.pluginId === 'theta' && log.event === 'stage-failed' && log.stage === 'manifest-validation',
+  ) as { detail?: { code?: string; retryable?: boolean } } | undefined;
+
+  assert.ok(failureLog);
+  assert.equal(failureLog?.detail?.code, PluginReloadErrorCode.PhaseGuardBlocked);
+  assert.equal(failureLog?.detail?.retryable, false);
+});
+
+test('workspace dependency diff is surfaced in collector detail snapshot', async () => {
+  const bridge = createBridge();
+  const baseDependencies = { npm: { 'dep-gamma': '3.0.0' }, workspace: ['packages/gamma/a.ts'] } as const;
+  const manifest = {
+    id: 'iota',
+    version: '1.0.0',
+    engines: { vscode: '1.35.0' },
+    'conimg-api': '1',
+    permissions: ['fs'],
+    dependencies: baseDependencies,
+    hooks: ['workspace.didOpen'],
+  } as const;
+
+  await bridge.reload({
+    kind: 'plugins.reload',
+    pluginId: 'iota',
+    manifest,
+    grantedPermissions: ['fs'],
+    dependencySnapshot: baseDependencies,
+  });
+
+  await bridge.reload({
+    kind: 'plugins.reload',
+    pluginId: 'iota',
+    manifest: {
+      ...manifest,
+      version: '1.1.0',
+      dependencies: {
+        npm: baseDependencies.npm,
+        workspace: [...baseDependencies.workspace, 'packages/gamma/b.ts'],
+      },
+    },
+    grantedPermissions: ['fs'],
+    dependencySnapshot: baseDependencies,
+  });
+
+  const failureLog = bridge
+    .getCollectorMessages()
+    .find((log) => log.pluginId === 'iota' && log.event === 'stage-failed' && log.stage === 'dependency-cache');
+
+  assert.ok(failureLog, 'expected dependency mismatch log');
+  assert.equal(failureLog?.detail?.code, PluginReloadErrorCode.DependencyMismatch);
+  assert.equal(failureLog?.detail?.retryable, true);
+  assert.deepEqual(failureLog?.detail?.diff, {
+    npm: { added: [], removed: [], changed: [] },
+    workspace: { added: ['packages/gamma/b.ts'], removed: [] },
+  });
 });
