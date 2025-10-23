@@ -11,6 +11,7 @@
 | --- | --- | --- | --- |
 | `name` | string / 必須 | npm パッケージと同じ命名規約、32 文字以内 | UI・ログに表示。 |
 | `version` | string / 必須 | semver (`major.minor.patch`) | `plugins.reload` の互換判定で使用。 |
+| `engines.vscode` | string / 必須 | semver (`major.minor.patch`) | Bridge との major が一致する必要がある。 |
 | `conimg-api` | string / 必須 | 例: `"1"` または `"1.x"` | 現行は `1` 系のみサポート。 |
 | `entry` | string / 任意 | 既定 `index.js` | webview ローダーに渡されるパス。 |
 | `permissions` | string[] / 任意 | 既定 `[]`。`fs`、`workspace:settings`、`ui:*`、`network:*` 等。 | 未宣言は拒否。 |
@@ -21,10 +22,10 @@
 
 ### 2.2 検証ステージ
 1. **構文検証**: JSON スキーマを適用。欠落/型不整合は `E_PLUGIN_MANIFEST_INVALID (retryable=false)`。
-2. **互換性チェック**: `conimg-api` の範囲が Extension Host のサポートと合致しない場合は `E_PLUGIN_API_UNSUPPORTED (retryable=false)`。
-3. **権限ゲート**: §2.3 を参照。未承認の権限が追加された場合はユーザ確認待ちで `E_PLUGIN_PERMISSION_PENDING (retryable=true)`。
+2. **互換性チェック**: `engines.vscode` の major が Bridge と異なる場合は `E_PLUGIN_VERSION_INCOMPATIBLE (retryable=false)`。`conimg-api` は将来バージョンで追加検証する。
+3. **権限ゲート**: §2.3 を参照。未承認の権限が追加された場合は `E_PLUGIN_PERMISSION_PENDING (retryable=false)`、拒否は `E_PLUGIN_PERMISSION_DENIED (retryable=false)`。
 4. **依存キャッシュ整合**: §2.4 のポリシーに従い、ハッシュ差分が見つかれば再解決を行い、失敗時は `E_PLUGIN_DEP_RESOLVE (retryable=true)`。
-5. **フック登録**: 宣言されたフックが §3 の要件を満たさない場合は `E_PLUGIN_HOOK_INVALID (retryable=false)`。
+5. **フック登録**: 宣言されたフックが §3 の要件を満たさない場合や初期化が失敗した場合は `E_PLUGIN_RELOAD_FAILED (retryable=true)` としてロールバックする。
 
 検証は `plugins.reload` / 初回ロード共通のステートマシンとして扱い、`retryable` 属性は AutoSave 設計（`docs/AUTOSAVE-DESIGN-IMPL.md`）を踏襲する。
 
@@ -94,11 +95,11 @@ sequenceDiagram
 ```
 
 - `plugins.reload`
-  - 失敗コード: `E_PLUGIN_MANIFEST_INVALID`, `E_PLUGIN_API_UNSUPPORTED`, `E_PLUGIN_PERMISSION_PENDING`, `E_PLUGIN_DEP_RESOLVE`, `E_PLUGIN_RELOAD_FAILED`。
-  - `retryable=true` は最大 3 回まで自動再試行し、超過時に `UI Toast + Collector error` を送出。
+  - 失敗コード: `E_PLUGIN_MANIFEST_INVALID`, `E_PLUGIN_VERSION_INCOMPATIBLE`, `E_PLUGIN_PERMISSION_PENDING`, `E_PLUGIN_PERMISSION_DENIED`, `E_PLUGIN_DEP_RESOLVE`, `E_PLUGIN_RELOAD_FAILED`。
+  - `retryable=true` は最大 3 回まで自動再試行し、`retryable=false` は承認・設定変更待ちでポーリングを停止する。
 - `log`
   - Webview→Host 双方向。`level=error` かつ `retryable=false` は即座にユーザ通知。`warn` は Collector 送出のみで UI は静観。
-  - `tags` には `extension:plugin-bridge` を付与し、Day8 Pipeline（Collector→Analyzer→Reporter）で追跡可能にする。
+  - `tags` には `extension:plugin-bridge`, `plugin:<id>`, `result:<success|rollback>` を付与し、Day8 Pipeline（Collector→Analyzer→Reporter）で追跡する。
 - ユーザ通知条件
   - `retryable=false`、または 5 分以内に同一 `E_PLUGIN_*` が 3 回発生。
   - 権限差分が広がる変更（`permissions` 増加）でユーザ未承認のまま 60 秒経過。

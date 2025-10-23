@@ -31,10 +31,26 @@ export interface PrecisionTabDesign {
   readonly navigationBadge?: 'beta'
 }
 
+export interface PrecisionPhaseGuard {
+  readonly phase: 'phase-a' | 'phase-b'
+  readonly allowedTabs: readonly DiffMergeSubTabKey[]
+  readonly initialTab: DiffMergeSubTabKey
+}
+
+export const PRECISION_PHASE_GUARD: Record<MergePrecision, PrecisionPhaseGuard> = Object.freeze({
+  legacy: { phase: 'phase-a', allowedTabs: ['review'], initialTab: 'review' },
+  beta: { phase: 'phase-b', allowedTabs: ['review', 'merged', 'diff'], initialTab: 'review' },
+  stable: { phase: 'phase-b', allowedTabs: ['diff', 'merged', 'review'], initialTab: 'diff' },
+})
+
 export const DIFF_MERGE_SUB_TAB_PLAN: Record<MergePrecision, PrecisionTabDesign> = Object.freeze({
-  legacy: { visibleTabs: ['review'], initialTab: 'review' },
-  beta: { visibleTabs: ['review', 'merged', 'diff'], initialTab: 'review', navigationBadge: 'beta' },
-  stable: { visibleTabs: ['diff', 'merged', 'review'], initialTab: 'diff' },
+  legacy: { visibleTabs: PRECISION_PHASE_GUARD.legacy.allowedTabs, initialTab: PRECISION_PHASE_GUARD.legacy.initialTab },
+  beta: {
+    visibleTabs: PRECISION_PHASE_GUARD.beta.allowedTabs,
+    initialTab: PRECISION_PHASE_GUARD.beta.initialTab,
+    navigationBadge: 'beta',
+  },
+  stable: { visibleTabs: PRECISION_PHASE_GUARD.stable.allowedTabs, initialTab: PRECISION_PHASE_GUARD.stable.initialTab },
 })
 
 export const planDiffMergeSubTabs = (precision: MergePrecision): DiffMergeSubTabPlan => {
