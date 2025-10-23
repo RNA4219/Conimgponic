@@ -16,10 +16,27 @@ class ConimgEditorProvider implements vscode.CustomTextEditorProvider {
     panel.webview.options = { enableScripts: true, localResourceRoots: [this.ctx.extensionUri] }
     panel.webview.html = getHtml(panel.webview, this.ctx.extensionUri, nonce)
 
+    const settings = vscode.workspace.getConfiguration('conimg')
+    const flags = {
+      autosave: {
+        value: settings.get('autosave.enabled') ?? false,
+        enabled: settings.get('autosave.enabled') ?? false,
+        source: 'vscode-settings',
+        errors: []
+      },
+      merge: {
+        value: settings.get('merge.precision') ?? 'legacy',
+        precision: settings.get('merge.precision') ?? 'legacy',
+        source: 'vscode-settings',
+        errors: []
+      },
+      updatedAt: new Date().toISOString()
+    }
+
     const bootstrap = {
       type: 'bootstrap',
       apiVersion: 1,
-      payload: { doc: JSON.parse(document.getText() || '{}'), settings: vscode.workspace.getConfiguration('conimg') }
+      payload: { doc: JSON.parse(document.getText() || '{}'), settings, flags }
     }
     panel.webview.postMessage(bootstrap)
 
