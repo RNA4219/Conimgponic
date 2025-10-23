@@ -75,12 +75,24 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
 
 const lastTabForPrecision: Record<MergePrecision, DiffMergeSubTabKey> = Object.freeze({ legacy: 'review', beta: 'review', stable: 'diff' })
 
-const toQueuePayload = ({ precision, hunkIds }: { readonly precision: MergePrecision; readonly hunkIds: readonly string[] }) => ({
+const toQueuePayload = ({
+  precision,
+  hunkIds,
+  lastTab,
+}: {
+  readonly precision: MergePrecision
+  readonly hunkIds: readonly string[]
+  readonly lastTab?: DiffMergeSubTabKey | null
+}) => ({
   type: 'queue-merge' as const,
   precision,
   origin: 'operation-pane.queue' as const,
   hunkIds,
-  telemetryContext: { collectorSurface: 'diff-merge.hunk-list' as const, analyzerSurface: 'diff-merge.queue' as const, lastTab: lastTabForPrecision[precision] },
+  telemetryContext: {
+    collectorSurface: 'diff-merge.hunk-list' as const,
+    analyzerSurface: 'diff-merge.queue' as const,
+    lastTab: lastTab ?? lastTabForPrecision[precision],
+  },
   metadata: { autoSaveRequested: precision !== 'legacy' },
 })
 
@@ -89,18 +101,22 @@ export const createDiffMergeController = ({
   dispatch,
   queueMergeCommand,
   onError,
+  resolveLastTab,
 }: {
   readonly precision: MergePrecision
   readonly dispatch: (action: DiffMergeAction) => void
   readonly queueMergeCommand: QueueMergeCommand
   readonly onError?: (event: MergeDecisionEvent) => void
+  readonly resolveLastTab?: () => DiffMergeSubTabKey | null
 }) => ({
   queueMerge: async (hunkIds: readonly string[]) => {
     const ids = [...hunkIds]
     if (!ids.length) return
     dispatch({ type: 'queueMerge', hunkIds: ids })
     try {
-      const result = await queueMergeCommand(toQueuePayload({ precision, hunkIds: ids }))
+      const result = await queueMergeCommand(
+        toQueuePayload({ precision, hunkIds: ids, lastTab: resolveLastTab?.() ?? null }),
+      )
       dispatch({ type: 'queueResult', hunkIds: ids, result: result.status })
       if (result.status === 'error') onError?.(result)
     } catch (error) {
