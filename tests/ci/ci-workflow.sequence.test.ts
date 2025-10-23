@@ -60,31 +60,17 @@ describe('ci workflow build job', () => {
 
       const pnpmCommands = extractPnpmCommands(steps);
 
-      assertCommandSequence(pnpmCommands, [
-        'pnpm -s lint',
-        'pnpm -s typecheck',
-        'pnpm test --filter autosave',
-        'pnpm test --filter merge',
-        'pnpm test --filter cli',
-        'pnpm test --filter collector',
-        'pnpm test --filter telemetry',
-        'pnpm test -- --test-coverage',
-        'pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml',
-      ];
-
-      let cursor = -1;
-
-      for (const expected of expectedSequence) {
-        const nextIndex = runCommands.findIndex((command, index) => index > cursor && command.includes(expected));
-
-        assert.notStrictEqual(
-          nextIndex,
-          -1,
-          `build job must include a step running "${expected}" after index ${cursor}`,
-        );
-
-        cursor = nextIndex;
-      }
+    assertCommandSequence(pnpmCommands, [
+      'pnpm -s lint',
+      'pnpm -s typecheck',
+      'pnpm test --filter autosave',
+      'pnpm test --filter merge',
+      'pnpm test --filter cli',
+      'pnpm test --filter collector',
+      'pnpm test --filter telemetry',
+      'pnpm test -- --test-coverage',
+      'pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml',
+    ]);
 
       const artifactSteps = steps.filter(isUploadArtifactStep);
 
