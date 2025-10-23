@@ -24,11 +24,13 @@
 
 ## 6. フォーマット別 必須フィールドと出力先
 
-| フォーマット | 出力先パス | 必須フィールド / 含有要素 |
-| --- | --- | --- |
-| Markdown | `runs/<ts>/shotlist.md` | `id`, `title`（見出し）、`desc`, `manual`, `notes` の本文セクション。|
-| CSV | `runs/<ts>/shotlist.csv` | 列 `id,title,desc,manual,status,tone,durationSec,shot,take,slate` を順序固定で出力し、欠損不可。|
-| JSONL | `runs/<ts>/shotlist.jsonl` | `storyboard.json` の `scenes[]` と同等フィールド（`id`,`title`,`desc`,`manual`,`status`,`tone`,`durationSec`,`shot`,`take`,`slate`,`assets` など）。|
-| Package Export | `<workspace>/.conimgponic/project/export/<name>.imgponic.json`（拡張側で決定） | `project/storyboard.json` と直近の `runs/<ts>/meta.json` を同梱し、`meta`→`scenes[]` の完全構造を保持。|
+下表は [DATA-SCHEMA.md](./DATA-SCHEMA.md) のルート構成および `storyboard.json` スキーマを基準に、拡張がエクスポート時に満たすべき必須項目・保存先をまとめたもの。`runs/<ts>/` の `<ts>` はエクスポート要求時の ISO タイムスタンプで、AutoSave の履歴世代と競合しない値を採用する。
 
-> `DATA-SCHEMA.md` のルート構成に従い、`runs/<ts>/` は既存実行単位のタイムスタンプディレクトリを指す。Package Export は履歴管理 (`history/<iso>.json`) と衝突しない専用ディレクトリを用意し、署名処理は v1.0 では不要。
+| フォーマット | 出力先パス | 元データ（DATA-SCHEMA 基準） | 必須フィールド / 含有要素 |
+| --- | --- | --- | --- |
+| Markdown | `runs/<ts>/shotlist.md` | `storyboard.json.scenes[]` | 各シーンを `### {id} {title}` 見出し＋本文（`desc`,`manual`,`notes`）に展開。`id` と `title` は必須、本文セクションは空文字を許容するがキー自体は欠落不可。|
+| CSV | `runs/<ts>/shotlist.csv` | `storyboard.json.scenes[]` | 列順固定 `id,title,desc,manual,status,tone,durationSec,shot,take,slate`。`tone` は配列を `;` 連結で格納し、数値フィールド（`durationSec`,`shot`,`take`）は文字列化して欠損を許可しない。|
+| JSONL | `runs/<ts>/shotlist.jsonl` | `storyboard.json.scenes[]` と `meta` | 各行は 1 JSON オブジェクト。`scenes[]` のフィールドを完全に写像し、`id`,`title`,`status`,`durationSec` は必須。`assets`,`ai` など任意フィールドは存在時に出力する。|
+| Package Export | `<workspace>/.conimgponic/project/export/<name>.imgponic.json`（拡張側が `<name>` を決定） | `project/storyboard.json` と `runs/<ts>/meta.json` | 2 ファイルを `{ storyboard, meta }` として同梱。`storyboard.meta.apiVersion` と `meta.updatedAt` を保持し、`scenes[]` 配列を欠落させない。|
+
+> Package Export は `history/<iso>.json` とは別ディレクトリで管理し、署名処理は v1.0 では不要。`export.result` で返却するパスは上記の正規化済みパスを用いる。

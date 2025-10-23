@@ -17,6 +17,13 @@
   state.json
 ```
 
+### 1.1 エクスポート成果物の割当
+
+| ディレクトリ | 拡張が書き込むファイル | 由来データ | 補足 |
+| --- | --- | --- | --- |
+| `runs/<ts>/` | `shotlist.md` / `shotlist.csv` / `shotlist.jsonl` / `meta.json` | `project/storyboard.json` の `scenes[]` と `meta` | `<ts>` は Export Bridge が生成する ISO タイムスタンプ。AutoSave の GC と衝突しないよう `project/.lock` を保持した状態で `fs.atomicWrite` を実行。|
+| `project/export/` | `<name>.imgponic.json` | `project/storyboard.json` と `runs/<ts>/meta.json` | エクスポートリクエスト毎に `<name>` を拡張が決定。`history/<iso>.json` には書き込まない。|
+
 ## 2. storyboard.json（抜粋）
 ```json
 {

@@ -9,12 +9,32 @@
 
 ## 2. ハンドラ責務と排他条件
 
+```mermaid
+flowchart TD
+  subgraph RequestCycle
+    A[export.request 受信] --> B[fs.read storyboard.json]
+    B --> C[検証 (DATA-SCHEMA)]
+    C -->|OK| D[フォーマット別整形]
+    D --> E[fs.atomicWrite runs/<ts>/shotlist.*]
+    D --> F[fs.atomicWrite project/export/*.imgponic.json]
+    E --> G{履歴ローテーション条件}
+    G -->|世代>20 または 50MB超| H[最古 runs/<ts>/ を削除]
+    G -->|許容範囲| I[現状維持]
+    H --> J[export.result 成功]
+    I --> J
+    C -->|NG| K[export.result 失敗 (retryable=false)]
+  end
+  J --> L[Collector WARN/INFO]
+```
+
+`fs.atomicWrite` が `runs/<ts>/` へ書き込む際は AutoSave と同じ上限（20 世代・50MB）を監視し（[docs/AUTOSAVE-DESIGN-IMPL.md](../../AUTOSAVE-DESIGN-IMPL.md) §1.1）、条件超過時に最古のエクスポート結果を削除する。削除は `export.result` のレスポンスに `pruned: string[]` を含めて UI/Collector に通知する（UI 側の表示仕様は別途策定）。
+
 | ハンドラ | 主責務 | I/O/副作用 | 排他・整合条件 |
 | --- | --- | --- | --- |
 | `fs.read` | `storyboard.json` および直近 `runs/<ts>/meta.json` の読込。BOM 除去と LF 正規化を担当。 | OPFS/ローカル FS からの読み込みのみ。 | 読み込み対象に `history/` が含まれる場合は読み取り専用ロックを要求し、書き込み処理と同時実行しない。|
-| `fs.atomicWrite` | `runs/<ts>/shotlist.*` や `project/export/*.imgponic.json` の一時ファイル書込→rename。`AutoSave` と同じロールバック規約を適用。 | `.tmp` ファイル生成と rename、失敗時の削除。 | `project/.lock` を取得した状態でのみ実行。既存 `history/<iso>.json` ディレクトリが存在する場合は書込パスを `runs/<ts>/` 配下に限定し、`history/` には触れない。|
+| `fs.atomicWrite` | `runs/<ts>/shotlist.*` や `project/export/*.imgponic.json` の一時ファイル書込→rename。`AutoSave` と同じロールバック規約を適用。 | `.tmp` ファイル生成と rename、失敗時の削除。 | `project/.lock` を取得した状態でのみ実行。既存 `history/<iso>.json` ディレクトリが存在する場合は書込パスを `runs/<ts>/` 配下に限定し、`history/` には触れない。書込後に 20 世代 / 50MB を超えた場合は最古世代を削除し `pruned` リストを構築。|
 | `export.request` | VSCode 側からのフォーマット指定・出力ディレクトリ要求を受理し、読取→変換→書込をキュー化。 | テレメトリ（`export.request` イベント）送信。 | リクエストタイムスタンプ単位で `runs/<ts>/` を確保し、既存 `runs/<ts>/` が進行中の場合はキューで順番待ち。|
-| `export.result` | 完了/失敗ステータスとパス、バイト数、警告一覧を応答。Collector へ結果イベントを送信。 | UI 通知（成功: info、失敗: warn/error）。 | `history/` に新規ファイルが追加されていないこと、および AutoSave の `lastSuccessAt` より新しい場合のみ成功扱いにする。|
+| `export.result` | 完了/失敗ステータスとパス、バイト数、警告一覧を応答。Collector へ結果イベントを送信。 | UI 通知（成功: info、失敗: warn/error）。 | `history/` に新規ファイルが追加されていないこと、および AutoSave の `lastSuccessAt` より新しい場合のみ成功扱いにする。世代削除が発生した場合は `pruned` 情報を添えて WARN ログを Collector へ転送。|
 
 排他制御は `project/.lock` を共有ロックとし、AutoSave 側の書込が走行中の場合は指数バックオフで待機する。`history/` ディレクトリを更新するハンドラは存在せず、既存履歴は読み取り専用（`fs.read`）でのみ参照する。
 
