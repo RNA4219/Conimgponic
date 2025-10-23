@@ -118,6 +118,40 @@ scenario(
 )
 
 scenario(
+  'bootstrap snapshot source propagates through initAutoSave fallback guard',
+  async (t: any, { initAutoSave }: any) => {
+    const storage = new Map<string, string>([['autosave.enabled', '0']])
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem(key: string){ return storage.get(key) ?? null }
+      },
+      configurable: true
+    })
+    const { resolveAutoSaveBootstrapPlan } = await importTs(join(root, 'src/config/index.ts'))
+    const plan = resolveAutoSaveBootstrapPlan()
+
+    const events: Record<string, unknown>[] = []
+    Object.defineProperty(globalThis, 'Day8Collector', {
+      value: { publish(event: Record<string, unknown>){ events.push(event) } },
+      configurable: true
+    })
+
+    t.after(() => {
+      delete (globalThis as any).localStorage
+      delete (globalThis as any).Day8Collector
+    })
+
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false })
+
+    assert.equal(runner.snapshot().phase, 'disabled')
+    assert.equal(events.length, 1)
+    const event = events[0] as { guard?: { featureFlag?: { value?: boolean; source?: string } } }
+    assert.equal(event?.guard?.featureFlag?.source, plan.snapshot.autosave.source)
+    assert.equal(event?.guard?.featureFlag?.value, plan.snapshot.autosave.enabled)
+  }
+)
+
+scenario(
   'workspace source takes precedence over global overrides',
   async (t: any, { initAutoSave }: any) => {
     const flags = createFlags(false)
