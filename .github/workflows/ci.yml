@@ -232,7 +232,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p logs
-          grep -E 'not ok|FAIL|Error' "logs/${{ matrix.suite }}.log" > "logs/${{ matrix.suite }}-failures.log" || true
+          grep -E ':[0-9]+:[0-9]+: |not ok|FAIL|Error' "logs/${{ matrix.suite }}.log" > "logs/${{ matrix.suite }}-failures.log" || true
 
       - name: Upload suite logs
         if: always()
@@ -244,7 +244,7 @@ jobs:
             logs/${{ matrix.suite }}-failures.log
           if-no-files-found: ignore
 
-      - name: Show suite log on failure
+      - name: Report suite failure
         if: steps.run_suite.outcome == 'failure'
         shell: bash
         run: |
@@ -256,10 +256,14 @@ jobs:
             echo "suite log not found"
           fi
           echo "::endgroup::"
-
-      - name: Fail on suite failure
-        if: steps.run_suite.outcome == 'failure'
-        run: exit 1
+          if [[ -f "logs/${{ matrix.suite }}-failures.log" ]]; then
+            while IFS= read -r line; do
+              if [[ -n "$line" ]]; then
+                echo "::error::${line}"
+              fi
+            done < "logs/${{ matrix.suite }}-failures.log"
+          fi
+          exit 1
 
   reports:
     needs:
