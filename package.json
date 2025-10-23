@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "lint": "eslint \"{src,tests}/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --loader ts-node/esm --test \"tests/**/*.test.ts\""
+    "test": "node --loader ts-node/esm --test \"tests/**/*.test.ts\"",
+    "license:check": "node --loader ts-node/esm scripts/license/verify.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
