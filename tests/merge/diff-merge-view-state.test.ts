@@ -5,17 +5,40 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import {createDiffMergeController,createInitialDiffMergeState,diffMergeReducer,DiffMergeAction,DiffMergeState,MergeDecisionEvent} from '../../src/components/diffMergeState'
 import { DiffMergeView, planDiffMergeView } from '../../src/components/DiffMergeView'
-import type { MergeHunk, MergePrecision } from '../../src/components/DiffMergeView'
+import type { DiffMergeQueueCommandPayload, MergeHunk, MergePrecision } from '../../src/components/DiffMergeView'
+
+type Dispatch = (action: DiffMergeAction) => void
+
+const successEvent: MergeDecisionEvent = {
+  status: 'success',
+  hunkIds: [],
+  telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: false },
+}
+
+const createMergeHunk = (id = 'h1'): MergeHunk => ({
+  id,
+  section: id,
+  decision: 'conflict',
+  similarity: 0.5,
+  merged: '<merged />',
+  manual: '<manual />',
+  ai: '<ai />',
+  base: '<base />',
+  prefer: 'none',
+})
 
 const harness = (precision: MergePrecision = 'stable') => {
-  let state: DiffMergeState = createInitialDiffMergeState([createMergeHunk()])
+  let hunks = [createMergeHunk()]
+  let state: DiffMergeState = createInitialDiffMergeState(hunks)
   const dispatch: Dispatch = (action) => {
     state = diffMergeReducer(state, action)
+    if (action.type === 'syncHunks') hunks = [...action.hunks]
   }
   const controller = createDiffMergeController({
     precision,
     dispatch,
     queueMergeCommand: async () => successEvent,
+    getCurrentHunkIds: () => hunks.map((hunk) => hunk.id),
   })
   return { state: () => state, dispatch, controller }
 }
@@ -38,9 +61,11 @@ test('markSkipped/reset', () => {
 
 test('queueMerge success', async () => {
   const payloads: DiffMergeQueueCommandPayload[] = []
-  let state: DiffMergeState = createInitialDiffMergeState([createMergeHunk()])
+  let hunks = [createMergeHunk()]
+  let state: DiffMergeState = createInitialDiffMergeState(hunks)
   const dispatch: Dispatch = (action) => {
     state = diffMergeReducer(state, action)
+    if (action.type === 'syncHunks') hunks = [...action.hunks]
   }
   const controller = createDiffMergeController({
     precision: 'stable',
@@ -49,10 +74,43 @@ test('queueMerge success', async () => {
       payloads.push(payload)
       return successEvent
     },
+    getCurrentHunkIds: () => hunks.map((hunk) => hunk.id),
   })
   await controller.queueMerge(['h1'])
   assert.equal(payloads.length, 1)
   assert.equal(state.hunkStates.h1, 'Merged')
+})
+
+test('syncHunks resets selection and queues latest hunks', async () => {
+  const payloads: DiffMergeQueueCommandPayload[] = []
+  let hunks = [createMergeHunk('h1'), createMergeHunk('h2')]
+  let state: DiffMergeState = createInitialDiffMergeState(hunks)
+  const dispatch: Dispatch = (action) => {
+    state = diffMergeReducer(state, action)
+    if (action.type === 'syncHunks') hunks = [...action.hunks]
+  }
+  const controller = createDiffMergeController({
+    precision: 'stable',
+    dispatch,
+    queueMergeCommand: async (payload) => {
+      payloads.push(payload)
+      return successEvent
+    },
+    getCurrentHunkIds: () => hunks.map((hunk) => hunk.id),
+  })
+
+  controller.toggleSelect('h1')
+  assert.equal(state.hunkStates.h1, 'Selected')
+
+  const replacement = [createMergeHunk('h3')]
+  dispatch({ type: 'syncHunks', hunks: replacement })
+  assert.deepEqual(state.hunkStates, { h3: 'Unreviewed' })
+  assert.equal(state.editingHunkId, null)
+
+  await controller.queueMerge(['h1', 'h3'])
+  assert.equal(payloads.length, 1)
+  assert.deepEqual(payloads[0]?.hunkIds, ['h3'])
+  assert.equal(state.hunkStates.h3, 'Merged')
 })
 
 test('openEditor/commitEdit', () => {
@@ -80,7 +138,7 @@ test('planDiffMergeView stable exposes diff workflow panes',()=>{const plan=plan
 
 test('planDiffMergeView beta orders review, diff, merged with beta badges',()=>{const plan=planDiffMergeView('beta');assert.deepEqual(plan.tabs.map((tab)=>tab.key),['review','diff','merged']);assert.equal(plan.initialTab,'review');assert.equal(plan.navigationBadge,'beta');const diffTab=plan.tabs.find((tab)=>tab.key==='diff');if(!diffTab)throw new Error('diff tab missing');assert.equal(diffTab.badge,'beta');assert.deepEqual(diffTab.panes,['hunk-list']);const mergedTab=plan.tabs.find((tab)=>tab.key==='merged');if(!mergedTab)throw new Error('merged tab missing');assert.deepEqual(mergedTab.panes,['operation-pane'])})
 
-const sampleHunks:readonly MergeHunk[]=[{id:'h1',section:'scene-001',decision:'conflict',similarity:0.5,merged:'<merged />',manual:'<manual />',ai:'<ai />',base:'<base />',prefer:'none'}]
+const sampleHunks:readonly MergeHunk[]=[createMergeHunk('h1')]
 const renderView=(precision:MergePrecision)=>renderToStaticMarkup(createElement(DiffMergeView,{precision,hunks:sampleHunks,queueMergeCommand:async()=>({status:'success',hunkIds:[],telemetry:{collectorSurface:'diff-merge.hunk-list',analyzerSurface:'diff-merge.queue',retryable:false}})}))
 
 test('DiffMergeView initial tab follows plan for beta/stable precisions',()=>{const betaHtml=renderView('beta');assert.match(betaHtml,/data-testid="diff-merge-tab-review"[^>]*aria-selected="true"/);assert.match(betaHtml,/data-navigation-badge="beta"/);const stableHtml=renderView('stable');assert.match(stableHtml,/data-testid="diff-merge-tab-diff"[^>]*aria-selected="true"/);assert.doesNotMatch(stableHtml,/data-navigation-badge=/)})
