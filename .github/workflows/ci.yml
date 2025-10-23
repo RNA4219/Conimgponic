@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies for SBOM coverage
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile=false --ignore-scripts
+
+      - id: syft
+        uses: anchore/syft-action@v1
+        with:
+          path: .
+          output: sbom.json
+          format: cyclonedx-json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-json
+          path: sbom.json
+          if-no-files-found: error
+
+      - if: failure()
+        run: |
+          echo 'Syft execution failed. Inspecting workspace state...'
+          if [ -f pnpm-debug.log ]; then
+            tail -n 200 pnpm-debug.log
+          fi
+          if [ -f sbom.json ]; then
+            head -n 40 sbom.json
+          fi
+
+  quality:
+    name: Quality Checks
+    needs: sbom
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Lint, typecheck, and test
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile=false --ignore-scripts
+          pnpm run lint
+          pnpm run typecheck
+          pnpm test

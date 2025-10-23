@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint \"{src,scripts,tests}/**/*.{ts,tsx,js,jsx}\"",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "test": "node --test"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -18,7 +21,29 @@
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.57.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.8"
+  },
+  "eslintConfig": {
+    "root": true,
+    "env": {
+      "browser": true,
+      "es2022": true,
+      "node": true
+    },
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+      "ecmaVersion": "latest",
+      "sourceType": "module",
+      "ecmaFeatures": {
+        "jsx": true
+      }
+    },
+    "ignorePatterns": [
+      "dist/",
+      "node_modules/"
+    ]
   }
 }
