@@ -1,6 +1,7 @@
 import type {
   AutoSaveBridgeMessage,
   AutoSavePhase,
+  AutoSaveEnvelopePhase,
   AutoSavePhaseGuardSnapshot,
   AutoSaveSnapshotRequestMessage,
   AutoSaveSnapshotResultMessage,
@@ -91,6 +92,7 @@ interface InternalState {
   retryCount: number
   status: AutoSaveStatusState
   reqCounter: number
+  correlationCounter: number
   history: HistoryEntry[]
   retainedBytes: number
 }
@@ -114,9 +116,15 @@ const statusPhaseForState = (state: AutoSaveStatusState): AutoSavePhase => {
   }
 }
 
+const API_VERSION = 1
+const PHASE_STATUS: AutoSaveEnvelopePhase = 'A-1'
+const PHASE_SNAPSHOT: AutoSaveEnvelopePhase = 'A-2'
+
 const createStatusMessage = (
   reqId: string,
-  issuedAt: string,
+  correlationId: string,
+  ts: string,
+  envelopePhase: AutoSaveEnvelopePhase,
   state: AutoSaveStatusState,
   guard: AutoSavePhaseGuardSnapshot,
   retryCount: number,
@@ -124,9 +132,12 @@ const createStatusMessage = (
   pendingBytes?: number
 ): AutoSaveStatusMessage => ({
   type: 'status.autosave',
-  phase: 'status.autosave',
+  apiVersion: API_VERSION,
+  phase: envelopePhase,
+  bridgePhase: 'status.autosave',
   reqId,
-  issuedAt,
+  correlationId,
+  ts,
   payload: {
     state,
     phase: statusPhaseForState(state),
@@ -139,13 +150,16 @@ const createStatusMessage = (
 
 const createSnapshotResultMessage = (
   request: AutoSaveSnapshotRequestMessage,
-  issuedAt: string,
+  ts: string,
   payload: AutoSaveSnapshotResultPayload
 ): AutoSaveSnapshotResultMessage => ({
   type: 'snapshot.result',
-  phase: 'snapshot.result',
+  apiVersion: API_VERSION,
+  phase: request.phase ?? PHASE_SNAPSHOT,
+  bridgePhase: 'snapshot.result',
   reqId: request.reqId,
-  issuedAt,
+  correlationId: request.correlationId,
+  ts,
   payload
 })
 
@@ -170,6 +184,7 @@ const emitWarn = (options: AutoSaveHostBridgeOptions, event: AutoSaveWarnEvent):
 }
 
 const nextReqId = (state: InternalState): string => `autosave-${++state.reqCounter}`
+const nextCorrelationId = (state: InternalState): string => `autosave-corr-${++state.correlationCounter}`
 
 const handleNonRetryableError = (
   options: AutoSaveHostBridgeOptions,
@@ -179,16 +194,30 @@ const handleNonRetryableError = (
 ): void => {
   state.status = 'error'
   state.retryCount = 0
-  const issuedAt = toIso(options.now())
+  const ts = toIso(options.now())
   options.sendMessage(
-    createSnapshotResultMessage(request, issuedAt, { ok: false, error })
+    createSnapshotResultMessage(request, ts, { ok: false, error })
   )
   emitTelemetry(options, {
     name: 'autosave.snapshot.result',
-    properties: { ok: false, code: error.code, retryable: error.retryable }
+    properties: {
+      ok: false,
+      code: error.code,
+      retryable: error.retryable,
+      correlationId: request.correlationId
+    }
   })
   options.sendMessage(
-    createStatusMessage(request.reqId, issuedAt, 'error', state.guard, state.retryCount, state.lastSuccessAt)
+    createStatusMessage(
+      request.reqId,
+      request.correlationId,
+      ts,
+      request.phase ?? PHASE_SNAPSHOT,
+      'error',
+      state.guard,
+      state.retryCount,
+      state.lastSuccessAt
+    )
   )
   state.status = 'disabled'
   state.guard = {
@@ -196,7 +225,16 @@ const handleNonRetryableError = (
     optionsDisabled: true
   }
   options.sendMessage(
-    createStatusMessage(request.reqId, issuedAt, 'disabled', state.guard, state.retryCount, state.lastSuccessAt)
+    createStatusMessage(
+      request.reqId,
+      request.correlationId,
+      ts,
+      request.phase ?? PHASE_SNAPSHOT,
+      'disabled',
+      state.guard,
+      state.retryCount,
+      state.lastSuccessAt
+    )
   )
 }
 
@@ -207,45 +245,81 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     retryCount: 0,
     status: 'disabled',
     reqCounter: 0,
+    correlationCounter: 0,
     history: [],
     retainedBytes: 0
   }
 
   const reportDirty = (pendingBytes: number, guard: AutoSavePhaseGuardSnapshot): void => {
     state.guard = guard
-    const issuedAt = toIso(options.now())
+    const ts = toIso(options.now())
+    const correlationId = nextCorrelationId(state)
     if (!isGuardEnabled(guard)) {
       state.status = 'disabled'
       state.retryCount = 0
-      options.sendMessage(createStatusMessage(nextReqId(state), issuedAt, 'disabled', guard, state.retryCount, state.lastSuccessAt))
+      options.sendMessage(
+        createStatusMessage(
+          nextReqId(state),
+          correlationId,
+          ts,
+          PHASE_STATUS,
+          'disabled',
+          guard,
+          state.retryCount,
+          state.lastSuccessAt
+        )
+      )
       emitTelemetry(options, {
         name: 'autosave.status',
-        properties: { state: 'disabled', source: 'phase-guard' }
+        properties: { state: 'disabled', source: 'phase-guard', correlationId }
       })
       return
     }
     state.status = 'dirty'
     const reqId = nextReqId(state)
-    options.sendMessage(createStatusMessage(reqId, issuedAt, 'dirty', guard, state.retryCount, state.lastSuccessAt, pendingBytes))
+    options.sendMessage(
+      createStatusMessage(
+        reqId,
+        correlationId,
+        ts,
+        PHASE_STATUS,
+        'dirty',
+        guard,
+        state.retryCount,
+        state.lastSuccessAt,
+        pendingBytes
+      )
+    )
     emitTelemetry(options, {
       name: 'autosave.status',
-      properties: { state: 'dirty', pendingBytes }
+      properties: { state: 'dirty', pendingBytes, correlationId }
     })
   }
 
   const handleSnapshotRequest = async (request: AutoSaveSnapshotRequestMessage): Promise<void> => {
     state.guard = request.payload.guard
-    const issuedAt = toIso(options.now())
+    const ts = toIso(options.now())
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       options.sendMessage(
-        createSnapshotResultMessage(request, issuedAt, { ok: false, error: createDisabledError() })
+        createSnapshotResultMessage(request, ts, { ok: false, error: createDisabledError() })
       )
       emitTelemetry(options, {
         name: 'autosave.snapshot.result',
-        properties: { ok: false, code: 'disabled', retryable: false }
+        properties: { ok: false, code: 'disabled', retryable: false, correlationId: request.correlationId }
       })
-      options.sendMessage(createStatusMessage(request.reqId, issuedAt, 'disabled', state.guard, state.retryCount, state.lastSuccessAt))
+      options.sendMessage(
+        createStatusMessage(
+          request.reqId,
+          request.correlationId,
+          ts,
+          request.phase ?? PHASE_SNAPSHOT,
+          'disabled',
+          state.guard,
+          state.retryCount,
+          state.lastSuccessAt
+        )
+      )
       return
     }
 
@@ -254,7 +328,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     options.sendMessage(
       createStatusMessage(
         request.reqId,
-        issuedAt,
+        request.correlationId,
+        ts,
+        request.phase ?? PHASE_SNAPSHOT,
         'saving',
         state.guard,
         state.retryCount,
@@ -264,7 +340,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     )
     emitTelemetry(options, {
       name: 'autosave.status',
-      properties: { state: 'saving', reqId: request.reqId }
+      properties: { state: 'saving', reqId: request.reqId, correlationId: request.correlationId }
     })
 
     let writeResult: AutoSaveAtomicWriteResult
@@ -290,14 +366,29 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       if (writeResult.error.retryable) {
         state.status = 'backoff'
         state.retryCount += 1
-        const retryIssuedAt = toIso(options.now())
-        options.sendMessage(createSnapshotResultMessage(request, retryIssuedAt, writeResult))
+        const retryTs = toIso(options.now())
+        options.sendMessage(createSnapshotResultMessage(request, retryTs, writeResult))
         options.sendMessage(
-          createStatusMessage(request.reqId, retryIssuedAt, 'backoff', state.guard, state.retryCount, state.lastSuccessAt)
+          createStatusMessage(
+            request.reqId,
+            request.correlationId,
+            retryTs,
+            request.phase ?? PHASE_SNAPSHOT,
+            'backoff',
+            state.guard,
+            state.retryCount,
+            state.lastSuccessAt
+          )
         )
         emitTelemetry(options, {
           name: 'autosave.snapshot.result',
-          properties: { ok: false, code: writeResult.error.code, retryable: true }
+          properties: {
+            ok: false,
+            code: writeResult.error.code,
+            retryable: true,
+            correlationId: request.correlationId,
+            attempt: state.retryCount
+          }
         })
         return
       }
@@ -308,7 +399,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     if (writeResult.lockStrategy === 'file-lock') {
       emitWarn(options, {
         code: 'autosave.lock.fallback',
-        details: { reqId: request.reqId, strategy: writeResult.lockStrategy }
+        details: { reqId: request.reqId, strategy: writeResult.lockStrategy, correlationId: request.correlationId }
       })
     }
 
@@ -318,7 +409,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     state.status = 'saved'
     state.retryCount = 0
 
-    const successIssuedAt = toIso(options.now())
+    const successTs = toIso(options.now())
     const payload: AutoSaveSnapshotResultPayload = {
       ok: true,
       bytes: writeResult.bytes,
@@ -326,17 +417,31 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       generation: writeResult.generation,
       retainedBytes: state.retainedBytes
     }
-    options.sendMessage(createSnapshotResultMessage(request, successIssuedAt, payload))
+    options.sendMessage(createSnapshotResultMessage(request, successTs, payload))
     emitTelemetry(options, {
       name: 'autosave.snapshot.result',
-      properties: { ok: true, generation: writeResult.generation, retainedBytes: state.retainedBytes }
+      properties: {
+        ok: true,
+        generation: writeResult.generation,
+        retainedBytes: state.retainedBytes,
+        correlationId: request.correlationId
+      }
     })
     options.sendMessage(
-      createStatusMessage(request.reqId, successIssuedAt, 'saved', state.guard, state.retryCount, state.lastSuccessAt)
+      createStatusMessage(
+        request.reqId,
+        request.correlationId,
+        successTs,
+        request.phase ?? PHASE_SNAPSHOT,
+        'saved',
+        state.guard,
+        state.retryCount,
+        state.lastSuccessAt
+      )
     )
     emitTelemetry(options, {
       name: 'autosave.status',
-      properties: { state: 'saved', reqId: request.reqId }
+      properties: { state: 'saved', reqId: request.reqId, correlationId: request.correlationId }
     })
   }
 
