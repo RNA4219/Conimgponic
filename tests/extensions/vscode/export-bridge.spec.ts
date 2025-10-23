@@ -13,7 +13,7 @@ describe('VSCode Export Bridge (RED scenarios)', () => {
     void csvInput
 
     // D: 改行が LF に統一され、末尾改行が 1 つであることを期待
-    assert.fail('CSV 正規化処理が未実装のため RED')
+    assert.fail('CSV 正規化処理が未実装のため RED — see docs/src-1.35_addon/EXPORT-IMPORT.md §6')
   })
 
   it('JSONL 容量上限: 50MB を超える場合は retryable=false で失敗を返す', () => {
@@ -25,7 +25,7 @@ describe('VSCode Export Bridge (RED scenarios)', () => {
     void scenes
 
     // D: エラーオブジェクトに retryable=false が含まれることを期待
-    assert.fail('JSONL 容量超過ハンドリングが未実装のため RED')
+    assert.fail('JSONL 容量超過ハンドリングが未実装のため RED — see docs/design/extensions/export-import.md §3')
   })
 
   it('atomicWrite 失敗時: UI へエラー通知と Collector WARN を送出する', () => {
@@ -36,6 +36,6 @@ describe('VSCode Export Bridge (RED scenarios)', () => {
     // E: Export Bridge が失敗結果を返却（予定）
 
     // D: UI 通知（エラー）と Collector WARN イベントが生成されることを期待
-    assert.fail('atomicWrite 失敗時の通知が未実装のため RED')
+    assert.fail('atomicWrite 失敗時の通知が未実装のため RED — see docs/design/extensions/export-import.md §4')
   })
 })
