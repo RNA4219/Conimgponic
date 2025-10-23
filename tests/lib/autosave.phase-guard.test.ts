@@ -148,6 +148,18 @@ scenario(
   }
 )
 
+scenario(
+  'disabled flushNow returns shared resolved promise',
+  async (_t: any, { initAutoSave }: any) => {
+    const flags = createFlags(false)
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, flags)
+    const first = runner.flushNow()
+    const second = runner.flushNow()
+    assert.strictEqual(first, second)
+    assert.equal(await first, undefined)
+  }
+)
+
 scenario('phase guard returns to idle when re-enabled', async (_t: any, { initAutoSave }: any) => {
   const disabledGuard = {
     featureFlag: { value: false, source: 'env' },
