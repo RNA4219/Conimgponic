@@ -29,6 +29,12 @@ jobs:
       - name: Configure pnpm store
         run: pnpm config set store-dir .pnpm-store
 
+      - name: Ensure lockfile
+        run: |
+          if [ ! -f pnpm-lock.yaml ]; then
+            pnpm install --lockfile-only
+          fi
+
       - name: Install dependencies for SBOM
         run: pnpm install --frozen-lockfile
 
