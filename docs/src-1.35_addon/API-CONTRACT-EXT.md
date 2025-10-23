@@ -43,7 +43,7 @@ type WvToExt =
 ### 4.2 Extension → Webview
 ```ts
 type ExtToWv =
-  | ({ type: "bootstrap" } & MsgBase & { payload: { doc: any, settings: Record<string, any> } })
+  | ({ type: "bootstrap" } & MsgBase & { payload: { doc: any, settings: Record<string, any>, flags: FlagSnapshot } })
   | ({ type: "snapshot.result" } & MsgBase & { ok: boolean, error?: { code: string, message: string, details?: any } })
   | ({ type: "fs.read.result" } & MsgBase & { ok: boolean, dataBase64?: string, error?: any })
   | ({ type: "fs.list.result" } & MsgBase & { ok: boolean, entries?: string[], error?: any })
@@ -62,7 +62,7 @@ type ExtToWv =
 ### 5.1 エディタ起動（resolveCustomTextEditor）
 ```
 Extension: create WebviewPanel (CSP/nonce 設定)
-Extension → Webview: "bootstrap" {doc, settings}
+Extension → Webview: "bootstrap" {doc, settings, flags}
 Webview   → Extension: "ready" {uiVersion}
 Webview   ：描画、state復元、保存インジケータ=○
 ```

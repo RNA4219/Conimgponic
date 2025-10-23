@@ -71,13 +71,14 @@
 ### 優先順位
 
 1. **ビルド時環境変数**: `import.meta.env` から `VITE_AUTOSAVE_ENABLED`（`"true" | "false"`）、`VITE_MERGE_PRECISION`（`"legacy" | "beta" | "stable"`）を読み取る。CI/CLI 出力向けに `process.env` もフォールバックで許容し、既存 `scripts/config-dump.ts` からの読み取り互換を維持する。
-2. **ブラウザ `localStorage`**: キーは後方互換のため `autosave.enabled`・`merge.precision` のまま保持し、値は JSON 文字列ではなくプレーン文字列を想定（例: `'true'`, `'beta'`）。無効値は読み捨てる。
-3. **既定値**: 本ドキュメント先頭の JSON を `DEFAULT_FLAGS` として `src/config/flags.ts` に内包する。どの入力ソースでも値が確定しない場合はこの既定値を採用する。
+2. **VS Code 設定 (`conimg.*`)**: 拡張ブリッジから渡される設定値を `resolveFlags()` が受け取り、`FlagDefinition.settingsKey` でマッピングする。`workspace.getConfiguration('conimg')` の `get()` API と、同等構造のプレーンオブジェクトの両方を解釈する。
+3. **ブラウザ `localStorage`**: キーは後方互換のため `autosave.enabled`・`merge.precision` のまま保持し、値は JSON 文字列ではなくプレーン文字列を想定（例: `'true'`, `'beta'`）。無効値は読み捨てる。
+4. **既定値**: 本ドキュメント先頭の JSON を `DEFAULT_FLAGS` として `src/config/flags.ts` に内包する。どの入力ソースでも値が確定しない場合はこの既定値を採用する。
 
 ### FlagSnapshot
 
 - `resolveFlags()` は `FlagSnapshot` を返却し、`autosave`・`merge` の各フラグに対して `value`・`source`・`errors` を収集する。
-- `source` は `'env' | 'localStorage' | 'default'` のいずれかであり、UI/Collector が Phase 判定やテレメトリ整合性を検証する際のキーとなる。
+- `source` は `'env' | 'vscode-settings' | 'localStorage' | 'default'` のいずれかであり、UI/Collector が Phase 判定やテレメトリ整合性を検証する際のキーとなる。
 - `updatedAt` は `ResolveOptions.clock()`（既定: `() => new Date()`）から得た ISO8601 文字列で記録し、`docs/AUTOSAVE-DESIGN-IMPL.md` における AutoSave フェーズ遷移ログと相関させる。
 
 ### 解決シーケンス（設計メモ）
@@ -86,10 +87,13 @@
 flowchart TD
     Start([resolveFlags]) --> EnvCheck{{import.meta.env?}}
     EnvCheck -- valid --> EnvHit[autosave.enabled / merge.precision ← env]
-    EnvCheck -- missing/invalid --> StorageCheck{window.localStorage?}
+    EnvCheck -- missing/invalid --> SettingsCheck{{VS Code 設定?}}
+    SettingsCheck -- valid --> SettingsHit[conimg.* ← vscode-settings]
+    SettingsCheck -- missing/invalid --> StorageCheck{window.localStorage?}
     StorageCheck -- valid --> StorageHit[値を coercer で検証して採用]
     StorageCheck -- missing/invalid --> DefaultHit[DEFAULT_FLAGS から既定値]
     EnvHit --> Snapshot[FlagSnapshot 作成]
+    SettingsHit --> Snapshot
     StorageHit --> Snapshot
     DefaultHit --> Snapshot
     Snapshot --> Telemetry[App/Merge へ source + errors を伝搬]

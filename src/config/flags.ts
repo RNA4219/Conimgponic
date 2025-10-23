@@ -1,4 +1,4 @@
-export type FlagSource = 'env' | 'localStorage' | 'default'
+export type FlagSource = 'env' | 'vscode-settings' | 'localStorage' | 'default'
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 export type FlagRolloutPhase = 'phase-a0' | 'phase-a1' | 'phase-b0'
 
@@ -67,6 +67,7 @@ export interface FlagDefinition<T> {
   readonly storageKey: string
   readonly legacyStorageKeys?: readonly string[]
   readonly defaultValue: T
+  readonly settingsKey?: string
   readonly coerce?: FlagCoercer<T>
 }
 
@@ -78,11 +79,16 @@ export type FlagCoercer<T> = (raw: string) => FlagCoerceResult<T>
 
 export interface ResolveOptions {
   readonly env?: Record<string, unknown>
+  readonly settings?: VSCodeConfigurationLike | null
   readonly storage?: Pick<Storage, 'getItem'> | null
   readonly clock?: () => Date
 }
 
 export interface FlagResolution<T> extends FlagValueSnapshot<T> {}
+
+export type VSCodeConfigurationLike = {
+  readonly get?: (section: string) => unknown
+} & Record<string, unknown>
 
 const defaultEnv = (() => {
   const metaEnv = ((import.meta as any)?.env ?? {}) as Record<string, unknown>
@@ -135,8 +141,29 @@ function attemptResolve<T>(
   return null
 }
 
+function readSettingsValue(
+  settings: VSCodeConfigurationLike | null,
+  key: string
+): unknown {
+  if (!settings) {
+    return undefined
+  }
+  if (typeof settings.get === 'function') {
+    return settings.get(key)
+  }
+  const segments = key.split('.')
+  let current: unknown = settings
+  for (const segment of segments) {
+    if (typeof current !== 'object' || current === null) {
+      return undefined
+    }
+    current = (current as Record<string, unknown>)[segment]
+  }
+  return current
+}
+
 /**
- * env → localStorage → docs/CONFIG_FLAGS.md 既定値の優先順位でフラグ値を解決する。
+ * env → VS Code 設定 → localStorage → docs/CONFIG_FLAGS.md 既定値の優先順位でフラグ値を解決する。
  * `docs/IMPLEMENTATION-PLAN.md` §0.2 の設定ソースマッピングと `FlagSnapshot` の
  * ソース追跡要件を満たすよう、検証失敗時は次順位へフォールバックしながら
  * エラーを蓄積する。
@@ -150,12 +177,29 @@ export function resolveFlag<T>(
   options: ResolveOptions = {}
 ): FlagResolution<T> {
   const env = options.env ?? defaultEnv
+  const settings = options.settings ?? null
   const storage = options.storage ?? defaultStorage
   const errors: FlagValidationError[] = []
 
   const envResolved = attemptResolve(env[def.envKey], 'env', def, errors)
   if (envResolved !== null) {
     return { value: envResolved, source: 'env', errors: [...errors] }
+  }
+
+  if (def.settingsKey) {
+    const settingsResolved = attemptResolve(
+      readSettingsValue(settings, def.settingsKey),
+      'vscode-settings',
+      def,
+      errors
+    )
+    if (settingsResolved !== null) {
+      return {
+        value: settingsResolved,
+        source: 'vscode-settings',
+        errors: [...errors]
+      }
+    }
   }
 
   if (storage) {
@@ -231,6 +275,7 @@ export const FEATURE_FLAG_DEFINITIONS = {
     storageKey: 'autosave.enabled',
     legacyStorageKeys: ['flag:autoSave.enabled'],
     defaultValue: DEFAULT_FLAGS.autosave.enabled,
+    settingsKey: 'autosave.enabled',
     coerce: coerceBoolean('autosave.enabled')
   },
   'merge.precision': {
@@ -239,6 +284,7 @@ export const FEATURE_FLAG_DEFINITIONS = {
     storageKey: 'merge.precision',
     legacyStorageKeys: ['flag:merge.precision'],
     defaultValue: DEFAULT_FLAGS.merge.precision,
+    settingsKey: 'merge.precision',
     coerce: coerceMergePrecision('merge.precision')
   }
 } as const satisfies {
