@@ -26,9 +26,9 @@ export interface PluginManifest {
   readonly version: string;
   readonly engines: { readonly vscode: string };
   readonly 'conimg-api': string;
-  readonly permissions: readonly string[];
+  readonly permissions?: readonly string[];
   readonly dependencies?: PluginManifestDependencies;
-  readonly hooks: readonly string[];
+  readonly hooks?: readonly string[];
 }
 
 export interface PluginReloadRequest {
@@ -132,9 +132,15 @@ export interface PluginBridge {
 type StageSpec = { readonly name: PluginReloadStageName; readonly retryable: boolean };
 type StageOutcome = { ok: true } | { ok: false; error: PluginReloadError };
 
+type NormalizedPluginManifest = PluginManifest & {
+  readonly permissions: readonly string[];
+  readonly hooks: readonly string[];
+};
+
 type StageContext = {
   readonly request: PluginReloadRequest;
   readonly config: PluginBridgeConfig;
+  readonly manifest: NormalizedPluginManifest;
   readonly previous?: PluginRuntimeSnapshot;
   readonly next: PluginRuntimeSnapshot;
 };
@@ -145,6 +151,14 @@ function normalizeManifestDependencies(dependencies: PluginManifestDependencies)
   return {
     npm: { ...(dependencies?.npm ?? {}) },
     workspace: [...(dependencies?.workspace ?? [])],
+  };
+}
+
+function normalizeManifest(manifest: PluginManifest): NormalizedPluginManifest {
+  return {
+    ...manifest,
+    permissions: [...(manifest.permissions ?? [])],
+    hooks: [...(manifest.hooks ?? [])],
   };
 }
 
@@ -159,6 +173,8 @@ const STAGES: readonly StageSpec[] = [
   { name: 'dependency-cache', retryable: true },
   { name: 'hook-registration', retryable: true },
 ];
+
+const HOOK_ALLOWLIST = new Set<string>(['onCompile', 'onExport', 'onMerge', 'commands', 'widgets']);
 
 export function maybeCreatePluginBridge(config: PluginBridgeConfig): PluginBridge | undefined {
   if (!config.enableFlag) {
@@ -208,6 +224,7 @@ function createPluginBridge(config: PluginBridgeConfig): PluginBridge {
     }
 
     const previous = snapshot(request.pluginId);
+    const normalizedManifest = normalizeManifest(request.manifest);
     const next: PluginRuntimeSnapshot = previous
       ? {
           manifest: previous.manifest,
@@ -216,7 +233,7 @@ function createPluginBridge(config: PluginBridgeConfig): PluginBridge {
           hooksRegistered: previous.hooksRegistered,
         }
       : {
-          manifest: request.manifest,
+          manifest: normalizedManifest,
           permissions: [...request.grantedPermissions],
           dependencies: cloneDependencySnapshot(request.dependencySnapshot),
           hooksRegistered: false,
@@ -231,8 +248,8 @@ function createPluginBridge(config: PluginBridgeConfig): PluginBridge {
     const completed: StageSpec[] = [];
 
     for (const [index, spec] of STAGES.entries()) {
-      publish(logMessage(request.pluginId, 'info', 'stage-start', spec.name));
-      const context: StageContext = { request, config, previous, next };
+      const context: StageContext = { request, config, manifest: normalizedManifest, previous, next };
+      publish(logMessage(request.pluginId, 'info', 'stage-start', spec.name, false, stageStartDetail(spec, context)));
       const outcome = runStage(spec, context);
       if (!outcome.ok) {
         statuses[index] = { name: spec.name, status: 'failed', retryable: spec.retryable, error: outcome.error };
@@ -254,11 +271,11 @@ function createPluginBridge(config: PluginBridgeConfig): PluginBridge {
       }
       applyStage(spec, context);
       statuses[index] = { name: spec.name, status: 'success', retryable: spec.retryable };
-      publish(logMessage(request.pluginId, 'info', 'stage-complete', spec.name));
+      publish(logMessage(request.pluginId, 'info', 'stage-complete', spec.name, false, stageCompleteDetail(spec, context)));
       completed.push(spec);
     }
 
-    next.manifest = request.manifest;
+    next.manifest = normalizedManifest;
     commitSnapshot(config, request.pluginId, next);
 
     publish(logMessage(request.pluginId, 'info', 'reload-complete'));
@@ -276,10 +293,9 @@ function createPluginBridge(config: PluginBridgeConfig): PluginBridge {
 }
 
 function runStage(spec: StageSpec, context: StageContext): StageOutcome {
-  const { request, config } = context;
+  const { request, config, manifest } = context;
   switch (spec.name) {
     case 'manifest-validation': {
-      const manifest = request.manifest;
       const engines = manifest.engines;
       const vscodeEngine = engines?.vscode;
       const conimgApi = manifest['conimg-api'];
@@ -310,7 +326,6 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
       return { ok: true };
     }
     case 'compatibility-check': {
-      const manifest = request.manifest;
       const engineMajor = extractMajor(manifest.engines.vscode);
       const hostMajor = extractMajor(config.platformVersion);
       if (engineMajor === undefined || hostMajor === undefined || engineMajor !== hostMajor) {
@@ -352,7 +367,7 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
       return { ok: true };
     }
     case 'permission-gate': {
-      const required = new Set(request.manifest.permissions);
+      const required = new Set(manifest.permissions);
       const granted = new Set(request.grantedPermissions);
       const missing: string[] = [];
       for (const permission of required) {
@@ -365,7 +380,7 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
         : { ok: false, error: buildError(spec.name, PluginReloadErrorCode.PermissionMismatch, `Missing permissions: ${missing.join(', ')}`, false, true) };
     }
     case 'dependency-cache': {
-      const manifestDependencies = normalizeManifestDependencies(request.manifest.dependencies);
+      const manifestDependencies = normalizeManifestDependencies(manifest.dependencies);
       const differences = diffDependencies(manifestDependencies, request.dependencySnapshot);
       if (!dependencyDiffHasChanges(differences)) {
         return { ok: true };
@@ -388,16 +403,14 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
       };
     }
     case 'hook-registration':
-      return request.manifest.hooks.length > 0
-        ? { ok: true }
-        : { ok: false, error: buildError(spec.name, PluginReloadErrorCode.HookRegistrationFailed, 'No hooks declared by plugin.', true, false) };
+      return { ok: true };
     default:
       return { ok: true };
   }
 }
 
 function applyStage(spec: StageSpec, context: StageContext): void {
-  const { request, next } = context;
+  const { request, next, manifest } = context;
   switch (spec.name) {
     case 'permission-gate':
       next.permissions = [...request.grantedPermissions];
@@ -406,7 +419,7 @@ function applyStage(spec: StageSpec, context: StageContext): void {
       next.dependencies = cloneDependencySnapshot(request.dependencySnapshot);
       break;
     case 'hook-registration':
-      next.hooksRegistered = true;
+      next.hooksRegistered = manifest.hooks.length > 0;
       break;
     default:
       break;
@@ -427,6 +440,38 @@ function rollbackStage(spec: StageSpec, context: StageContext): PluginBridgeLogM
     case 'hook-registration':
       next.hooksRegistered = previous?.hooksRegistered ?? false;
       return undefined;
+    default:
+      return undefined;
+  }
+}
+
+function stageStartDetail(spec: StageSpec, context: StageContext): Record<string, unknown> | undefined {
+  switch (spec.name) {
+    case 'permission-gate':
+      return {
+        requiredPermissions: [...context.manifest.permissions],
+        grantedPermissions: [...context.request.grantedPermissions],
+      };
+    case 'hook-registration':
+      return {
+        declaredHooks: [...context.manifest.hooks],
+      };
+    default:
+      return undefined;
+  }
+}
+
+function stageCompleteDetail(spec: StageSpec, context: StageContext): Record<string, unknown> | undefined {
+  switch (spec.name) {
+    case 'permission-gate':
+      return {
+        appliedPermissions: [...context.next.permissions],
+      };
+    case 'hook-registration':
+      return {
+        registeredHooks: [...context.manifest.hooks],
+        hooksRegistered: context.next.hooksRegistered,
+      };
     default:
       return undefined;
   }

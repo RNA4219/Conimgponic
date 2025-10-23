@@ -4,7 +4,7 @@ export type FlagRolloutPhase = 'phase-a0' | 'phase-a1' | 'phase-b0'
 
 export const DEFAULT_FLAGS = {
   autosave: {
-    enabled: false,
+    enabled: true,
     debounceMs: 500,
     idleMs: 2000,
     maxGenerations: 20,
@@ -18,7 +18,7 @@ export const DEFAULT_FLAGS = {
     profile: {
       tokenizer: 'char' as const,
       granularity: 'section' as const,
-      threshold: 0.75,
+      threshold: 0.72,
       prefer: 'none' as const
     }
   }
