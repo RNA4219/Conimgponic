@@ -557,6 +557,11 @@ pnpm run flags:reset
 - `phase` は §2.1 のフェーズ名（`A-0` / `A-1` ...）を記録し、SLO 違反の再現性を向上させる。
 - `lease_uuid` は `src/lib/locks.ts` のロック ID と一致させ、Collector で二重書き込みを集計可能にする。
 
+#### 6.1.1 VS Code 拡張ブリッジ統合イベント
+- 拡張ブリッジから Webview/Day8 へ流れる Telemetry は `docs/TELEMETRY-SECURITY-PERFORMANCE-DESIGN.md` の契約に従い、`flag_resolution` / `status.autosave` / `snapshot.result` / `merge.result` / `export.result` / `error` の 6 系列で Collector へ送出する。【F:docs/TELEMETRY-SECURITY-PERFORMANCE-DESIGN.md†L13-L65】
+- 各イベントは `request_id` (UUID) を共有し、Collector が 15 分窓で突合する。`status.autosave` と `snapshot.result` は UI フェーズ遷移と I/O 成否を結合し、Analyzer が Phase ガードを評価できるよう `detail.retry_count` と `performance.flush_latency_ms` を必須とする。
+- `flag_resolution` はフラグソース (`env`/`remote`/`default`) と `detail.retryable` を保持し、`default_used=true` が 5% を超えた場合にロールバック候補を生成する。`merge.result`/`export.result` は処理時間と成功率で Phase B / Export ガードを判断する。
+
 ### 6.2 Collector / Analyzer 連携
 - Collector は `project/autosave/telemetry/*.jsonl` を 15 分周期で集約し、Day8 `workflow-cookbook/logs/autosave/*.jsonl` へ転送する。既存パイプライン（Collector → Analyzer → Reporter）に組み込み、Day8 設計書の責務分離を遵守する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
 - Analyzer では下記派生メトリクスを計算し、Phase ゲート判定に用いる。
@@ -583,98 +588,10 @@ pnpm run flags:reset
 | 手動ロールバック件数 | 1 日で 1 件以上 | Collector（Webhook） | Slack `#launch-autosave` | 24h 以内に RCA 起案 | Reporter がロールバック履歴を追記 |
 | Telemetry キュー滞留時間 | 15 分超でアラート | Collector | Grafana Alert → Slack `#telemetry` | Analyzer 処理を一時停止しキュー排出 | Collector が `queue.lag_seconds` を送出 |
 
-### 6.2 Telemetry イベントスキーマ案（JSON Schema 下書き）
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://conimgponic.dev/schemas/telemetry/autosave-merge-event.json",
-  "title": "AutosaveMergeTelemetryEvent",
-  "type": "object",
-  "required": [
-    "event_id",
-    "feature",
-    "component",
-    "timestamp",
-    "metrics"
-  ],
-  "properties": {
-    "event_id": {
-      "type": "string",
-      "pattern": "^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$"
-    },
-    "feature": {
-      "type": "string",
-      "enum": ["autosave", "merge"],
-      "description": "監視対象機能名"
-    },
-    "component": {
-      "type": "string",
-      "enum": ["collector", "analyzer", "reporter"],
-      "description": "イベントを送出した Day8 コンポーネント"
-    },
-    "phase": {
-      "type": "string",
-      "enum": ["A-0", "A-1", "A-2", "B-0", "B-1"],
-      "description": "ロールアウトフェーズ"
-    },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "metrics": {
-      "type": "object",
-      "required": ["window_minutes"],
-      "properties": {
-        "window_minutes": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "save_latency_p95_ms": {
-          "type": "number",
-          "minimum": 0
-        },
-        "save_failure_rate": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "merge_success_rate": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "manual_rollbacks": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "queue_lag_seconds": {
-          "type": "number",
-          "minimum": 0
-        }
-      },
-      "additionalProperties": false
-    },
-    "error": {
-      "type": "object",
-      "properties": {
-        "retryable": {
-          "type": "boolean",
-          "description": "再試行可能性のフラグ"
-        },
-        "code": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
-        }
-      },
-      "required": ["retryable"],
-      "additionalProperties": false
-    }
-  },
-  "additionalProperties": false
-}
-```
+### 6.2 Telemetry JSON Schema v1（VS Code 拡張ブリッジ）
+- VS Code 拡張の Telemetry は `schemas/telemetry.schema.json` を正とし、Collector 取り込み前に JSON Schema 2020-12 で検証する。`version=1`、`workspace_id` / `request_id` は UUID (`format: "uuid"`) を必須とする。`component` は `autosave` / `merge` / `flags` / `export`、`kind` は `save` / `ui` / `merge` / `flag_resolution` / `export` / `error` を許可する。【F:docs/TELEMETRY-SECURITY-PERFORMANCE-DESIGN.md†L30-L65】
+- `detail` サブオブジェクトで `duration_ms` / `retry_count` / `error_code` / `retryable` を保持し、イベント種別ごとの情報 (`autosave.state`, `merge.processing_ms`, `flags.resolved_value`, `export.artifact_bytes`) は専用サブオブジェクトに格納する。`additionalProperties=false` で予期しないフィールドを拒否する。
+- Collector は `schemas/telemetry.schema.json` を `workflow-cookbook/scripts/analyze.py` に組み込み、`flag_resolution` 欠損や `status.autosave` の `performance` 不備を RED テストで検出する。Analyzer/Reporter はスキーマ準拠イベントのみを対象とし、Phase ガード (`autosave_p95`, `ui_saved_rate`, `merge_auto_success_rate`, `export_latency_p95`) を評価する。
 
 ### 6.3 ロールバック/Incident 通知データ要件と検証
 - 通知イベントには `feature`, `phase`, `error.retryable`, `manual_rollbacks` を必須とし、Slack テンプレート `templates/alerts/rollback.md` と連携させる。
@@ -682,16 +599,16 @@ pnpm run flags:reset
 - ロールバック後の再開判定には Analyzer から保存時間/失敗率の最新値を取得し、Reporter 日次サマリと整合することを SRE が確認する。
 
 #### 実装チーム向けチェックリスト
-- [ ] Collector: Telemetry JSONL に JSON Schema v1 を適用し、`feature`/`component`/`phase` を欠損なく出力する。
-- [ ] Analyzer: イベントの `metrics` を集計し、しきい値超過時に通知ペイロードへ `error.retryable` と推奨アクションを付与する。
-- [ ] Reporter: ロールバック/Incident 通知に `incident_ref` と RCA ステータスを追記し、Governance レビューへ添付する。
-- [ ] Ops: Slack/PagerDuty 連携で上記ペイロードの必須フィールドが表示されることを確認する。
+- [ ] Collector: Telemetry JSONL に `schemas/telemetry.schema.json` を適用し、`component` / `kind` / `detail.retryable` / `performance.flush_latency_ms` を欠損なく出力する。
+- [ ] Analyzer: `flag_resolution_success_rate` / `autosave_p95` / `ui_saved_rate` / `merge_auto_success_rate` / `export_latency_p95` を集計し、逸脱時に `rollback_required` と `rollbackTo` を設定する。
+- [ ] Reporter: ロールバック/Incident 通知に `incident_ref` と `pnpm run flags:rollback` の結果ログを添付し、Day8 ガバナンスへ共有する。【F:docs/design/extensions/telemetry.md†L137-L199】
+- [ ] Ops: `docs/CSP-PERFORMANCE-CHECKLIST.md` を用いて CSP・性能検証を完了し、Slack/PagerDuty テンプレートで必須フィールドが表示されることを確認する。
 
 #### 検証コマンド案
 ```bash
 # JSON Schema バリデーション（Collector 出力サンプル）
 pnpm tsx scripts/monitor/validate-event.ts reports/monitoring/sample.jsonl \
-  --schema schemas/telemetry/autosave-merge-event.schema.json
+  --schema schemas/telemetry.schema.json
 
 # Analyzer アラート閾値のドライラン（15 分窓）
 pnpm tsx scripts/monitor/analyzer-dryrun.ts --window 15 --threshold-config configs/telemetry/thresholds.yml

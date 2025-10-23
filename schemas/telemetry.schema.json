@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VS Code Extension Telemetry Event",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "component": {
+      "type": "string",
+      "enum": [
+        "autosave",
+        "merge",
+        "flags",
+        "export"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "save",
+        "ui",
+        "merge",
+        "flag_resolution",
+        "export",
+        "error"
+      ]
+    },
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "A-0",
+        "A-1",
+        "A-2",
+        "B-0",
+        "B-1",
+        "GA"
+      ]
+    },
+    "tenant": {
+      "type": "string",
+      "minLength": 1
+    },
+    "client_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "request_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "warning",
+        "failure"
+      ]
+    },
+    "detail": {
+      "type": "object",
+      "properties": {
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "lag_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "phase_transition": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "performance": {
+      "type": "object",
+      "properties": {
+        "first_paint_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "scroll_fps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "flush_latency_ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "autosave": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "disabled",
+            "idle",
+            "debouncing",
+            "awaiting-lock",
+            "writing",
+            "saved",
+            "error",
+            "readonly"
+          ]
+        },
+        "pending_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "history_retained": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "flush_latency_ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "merge": {
+      "type": "object",
+      "properties": {
+        "precision": {
+          "type": "string",
+          "enum": [
+            "legacy",
+            "beta",
+            "stable"
+          ]
+        },
+        "processing_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "conflict_segments": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "auto_applied": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "flags": {
+      "type": "object",
+      "properties": {
+        "flag_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "env",
+            "remote",
+            "local",
+            "default"
+          ]
+        },
+        "resolved_value": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "default_used": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "flag_id",
+        "source",
+        "default_used"
+      ],
+      "additionalProperties": false
+    },
+    "export": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transport": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "format",
+        "artifact_bytes",
+        "duration_ms"
+      ],
+      "additionalProperties": false
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "version",
+    "ts",
+    "component",
+    "kind",
+    "workspace_id",
+    "phase",
+    "tenant",
+    "client_version",
+    "request_id",
+    "status",
+    "detail"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "component": {
+            "const": "autosave"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "autosave"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "component": {
+            "const": "merge"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "merge"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "component": {
+            "const": "flags"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "flags"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "component": {
+            "const": "export"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "export"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "detail"
+        ],
+        "properties": {
+          "detail": {
+            "required": [
+              "error_code",
+              "retryable"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "flag_resolution"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "flags"
+        ],
+        "properties": {
+          "detail": {
+            "required": [
+              "retryable"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
