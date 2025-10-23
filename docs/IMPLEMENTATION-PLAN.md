@@ -177,6 +177,43 @@ sequenceDiagram
 | Analyzer | 4 分算出→1 分判定で `rollback_required` を決定。【F:Day8/docs/day8/design/03_architecture.md†L17-L31】 | Analyzer は `.lock` を参照しない前提で、AutoSave からの通知は `autosave.lock.*` メトリクス経由に限定。 | Analyzer が `.lock` を参照した形跡があれば lint/レビューで是正し、`readonly` 発生率が 5% 超でロールバック検討。 |
 | Reporter | 4 分整形→承認フロー。【F:Day8/docs/day8/design/03_architecture.md†L31-L36】 | Reporter への通知は `autosave.lock.readonly` の集計結果のみ。ファイル削除失敗時も `.lock` を移動しない。 | Reporter が `.lock` 異常を検知した際は Runbook 手順 4（フォールバック無効化）でロールバック。 |
 
+#### 1.5 状態・イベント統合図
+
+`§1.1`〜`§1.4` の要件を束ね、ロック状態とイベントを 1 枚で把握できるよう整理する。状態遷移は Web Lock 優先・フォールバック併用・Day8 監視要件を反映し、イベント行列は UI/Telemetry へ伝える再試行可否を強調する。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: initAutoSave()
+    Idle --> Acquiring_Web: acquireProjectLock() (lock:attempt)
+    Acquiring_Web --> Acquiring_File: navigator.locks missing / denied (lock:warning fallback-engaged)
+    Acquiring_Web --> Acquired: Web Lock lease granted (lock:acquired)
+    Acquiring_File --> Acquired: fallback lease granted (lock:fallback-engaged)
+    Acquiring_Web --> Readonly: retries exhausted (lock:error retryable=false)
+    Acquiring_File --> Readonly: fallback-conflict (lock:error retryable=false)
+    Acquired --> Renewing: heartbeat due (lock:renew-scheduled)
+    Renewing --> Acquired: lease refreshed (lock:renewed)
+    Renewing --> Readonly: ttl exceeded / renew failure (lock:readonly-entered)
+    Acquired --> Releasing: dispose()/flushNow complete (lock:release-requested)
+    Releasing --> Idle: artefacts cleared (lock:released)
+    Readonly --> Idle: manual reset (withProjectLock retry)
+```
+
+| イベント | 主遷移 / 起点 | 代表ペイロード | Retryable 判定 | 参照 |
+| --- | --- | --- | --- | --- |
+| `lock:attempt` | `Idle → Acquiring_Web` / `Renewing` | `{ strategy, retry }` | `retryable=true`（再試行可） | §1.1 Web Lock 優先 |
+| `lock:waiting` | 再試行バックオフ中 | `{ retry, delayMs }` | `retryable=true`（残試行数>0） | §1.2 Backoff |
+| `lock:fallback-engaged` | Web Lock 不可 → フォールバック遷移 | `{ lease }` | `retryable=true`（フォールバック継続） | §1.1 TTL/戦略 |
+| `lock:warning` | フォールバック/ハートビート遅延 | `{ warning, detail }` | 警告。`retryable` は直近エラーに依存 | §1.2 イベント |
+| `lock:acquired` | いずれの戦略でも取得成功 | `{ lease }` | 正常（次心拍に引継ぎ） | §1.1 心拍設計 |
+| `lock:renew-scheduled` | `Acquired → Renewing` | `{ nextHeartbeatInMs }` | `retryable=true`（心拍実行） | §1.1 Heartbeat |
+| `lock:renewed` | 期限更新完了 | `{ lease }` | 正常。`retryable=true` 維持 | §1.2 Renew |
+| `lock:release-requested` | 解放開始 | `{ lease }` | 正常（解放後 Idle） | §1.2 Release |
+| `lock:released` | Artefact 完了 | `{ leaseId }` | 正常（以降は再取得） | §1.2 Release |
+| `lock:error` | 取得/更新/解放失敗 | `{ operation, error, retryable }` | ケース別（`fallback-conflict` 等は `false`） | §1.3 再試行境界 |
+| `lock:readonly-entered` | 再試行不能／ttl 超過 | `{ reason, lastError }` | `retryable=false` 固定 | §1.3 Readonly 降格 |
+
+イベントごとの再試行可否は Day8 Collector/Analyzer が監視する `autosave.lock.*` メトリクスの閾値と同期させ、`§1.4` の隔離策（`project/.lock` 限定運用）を満たす。
+
 #### `src/lib/locks.ts` 公開 API と想定利用者
 | API | 役割 | 想定利用者 |
 | --- | --- | --- |
