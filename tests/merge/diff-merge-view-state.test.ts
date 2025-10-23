@@ -4,8 +4,16 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import {createDiffMergeController,createInitialDiffMergeState,diffMergeReducer,DiffMergeAction,DiffMergeState,MergeDecisionEvent} from '../../src/components/diffMergeState'
-import { DiffMergeView, planDiffMergeView } from '../../src/components/DiffMergeView'
-import type { MergeHunk, MergePrecision } from '../../src/components/DiffMergeView'
+import { DiffMergeView, planDiffMergeView, resolveDiffMergeStoredTab } from '../../src/components/DiffMergeView'
+import type {
+  DiffMergeTabStorage,
+  DiffMergeSubTabKey,
+  MergeHunk,
+  MergePrecision,
+  QueueMergeCommand,
+} from '../../src/components/DiffMergeView'
+
+type DiffMergeQueueCommandPayload = Parameters<QueueMergeCommand>[0]
 
 const harness = (precision: MergePrecision = 'stable') => {
   let state: DiffMergeState = createInitialDiffMergeState([createMergeHunk()])
@@ -55,6 +63,24 @@ test('queueMerge success', async () => {
   assert.equal(state.hunkStates.h1, 'Merged')
 })
 
+test('queueMerge telemetry captures active diff tab', async () => {
+  const captured: DiffMergeQueueCommandPayload[] = []
+  let tab: DiffMergeSubTabKey = 'review'
+  const controller = createDiffMergeController({
+    precision: 'stable',
+    dispatch: () => undefined,
+    queueMergeCommand: async (payload) => {
+      captured.push(payload)
+      return successEvent
+    },
+    resolveLastTab: () => tab,
+  })
+  tab = 'merged'
+  await controller.queueMerge(['h1'])
+  assert.equal(captured.length, 1)
+  assert.equal(captured[0]?.telemetryContext.lastTab, 'merged')
+})
+
 test('openEditor/commitEdit', () => {
   const h = harness()
   h.controller.openEditor('h1')
@@ -84,3 +110,29 @@ const sampleHunks:readonly MergeHunk[]=[{id:'h1',section:'scene-001',decision:'c
 const renderView=(precision:MergePrecision)=>renderToStaticMarkup(createElement(DiffMergeView,{precision,hunks:sampleHunks,queueMergeCommand:async()=>({status:'success',hunkIds:[],telemetry:{collectorSurface:'diff-merge.hunk-list',analyzerSurface:'diff-merge.queue',retryable:false}})}))
 
 test('DiffMergeView initial tab follows plan for beta/stable precisions',()=>{const betaHtml=renderView('beta');assert.match(betaHtml,/data-testid="diff-merge-tab-review"[^>]*aria-selected="true"/);assert.match(betaHtml,/data-navigation-badge="beta"/);const stableHtml=renderView('stable');assert.match(stableHtml,/data-testid="diff-merge-tab-diff"[^>]*aria-selected="true"/);assert.doesNotMatch(stableHtml,/data-navigation-badge=/)})
+
+class MemoryStorage implements DiffMergeTabStorage {
+  #map = new Map<string, string>()
+
+  getItem(key: string): string | null {
+    return this.#map.has(key) ? this.#map.get(key)! : null
+  }
+
+  setItem(key: string, value: string): void {
+    this.#map.set(key, value)
+  }
+
+  removeItem(key: string): void {
+    this.#map.delete(key)
+  }
+}
+
+test('resolveDiffMergeStoredTab restores stable precision selection across mounts', () => {
+  const storage = new MemoryStorage()
+  storage.setItem('diff-merge.lastTab.stable', 'merged')
+  const plan = planDiffMergeView('stable')
+  assert.equal(
+    resolveDiffMergeStoredTab({ plan, precision: 'stable', storage }),
+    'merged',
+  )
+})
