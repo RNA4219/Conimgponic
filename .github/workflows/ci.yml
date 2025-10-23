@@ -244,6 +244,19 @@ jobs:
             logs/${{ matrix.suite }}-failures.log
           if-no-files-found: ignore
 
+      - name: Show suite log on failure
+        if: steps.run_suite.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::${{ matrix.suite }} suite failure log"
+          if [[ -f "logs/${{ matrix.suite }}.log" ]]; then
+            cat "logs/${{ matrix.suite }}.log"
+          else
+            echo "suite log not found"
+          fi
+          echo "::endgroup::"
+
       - name: Fail on suite failure
         if: steps.run_suite.outcome == 'failure'
         run: exit 1
