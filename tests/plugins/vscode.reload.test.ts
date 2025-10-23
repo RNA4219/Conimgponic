@@ -17,6 +17,20 @@ const stageOrder: PluginReloadStageName[] = [
   'hook-registration',
 ];
 
+interface StageFailureLog {
+  readonly event: 'stage-failed';
+  readonly stage: string;
+  readonly notifyUser?: boolean;
+  readonly pluginId?: string;
+  readonly detail?: { readonly code?: string; readonly retryable?: boolean };
+}
+
+const isStageFailureLog = (log: unknown): log is StageFailureLog => {
+  if (!log || typeof log !== 'object') return false;
+  const candidate = log as { event?: unknown; stage?: unknown };
+  return candidate.event === 'stage-failed' && typeof candidate.stage === 'string';
+};
+
 function createBridge(): PluginBridge {
   const bridge = maybeCreatePluginBridge({
     enableFlag: true,
@@ -399,8 +413,9 @@ test('phase guard blocked emits notifyUser log with E_PLUGIN_PHASE_BLOCKED', asy
   assert.equal(result.response.error.notifyUser, true);
 
   const failureLog = collectorMessages.find(
-    (log: any) => log.event === 'stage-failed' && log.stage === 'manifest-validation',
-  ) as { notifyUser: boolean } | undefined;
+    (log): log is StageFailureLog =>
+      isStageFailureLog(log) && log.stage === 'manifest-validation',
+  );
   assert.ok(failureLog);
   assert.equal(failureLog.notifyUser, true);
 });
@@ -448,8 +463,9 @@ test('phase guard blocked log includes error code for collector analysis', async
   });
 
   const failureLog = collectorMessages.find(
-    (log: any) => log.pluginId === 'theta' && log.event === 'stage-failed' && log.stage === 'manifest-validation',
-  ) as { detail?: { code?: string; retryable?: boolean } } | undefined;
+    (log): log is StageFailureLog =>
+      isStageFailureLog(log) && log.pluginId === 'theta' && log.stage === 'manifest-validation',
+  );
 
   assert.ok(failureLog);
   assert.equal(failureLog?.detail?.code, PluginReloadErrorCode.PhaseGuardBlocked);
