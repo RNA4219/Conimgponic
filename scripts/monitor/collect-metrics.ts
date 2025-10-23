@@ -45,11 +45,28 @@ export interface TelemetryJsonlRecordBase {
   readonly backoffMs: ReadonlyArray<number>;
 }
 
+export type AutoSavePhaseStep =
+  | 'disabled'
+  | 'debouncing'
+  | 'awaiting-lock'
+  | 'writing'
+  | 'gc'
+  | 'idle'
+  | 'backoff'
+  | 'error';
+
+export interface StatusAutosaveGuardSnapshot {
+  readonly current: RolloutPhase;
+  readonly rollbackTo: RolloutPhase;
+}
+
 export interface StatusAutosavePayload {
   readonly state: 'idle' | 'dirty' | 'saving' | 'saved';
   readonly debounce_ms: number;
   readonly latency_ms: number;
   readonly attempt: number;
+  readonly phase_step: AutoSavePhaseStep;
+  readonly guard: StatusAutosaveGuardSnapshot;
 }
 
 export interface FlagResolutionPayload {
@@ -60,13 +77,18 @@ export interface FlagResolutionPayload {
   readonly evaluation_ms: number;
 }
 
+export type MergeTracePhase = 'queued' | 'applying' | 'completed';
+
 export interface MergeTracePayload {
+  readonly phase: MergeTracePhase;
   readonly collisions: number;
   readonly guardrail: {
     readonly metric: MetricsKey;
     readonly observed: number;
     readonly rollbackTo: RolloutPhase;
+    readonly tolerance_pct: number;
   };
+  readonly processing_ms: number;
   readonly digest: string;
 }
 
@@ -502,7 +524,15 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'status.autosave',
         description: 'AutoSave 状態遷移と遅延を Phase ガード autosave_p95 と同期させる。',
-        jsonlFields: ['payload.state', 'payload.debounce_ms', 'payload.latency_ms', 'payload.attempt'],
+        jsonlFields: [
+          'payload.state',
+          'payload.debounce_ms',
+          'payload.latency_ms',
+          'payload.attempt',
+          'payload.phase_step',
+          'payload.guard.current',
+          'payload.guard.rollbackTo'
+        ],
         retryable: true,
         pipelineStage: 'collector',
         guardrail: {
@@ -513,7 +543,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'flag_resolution',
         description: 'Feature flag の判定結果を Analyzer の restore_success_rate 推定に反映する。',
-        jsonlFields: ['payload.flag', 'payload.variant', 'payload.source', 'payload.phase'],
+        jsonlFields: ['payload.flag', 'payload.variant', 'payload.source', 'payload.phase', 'payload.evaluation_ms'],
         retryable: true,
         pipelineStage: 'analyzer',
         guardrail: {
@@ -524,7 +554,15 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'merge.trace',
         description: '精緻マージの衝突数と Phase ガード merge_auto_success_rate の観測値を出力する。',
-        jsonlFields: ['payload.collisions', 'payload.guardrail.metric', 'payload.guardrail.observed'],
+        jsonlFields: [
+          'payload.phase',
+          'payload.collisions',
+          'payload.processing_ms',
+          'payload.guardrail.metric',
+          'payload.guardrail.observed',
+          'payload.guardrail.tolerance_pct',
+          'payload.guardrail.rollbackTo'
+        ],
         retryable: false,
         pipelineStage: 'analyzer',
         guardrail: {
