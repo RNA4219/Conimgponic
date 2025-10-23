@@ -147,6 +147,18 @@ jobs:
       - name: Autosave tests
         run: pnpm test --filter autosave
 
+      - name: Merge tests
+        run: pnpm test --filter merge
+
+      - name: CLI tests
+        run: pnpm test --filter cli
+
+      - name: Collector tests
+        run: pnpm test --filter collector
+
+      - name: Telemetry tests
+        run: pnpm test --filter telemetry
+
       - name: Test with coverage
         run: |
           set -euo pipefail
