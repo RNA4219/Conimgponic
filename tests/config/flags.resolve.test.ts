@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   DEFAULT_FLAG_SNAPSHOT,
   FEATURE_FLAG_DEFINITIONS,
+  FlagResolutionError,
   FlagSnapshot,
   FlagSource,
   resolveFlags
@@ -97,4 +98,45 @@ test('defaults are used when no sources apply', () => {
 test('source typing includes workspace', () => {
   const source: FlagSource = 'workspace'
   assert.equal(source, 'workspace')
+})
+
+test('invalid values aggregate errors and fall back to defaults', () => {
+  const env = {
+    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'MAYBE',
+    [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'invalid'
+  }
+  const workspace: WorkspaceRecord = {
+    'conimg.autosave.enabled': 'not-boolean',
+    'conimg.merge.threshold': 1.5
+  }
+  const storage = createStorage({
+    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: 'truthy?',
+    [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'gamma'
+  })
+
+  const result = resolveFlags({ env, workspace, storage }, { withErrors: true })
+
+  assert.equal(result.snapshot.autosave.enabled, DEFAULT_FLAG_SNAPSHOT.autosave.enabled)
+  assert.equal(result.snapshot.autosave.source, 'default')
+  assert.equal(result.snapshot.merge.precision, DEFAULT_FLAG_SNAPSHOT.merge.precision)
+  assert.equal(result.snapshot.merge.source, 'default')
+
+  assert.equal(result.errors.length, 6)
+  const sources = result.errors.reduce<Record<FlagSource, number>>(
+    (acc, error) => {
+      acc[error.source] = (acc[error.source] ?? 0) + 1
+      return acc
+    },
+    { env: 0, workspace: 0, localStorage: 0, default: 0 }
+  )
+  assert.deepEqual(sources, {
+    env: 2,
+    workspace: 2,
+    localStorage: 2,
+    default: 0
+  })
+
+  for (const error of result.errors as readonly FlagResolutionError[]) {
+    assert.ok(error.message.includes(error.flag))
+  }
 })
