@@ -10,6 +10,9 @@ export const DEFAULT_FLAGS = {
     maxGenerations: 20,
     maxBytes: 50 * 1024 * 1024
   },
+  plugins: {
+    enable: false
+  },
   merge: {
     precision: 'legacy' as const,
     profile: {
@@ -31,6 +34,7 @@ export interface FlagValidationIssue {
 
 export interface FlagValidationError extends FlagValidationIssue {
   readonly source: FlagSource
+  readonly phase: FlagRolloutPhase
 }
 
 export type FlagResolutionError = FlagValidationError
@@ -49,6 +53,10 @@ export type AutosaveFlagSnapshot = FlagValueSnapshot<boolean> & {
   readonly enabled: boolean
 }
 
+export type PluginEnableFlagSnapshot = FlagValueSnapshot<boolean> & {
+  readonly enabled: boolean
+}
+
 export type MergePrecisionFlagSnapshot = FlagValueSnapshot<MergePrecision> & {
   readonly precision: MergePrecision
 }
@@ -59,6 +67,7 @@ export type MergePrecisionFlagSnapshot = FlagValueSnapshot<MergePrecision> & {
  */
 export interface FlagSnapshot {
   readonly autosave: AutosaveFlagSnapshot
+  readonly plugins: PluginEnableFlagSnapshot
   readonly merge: MergePrecisionFlagSnapshot
   readonly updatedAt: string
 }
@@ -71,6 +80,7 @@ export interface FlagDefinition<T> {
   readonly defaultValue: T
   readonly coerce?: FlagCoercer<T>
   readonly workspaceKey?: string
+  readonly phase: FlagRolloutPhase
 }
 
 export type FlagCoerceResult<T> =
@@ -87,7 +97,7 @@ export interface ResolveOptions {
 }
 
 export type WorkspaceConfiguration =
-  | { readonly get: (key: string) => unknown }
+  | { readonly get: <T = unknown>(key: string) => T | undefined }
   | Record<string, unknown>
 
 export interface FlagResolution<T> extends FlagValueSnapshot<T> {}
@@ -118,7 +128,9 @@ function readWorkspaceValue(
     return undefined
   }
 
-  const withGetter = workspace as { readonly get?: (key: string) => unknown }
+  const withGetter = workspace as {
+    readonly get?: <T = unknown>(key: string) => T | undefined
+  }
   if (typeof withGetter.get === 'function') {
     return withGetter.get(key)
   }
@@ -167,7 +179,7 @@ function attemptResolve<T>(
     return coerced.value
   }
 
-  errors.push({ ...coerced.error, source })
+  errors.push({ ...coerced.error, source, phase: def.phase })
   return null
 }
 
@@ -313,7 +325,17 @@ export const FEATURE_FLAG_DEFINITIONS = {
     legacyStorageKeys: ['flag:autoSave.enabled'],
     defaultValue: DEFAULT_FLAGS.autosave.enabled,
     coerce: coerceBoolean('autosave.enabled'),
-    workspaceKey: 'conimg.autosave.enabled'
+    workspaceKey: 'conimg.autosave.enabled',
+    phase: 'phase-a0'
+  },
+  'plugins.enable': {
+    name: 'Plugin Bridge Enable',
+    envKey: 'VITE_PLUGINS_ENABLE',
+    storageKey: 'plugins.enable',
+    defaultValue: DEFAULT_FLAGS.plugins.enable,
+    coerce: coerceBoolean('plugins.enable'),
+    workspaceKey: 'conimg.plugins.enable',
+    phase: 'phase-a1'
   },
   'merge.precision': {
     name: 'Merge Precision Mode',
@@ -322,10 +344,12 @@ export const FEATURE_FLAG_DEFINITIONS = {
     legacyStorageKeys: ['flag:merge.precision'],
     defaultValue: DEFAULT_FLAGS.merge.precision,
     coerce: coerceMergePrecision('merge.precision'),
-    workspaceKey: 'conimg.merge.threshold'
+    workspaceKey: 'conimg.merge.threshold',
+    phase: 'phase-b0'
   }
 } as const satisfies {
   readonly 'autosave.enabled': FlagDefinition<boolean>
+  readonly 'plugins.enable': FlagDefinition<boolean>
   readonly 'merge.precision': FlagDefinition<MergePrecision>
 }
 
@@ -351,6 +375,12 @@ export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
     errors: [],
     enabled: DEFAULT_FLAGS.autosave.enabled
   },
+  plugins: {
+    value: DEFAULT_FLAGS.plugins.enable,
+    source: 'default',
+    errors: [],
+    enabled: DEFAULT_FLAGS.plugins.enable
+  },
   merge: {
     value: DEFAULT_FLAGS.merge.precision,
     source: 'default',
@@ -375,6 +405,7 @@ export function resolveFlags(
   config?: { readonly withErrors?: boolean }
 ): FlagSnapshot | FlagResolutionSummary {
   const autosave = resolveFeatureFlag('autosave.enabled', options)
+  const plugins = resolveFeatureFlag('plugins.enable', options)
   const merge = resolveFeatureFlag('merge.precision', options)
   const clock = options?.clock ?? (() => new Date())
 
@@ -388,6 +419,12 @@ export function resolveFlags(
       errors: autosave.errors,
       enabled: autosave.value
     },
+    plugins: {
+      value: plugins.value,
+      source: plugins.source,
+      errors: plugins.errors,
+      enabled: plugins.value
+    },
     merge: {
       value: merge.value,
       source: merge.source,
@@ -400,6 +437,7 @@ export function resolveFlags(
   if (config?.withErrors) {
     const errors: FlagResolutionError[] = [
       ...autosave.errors,
+      ...plugins.errors,
       ...merge.errors
     ]
     return {
