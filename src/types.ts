@@ -5,7 +5,7 @@ export type AssetRef = {
   kind: 'character'|'prop'|'background'
   label: string
   prompt?: string
-  meta?: Record<string, any>
+  meta?: Record<string, unknown>
 }
 
 export type Scene = {
@@ -19,7 +19,7 @@ export type Scene = {
   rating?: 1|2|3|4|5
   assets: AssetRef[]
   notes?: string
-  meta?: Record<string, any>
+  meta?: Record<string, unknown>
   shot?: string
   take?: number
   slate?: string

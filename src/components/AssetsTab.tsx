@@ -17,7 +17,7 @@ export function AssetsTab(){
   }
   async function save(){
     await saveJSON('project/assets.json', items)
-    ;(useSB.getState() as any).sb.assetsCatalog = items
+    useSB.setState((state) => ({ sb: { ...state.sb, assetsCatalog: items } }))
     alert('Assets saved to OPFS')
   }
   return (
@@ -30,7 +30,8 @@ export function AssetsTab(){
         <div key={a.id} className="card" style={{padding:8}}>
           <div style={{display:'grid', gridTemplateColumns:'120px 1fr 1fr 1fr', gap:8}}>
             <select value={a.kind} onChange={e=>{
-              const v = e.target.value as any; const ns=[...items]; ns[i] = {...a, kind:v}; setItems(ns)
+              const v = e.target.value as AssetRef['kind']
+              const ns=[...items]; ns[i] = {...a, kind:v}; setItems(ns)
             }}>
               <option value="character">character</option>
               <option value="prop">prop</option>

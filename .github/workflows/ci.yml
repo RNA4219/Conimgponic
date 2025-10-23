@@ -169,7 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p reports
-          pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml
+          pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml
 
       - name: Build
         run: |

@@ -174,8 +174,6 @@ const STAGES: readonly StageSpec[] = [
   { name: 'hook-registration', retryable: true },
 ];
 
-const HOOK_ALLOWLIST = new Set<string>(['onCompile', 'onExport', 'onMerge', 'commands', 'widgets']);
-
 export function maybeCreatePluginBridge(config: PluginBridgeConfig): PluginBridge | undefined {
   if (!config.enableFlag) {
     return undefined;

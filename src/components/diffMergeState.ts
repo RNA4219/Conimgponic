@@ -165,14 +165,14 @@ export const createDiffMergeController = ({
   queueMergeCommand,
   getCurrentHunkIds,
   onError,
-  resolveLastTab,
+  resolveCurrentTab,
 }: {
   readonly precision: MergePrecision
   readonly dispatch: (action: DiffMergeAction) => void
   readonly queueMergeCommand: QueueMergeCommand
   readonly getCurrentHunkIds: () => readonly string[]
   readonly onError?: (event: MergeDecisionEvent) => void
-  readonly resolveLastTab?: () => DiffMergeSubTabKey | null
+  readonly resolveCurrentTab?: () => DiffMergeSubTabKey | null
 }) => ({
   queueMerge: async (hunkIds: readonly string[]) => {
     const ids = [...retainKnownHunkIds(hunkIds, getCurrentHunkIds())]
@@ -180,7 +180,7 @@ export const createDiffMergeController = ({
     dispatch({ type: 'queueMerge', hunkIds: ids })
     try {
       const result = await queueMergeCommand(
-        toQueuePayload({ precision, hunkIds: ids, lastTab: resolveLastTab?.() ?? null }),
+        toQueuePayload({ precision, hunkIds: ids, lastTab: resolveCurrentTab?.() ?? null }),
       )
       dispatch({ type: 'queueResult', hunkIds: ids, result: result.status })
       if (result.status === 'error') onError?.(result)

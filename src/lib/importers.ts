@@ -1,4 +1,4 @@
-import type { Storyboard } from '../types'
+import type { Scene, Storyboard } from '../types'
 
 export async function readFileAsText(file: File): Promise<string>{
   return new Promise((res, rej)=>{
@@ -20,7 +20,15 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
       const i = idx.get(o.id)
       if (i != null){
         const sc = sb.scenes[i]
-        const patch: any = { seed: o.seed ?? sc.seed, tone: o.tone ?? sc.tone, slate: o.slate ?? sc.slate, shot: o.shot ?? sc.shot, take: (Number.isFinite(o.take)? o.take: sc.take) }
+        const patch: Partial<Scene> & Record<ImportMode, string> = {
+          seed: o.seed ?? sc.seed,
+          tone: o.tone ?? sc.tone,
+          slate: o.slate ?? sc.slate,
+          shot: o.shot ?? sc.shot,
+          take: Number.isFinite(o.take)? o.take: sc.take,
+          manual: sc.manual,
+          ai: sc.ai
+        }
         patch[mode] = String(o.text||'')
         sb.scenes[i] = { ...sc, ...patch }
       }else{
@@ -56,7 +64,15 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
     const j = idx.get(id)
     if (j != null){
       const sc = sb.scenes[j]
-      const patch: any = { seed: (Number.isFinite(seed)? seed: sc.seed), tone: tone ?? sc.tone, slate: slate ?? sc.slate, shot: shot ?? sc.shot, take: (Number.isFinite(take)? take: sc.take) }
+      const patch: Partial<Scene> & Record<ImportMode, string> = {
+        seed: Number.isFinite(seed)? seed: sc.seed,
+        tone: tone ?? sc.tone,
+        slate: slate ?? sc.slate,
+        shot: shot ?? sc.shot,
+        take: Number.isFinite(take)? take: sc.take,
+        manual: sc.manual,
+        ai: sc.ai
+      }
       patch[mode] = text
       sb.scenes[j] = { ...sc, ...patch }
     }else{

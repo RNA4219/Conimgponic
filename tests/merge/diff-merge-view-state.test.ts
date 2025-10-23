@@ -5,7 +5,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import {createDiffMergeController,createInitialDiffMergeState,diffMergeReducer,DiffMergeAction,DiffMergeState,MergeDecisionEvent} from '../../src/components/diffMergeState'
 import { DiffMergeView, planDiffMergeView } from '../../src/components/DiffMergeView'
-import type { DiffMergeQueueCommandPayload, MergeHunk, MergePrecision } from '../../src/components/DiffMergeView'
+import type {
+  DiffMergeQueueCommandPayload,
+  DiffMergeSubTabKey,
+  MergeHunk,
+  MergePrecision,
+} from '../../src/components/DiffMergeView'
 
 type Dispatch = (action: DiffMergeAction) => void
 
@@ -170,6 +175,26 @@ const renderView=(precision:MergePrecision)=>renderToStaticMarkup(createElement(
 
 test('DiffMergeView initial tab follows plan for beta/stable precisions',()=>{const betaHtml=renderView('beta');assert.match(betaHtml,/data-testid="diff-merge-tab-review"[^>]*aria-selected="true"/);assert.match(betaHtml,/data-navigation-badge="beta"/);const stableHtml=renderView('stable');assert.match(stableHtml,/data-testid="diff-merge-tab-diff"[^>]*aria-selected="true"/);assert.doesNotMatch(stableHtml,/data-navigation-badge=/)})
 
+test('DiffMergeView stable precision restores last selected tab from storage', () => {
+  const storage = new MemoryStorage()
+  const original = (globalThis as { localStorage?: MemoryStorage }).localStorage
+  ;(globalThis as { localStorage?: MemoryStorage }).localStorage = storage
+  try {
+    const storageKey = 'diff-merge.lastTab.stable'
+    const initialHtml = renderView('stable')
+    assert.match(initialHtml, /data-testid="diff-merge-tab-diff"[^>]*aria-selected="true"/)
+    storage.setItem(storageKey, 'merged')
+    const remountHtml = renderView('stable')
+    assert.match(remountHtml, /data-testid="diff-merge-tab-merged"[^>]*aria-selected="true"/)
+  } finally {
+    if (original === undefined) {
+      delete (globalThis as { localStorage?: MemoryStorage }).localStorage
+    } else {
+      ;(globalThis as { localStorage?: MemoryStorage }).localStorage = original
+    }
+  }
+})
+
 class MemoryStorage implements DiffMergeTabStorage {
   #map = new Map<string, string>()
 
@@ -194,4 +219,26 @@ test('resolveDiffMergeStoredTab restores stable precision selection across mount
     resolveDiffMergeStoredTab({ plan, precision: 'stable', storage }),
     'merged',
   )
+})
+
+test('queueMerge telemetry payload reflects current tab selection', async () => {
+  let telemetryLastTab: DiffMergeSubTabKey | undefined
+  let currentTab: DiffMergeSubTabKey | null = 'diff'
+  let state: DiffMergeState = createInitialDiffMergeState([createMergeHunk('h1')])
+  const dispatch: Dispatch = (action) => {
+    state = diffMergeReducer(state, action)
+  }
+  const controller = createDiffMergeController({
+    precision: 'stable',
+    dispatch,
+    queueMergeCommand: async (payload) => {
+      telemetryLastTab = payload.telemetryContext.lastTab
+      return successEvent
+    },
+    getCurrentHunkIds: () => ['h1'],
+    resolveCurrentTab: () => currentTab,
+  })
+  currentTab = 'merged'
+  await controller.queueMerge(['h1'])
+  assert.equal(telemetryLastTab, 'merged')
 })

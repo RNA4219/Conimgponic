@@ -1,4 +1,5 @@
 import type { Storyboard } from '../types'
+import { FLAG_MIGRATION_PLAN } from '../config/flags'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
 
@@ -172,6 +173,8 @@ export interface AutoSavePhaseGuardSnapshot {
   }
   readonly optionsDisabled: boolean
 }
+
+const PHASE_GUARD_ROLLOUT_ACTIVE = FLAG_MIGRATION_PLAN.some((step) => step.phase.startsWith('phase-a'))
 
 interface Day8CollectorLike {
   publish(event: Record<string, unknown>): void
@@ -750,8 +753,6 @@ const AUTOSAVE_DIRECTORY = 'project/autosave'
 const CURRENT_PATH = `${AUTOSAVE_DIRECTORY}/current.json`
 const INDEX_PATH = `${AUTOSAVE_DIRECTORY}/index.json`
 const HISTORY_DIRECTORY = `${AUTOSAVE_DIRECTORY}/history`
-const FALLBACK_LOCK_PATH = `${AUTOSAVE_DIRECTORY}/.lock`
-const encoder = new TextEncoder()
 const sanitizeTimestamp = (ts: string) => ts.replace(/[:.]/g, '-')
 
 interface AutoSaveIndexPayload {
@@ -773,6 +774,14 @@ const createAutoSaveError = (
   if (cause instanceof Error) error.cause = cause
   if (context) error.context = context
   return error
+}
+
+const isAutoSaveError = (value: unknown): value is AutoSaveError => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as { code?: unknown; retryable?: unknown }
+  return typeof candidate.code === 'string' && typeof candidate.retryable === 'boolean'
 }
 
 const parseIndexFile = (value: unknown): AutoSaveIndexPayload => {
@@ -798,57 +807,6 @@ const loadIndex = async (): Promise<AutoSaveIndexPayload> => {
   }
 }
 
-const atomicWrite = async (path: string, data: string): Promise<void> => {
-  const segments = path.split('/').filter(Boolean)
-  const fileName = segments.pop()
-  if (!fileName) throw new Error('invalid path')
-  const dirPath = segments.join('/')
-  const dir = await ensureDir(dirPath)
-  const tmpHandle = await dir.getFileHandle(`${fileName}.tmp`, { create: true })
-  const tmpWritable = await tmpHandle.createWritable()
-  await tmpWritable.write(data)
-  await tmpWritable.close()
-  const finalHandle = await dir.getFileHandle(fileName, { create: true })
-  const finalWritable = await finalHandle.createWritable()
-  await finalWritable.write(data)
-  await finalWritable.close()
-  try {
-    await dir.removeEntry(`${fileName}.tmp`)
-  } catch {}
-}
-
-const writeIndex = async (payload: AutoSaveIndexPayload): Promise<void> => {
-  await atomicWrite(INDEX_PATH, JSON.stringify(payload, null, 2))
-}
-
-const removeFile = async (path: string): Promise<void> => {
-  const segments = path.split('/').filter(Boolean)
-  const name = segments.pop()
-  if (!name) return
-  let dir = await getRoot()
-  for (const segment of segments) {
-    dir = await dir.getDirectoryHandle(segment, { create: true })
-  }
-  try {
-    await dir.removeEntry(name)
-  } catch {}
-}
-
-const clampHistory = async (
-  entries: readonly AutoSaveHistoryEntry[],
-  policy: AutoSavePolicy
-): Promise<readonly AutoSaveHistoryEntry[]> => {
-  const next = [...entries].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
-  let total = next.reduce((sum, entry) => sum + (entry.bytes || 0), 0)
-  while (next.length > policy.maxGenerations || total > policy.maxBytes) {
-    const removed = next.shift()
-    if (!removed) break
-    await removeFile(`${HISTORY_DIRECTORY}/${removed.ts}.json`)
-    total -= removed.bytes
-  }
-  return next
-}
-
 /**
  * AutoSave スケジューラを初期化する。
  *
@@ -864,15 +822,59 @@ export function initAutoSave(
   const truthy = /^(1|true)$/i, falsy = /^(0|false)$/i
   const asBool = (value: unknown) => (typeof value === 'string' && truthy.test(value) ? true : typeof value === 'string' && falsy.test(value) ? false : null)
   const resolveFlag = () => {
-    const g = globalThis as any
-    const override = g?.__AUTOSAVE_ENABLED__, storage = asBool(g?.localStorage?.getItem?.('autosave.enabled'))
+    const scope = globalThis as typeof globalThis & {
+      __AUTOSAVE_ENABLED__?: unknown
+      localStorage?: { getItem?: (key: string) => string | null }
+      process?: { env?: Record<string, unknown> }
+      'import'?: { meta?: { env?: Record<string, unknown> } }
+    }
+    const override = scope?.__AUTOSAVE_ENABLED__
+    const storage = asBool(scope?.localStorage?.getItem?.('autosave.enabled'))
     if (typeof override === 'boolean') return override
     if (storage != null) return storage
-    const env = asBool(g?.process?.env?.VITE_AUTOSAVE_ENABLED ?? g?.import?.meta?.env?.VITE_AUTOSAVE_ENABLED)
+    const env = asBool(
+      scope?.process?.env?.VITE_AUTOSAVE_ENABLED ?? scope?.['import']?.meta?.env?.VITE_AUTOSAVE_ENABLED
+    )
     return env ?? !AUTOSAVE_POLICY.disabled
   }
   const guardSource = (value: unknown): AutoSavePhaseGuardSnapshot['featureFlag']['source'] =>
     value === 'env' || value === 'workspace' || value === 'localStorage' || value === 'default' ? value : 'default'
+  const resolveGuardFromEnvironment = (
+    fallbackOptionsDisabled: boolean
+  ): AutoSavePhaseGuardSnapshot => {
+    const scope = globalThis as typeof globalThis & {
+      __AUTOSAVE_ENABLED__?: boolean
+      localStorage?: { getItem?: (key: string) => string | null }
+      process?: { env?: Record<string, unknown> }
+      import?: { meta?: { env?: Record<string, unknown> } }
+    }
+    if (typeof scope.__AUTOSAVE_ENABLED__ === 'boolean') {
+      return {
+        featureFlag: { value: scope.__AUTOSAVE_ENABLED__, source: 'env' },
+        optionsDisabled: fallbackOptionsDisabled
+      }
+    }
+    const storage = asBool(scope.localStorage?.getItem?.('autosave.enabled'))
+    if (storage != null) {
+      return {
+        featureFlag: { value: storage, source: 'localStorage' },
+        optionsDisabled: fallbackOptionsDisabled
+      }
+    }
+    const env = asBool(
+      scope.process?.env?.VITE_AUTOSAVE_ENABLED ?? scope.import?.meta?.env?.VITE_AUTOSAVE_ENABLED
+    )
+    if (env != null) {
+      return {
+        featureFlag: { value: env, source: 'env' },
+        optionsDisabled: fallbackOptionsDisabled
+      }
+    }
+    return {
+      featureFlag: { value: !AUTOSAVE_POLICY.disabled, source: 'default' },
+      optionsDisabled: fallbackOptionsDisabled
+    }
+  }
   const normalizeGuard = (
     candidate: AutoSaveInitGuardInput | undefined,
     fallbackOptionsDisabled: boolean
@@ -922,9 +924,19 @@ export function initAutoSave(
   ): AutoSaveError => Object.assign(Object.assign(new Error(message), { name: 'AutoSaveError' }), { code, retryable, cause, context })
   const disabledError = () => makeError('disabled', 'AutoSave is disabled', false)
   const removeFile = async (path: string) => {
-    const segs = path.split('/').filter(Boolean), name = segs.pop()
-    if (!name) return
-    try { await (await ensureDir(segs.join('/'))).removeEntry(name) } catch {}
+    const segs = path.split('/').filter(Boolean)
+    const name = segs.pop()
+    if (!name) {
+      return
+    }
+    try {
+      await (await ensureDir(segs.join('/'))).removeEntry(name)
+    } catch (removeError) {
+      if (removeError instanceof DOMException && removeError.name === 'NotFoundError') {
+        return
+      }
+      console.warn('Failed to remove autosave artefact', removeError)
+    }
   }
   const renameFile = async (tmp: string, target: string) => {
     const data = await loadText(tmp)
@@ -933,35 +945,13 @@ export function initAutoSave(
   }
   const fallbackOptionsDisabled = options?.disabled === true
   const guardSnapshot = normalizeGuard(flagSnapshot, fallbackOptionsDisabled)
-  const effectiveOptionsDisabled = guardSnapshot?.optionsDisabled ?? fallbackOptionsDisabled
-  const snapshotFlagValue = (() => {
-    if (!flagSnapshot || typeof flagSnapshot !== 'object') return null
-    if ('featureFlag' in flagSnapshot && flagSnapshot.featureFlag && typeof flagSnapshot.featureFlag === 'object') {
-      const guard = flagSnapshot as AutoSavePhaseGuardSnapshot
-      return typeof guard.featureFlag?.value === 'boolean' ? guard.featureFlag.value : null
-    }
-    const record = flagSnapshot as Record<string, unknown>
-    if ('autosave' in record && record.autosave && typeof record.autosave === 'object') {
-      const auto = record.autosave as { enabled?: unknown }
-      return typeof auto?.enabled === 'boolean' ? auto.enabled : null
-    }
-    if ('enabled' in record) {
-      const auto = record as { enabled?: unknown }
-      return typeof auto.enabled === 'boolean' ? auto.enabled : null
-    }
-    return null
-  })()
-  const normalizedFlagValue = guardSnapshot?.featureFlag.value ?? snapshotFlagValue
-  const flagEnabled = normalizedFlagValue ?? resolveFlag()
+  const guard = guardSnapshot ?? resolveGuardFromEnvironment(fallbackOptionsDisabled)
+  const flagEnabled = guard.featureFlag.value
+  const effectiveOptionsDisabled = guard.optionsDisabled
   if (effectiveOptionsDisabled || !flagEnabled) {
     const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
-    const guardForLog: AutoSavePhaseGuardSnapshot =
-      guardSnapshot ?? {
-        featureFlag: { value: flagEnabled, source: 'default' },
-        optionsDisabled: effectiveOptionsDisabled
-      }
     publishGuardCollectorEvent(
-      guardForLog,
+      guard,
       effectiveOptionsDisabled ? 'options-disabled' : 'feature-flag-disabled'
     )
     const resolvedPromise: Promise<void> = Promise.resolve()
@@ -976,7 +966,7 @@ export function initAutoSave(
   const encoder = new TextEncoder()
   const pendingQueue: AutoSaveQueueEntry[] = []
   const phaseGuardEnabled =
-    guardSnapshot?.featureFlag.value === true && guardSnapshot.optionsDisabled !== true
+    guard.featureFlag.value === true && guard.optionsDisabled !== true
       ? true
       : (() => {
           if (!flagSnapshot || typeof flagSnapshot !== 'object') return false
@@ -1022,16 +1012,16 @@ export function initAutoSave(
         phase = 'updating-index'; const ts = new Date().toISOString(); await updateIndex(ts, pendingBytes, payload)
         phase = 'gc'; lastSuccessAt = ts; pendingQueue.length = 0; queuedGeneration = 0; pendingBytes = 0; retryCount = 0; lastError = undefined; phase = disposed ? 'disabled' : 'idle'
       }, { preferredStrategy: 'web-lock' })
-    } catch (error) {
+    } catch (error: unknown) {
       if (disposed) throw disabledError()
       const autoError =
-        error && typeof error === 'object' && 'code' in (error as any) && 'retryable' in (error as any)
-          ? (error as AutoSaveError)
+        isAutoSaveError(error)
+          ? error
           : error instanceof ProjectLockError
           ? makeError('lock-unavailable', error.message, error.retryable, error, { operation: error.operation })
           : error instanceof Error
           ? makeError('write-failed', error.message, true, error)
-          : makeError('write-failed', 'Unexpected AutoSave failure', true, undefined, { value: error as unknown })
+          : makeError('write-failed', 'Unexpected AutoSave failure', true, undefined, { value: error })
       lastError = autoError
       if (autoError.retryable) {
         retryCount = attempt + 1
