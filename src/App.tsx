@@ -1,12 +1,18 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useSB } from './store'
 import { LeftRight } from './components/LeftRightPanes'
 import { StoryboardList } from './components/StoryboardList'
 import { MergeDock } from './components/MergeDock'
-import { OLLAMA_BASE, setOllamaBase } from './config'
+import {
+  OLLAMA_BASE,
+  setOllamaBase,
+  resolveAutoSaveBootstrapPlan,
+  type AutoSaveBootstrapPlan
+} from './config'
 import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { buildPackage } from './lib/package'
+import { initAutoSave, type AutoSaveInitResult, type AutoSavePhaseGuardSnapshot } from './lib/autosave'
 
 function HelpModal({onClose}:{onClose:()=>void}){
   return (
@@ -24,11 +30,33 @@ function HelpModal({onClose}:{onClose:()=>void}){
   )
 }
 
+export type AutoSaveActivationDecision =
+  | {
+      readonly mode: 'manual-only'
+      readonly guard: AutoSavePhaseGuardSnapshot
+      readonly reason: 'phase-a0-failsafe' | 'feature-flag-disabled'
+    }
+  | {
+      readonly mode: 'autosave'
+      readonly guard: AutoSavePhaseGuardSnapshot
+      readonly reason: 'feature-flag-enabled'
+    }
+
+export function planAutoSave(plan: AutoSaveBootstrapPlan): AutoSaveActivationDecision {
+  if (!plan.guard.featureFlag.value) {
+    const reason = plan.failSafePhase === 'phase-a0' ? 'phase-a0-failsafe' : 'feature-flag-disabled'
+    return { mode: 'manual-only', guard: plan.guard, reason }
+  }
+  return { mode: 'autosave', guard: plan.guard, reason: 'feature-flag-enabled' }
+}
+
 export default function App(){
   const { sb, setSBTitle, addScene } = useSB()
   const [dockOpen, setDockOpen] = useState(()=> (localStorage.getItem('dockOpen')==='0'? false: true))
   const [help, setHelp] = useState(false)
   const [base, setBase] = useState(OLLAMA_BASE)
+  const [autoSavePlan, setAutoSavePlan] = useState<AutoSaveBootstrapPlan | null>(null)
+  const autoSaveRunner = useRef<AutoSaveInitResult | null>(null)
 
   useEffect(()=>{
     function onKey(e: KeyboardEvent){
@@ -55,6 +83,33 @@ export default function App(){
     window.addEventListener('keydown', onKey)
     return ()=> window.removeEventListener('keydown', onKey)
   }, [])
+
+  useEffect(()=>{
+    setAutoSavePlan(resolveAutoSaveBootstrapPlan())
+  }, [])
+
+  useEffect(()=>{
+    if (!autoSavePlan){
+      return
+    }
+
+    const decision = planAutoSave(autoSavePlan)
+    if (decision.mode !== 'autosave'){
+      autoSaveRunner.current?.dispose()
+      autoSaveRunner.current = null
+      return
+    }
+
+    const runner = initAutoSave(() => useSB.getState().sb, {
+      disabled: decision.guard.optionsDisabled
+    })
+    autoSaveRunner.current = runner
+
+    return ()=>{
+      autoSaveRunner.current?.dispose()
+      autoSaveRunner.current = null
+    }
+  }, [autoSavePlan])
 
   return (
     <div className="app">
