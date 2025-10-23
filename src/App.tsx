@@ -30,6 +30,25 @@ function HelpModal({onClose}:{onClose:()=>void}){
   )
 }
 
+type Day8CollectorGuardEvent = {
+  readonly feature: 'autosave-diff-merge'
+  readonly event: 'autosave.guard'
+  readonly blocked: boolean
+  readonly reason: AutoSaveActivationDecision['reason']
+  readonly guard: AutoSavePhaseGuardSnapshot
+  readonly ts: string
+}
+
+interface Day8Collector {
+  publish(event: Day8CollectorGuardEvent): void
+}
+
+const getDay8Collector = (): Day8Collector | undefined => {
+  const scope = globalThis as { Day8Collector?: Day8Collector }
+  const candidate = scope.Day8Collector
+  return candidate && typeof candidate.publish === 'function' ? candidate : undefined
+}
+
 export type AutoSaveActivationDecision =
   | {
       readonly mode: 'manual-only'
@@ -43,11 +62,32 @@ export type AutoSaveActivationDecision =
     }
 
 export function planAutoSave(plan: AutoSaveBootstrapPlan): AutoSaveActivationDecision {
+  if (plan.guard.optionsDisabled) {
+    return { mode: 'manual-only', guard: plan.guard, reason: 'feature-flag-disabled' }
+  }
   if (!plan.guard.featureFlag.value) {
     const reason = plan.failSafePhase === 'phase-a0' ? 'phase-a0-failsafe' : 'feature-flag-disabled'
     return { mode: 'manual-only', guard: plan.guard, reason }
   }
   return { mode: 'autosave', guard: plan.guard, reason: 'feature-flag-enabled' }
+}
+
+export function publishAutoSaveGuard(decision: AutoSaveActivationDecision): void {
+  if (decision.mode !== 'manual-only') {
+    return
+  }
+  const collector = getDay8Collector()
+  if (!collector) {
+    return
+  }
+  collector.publish({
+    feature: 'autosave-diff-merge',
+    event: 'autosave.guard',
+    blocked: true,
+    reason: decision.reason,
+    guard: decision.guard,
+    ts: new Date().toISOString()
+  })
 }
 
 export default function App(){
@@ -56,6 +96,7 @@ export default function App(){
   const [help, setHelp] = useState(false)
   const [base, setBase] = useState(OLLAMA_BASE)
   const [autoSavePlan, setAutoSavePlan] = useState<AutoSaveBootstrapPlan | null>(null)
+  const [autoSaveDecision, setAutoSaveDecision] = useState<AutoSaveActivationDecision | null>(null)
   const autoSaveRunner = useRef<AutoSaveInitResult | null>(null)
 
   useEffect(()=>{
@@ -94,6 +135,7 @@ export default function App(){
     }
 
     const decision = planAutoSave(autoSavePlan)
+    setAutoSaveDecision(decision)
     if (decision.mode !== 'autosave'){
       autoSaveRunner.current?.dispose()
       autoSaveRunner.current = null
@@ -114,6 +156,13 @@ export default function App(){
       autoSaveRunner.current = null
     }
   }, [autoSavePlan])
+
+  useEffect(()=>{
+    if (!autoSaveDecision){
+      return
+    }
+    publishAutoSaveGuard(autoSaveDecision)
+  }, [autoSaveDecision])
 
   return (
     <div className="app">
