@@ -11,6 +11,7 @@
 | --- | --- | --- | --- |
 | `name` | string / 必須 | npm パッケージと同じ命名規約、32 文字以内 | UI・ログに表示。 |
 | `version` | string / 必須 | semver (`major.minor.patch`) | `plugins.reload` の互換判定で使用。 |
+| `engines.vscode` | string / 必須 | semver (`major.minor.patch`) | Bridge との major が一致する必要がある。 |
 | `conimg-api` | string / 必須 | 例: `"1"` または `"1.x"` | 現行は `1` 系のみサポート。 |
 | `entry` | string / 任意 | 既定 `index.js` | webview ローダーに渡されるパス。 |
 | `permissions` | string[] / 任意 | 既定 `[]`。`fs`、`workspace:settings`、`ui:*`、`network:*` 等。 | 未宣言は拒否。 |

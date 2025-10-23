@@ -39,6 +39,8 @@ export interface MergeProfile {
   readonly seed?: string;
 }
 
+export type MergeProfileOverrides = Partial<MergeProfile> & { readonly precision?: MergePrecision };
+
 export interface MergeSectionDescriptor {
   readonly id: string;
   readonly label: string;
@@ -187,7 +189,7 @@ export interface MergeEventHub {
 }
 
 export interface MergeEngineOptions {
-  readonly profile?: Partial<MergeProfile>;
+  readonly profile?: MergeProfileOverrides;
   readonly scoring?: MergeScoringStrategy;
   readonly telemetry?: MergeTelemetrySink;
   readonly events?: MergeEventHub;
@@ -197,7 +199,7 @@ export interface MergeEngineOptions {
 
 export interface MergeEngine {
   readonly merge3: (input: MergeInput, options?: MergeEngineOptions) => MergeResult;
-  readonly resolveProfile: (overrides?: Partial<MergeProfile>) => ResolvedMergeProfile;
+  readonly resolveProfile: (overrides?: MergeProfileOverrides) => ResolvedMergeProfile;
   readonly score: MergeScoringStrategy;
 }
 
@@ -208,9 +210,24 @@ export interface MergeTraceEntry {
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
+export interface MergeTraceDecisionEntry {
+  readonly hunkId: string;
+  readonly section: string | null;
+  readonly decision: MergeDecision;
+  readonly similarity: number;
+  readonly threshold: number;
+}
+
+export interface MergeTraceSummary {
+  readonly threshold: number;
+  readonly autoAdoptionRate: number;
+}
+
 export interface MergeTrace {
   readonly sceneId: string;
   readonly entries: readonly MergeTraceEntry[];
+  readonly decisions: readonly MergeTraceDecisionEntry[];
+  readonly summary: MergeTraceSummary;
 }
 
 export type MergePipelineStage = 'segment' | 'score' | 'decide' | 'queue';
@@ -387,6 +404,7 @@ const PRECISION_CONFIG: Record<MergePrecision, {
   readonly reviewDelta: (threshold: number) => number;
   readonly weights: { readonly jaccard: number; readonly cosine: number };
   readonly lockPolicy: 'strict' | 'advisory';
+  readonly thresholdClamp: (value: number) => number;
 }> = {
   legacy: {
     min: 0.65,
@@ -394,6 +412,7 @@ const PRECISION_CONFIG: Record<MergePrecision, {
     reviewDelta: (threshold) => threshold - 0.04,
     weights: { jaccard: 0.5, cosine: 0.5 },
     lockPolicy: 'strict',
+    thresholdClamp: (value) => Math.max(value, 0.65),
   },
   beta: {
     min: 0.75,
@@ -401,6 +420,7 @@ const PRECISION_CONFIG: Record<MergePrecision, {
     reviewDelta: (threshold) => threshold - 0.02,
     weights: { jaccard: 0.4, cosine: 0.6 },
     lockPolicy: 'strict',
+    thresholdClamp: (value) => clamp(value, 0.68, 0.9),
   },
   stable: {
     min: 0.82,
@@ -408,6 +428,7 @@ const PRECISION_CONFIG: Record<MergePrecision, {
     reviewDelta: (threshold) => threshold - 0.01,
     weights: { jaccard: 0.3, cosine: 0.7 },
     lockPolicy: 'strict',
+    thresholdClamp: (value) => clamp(value, 0.7, 0.94),
   },
 };
 
@@ -436,12 +457,33 @@ function normalizePrecision(value?: string | null): MergePrecision {
   return PRECISION_FALLBACK;
 }
 
-function resolvePrecision(overrides?: Partial<MergeProfile>): MergePrecision {
+function resolvePrecision(overrides?: MergeProfileOverrides): MergePrecision {
   const envPrecision = typeof process !== 'undefined' && typeof process.env !== 'undefined'
     ? process.env.MERGE_PRECISION
     : undefined;
-  const candidate = (overrides as { precision?: string })?.precision ?? envPrecision;
+  const candidate = overrides?.precision ?? envPrecision;
   return normalizePrecision(candidate ?? undefined);
+}
+
+function parseThreshold(value?: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseFloat(value);
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+  return undefined;
+}
+
+function resolveThreshold(precision: MergePrecision, overrides?: MergeProfileOverrides): number {
+  const config = PRECISION_CONFIG[precision];
+  const overrideValue = overrides?.threshold;
+  const envThreshold = typeof process !== 'undefined' && typeof process.env !== 'undefined'
+    ? parseThreshold(process.env.CONIMG_MERGE_THRESHOLD ?? null)
+    : undefined;
+  const base = overrideValue ?? envThreshold ?? DEFAULT_MERGE_PROFILE.threshold;
+  return config.thresholdClamp(base);
 }
 
 function ensureNotAborted(signal?: AbortSignal): void {
@@ -694,19 +736,40 @@ function buildPlan(decisions: readonly SectionDecision[], profile: ResolvedMerge
   };
 }
 
-function buildTrace(sceneId: string | undefined, stages: readonly MergeTraceEntry[]): MergeTrace {
+function buildTrace(
+  sceneId: string | undefined,
+  stages: readonly MergeTraceEntry[],
+  profile: ResolvedMergeProfile,
+  hunks?: readonly MergeHunk[],
+): MergeTrace {
+  const decisions = (hunks ?? []).map<MergeTraceDecisionEntry>((hunk) => ({
+    hunkId: hunk.id,
+    section: hunk.section,
+    decision: hunk.decision,
+    similarity: hunk.similarity,
+    threshold: profile.threshold,
+  }));
+  const total = decisions.length;
+  const auto = decisions.filter((entry) => entry.decision === 'auto').length;
+  const autoAdoptionRate = total === 0 ? 1 : auto / total;
   return {
     sceneId: sceneId ?? 'unknown',
     entries: stages,
+    decisions,
+    summary: {
+      threshold: profile.threshold,
+      autoAdoptionRate,
+    },
   };
 }
 
-const resolveProfileInternal = (overrides?: Partial<MergeProfile>): ResolvedMergeProfile => {
+const resolveProfileInternal = (overrides?: MergeProfileOverrides): ResolvedMergeProfile => {
   const precision = resolvePrecision(overrides);
+  const threshold = resolveThreshold(precision, overrides);
   const baseProfile: MergeProfile = {
     tokenizer: overrides?.tokenizer ?? DEFAULT_MERGE_PROFILE.tokenizer,
     granularity: overrides?.granularity ?? DEFAULT_MERGE_PROFILE.granularity,
-    threshold: overrides?.threshold ?? DEFAULT_MERGE_PROFILE.threshold,
+    threshold,
     prefer: overrides?.prefer ?? DEFAULT_MERGE_PROFILE.prefer,
     seed: overrides?.seed ?? DEFAULT_MERGE_PROFILE.seed,
   };
@@ -785,7 +848,7 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
           hunk: decision.hunk,
           sceneId: input.sceneId ?? 'unknown',
           retryable: decision.hunk.decision !== 'auto',
-          trace: buildTrace(input.sceneId, stages),
+          trace: buildTrace(input.sceneId, stages, profile, decisions.map((entry) => entry.hunk)),
         };
         options.events.publish(event);
       }
@@ -822,7 +885,7 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
       }
     }
 
-    const finalTrace = buildTrace(input.sceneId, stages);
+    const finalTrace = buildTrace(input.sceneId, stages, profile, hunks);
     const mergeResult: MergeResult = { hunks, mergedText, stats: finalStats, trace: finalTrace };
 
     options?.telemetry?.({ type: 'merge:finish', sceneId: input.sceneId ?? 'unknown', profile, stats: finalStats, trace: finalTrace });

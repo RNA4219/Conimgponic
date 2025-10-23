@@ -71,13 +71,14 @@
 ### 優先順位
 
 1. **ビルド時環境変数**: `import.meta.env` から `VITE_AUTOSAVE_ENABLED`（`"true" | "false"`）、`VITE_MERGE_PRECISION`（`"legacy" | "beta" | "stable"`）を読み取る。CI/CLI 出力向けに `process.env` もフォールバックで許容し、既存 `scripts/config-dump.ts` からの読み取り互換を維持する。
-2. **ブラウザ `localStorage`**: キーは後方互換のため `autosave.enabled`・`merge.precision` のまま保持し、値は JSON 文字列ではなくプレーン文字列を想定（例: `'true'`, `'beta'`）。無効値は読み捨てる。
-3. **既定値**: 本ドキュメント先頭の JSON を `DEFAULT_FLAGS` として `src/config/flags.ts` に内包する。どの入力ソースでも値が確定しない場合はこの既定値を採用する。
+2. **VSCode 設定 (`conimg.*`)**: `workspace.get('conimg.autosave.enabled')` / `workspace.get('conimg.merge.threshold')` を Phase ガード条件へ反映する。`conimg.merge.threshold` は `0.75` 以上で `beta`、`0.82` 以上で `stable` とみなし、それ以外は `legacy`。設定値が `NaN` や範囲外の場合はエラーとして記録し、次順位へフォールバックする。
+3. **ブラウザ `localStorage`**: キーは後方互換のため `autosave.enabled`・`merge.precision` のまま保持し、値は JSON 文字列ではなくプレーン文字列を想定（例: `'true'`, `'beta'`）。無効値は読み捨てる。
+4. **既定値**: 本ドキュメント先頭の JSON を `DEFAULT_FLAGS` として `src/config/flags.ts` に内包する。どの入力ソースでも値が確定しない場合はこの既定値を採用する。
 
 ### FlagSnapshot
 
 - `resolveFlags()` は `FlagSnapshot` を返却し、`autosave`・`merge` の各フラグに対して `value`・`source`・`errors` を収集する。
-- `source` は `'env' | 'localStorage' | 'default'` のいずれかであり、UI/Collector が Phase 判定やテレメトリ整合性を検証する際のキーとなる。
+- `source` は `'env' | 'workspace' | 'localStorage' | 'default'` のいずれかであり、UI/Collector が Phase 判定やテレメトリ整合性を検証する際のキーとなる。
 - `updatedAt` は `ResolveOptions.clock()`（既定: `() => new Date()`）から得た ISO8601 文字列で記録し、`docs/AUTOSAVE-DESIGN-IMPL.md` における AutoSave フェーズ遷移ログと相関させる。
 
 ### 解決シーケンス（設計メモ）
@@ -86,10 +87,13 @@
 flowchart TD
     Start([resolveFlags]) --> EnvCheck{{import.meta.env?}}
     EnvCheck -- valid --> EnvHit[autosave.enabled / merge.precision ← env]
-    EnvCheck -- missing/invalid --> StorageCheck{window.localStorage?}
+    EnvCheck -- missing/invalid --> WorkspaceCheck{{VSCode workspace?}}
+    WorkspaceCheck -- valid --> WorkspaceHit[conimg.* から Phase 判定]
+    WorkspaceCheck -- missing/invalid --> StorageCheck{window.localStorage?}
     StorageCheck -- valid --> StorageHit[値を coercer で検証して採用]
     StorageCheck -- missing/invalid --> DefaultHit[DEFAULT_FLAGS から既定値]
     EnvHit --> Snapshot[FlagSnapshot 作成]
+    WorkspaceHit --> Snapshot
     StorageHit --> Snapshot
     DefaultHit --> Snapshot
     Snapshot --> Telemetry[App/Merge へ source + errors を伝搬]
@@ -104,10 +108,23 @@ flowchart TD
 - `localStorage` のホットリロードは Phase B まで延期し、当面はタブ再読み込みでのみ値を反映する（パフォーマンス ±5% 以内を保証）。
 - CLI/JSON 出力向けには同一ロジックを `resolveFlags({ storage: null })` で再利用し、`localStorage` レイヤーをスキップして `env → default` 順に評価する。
 
+### VSCode 設定マッピングと Phase ガード
+
+| VSCode 設定キー | 解決対象 | 判定ロジック | Collector 送出 | 備考 |
+| --- | --- | --- | --- | --- |
+| `conimg.autosave.enabled` | `autosave.enabled` | boolean coercer (`true` / `false` / `1` / `0`) | `flag_resolution.source='workspace'`、`autosave.phase` を `disabled/idle` へ同期。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L61-L209】 | env が true の場合は Phase ガード解除済みとして扱い、設定が false でもフェールセーフは env 優先。 |
+| `conimg.merge.threshold` | `merge.precision` | `0.82` 以上→`stable`、`0.75` 以上→`beta`、その他→`legacy`。範囲外/NaN は `invalid-precision` として記録。 | `flag_resolution.precision` に加えて `threshold` を Collector へ添付し、Analyzer が Phase 遷移監視に利用。【F:Day8/docs/day8/design/03_architecture.md†L1-L39】 | VSCode 設定は Phase rollback 提案時に Slack テンプレ (`templates/alerts/rollback.md`) と同期する。 |
+
+### Telemetry / Collector 連携設計
+
+1. `resolveFlags()` 実行ごとに `flag_resolution` イベントを Collector へ送出し、`{ phaseGuard, autosave: { enabled, source }, merge: { precision, source, threshold? }, updatedAt }` を JSONL append。Day8 Pipeline は Analyzer で Phase 逸脱を集計し、Reporter が `reports/today.md` へ反映する。【F:Day8/docs/day8/design/03_architecture.md†L1-L39】
+2. Phase A フェールセーフにより `source='default' | 'localStorage'` の場合は `autosave.phase='disabled'` を維持し、Collector では `guardFallback=true` を付与する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L85】
+3. VSCode 設定が env と競合した際は `conflict=true` を付与し、Reporter がロールバック推奨を生成する。追加メタデータは 2 フィールドであり、Collector の処理コストは ±5% 以内。
+
 ## `src/config/flags.ts` 設計
 
--```ts
-export type FlagSource = 'env' | 'localStorage' | 'default'
+```ts
+export type FlagSource = 'env' | 'workspace' | 'localStorage' | 'default'
 
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 
@@ -143,11 +160,11 @@ export interface FlagSnapshot {
   readonly updatedAt: string
 }
 
-export interface ResolveOptions {
-  readonly env?: Record<string, unknown>
-  readonly storage?: Pick<Storage, 'getItem'> | null
-  readonly clock?: () => Date
-}
+export type FlagCoerceResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: FlagValidationIssue }
+
+export type FlagCoercer<T> = (raw: string) => FlagCoerceResult<T>
 
 export interface FlagDefinition<T> {
   readonly name: string
@@ -156,12 +173,24 @@ export interface FlagDefinition<T> {
   readonly legacyStorageKeys?: readonly string[]
   readonly defaultValue: T
   readonly coerce?: FlagCoercer<T>
+  readonly workspaceKey?: string
+}
+
+export interface ResolveOptions {
+  readonly env?: Record<string, unknown>
+  readonly storage?: Pick<Storage, 'getItem'> | null
+  readonly workspace?: WorkspaceConfiguration | null
+  readonly clock?: () => Date
 }
 
 export type FeatureFlagName = 'autosave.enabled' | 'merge.precision'
 
 export type FeatureFlagValue<Name extends FeatureFlagName> =
   (typeof FEATURE_FLAG_DEFINITIONS)[Name]['defaultValue']
+
+export type WorkspaceConfiguration =
+  | { readonly get: (key: string) => unknown }
+  | Record<string, unknown>
 
 export const DEFAULT_FLAGS = {
   autosave: {
@@ -187,10 +216,10 @@ export function resolveFeatureFlag<Name extends FeatureFlagName>(
   name: Name,
   options?: ResolveOptions
 ): FlagValueSnapshot<FeatureFlagValue<Name>>
-```
+
 
 - `DEFAULT_FLAGS` は冒頭 JSON と同じ構造を `as const` で保持し、`defaultValue` 更新時の後方互換を担保する。
-- `FlagValueSnapshot.source` に `'env' | 'localStorage' | 'default'` を格納し、App/Merge UI からのテレメトリ一致を保証する。
+- `FlagValueSnapshot.source` に `'env' | 'workspace' | 'localStorage' | 'default'` を格納し、App/Merge UI からのテレメトリ一致を保証する。
 - `updatedAt` は `clock()`（既定: `() => new Date()`）で決定し、テストではフェイククロックで固定する。
 - 2025-01-18 設計更新: 本節と `src/config/flags.ts` の定義差分はゼロ（`import.meta.env` / `process.env` マージ、`FlagSnapshot.updatedAt` の仕様を確認済み）。
 
