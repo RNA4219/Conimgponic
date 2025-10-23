@@ -855,14 +855,22 @@ export function initAutoSave(
   }
   if (options?.disabled === true || !resolveFlag()) {
     const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
-    return { snapshot: () => ({ ...snapshot }), flushNow: async () => { throw disabledError() }, dispose: () => {} }
+    return {
+      snapshot: () => ({ ...snapshot }),
+      flushNow: async () => { throw disabledError() },
+      dispose: () => {},
+      markDirty: () => {}
+    }
   }
   const encoder = new TextEncoder()
+  const pendingQueue: AutoSaveQueueEntry[] = []
+  const phaseGuardEnabled = flagSnapshot?.autosave?.phase === 'phase-a'
   let phase: AutoSavePhase = 'idle'
   let retryCount = 0
   let lastSuccessAt: string | undefined
   let pendingBytes = 0
   let lastError: AutoSaveError | undefined
+  let queuedGeneration = 0
   let disposed = false, retryTimer: ReturnType<typeof setTimeout> | null = null
   const updateIndex = async (ts: string, bytes: number, payload: string) => {
     const path = 'project/autosave/index.json', tmp = `${path}.tmp`, current = (await loadJSON(path)) as { entries?: AutoSaveHistoryEntry[] } | null, key = sanitizeTimestamp(ts)
@@ -887,7 +895,7 @@ export function initAutoSave(
         if (disposed) throw disabledError()
         phase = 'writing-current'; await saveText('project/autosave/current.json.tmp', payload); await renameFile('project/autosave/current.json.tmp', 'project/autosave/current.json')
         phase = 'updating-index'; const ts = new Date().toISOString(); await updateIndex(ts, pendingBytes, payload)
-        phase = 'gc'; lastSuccessAt = ts; pendingBytes = 0; retryCount = 0; lastError = undefined; phase = disposed ? 'disabled' : 'idle'
+        phase = 'gc'; lastSuccessAt = ts; pendingQueue.length = 0; queuedGeneration = 0; pendingBytes = 0; retryCount = 0; lastError = undefined; phase = disposed ? 'disabled' : 'idle'
       }, { preferredStrategy: 'web-lock' })
     } catch (error) {
       if (disposed) throw disabledError()
@@ -924,17 +932,45 @@ export function initAutoSave(
       throw autoError
     }
   }
-  const snapshot = (): AutoSaveStatusSnapshot => ({ phase: disposed ? 'disabled' : phase, lastSuccessAt, pendingBytes, lastError, retryCount })
+  const snapshot = (): AutoSaveStatusSnapshot => ({
+    phase: disposed ? 'disabled' : phase,
+    lastSuccessAt,
+    pendingBytes,
+    lastError,
+    retryCount,
+    ...(queuedGeneration > 0 ? { queuedGeneration } : {})
+  })
   return {
     snapshot,
     flushNow: async () => {
       if (disposed) throw disabledError()
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+      if (pendingQueue.length > 0) {
+        pendingQueue.shift()
+        queuedGeneration = pendingQueue.length
+      }
       await runFlush(0)
     },
     dispose: () => {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
-      disposed = true; phase = 'disabled'; pendingBytes = 0
+      disposed = true; phase = 'disabled'; pendingBytes = 0; pendingQueue.length = 0; queuedGeneration = 0
+    },
+    markDirty: (meta) => {
+      if (disposed) return
+      const hasPending = typeof meta?.pendingBytes === 'number' && Number.isFinite(meta.pendingBytes)
+      if (hasPending) {
+        const normalized = Math.max(0, Math.trunc(meta!.pendingBytes!))
+        pendingBytes = normalized
+      }
+      const estimated = pendingBytes
+      pendingQueue.push({ ts: new Date().toISOString(), reason: 'change', estimatedBytes: estimated, retries: 0 })
+      if (pendingQueue.length > AUTOSAVE_QUEUE_POLICY.maxPending) {
+        pendingQueue.splice(0, pendingQueue.length - AUTOSAVE_QUEUE_POLICY.maxPending)
+      }
+      queuedGeneration = pendingQueue.length
+      if (phase === 'idle' || phase === 'debouncing' || phase === 'dirty') {
+        phase = phaseGuardEnabled ? 'dirty' : 'debouncing'
+      }
     }
   }
 }

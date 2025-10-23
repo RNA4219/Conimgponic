@@ -29,6 +29,15 @@ scenario('scheduler transitions debouncing → awaiting-lock → gc with fake ti
   assert.equal(collectorEvents.length, 0)
 })
 
+scenario('markDirty transitions snapshot to debouncing and updates pendingBytes', async (_t, ctx) => {
+  const { initAutoSave } = ctx as any
+  const runner = initAutoSave(() => ({ nodes: [{ id: 'delta' }] } as any), { disabled: false })
+  runner.markDirty({ pendingBytes: 2048 })
+  const snap = runner.snapshot()
+  assert.equal(snap.phase, 'debouncing')
+  assert.equal(snap.pendingBytes, 2048)
+})
+
 scenario('history guard enforces 20 generations and 50MB capacity', async (_t, ctx) => {
   const { initAutoSave, opfs, AUTOSAVE_POLICY } = ctx as any
   const runner = initAutoSave(() => ({ nodes: [{ id: 'beta' }] } as any), { disabled: false })
@@ -36,8 +45,13 @@ scenario('history guard enforces 20 generations and 50MB capacity', async (_t, c
   for (let i = 0; i < AUTOSAVE_POLICY.maxGenerations + 2; i++){
     collectorEvents.push(await runner.flushNow().catch((error: unknown) => error))
   }
-  const historyKeys = Array.from(opfs.files.keys()).filter((key) => key.startsWith('project/autosave/history/'))
-  const totalBytes = historyKeys.reduce((sum, key) => sum + Buffer.byteLength(opfs.files.get(key) ?? '', 'utf8'), 0)
+  const historyKeys = Array.from(opfs.files.keys() as IterableIterator<string>).filter((key) =>
+    key.startsWith('project/autosave/history/')
+  )
+  const totalBytes = historyKeys.reduce<number>(
+    (sum, key) => sum + Buffer.byteLength((opfs.files.get(key) as string | undefined) ?? '', 'utf8'),
+    0
+  )
   assert.equal(historyKeys.length, AUTOSAVE_POLICY.maxGenerations)
   assert.ok(totalBytes <= AUTOSAVE_POLICY.maxBytes)
   assert.ok(collectorEvents.every((entry) => entry === undefined))
