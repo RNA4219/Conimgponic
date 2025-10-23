@@ -50,6 +50,22 @@ sequenceDiagram
 - `docs/CONFIG_FLAGS.md` で定義された優先順位（env → localStorage → 既定値）を `src/config/flags.ts` が忠実に再現することをレビュー観点として固定する。【F:docs/CONFIG_FLAGS.md†L57-L90】
 - `FlagSnapshot.source` によって、後方互換のための `localStorage` 直接参照を段階的に排除しながらも既存 UI の動作確認が容易になる前提を保持する。
 
+#### 0.2.2 Phase ガード解除時の挙動整理
+Phase ガード（`autosave.enabled=false` + `AutoSaveOptions.disabled=true`）を順次解除する際は、段階ごとに UI とロック制御の既定値が変化する。切替点を明示し、ロールバック条件と一致させる。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L66】【F:docs/AUTOSAVE-INDICATOR-UI.md†L122-L176】
+
+| 移行フェーズ | フラグ既定値 (`autosave.enabled`) | UI 表示の変化 | ロック/保存ポリシーの変化 | ロールバック条件 |
+| --- | --- | --- | --- | --- |
+| Phase A (初期) | `false` | Indicator 非表示。`snapshot().phase='disabled'` を固定 | 保存ジョブ・ロック取得とも停止 | フラグ反転後も `snapshot().phase` が `disabled` のまま 3 回継続 |
+| Phase A-1 | `true` (限定ロールアウト) | Indicator 表示、`Retry` 非表示、履歴 CTA 非活性 | 保存は固定ポリシー（デバウンス500ms/アイドル2s）、ロック警告はトーストのみ | `lock:readonly-entered` が 24h 以内に連続 5 回以上発火 |
+| Phase B | `true` (既定) | Retry CTA・履歴ドロップダウンを有効化 | Web Lock 優先 + `.lock` フォールバックを本番化 | `lock:warning(fallback-engaged)` が総保存数の 5% を超過 |
+| Phase C | `true` + Precision `beta/stable` | Diff Merge 連動、Readonly 時の履歴 CTA を primary 強調 | ハートビート間隔の動的調整と保存ポリシー可変化 | `autosave:failure` (retryable=false) が 3 連続発生 |
+
+##### 段階導入チェックリスト
+- [ ] フラグの既定値変更に合わせて `docs/CONFIG_FLAGS.md` とリリースノートを更新したか
+- [ ] ReadOnly 降格発生率を `reports/today.md` で観測し、上限を超えた場合にロールバック手順を準備したか
+- [ ] `ui.autosaveIndicator.*` テレメトリの送信量を Collector SLO（±5%）内に収めるようレート制御を設定したか
+- [ ] `Day8/docs/day8/design/03_architecture.md` の責務境界（Collector/Analyzer/Reporter）と矛盾する副作用を追加していないか
+
 ### 0.3 MergeDock / DiffMergeView タブ棚卸し
 | コンポーネント | 露出タブ / ペイン | 補足 | 出典 |
 | --- | --- | --- | --- |
@@ -150,6 +166,20 @@ stateDiagram-v2
 | `releaseProjectLock` | AutoSave 終了・手動保存 | `Acquired → Releasing → Idle` | `lock:release-requested` → `lock:released` / `lock:error` / `lock:readonly-entered` | 冪等性確保のため Web Lock と `.lock` を順に解放し、失敗が残っても readonly 降格で UI へ共有。 |
 | `withProjectLock` | CLI / バッチ | `Idle` から各状態 | Acquire/Renew/Release のイベントを合成 | `renewIntervalMs` 未指定時は `ttlMillis-5000` を採用し、`onReadonly` コールバックで UI 通知。 |
 | `subscribeLockEvents` | UI / Telemetry | - | 任意の `lock:*` イベント | `Set` ベースの購読管理。解除後はイベント配送を停止。 |
+
+##### 1.2.1 AutoSaveIndicator イベント購読一覧
+`AutoSaveIndicator` は AutoSave ランナーとロックモジュールの双方から状態を受け取り、`snapshot()` だけでは補足できない状態（再試行回数・ReadOnly 遷移など）を描画へ反映する。Phase A ガード下でも下記イベントを購読することで UI とテレメトリの一貫性を担保する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L27-L87】【F:docs/AUTOSAVE-INDICATOR-UI.md†L79-L176】
+
+| 種別 | イベント | 主なトリガー | AutoSaveIndicator の利用目的 |
+| --- | --- | --- | --- |
+| AutoSave Runner | `autosave:progress` | `debouncing`→`awaiting-lock` などフェーズ遷移時 | スピナー表示・`aria-busy` 切替、次フェーズ候補のハイライト更新 |
+| AutoSave Runner | `autosave:success` | 保存完了 (`phase='idle'`) | 「最新状態」ラベル更新、履歴アクセスを `available` へ復帰しテレメトリ `phaseChanged` を発火 |
+| AutoSave Runner | `autosave:failure` | 再試行可否を伴う失敗 (`retryable` 含む) | バナー/トーストの分岐、`Retry` CTA の表示可否制御、`errorShown` テレメトリ送信 |
+| ロック | `lock:attempt` / `lock:waiting` | ロック取得開始・バックオフ | ReadOnly への降格前兆として `Retry` ボタンを抑止し、状態テキストを「ロック取得中」へ更新 |
+| ロック | `lock:acquired` / `lock:renewed` | ロック獲得・ハートビート更新 | ReadOnly 解除後の復帰表示、およびリトライ回数リセット |
+| ロック | `lock:warning(*)` | フォールバック有効化・ハートビート遅延 | バナーの警告表示と Collector テレメトリ `ui.autosaveIndicator.warningShown`（後続拡張）への橋渡し |
+| ロック | `lock:readonly-entered` | 衝突・リース期限切れ | 閲覧専用バナーの描画、履歴操作の `disabled` 化、ReadOnly テレメトリ発火 |
+| ロック | `lock:released` | dispose や flush による解放完了 | Phase A の再初期化シグナルとして `snapshot()` 再取得を促し、ステータス行をリセット |
 
 #### 1.3 イベントタイムライン（参考）
 ```mermaid
