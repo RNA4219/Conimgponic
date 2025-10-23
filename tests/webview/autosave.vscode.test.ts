@@ -13,7 +13,8 @@ import { resolveFlags } from '../../src/config'
 import {
   createVscodeAutoSaveBridge,
   type AutoSaveAtomicWriteResult,
-  type AutoSaveTelemetryEvent
+  type AutoSaveTelemetryEvent,
+  type AutoSaveTelemetryEventProperties
 } from '../../src/platform/vscode/autosave'
 
 const guardEnabled: AutoSavePhaseGuardSnapshot = {
@@ -199,6 +200,66 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(resultEvent.properties?.phaseAfter, 'idle')
     assert.equal(resultEvent.properties?.flagSource, guardEnabled.featureFlag.source)
     assert.equal(resultEvent.properties?.lockStrategy, 'web-lock')
+  })
+
+  it('reportDirty/handleSnapshotRequest telemetry carries phase metadata', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    let tick = 0
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      now: () => {
+        const ts = new Date('2024-01-01T00:00:00.000Z')
+        ts.setMilliseconds(tick * 250)
+        tick += 1
+        return ts
+      },
+      sendMessage: () => {},
+      atomicWrite: async () => ({
+        ok: true,
+        bytes: 2048,
+        generation: 3,
+        lastSuccessAt: new Date('2024-01-01T00:00:04.000Z').toISOString(),
+        lockStrategy: 'web-lock'
+      }),
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(2048, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-phase', 'corr-phase', guardEnabled, 2048, 3)
+    )
+
+    const expectPhases = (
+      event: AutoSaveTelemetryEvent | undefined,
+      phases: { before: AutoSaveTelemetryEventProperties['phaseBefore']; after: AutoSaveTelemetryEventProperties['phaseAfter']; lock: AutoSaveTelemetryEventProperties['lockStrategy'] }
+    ): void => {
+      assert.ok(event, 'telemetry event should exist')
+      assert.equal(event.properties?.phaseBefore, phases.before)
+      assert.equal(event.properties?.phaseAfter, phases.after)
+      assert.equal(event.properties?.flagSource, guardEnabled.featureFlag.source)
+      assert.equal(event.properties?.lockStrategy, phases.lock)
+    }
+
+    const dirtyEvent = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'dirty'
+    )
+    expectPhases(dirtyEvent, { before: 'idle', after: 'debouncing', lock: 'none' })
+
+    const savingEvent = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'saving'
+    )
+    expectPhases(savingEvent, { before: 'debouncing', after: 'awaiting-lock', lock: 'none' })
+
+    const resultEvent = telemetry.find(
+      (event) => event.name === 'autosave.snapshot.result' && event.properties?.ok === true
+    )
+    expectPhases(resultEvent, { before: 'awaiting-lock', after: 'idle', lock: 'web-lock' })
+
+    const savedEvent = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'saved'
+    )
+    expectPhases(savedEvent, { before: 'awaiting-lock', after: 'idle', lock: 'web-lock' })
   })
 
   it('enforces history max generations and size limit', async () => {
