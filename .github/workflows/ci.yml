@@ -166,7 +166,10 @@ jobs:
         run: mkdir -p reports
 
       - name: Generate JUnit report
-        run: pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml
 
       - name: Build
         run: |

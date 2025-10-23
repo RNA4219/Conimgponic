@@ -69,20 +69,22 @@ describe('ci workflow build job', () => {
         'pnpm test --filter collector',
         'pnpm test --filter telemetry',
         'pnpm test -- --test-coverage',
-        'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml',
-      ]);
+        'pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml',
+      ];
 
-      assert.deepStrictEqual(
-        pnpmCommands.filter((command) => command.includes('--filter ')),
-        [
-          'pnpm test --filter autosave',
-          'pnpm test --filter merge',
-          'pnpm test --filter cli',
-          'pnpm test --filter collector',
-          'pnpm test --filter telemetry',
-        ],
-        'build job must run targeted filter suites in order',
-      );
+      let cursor = -1;
+
+      for (const expected of expectedSequence) {
+        const nextIndex = runCommands.findIndex((command, index) => index > cursor && command.includes(expected));
+
+        assert.notStrictEqual(
+          nextIndex,
+          -1,
+          `build job must include a step running "${expected}" after index ${cursor}`,
+        );
+
+        cursor = nextIndex;
+      }
 
       const artifactSteps = steps.filter(isUploadArtifactStep);
 
