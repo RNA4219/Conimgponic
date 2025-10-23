@@ -158,8 +158,16 @@ sequenceDiagram
   1. `dirty→saving→saved` の状態遷移とテレメトリ発火回数。
   2. 20 世代 / 50MB ガードの FIFO / 容量制御。
   3. 非 retryable エラー時の Readonly 降格（`status.autosave` → `disabled`）。
-  4. `.lock` フォールバック利用時の warn テレメトリ送出。
-  5. Phase ガード無効化時に永続化をショートサーキットする。
+  4. VS Code `workspace` 設定から `resolveFlags({ workspace })` で得た `FlagSnapshot` を `bridge.bootstrap` 経由で Webview へ渡し、Phase ガードのソースが `workspace` になる RED ケース。
+  5. `.lock` フォールバック利用時の warn テレメトリ送出。
+  6. Phase ガード無効化時に永続化をショートサーキットする。
+
+### 3.6 FlagSnapshot ブートストラップと設定読み出しモジュール
+
+- 新設モジュール: `src/platform/vscode/flags.ts`（仮）。VS Code 拡張側で `vscode.workspace.getConfiguration('conimg')` を受け取り、`resolveFlags({ workspace })` を呼び出して `FlagSnapshot` を確定する。時計は `ResolveOptions.clock` を渡し、Day8 Collector が `flag_resolution` の `evaluation_ms` を ±5% 監視できるよう固定する【F:Day8/docs/day8/design/03_architecture.md†L15-L44】。
+- API: `resolveWorkspaceFlags(workspace: WorkspaceConfiguration): FlagSnapshot`、`deriveAutoSavePhaseGuard(snapshot: FlagSnapshot): AutoSavePhaseGuardSnapshot`、`createAutoSaveBootstrapPayload(snapshot, policy)` を公開する。前者 2 つで Phase ガードの `featureFlag.value/source` を統一し、後者で `bridge.bootstrap` メッセージ `{ policy, guard, flags: snapshot }` を生成する。
+- 適用箇所: `createVscodeAutoSaveBridge` を初期化する際に `deriveAutoSavePhaseGuard()` の結果を `initialGuard` へ渡し、同じ `FlagSnapshot` を Webview 初期化 (`panel.webview.postMessage`) の `bridge.bootstrap` として送信する。これにより UI 側の Phase ガードと拡張ホストのステートマシンが同一ソースで同期する【F:docs/src-1.35_addon/extension.sample.ts†L31-L78】。
+- `plugins.reload` 連携: `deriveAutoSavePhaseGuard()` が返す `guard.featureFlag` と `snapshot.autosave` の `phase` を `PluginPhaseGuard.ensureReloadAllowed('plugins:reload')` の判定材料に供給し、AutoSave が `disabled` のフェーズではプラグイン再読み込みを拒否して `notifyUser=true` の `reload-error` を発行する。Collector には `flag_resolution` / `status.autosave` 双方で `source`（`env` / `workspace` など）、`phase`（`disabled` / `debouncing` など）、`notifyUser`（UI 通知要否）を含めることで、Day8 Analyzer が Rollback 判定とユーザー通知の両立を図れるようにする【F:Day8/docs/day8/design/03_architecture.md†L24-L41】【F:src/platform/vscode/plugins/index.ts†L44-L133】。
 - これらは `docs/src-1.35_addon/TEST-PLAN.md` の VS Code ブリッジ節と整合し、Collector/Telemetry の最小イベント集合（`autosave.status` / `autosave.snapshot.result` / `autosave.lock.fallback`）を検証する。
 
 

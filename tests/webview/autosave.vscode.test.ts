@@ -9,6 +9,7 @@ import {
   type AutoSaveSnapshotResultMessage,
   type AutoSaveStatusMessage
 } from '../../src/lib/autosave'
+import { resolveFlags } from '../../src/config'
 import { createVscodeAutoSaveBridge, type AutoSaveAtomicWriteResult } from '../../src/platform/vscode/autosave'
 
 const guardEnabled: AutoSavePhaseGuardSnapshot = {
@@ -49,6 +50,52 @@ const createRequest = (
 })
 
 describe('createVscodeAutoSaveBridge', () => {
+  it('bootstrap で workspace 由来の FlagSnapshot を伝搬する', () => {
+    const workspace = {
+      get: (key: string): unknown => {
+        if (key === 'conimg.autosave.enabled') {
+          return 'false'
+        }
+        if (key === 'conimg.merge.threshold') {
+          return 'beta'
+        }
+        return undefined
+      }
+    }
+    const sent: AutoSaveBridgeMessage[] = []
+    const snapshot = resolveFlags({
+      workspace,
+      storage: null,
+      env: {},
+      clock: () => new Date('2024-01-02T00:00:00.000Z')
+    })
+    const expectedGuard: AutoSavePhaseGuardSnapshot = {
+      featureFlag: {
+        value: snapshot.autosave.value,
+        source: snapshot.autosave.source
+      },
+      optionsDisabled: !snapshot.autosave.value
+    }
+
+    createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: expectedGuard,
+      now: () => new Date('2024-01-02T00:00:00.000Z'),
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => {
+        throw new Error('bootstrap で atomicWrite を呼ばない')
+      }
+    })
+
+    const bootstrap = sent.find((message) => message.type === 'bridge.bootstrap') as any
+    assert.ok(bootstrap, 'workspace 由来の FlagSnapshot を含む bootstrap メッセージが必要')
+    assert.equal(bootstrap.payload.guard.featureFlag.value, expectedGuard.featureFlag.value)
+    assert.equal(bootstrap.payload.guard.featureFlag.source, expectedGuard.featureFlag.source)
+    assert.equal(bootstrap.payload.flags.autosave.value, snapshot.autosave.value)
+    assert.equal(bootstrap.payload.flags.autosave.source, snapshot.autosave.source)
+    assert.equal(bootstrap.payload.flags.merge.source, snapshot.merge.source)
+  })
+
   it('emits dirty→saving→saved status transitions with atomic write', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const telemetry: any[] = []
