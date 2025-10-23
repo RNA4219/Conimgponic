@@ -106,6 +106,46 @@ stateDiagram-v2
     note right of Compiled: バックアップ表示
 ```
 
+#### 0.3.4 precision モード統合ステート図
+```mermaid
+stateDiagram-v2
+    state Legacy {
+        [*] --> Compiled
+        Compiled --> Shot: タブ押下
+        Compiled --> Assets: タブ押下
+        Compiled --> Import: タブ押下
+        Compiled --> Golden: タブ押下
+        note right of Compiled: pref は manual-first / ai-first
+    }
+    state Beta {
+        [*] --> Compiled
+        Compiled --> Diff: Diff Merge
+        Diff --> Operation: ハンク選択
+        Operation --> Diff: 決定完了
+        note right of Diff: MergeDock 末尾に Diff タブ
+    }
+    state Stable {
+        [*] --> Diff
+        Diff --> Operation: ハンク選択
+        Operation --> Edit: 編集モーダル
+        Edit --> Operation: 保存/キャンセル
+        Operation --> Bulk: 一括操作
+        Bulk --> Operation
+        Diff --> Compiled: レガシービュー確認
+    }
+
+    [*] --> Legacy: merge.precision=legacy
+    Legacy --> Beta: setPrecision('beta')
+    Beta --> Stable: setPrecision('stable')
+    Stable --> Beta: downgrade('beta')
+    Beta --> Legacy: downgrade('legacy')
+    note right of Legacy: 初期タブ=Compiled
+    note right of Beta: 初期タブ=Compiled
+    note right of Stable: 初期タブ=Diff
+```
+- precision 切替は `merge.precision` フラグの再評価で発火し、`MergeDock` のタブ DOM を再構成する。【F:docs/design/merge/diff-merge-view.md†L26-L78】
+- `stable` でのみ Diff タブが初期表示となり、`Legacy`/`Beta` は `Compiled` を初期タブとして `diff-merge` を遅延マウントする。既存 UI との整合は `docs/MERGE-DESIGN-IMPL.md` §5 のタブ制御要件と同期する。【F:docs/MERGE-DESIGN-IMPL.md†L168-L206】
+
 ## 1) 対象モジュール追加
 - `src/lib/autosave.ts`（API・イベント・ローテ）
 - `src/lib/locks.ts`（Web Locks + フォールバック）

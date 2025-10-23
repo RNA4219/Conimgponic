@@ -67,6 +67,13 @@ flowchart TD
 | `BannerStack` | バナー/トースト制御。 | `DiffMergeView.tsx` 内部 | 全 precision | AutoSave・`retryable` を集約表示。 |
 | `TelemetryBridge` | `queueMergeCommand` 送出とイベント購読。 | `src/lib/merge.ts` | 全 precision | AutoSave `flushNow()` 呼出順を保証。 |
 
+### 3.1 詳細コンポーネント構成
+
+- **DiffMergeTabs**: `role="tablist"` と `aria-controls` を提供し、`merge.precision` ごとのタブ配列と初期タブを `planDiffMergeSubTabs` で決定する。Phase 移行時の DOM 再構成は `MergeDock` のフラグ評価と同期し、Collector/Analyzer から観測されるタブ遷移ログを破壊しない。【F:docs/IMPLEMENTATION-PLAN.md†L56-L115】【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
+- **HunkListPane**: `diffMergeReducer` の状態を `aria-selected` と `aria-pressed` にマッピングし、キーボード (`Alt+J/K`) とマウス操作を統一イベント (`toggle-select`) へ正規化する。AutoSave のロック待機中は `aria-disabled` をオンにして書込抑制し、ロック解除で自動復帰する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L55】
+- **OperationPane**: 選択ハンク ID を `queueMergeCommand` の `hunkIds` 配列に集約し、ボタン押下を `queue-merge` テレメトリとして Collector/Analyzer へ送信する。処理中は `aria-busy` とスケルトンを併用し、UI 負荷を抑制する。【F:Day8/docs/day8/design/03_architecture.md†L1-L55】
+- **EditModal**: ハンク個別編集を `aria-modal="true"` で提示し、保存 (`commit-edit`) 後に OperationPane と TelemetryBridge を経由して `retryable` 状態を反映する。AutoSave の共有ロックが取得済みかをチェックし、ロック競合時は保存を待機させる。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L103】
+
 ## 4. タブ状態機械
 
 `docs/MERGE-DESIGN-IMPL.md` §5.2 と実装計画の precision 遷移図を反映し、タブ状態と Diff ハンク状態を統合したステートマシンを定義する。
@@ -138,6 +145,45 @@ sequenceDiagram
 | 4. 結果通知 | `commandResolved` を発火し UI ステータス更新。 | 全 precision | `retryable=false` で `MergeDock` を `compiled` へ戻す。 | Diff 状態破棄で不整合防止。 |
 | 5. AutoSave flush | 成功時に `flushNow()` を連携。 | `beta/stable` のみ | ロック解除直後に実行。 | Telemetry でロック時間を追跡。 |
 
+### 5.1 `queueMergeCommand` インターフェース
+
+```ts
+type QueueMergeCommand = (payload: {
+  type: 'queue-merge'
+  precision: MergePrecision
+  origin: 'operation-pane.queue' | 'hunk-list.action' | 'edit-modal.commit'
+  hunkIds: readonly string[]
+  telemetryContext: {
+    collectorSurface: 'diff-merge.hunk-list' | 'diff-merge.operation-pane'
+    analyzerSurface: 'diff-merge.queue'
+    lastTab: DiffMergeSubTabKey
+  }
+  metadata: { autoSaveRequested: boolean; retryOf?: 'auto' | 'conflict' }
+}) => Promise<{
+  status: 'success' | 'conflict' | 'error'
+  hunkIds: readonly string[]
+  telemetry: {
+    collectorSurface: 'diff-merge.hunk-list'
+    analyzerSurface: 'diff-merge.queue'
+    retryable: boolean
+  }
+}>
+```
+
+- AutoSave の `requestSharedLock('project')` を先行し、ロック未取得時は `retryable=true` で失敗応答を返して UI を読み取り専用へ遷移させる。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L103】
+- Collector/Analyzer へのイベントは Day8 のパイプラインに従い JSONL で排出し、`telemetryContext` をそのまま `collectorSurface` / `analyzerSurface` として連携する。【F:Day8/docs/day8/design/03_architecture.md†L1-L55】
+
+### 5.2 テレメトリ連携
+
+| フェーズ | 発火地点 | イベント名 | Collector/Analyzer 連携 | 備考 |
+| --- | --- | --- | --- | --- |
+| タブ切替 | DiffMergeTabs | `merge:tabs:change` | Collector は `aria-selected` のトグルを記録、Analyzer はタブ滞在時間を算出。 | `role="tablist"` DOM を監視。 |
+| ハンク操作 | HunkListPane / EditModal | `merge:hunk:update` | Collector は操作種別・ハンク ID を JSONL に即時書込。Analyzer は滞留ハンク数を再計算。 | AutoSave ロック中は `pending` として記録。 |
+| キュー投入 | OperationPane | `merge:queue:enqueue` | Analyzer がロック待機時間と成功率を集計。Collector は UI レイテンシを記録。 | `metadata.autoSaveRequested` をタグ化。 |
+| 結果反映 | TelemetryBridge | `merge:queue:resolved` | Collector が `retryable` を基準に警告を生成し、Analyzer は成功率 KPI を更新。 | AutoSave `flushNow()` 成功後に排出。 |
+
+Telemetry ブリッジは DiffMergeView の副作用層として機能し、AutoSave の共有ロックイベントと Diff 操作ログを一元化することで Day8 の Collector/Analyzer 連携を維持する。【F:Day8/docs/day8/design/03_architecture.md†L1-L55】
+
 ## 6. AutoSave ロック協調要件
 
 - `AutoSave` の共有ロック (`requestSharedLock('project')`) が未取得の場合、Diff タブ操作はバナー表示と CTA 無効化で待機する。
@@ -162,3 +208,18 @@ TDD を前提に、`node:test` で実装するユニット/結合テストの観
 - **AutoSave ロック遅延**: 共有ロックが 5 秒超過で未取得の場合、UI は `retryable` バナーを継続表示し、`queueMergeCommand` キューを維持する。ロールバック時は Diff タブ DOM を破棄し、未処理コマンドをキャンセルする。【F:docs/MERGE-DESIGN-IMPL.md†L188-L206】
 - **precision 降格**: `stable` から `beta/legacy` へ降格する際、`merge.lastTab` を `compiled` に設定し Diff 状態・テレメトリを破棄する。ロック中は降格を保留し、解除後に再評価する。【F:docs/IMPLEMENTATION-PLAN.md†L74-L104】
 - **`retryable=false` エラー**: `queueMergeCommand` が非再試行エラーを返した場合、Diff タブを非表示に戻し `MergeDock` を従来 UI にフォールバック。AutoSave には `releaseShared('project')` を送信し整合性を確保する。【F:docs/MERGE-DESIGN-IMPL.md†L205-L222】
+
+## 9. MergeDock への段階導入手順
+
+1. **Phase B**: `merge.precision` フラグを `beta` に設定し (`docs/CONFIG_FLAGS.md`)、`MergeDock` に Diff タブを末尾追加。`DiffMergeView` は `queueMergeCommand('hydrate')` 成功後にマウントし、既存 5 タブ構成を維持する。【F:docs/IMPLEMENTATION-PLAN.md†L56-L115】
+2. **Phase B→C トライアル**: Telemetry 成功率が Day8 Collector 経由で 95% を超過したタイミングで `beta` ユーザーに AutoSave 共有ロック必須フローを展開し、UI バナーで共有ロック待機を告知する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L103】【F:Day8/docs/day8/design/03_architecture.md†L1-L55】
+3. **Phase C (Stable)**: `merge.precision=stable` を既定値に昇格。Diff タブを先頭に配置し、`MergeDock` で `merge.lastTab` を `localStorage` に保存。降格パス (`downgrade('beta'|'legacy')`) を常時有効にしてロールバック時間を最小化する。【F:docs/IMPLEMENTATION-PLAN.md†L56-L115】
+
+## 10. UI 負荷・アクセシビリティとフラグ例
+
+- **UI 負荷**: ハンク描画は仮想化を行わずに最大 200 件まで描画し、AutoSave ロック待機中は `aria-busy` とプレースホルダで CPU 使用率を抑制する。Collector への JSONL 送信は即時排出とし、Day8 Analyzer 側で 15 分単位に集約する。【F:Day8/docs/day8/design/03_architecture.md†L1-L55】
+- **キーボード操作**: タブは `ArrowLeft/ArrowRight`、ハンクは `Alt+J/K`、一括適用は `Ctrl+Enter` を割り当て、`aria-keyshortcuts` 属性で支援技術に公開する。AutoSave ロック中はショートカットをイベントキャンセルする。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L103】
+- **読み上げ**: 主要ステータス（保存待機、衝突、成功）は `aria-live="polite"` バナーに集約し、ハンク行には `aria-describedby` で差分概要を紐付ける。テレメトリ結果 (`retryable` 判定) も同バナーで通知する。【F:docs/MERGE-DESIGN-IMPL.md†L168-L206】
+- **段階導入フラグ設定例**:
+  - Phase B 試験: `.env` に `VITE_MERGE_PRECISION=beta`、`localStorage.merge.precision` を `beta` に設定し、`docs/CONFIG_FLAGS.md` の既定は `legacy` を維持。
+  - Phase C 本番: `.env` と `docs/CONFIG_FLAGS.md` を `stable` に揃え、`autosave.enabled` を `true` にして AutoSave 連携を強制。ロールバック用に `localStorage.merge.precision=legacy` を許可し、CI で監視する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L1-L103】【F:docs/CONFIG_FLAGS.md†L57-L90】
