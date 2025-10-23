@@ -37,7 +37,7 @@
 4. `pnpm test --filter merge` — Diff Merge タブとスコアリングの差分を確認。【F:tests/merge/TEST_PLAN.md†L54-L60】
 5. `pnpm test --filter cli` → `pnpm test --filter collector` — CLI 出力と Collector 経路をフラグ行列別にチェック。【F:tests/cli/TEST_PLAN.md†L62-L80】
 6. `pnpm test --filter telemetry` — JSONL から SLO 判定までを再現。【F:tests/telemetry/TEST_PLAN.md†L8-L55】
-7. `pnpm test -- --coverage` / `pnpm test -- --reporter junit` — スナップショット更新前と CI レポート収集時に実施。【F:tests/autosave/TEST_PLAN.md†L74-L78】【F:tests/cli/TEST_PLAN.md†L62-L80】
+7. `pnpm test -- --test-coverage` / `pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml` — スナップショット更新前と CI レポート収集時に実施。【F:tests/autosave/TEST_PLAN.md†L74-L78】【F:tests/cli/TEST_PLAN.md†L62-L80】
 
 ### 4.2 ゲート条件
 - **Phase A ロールアウト**: `S-A0`〜`S-A2` のケースが全て緑で、`autosave.save.completed` の P95 ≤ 2.5s, 復旧成功率 ≥ 99.5%。【F:docs/IMPLEMENTATION-PLAN.md†L118-L130】【F:tests/telemetry/TEST_PLAN.md†L15-L27】

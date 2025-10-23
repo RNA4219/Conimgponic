@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert'
 import test from 'node:test'
 
 import {
+  DEFAULT_FLAGS,
   DEFAULT_FLAG_SNAPSHOT,
   FEATURE_FLAG_DEFINITIONS,
   FlagResolutionError,
@@ -61,6 +62,21 @@ test('workspace configuration resolves plugin enable flag before storage and def
     DEFAULT_FLAG_SNAPSHOT.plugins.enabled
   )
   assert.equal(fromDefaults.plugins.source, 'default')
+})
+
+test('collector fallback applies default autosave and merge threshold when no inputs', () => {
+  const resolution = resolveFlags(
+    { storage: null },
+    { withErrors: true }
+  )
+
+  assert.equal(DEFAULT_FLAGS.autosave.enabled, true)
+  assert.equal(resolution.snapshot.autosave.enabled, true)
+  assert.equal(resolution.snapshot.autosave.source, 'default')
+  assert.equal(resolution.snapshot.merge.precision, DEFAULT_FLAGS.merge.precision)
+  assert.equal(resolution.snapshot.merge.source, 'default')
+  assert.equal(DEFAULT_FLAGS.merge.profile.threshold, 0.72)
+  assert.equal(resolution.errors.length, 0)
 })
 
 test('resolveFlags with errors collects plugin metadata for collector snapshots', () => {

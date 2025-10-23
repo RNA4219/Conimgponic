@@ -8,41 +8,20 @@ import React, {
 
 import { useSB } from '../store'
 import { readFileAsText } from '../lib/importers'
+import { createNormalizedOutputs, type ExportFormat, type TelemetryCollector } from '../lib/exporters'
 import {
-  createNormalizedOutputs,
-  firstLineDiff,
-  normalizeJson,
-  normalizeJsonl,
-  trimLines,
-  type ExportFormat,
-  type NormalizedOutputs,
-  type TelemetryCollector,
-} from '../lib/exporters'
-
-interface GoldenArtifacts {
-  readonly markdown?: string
-  readonly csv?: string
-  readonly jsonl?: string
-  readonly package: Record<string, string>
-}
+  compareNormalizedOutputs,
+  createTelemetryEvent,
+  formatComparisonSummary,
+  normalizeGoldenArtifact,
+  type ComparisonEntry,
+  type GoldenArtifacts,
+} from '../lib/golden/compare'
 
 interface ArtifactFile {
   readonly format: ExportFormat
   readonly payload: string
   readonly name?: string
-}
-
-interface ComparisonEntry {
-  readonly format: ExportFormat
-  readonly name?: string
-  readonly status: 'matched' | 'diff'
-  readonly diff?: string
-}
-
-interface ComparisonResult {
-  readonly entries: ComparisonEntry[]
-  readonly summary: string
-  readonly matchRate: number
 }
 
 type EntryKey = 'markdown' | 'csv' | 'jsonl' | `package:${string}`
@@ -53,81 +32,6 @@ const formatLabel: Record<ScalarFormat, string> = {
   markdown: 'Markdown',
   csv: 'CSV',
   jsonl: 'JSONL',
-}
-
-function normalizeGoldenPayload(
-  format: ExportFormat,
-  golden: GoldenArtifacts,
-  name?: string,
-): string | undefined {
-  switch (format) {
-    case 'markdown':
-      return golden.markdown ? trimLines(golden.markdown) : undefined
-    case 'csv':
-      return golden.csv ? trimLines(golden.csv) : undefined
-    case 'jsonl':
-      return golden.jsonl ? normalizeJsonl(golden.jsonl) : undefined
-    case 'package':
-      if (!name) return undefined
-      return golden.package[name] ? normalizeJson(golden.package[name]) : undefined
-    default:
-      return undefined
-  }
-}
-
-function compareOutputs(actual: NormalizedOutputs, golden: GoldenArtifacts): ComparisonResult {
-  const entries: ComparisonEntry[] = []
-
-  for (const format of ['markdown', 'csv', 'jsonl'] as const) {
-    const expected = normalizeGoldenPayload(format, golden)
-    if (!expected) {
-      entries.push({ format, status: 'diff', diff: 'missing golden input' })
-      continue
-    }
-    const actualValue = actual[format]
-    if (expected === actualValue) {
-      entries.push({ format, status: 'matched' })
-    } else {
-      entries.push({ format, status: 'diff', diff: firstLineDiff(actualValue, expected) })
-    }
-  }
-
-  const packageNames = new Set([
-    ...Object.keys(actual.package),
-    ...Object.keys(golden.package),
-  ])
-  packageNames.forEach((name) => {
-    const actualPayload = actual.package[name]
-    if (!actualPayload) {
-      entries.push({ format: 'package', name, status: 'diff', diff: 'missing generated artifact' })
-      return
-    }
-    const expected = normalizeGoldenPayload('package', golden, name)
-    if (!expected) {
-      entries.push({ format: 'package', name, status: 'diff', diff: 'missing golden input' })
-      return
-    }
-    if (expected === actualPayload) {
-      entries.push({ format: 'package', name, status: 'matched' })
-    } else {
-      entries.push({ format: 'package', name, status: 'diff', diff: firstLineDiff(actualPayload, expected) })
-    }
-  })
-
-  const matchCount = entries.filter((entry) => entry.status === 'matched').length
-  const matchRate = entries.length ? matchCount / entries.length : 0
-
-  const summary = entries.length
-    ? entries
-        .map((entry) =>
-          entry.status === 'matched'
-            ? `${entry.format}${entry.name ? `:${entry.name}` : ''}: OK`
-            : `${entry.format}${entry.name ? `:${entry.name}` : ''}: diff -> ${entry.diff ?? 'mismatch'}`,
-        )
-        .join('\n')
-    : 'No golden artifacts loaded'
-
-  return { entries, summary, matchRate }
 }
 
 function detectArtifact(file: File, payload: string): ArtifactFile | null {
@@ -165,7 +69,11 @@ export function GoldenCompare({ telemetry }: GoldenCompareProps): JSX.Element {
   const { sb } = useSB()
   const normalized = useMemo(() => createNormalizedOutputs(sb), [sb])
   const [golden, setGolden] = useState<GoldenArtifacts>({ package: {} })
-  const comparison = useMemo(() => compareOutputs(normalized, golden), [normalized, golden])
+  const comparison = useMemo(
+    () => compareNormalizedOutputs(normalized, golden),
+    [normalized, golden],
+  )
+  const summary = useMemo(() => formatComparisonSummary(comparison.entries), [comparison.entries])
   const entryKeys = useMemo(() => {
     const keys = new Set<EntryKey>()
     comparison.entries.forEach((entry) => {
@@ -193,7 +101,7 @@ export function GoldenCompare({ telemetry }: GoldenCompareProps): JSX.Element {
 
   const normalizedGolden = useMemo(() => {
     if (!selectedEntry) return undefined
-    return normalizeGoldenPayload(selectedEntry.format, golden, selectedEntry.name)
+    return normalizeGoldenArtifact(selectedEntry.format, golden, selectedEntry.name)
   }, [golden, selectedEntry])
 
   const telemetrySummaryRef = useRef<string | null>(null)
@@ -201,37 +109,15 @@ export function GoldenCompare({ telemetry }: GoldenCompareProps): JSX.Element {
     if (!telemetry || !comparison.entries.length) {
       return
     }
-    if (telemetrySummaryRef.current === comparison.summary) {
+    if (telemetrySummaryRef.current === summary) {
       return
     }
-    telemetrySummaryRef.current = comparison.summary
-    const allMatched = comparison.entries.every((entry) => entry.status === 'matched')
-    const formats = Array.from(
-      new Set(
-        comparison.entries.map((entry) =>
-          entry.format === 'package' && entry.name ? `package:${entry.name}` : entry.format,
-        ),
-      ),
-    )
-    const payload: Record<string, unknown> = {
-      runId: 'ui-preview',
-      matchRate: comparison.matchRate,
-      entries: comparison.entries.map((entry) => ({
-        format: entry.format,
-        name: entry.name ?? null,
-        status: entry.status,
-        diff: entry.diff ?? null,
-      })),
+    telemetrySummaryRef.current = summary
+    const event = createTelemetryEvent(comparison, 'ui-preview')
+    if (event) {
+      telemetry.track(event.event, event.payload)
     }
-    if (allMatched) {
-      payload.formats = formats
-      telemetry.track('export.success', payload)
-    } else {
-      payload.retryable = false
-      payload.formats = formats
-      telemetry.track('export.failed', payload)
-    }
-  }, [comparison, telemetry])
+  }, [comparison, summary, telemetry])
 
   const handleFiles = useCallback(async (fileList: FileList) => {
     const files = Array.from(fileList)
@@ -287,7 +173,14 @@ export function GoldenCompare({ telemetry }: GoldenCompareProps): JSX.Element {
         />
         <span>一致率: {(comparison.matchRate * 100).toFixed(1)}%</span>
       </div>
-      <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{comparison.summary}</pre>
+      <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{summary}</pre>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <span>結果: {comparison.ok ? '✅ Golden 一致' : '❌ 差分あり'}</span>
+        <span>
+          再実行可否:
+          {comparison.error ? (comparison.error.retryable ? '再実行可能' : '再実行不可') : '検証済み'}
+        </span>
+      </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           比較対象:
