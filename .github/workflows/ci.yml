@@ -67,17 +67,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
       - name: Enable Corepack
         run: corepack enable
 
       - name: Prepare pnpm
         run: corepack prepare pnpm@9.12.3 --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
 
       - name: Ensure lockfile
         run: |
