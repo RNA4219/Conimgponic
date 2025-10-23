@@ -89,6 +89,35 @@ scenario(
 )
 
 scenario(
+  'phase guard emits autosave.guard telemetry when collector available',
+  async (t: any, { initAutoSave }: any) => {
+    const events: Record<string, unknown>[] = []
+    Object.defineProperty(globalThis, 'Day8Collector', {
+      value: { publish: (event: Record<string, unknown>) => { events.push(event) } },
+      configurable: true
+    })
+    t.after(() => delete (globalThis as any).Day8Collector)
+
+    const flags = createFlags(false)
+    initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, flags)
+
+    assert.equal(events.length, 1)
+    const event = events[0]
+    assert.equal(event.feature, 'autosave-diff-merge')
+    assert.equal(event.event, 'autosave.guard')
+    assert.equal(event.blocked, true)
+    assert.equal(event.reason, 'feature-flag-disabled')
+    assert.equal(event.phase, 'disabled')
+    assert.equal(event.level, 'debug')
+    assert.deepEqual(event.guard, {
+      featureFlag: { value: false, source: 'default' },
+      optionsDisabled: false
+    })
+    assert.match(String(event.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
+  }
+)
+
+scenario(
   'workspace source takes precedence over global overrides',
   async (t: any, { initAutoSave }: any) => {
     const flags = createFlags(false)

@@ -187,7 +187,7 @@ const resolveDay8Collector = (): Day8CollectorLike | undefined => {
     : undefined
 }
 
-const publishDisabledCollectorEvent = (
+const publishGuardCollectorEvent = (
   guard: AutoSavePhaseGuardSnapshot,
   reason: AutoSaveDisabledReason
 ): void => {
@@ -195,7 +195,8 @@ const publishDisabledCollectorEvent = (
   if (!collector) return
   collector.publish({
     feature: 'autosave-diff-merge',
-    event: 'autosave.disabled',
+    event: 'autosave.guard',
+    blocked: true,
     level: 'debug',
     phase: 'disabled',
     reason,
@@ -959,7 +960,7 @@ export function initAutoSave(
         featureFlag: { value: flagEnabled, source: 'default' },
         optionsDisabled: effectiveOptionsDisabled
       }
-    publishDisabledCollectorEvent(
+    publishGuardCollectorEvent(
       guardForLog,
       effectiveOptionsDisabled ? 'options-disabled' : 'feature-flag-disabled'
     )
