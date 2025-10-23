@@ -716,6 +716,7 @@ const INDEX_PATH = `${AUTOSAVE_DIRECTORY}/index.json`
 const HISTORY_DIRECTORY = `${AUTOSAVE_DIRECTORY}/history`
 const FALLBACK_LOCK_PATH = `${AUTOSAVE_DIRECTORY}/.lock`
 const encoder = new TextEncoder()
+const sanitizeTimestamp = (ts: string) => ts.replace(/[:.]/g, '-')
 
 interface AutoSaveIndexPayload {
   readonly current: AutoSaveHistoryEntry | null
@@ -852,7 +853,6 @@ export function initAutoSave(
     if (data == null) throw makeError('write-failed', `Missing artefact ${tmp}`, true)
     await saveText(target, data); await removeFile(tmp)
   }
-  const sanitize = (ts: string) => ts.replace(/[:.]/g, '-')
   if (options?.disabled === true || !resolveFlag()) {
     const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
     return { snapshot: () => ({ ...snapshot }), flushNow: async () => { throw disabledError() }, dispose: () => {} }
@@ -865,12 +865,12 @@ export function initAutoSave(
   let lastError: AutoSaveError | undefined
   let disposed = false, retryTimer: ReturnType<typeof setTimeout> | null = null
   const updateIndex = async (ts: string, bytes: number, payload: string) => {
-    const path = 'project/autosave/index.json', tmp = `${path}.tmp`, current = (await loadJSON(path)) as { entries?: AutoSaveHistoryEntry[] } | null, key = sanitize(ts)
+    const path = 'project/autosave/index.json', tmp = `${path}.tmp`, current = (await loadJSON(path)) as { entries?: AutoSaveHistoryEntry[] } | null, key = sanitizeTimestamp(ts)
     const entries = Array.isArray(current?.entries) ? current!.entries.filter((entry) => typeof entry?.ts === 'string' && typeof entry?.bytes === 'number') : []
     entries.unshift({ ts, bytes, location: 'history', retained: true })
     let total = 0; for (const item of entries) total += item.bytes
     while ((entries.length > AUTOSAVE_POLICY.maxGenerations || total > AUTOSAVE_POLICY.maxBytes) && entries.length > 0) {
-      const drop = entries.pop()!; total -= drop.bytes; await removeFile(`project/autosave/history/${sanitize(drop.ts)}.json`)
+      const drop = entries.pop()!; total -= drop.bytes; await removeFile(`project/autosave/history/${sanitizeTimestamp(drop.ts)}.json`)
     }
     if (total > AUTOSAVE_POLICY.maxBytes) throw makeError('history-overflow', 'Unable to satisfy AutoSave history retention policy', false, undefined, { totalBytes: total })
     await saveText(`project/autosave/history/${key}.json.tmp`, payload); await renameFile(`project/autosave/history/${key}.json.tmp`, `project/autosave/history/${key}.json`)
@@ -899,10 +899,27 @@ export function initAutoSave(
           : error instanceof Error
           ? makeError('write-failed', error.message, true, error)
           : makeError('write-failed', 'Unexpected AutoSave failure', true, undefined, { value: error as unknown })
-      lastError = autoError; retryCount = autoError.retryable ? attempt + 1 : 0; phase = 'error'
-      if (autoError.retryable && attempt + 1 < AUTOSAVE_RETRY_POLICY.maxAttempts) {
-        const delay = Math.min(AUTOSAVE_RETRY_POLICY.initialDelayMs * Math.pow(AUTOSAVE_RETRY_POLICY.multiplier, attempt), AUTOSAVE_RETRY_POLICY.maxDelayMs)
-        await new Promise<void>((resolve) => { retryTimer = setTimeout(resolve, delay) }); retryTimer = null; return runFlush(attempt + 1)
+      lastError = autoError
+      if (autoError.retryable) {
+        retryCount = attempt + 1
+        phase = 'error'
+        if (attempt + 1 < AUTOSAVE_RETRY_POLICY.maxAttempts) {
+          const delay = Math.min(
+            AUTOSAVE_RETRY_POLICY.initialDelayMs * Math.pow(AUTOSAVE_RETRY_POLICY.multiplier, attempt),
+            AUTOSAVE_RETRY_POLICY.maxDelayMs
+          )
+          await new Promise<void>((resolve) => {
+            retryTimer = setTimeout(resolve, delay)
+          })
+          retryTimer = null
+          return runFlush(attempt + 1)
+        }
+      } else {
+        retryCount = 0
+        phase = 'error'
+        pendingBytes = 0
+        disposed = true
+        phase = 'disabled'
       }
       throw autoError
     }
@@ -951,7 +968,7 @@ export async function restorePrompt(): Promise<
     ts: latest.ts,
     bytes: latest.bytes,
     source: 'history',
-    location: `${HISTORY_DIRECTORY}/${latest.ts}.json`
+    location: `${HISTORY_DIRECTORY}/${sanitizeTimestamp(latest.ts)}.json`
   }
 }
 
@@ -979,7 +996,7 @@ export async function restoreFromCurrent(): Promise<boolean> {
  * 例外: `code='data-corrupted'` または `code='lock-unavailable'` の `AutoSaveError` を throw。
  */
 export async function restoreFrom(ts: string): Promise<boolean> {
-  const text = await loadText(`${HISTORY_DIRECTORY}/${ts}.json`)
+  const text = await loadText(`${HISTORY_DIRECTORY}/${sanitizeTimestamp(ts)}.json`)
   if (!text) return false
   try {
     JSON.parse(text)
