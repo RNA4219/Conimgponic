@@ -33,6 +33,8 @@ export interface FlagValidationError extends FlagValidationIssue {
   readonly source: FlagSource
 }
 
+export type FlagResolutionError = FlagValidationError
+
 export interface FlagValueSnapshot<T> {
   readonly value: T
   /**
@@ -358,7 +360,20 @@ export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
   updatedAt: new Date(0).toISOString()
 }
 
-export function resolveFlags(options?: ResolveOptions): FlagSnapshot {
+export interface FlagResolutionSummary {
+  readonly snapshot: FlagSnapshot
+  readonly errors: readonly FlagResolutionError[]
+}
+
+export function resolveFlags(options?: ResolveOptions): FlagSnapshot
+export function resolveFlags(
+  options: ResolveOptions | undefined,
+  config: { readonly withErrors: true }
+): FlagResolutionSummary
+export function resolveFlags(
+  options?: ResolveOptions,
+  config?: { readonly withErrors?: boolean }
+): FlagSnapshot | FlagResolutionSummary {
   const autosave = resolveFeatureFlag('autosave.enabled', options)
   const merge = resolveFeatureFlag('merge.precision', options)
   const clock = options?.clock ?? (() => new Date())
@@ -366,7 +381,7 @@ export function resolveFlags(options?: ResolveOptions): FlagSnapshot {
   // Phase A 移行中は既存 UI の `localStorage` 直読フェールセーフが残るため、
   // resolveFlags() だけでは値が届かないケースも想定する。App/Merge 側で
   // snapshot 未取得時は従来挙動へフォールバックできるようガイドする。
-  return {
+  const snapshot: FlagSnapshot = {
     autosave: {
       value: autosave.value,
       source: autosave.source,
@@ -381,6 +396,19 @@ export function resolveFlags(options?: ResolveOptions): FlagSnapshot {
     },
     updatedAt: clock().toISOString()
   }
+
+  if (config?.withErrors) {
+    const errors: FlagResolutionError[] = [
+      ...autosave.errors,
+      ...merge.errors
+    ]
+    return {
+      snapshot,
+      errors
+    }
+  }
+
+  return snapshot
 }
 
 export interface FlagMigrationStep {
