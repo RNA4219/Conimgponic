@@ -122,6 +122,10 @@ Webview → Extension: "merge.request" {base,ours,theirs,threshold}
 Extension: core.merge 実行 → trace出力
 Extension → Webview: "merge.result" {ok:true,result,trace}
 Webview   ：UIへ反映、採用/衝突分岐
+
+- `trace.summary.threshold` は VS Code 設定 `conimg.merge.threshold`（存在する場合）をフェーズ別のクランプ後に反映し、Webview が Phase ガード UI を同期できるようにする。【F:src/platform/vscode/merge/bridge.ts†L1-L67】
+- `trace.summary.autoAdoptionRate` は `result.trace.decisions` で `decision='auto'` の件数比を示し、Collector が 80% 監視を行う指標とする。【F:src/lib/merge.ts†L204-L237】【F:docs/design/extensions/telemetry.md†L24-L35】
+- `trace.decisions[]` には各ハンクの `hunkId`・`decision`・`similarity`・`threshold` を格納し、`DiffMergeView` のタブ露出率計測と Phase B ロールアウト検証に再利用する。【F:src/lib/merge.ts†L204-L237】【F:src/components/DiffMergeView.tsx†L25-L52】
 ```
 
 ### 5.4 Export（MD/CSV/JSONL）
