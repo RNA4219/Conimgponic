@@ -50,6 +50,12 @@ describe('security-audit workflow schedule', () => {
 
         const cron = entry.cron.trim();
         assert.notStrictEqual(cron, '', `schedule entry #${index + 1} cron must be non-empty`);
+        const segments = cron.split(/\s+/).filter(Boolean);
+        assert.strictEqual(
+          segments.length,
+          5,
+          `schedule entry #${index + 1} cron must include 5 space-separated fields`
+        );
       });
     } catch (error) {
       console.error('Failed to verify schedule trigger:', error);
