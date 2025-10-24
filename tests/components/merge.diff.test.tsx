@@ -143,3 +143,57 @@ test('workspace threshold from resolveFlags updates diff exposure and clamp', ()
   assert.equal(plan.diff.exposure, 'default')
   assert.equal(plan.autoApplied.target, 0.97)
 })
+
+test('env precision threshold from flags overrides workspace and storage settings', () => {
+  const processEnv = (globalThis as {
+    process?: { env?: Record<string, string | undefined> }
+  }).process?.env
+
+  if (!processEnv) {
+    throw new Error('process.env is not available')
+  }
+
+  const originalPrecision = processEnv.VITE_MERGE_PRECISION
+  processEnv.VITE_MERGE_PRECISION = 'beta'
+
+  const workspace = {
+    get: (key: string): unknown => {
+      if (key === 'conimg.merge.threshold') {
+        return 0.83
+      }
+      return undefined
+    },
+  }
+
+  const storage = {
+    getItem: (key: string): string | null => {
+      if (key === 'conimg.merge.threshold') {
+        return '0.9'
+      }
+      return null
+    },
+  }
+
+  try {
+    const snapshot = resolveMergeThresholdSnapshot({ workspace, storage })
+    assert.equal(snapshot.precision, 'beta')
+    assert.equal(snapshot.threshold, 0.72)
+
+    const plan = resolveMergeDockPhasePlan({
+      precision: snapshot.precision,
+      threshold: snapshot.threshold,
+      phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+    })
+
+    assert.equal(plan.diff.enabled, true)
+    assert.equal(plan.guard.phaseBRequired, true)
+    assert.equal(plan.threshold.request, 0.72)
+    assert.equal(plan.autoApplied.target, 0.77)
+  } finally {
+    if (originalPrecision === undefined) {
+      delete processEnv.VITE_MERGE_PRECISION
+    } else {
+      processEnv.VITE_MERGE_PRECISION = originalPrecision
+    }
+  }
+})
