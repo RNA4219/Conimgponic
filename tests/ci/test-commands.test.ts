@@ -43,3 +43,28 @@ test('test:junit script prepares reports directory before writing junit report',
     'junit report should be written to reports/junit.xml',
   );
 });
+
+const phaseTestScripts = new Map<
+  keyof Pick<
+    NonNullable<typeof packageJson.scripts>,
+    'test:autosave' | 'test:merge' | 'test:cli' | 'test:collector' | 'test:telemetry'
+  >,
+  string
+>([
+  ['test:autosave', 'pnpm test -- "tests/autosave/**/*.test.ts"'],
+  ['test:merge', 'pnpm test -- "tests/merge/**/*.test.ts"'],
+  ['test:cli', 'pnpm test -- "tests/cli/**/*.test.ts"'],
+  ['test:collector', 'pnpm test -- "tests/collector/**/*.test.ts"'],
+  ['test:telemetry', 'pnpm test -- "tests/telemetry/**/*.test.ts"'],
+]);
+
+for (const [scriptName, expectedCommand] of phaseTestScripts) {
+  test(`${scriptName} script targets its test suite`, () => {
+    const script = resolveScript(scriptName);
+    assert.strictEqual(
+      script,
+      expectedCommand,
+      `${scriptName} must invoke pnpm test with ${expectedCommand.split(' -- ')[1]}`,
+    );
+  });
+}
