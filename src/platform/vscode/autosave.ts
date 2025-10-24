@@ -45,6 +45,10 @@ export interface AutoSaveTelemetryEvent {
   readonly properties?: AutoSaveTelemetryEventProperties
 }
 
+type AutoSaveTelemetryEventInput = Omit<AutoSaveTelemetryEvent, 'properties'> & {
+  readonly properties?: Record<string, unknown>
+}
+
 export interface AutoSaveWarnEvent {
   readonly code: string
   readonly details?: Record<string, unknown>
@@ -206,21 +210,19 @@ const clampHistory = (state: InternalState, policy: AutoSavePolicy): void => {
 
 const emitTelemetry = (
   options: AutoSaveHostBridgeOptions,
-  event: AutoSaveTelemetryEvent,
+  event: AutoSaveTelemetryEventInput,
   context: AutoSaveTelemetryContext
 ): void => {
   const phaseBefore = statusPhaseForState(context.before)
   const phaseAfter = statusPhaseForState(context.after)
-  options.telemetry?.({
-    ...event,
-    properties: {
-      ...event.properties,
-      phaseBefore,
-      phaseAfter,
-      flagSource: context.guard.featureFlag.source,
-      lockStrategy: context.lockStrategy ?? 'none'
-    }
-  })
+  const properties: AutoSaveTelemetryEventProperties = {
+    ...(event.properties ?? {}),
+    phaseBefore,
+    phaseAfter,
+    flagSource: context.guard.featureFlag.source,
+    lockStrategy: context.lockStrategy ?? 'none'
+  }
+  options.telemetry?.({ ...event, properties })
 }
 
 const emitWarn = (options: AutoSaveHostBridgeOptions, event: AutoSaveWarnEvent): void => {

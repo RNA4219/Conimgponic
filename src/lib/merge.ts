@@ -335,15 +335,72 @@ export const buildMergePlan = (
     };
   }
 
-  const planHunks = hunks.map<MergePlanHunk>((hunk) => ({
-    id: hunk.id,
-    section: hunk.section,
-    decision: hunk.decision,
-    similarity: hunk.similarity,
-    locked: hunk.locked,
-    preferred: hunk.prefer,
-    queueAction: hunk.decision === 'auto' && precisionState.allowsAutoApply ? 'apply' : 'hold',
-  }));
+  const planEntries = hunks.map<MergePlanEntry>((hunk) => {
+    const band: MergePlanBand = hunk.decision === 'auto'
+      ? 'auto'
+      : hunk.similarity >= profile.similarityBands.review
+        ? 'review'
+        : 'conflict';
+    const locked = hunk.locked;
+    const phase: MergePlanPhase = band === 'auto' && precisionState.allowsAutoApply && !locked ? 'phase-a' : 'phase-b';
+    const recommendedCommand: MergePlanRecommendedCommand = locked
+      ? 'queue:force-lock-resolution'
+      : band === 'auto'
+        ? precisionState.allowsAutoApply
+          ? 'queue:auto-apply'
+          : 'queue:request-review'
+        : band === 'review'
+          ? 'queue:request-review'
+          : 'queue:manual-intervention';
+    return {
+      hunkId: hunk.id,
+      section: hunk.section,
+      decision: hunk.decision,
+      similarity: hunk.similarity,
+      locked,
+      band,
+      phase,
+      recommendedCommand,
+    };
+  });
+
+  const phaseATotal = planEntries.filter((entry) => entry.phase === 'phase-a').length;
+  const summary: MergePlanSummary = {
+    total: planEntries.length,
+    phaseA: phaseATotal,
+    phaseB: planEntries.length - phaseATotal,
+    reviewBand: planEntries.filter((entry) => entry.band === 'review').length,
+    locked: planEntries.filter((entry) => entry.locked).length,
+  };
+
+  const phaseBReasons = new Set<MergePlanPhaseBReason>();
+  if (planEntries.some((entry) => entry.band === 'review')) {
+    phaseBReasons.add('review-band');
+  }
+  if (planEntries.some((entry) => entry.locked && entry.band === 'conflict')) {
+    phaseBReasons.add('locked-conflict');
+  }
+  if (planEntries.some((entry) => entry.band === 'conflict' && !entry.locked)) {
+    phaseBReasons.add('low-similarity');
+  }
+
+  const phaseB: MergePlanPhaseB = {
+    required: summary.phaseB > 0,
+    reasons: summary.phaseB > 0 ? Array.from(phaseBReasons) : [],
+  };
+
+  const planHunks = planEntries.map<MergePlanHunk>((entry, index) => {
+    const sourceHunk = hunks[index];
+    return {
+      id: entry.hunkId,
+      section: entry.section,
+      decision: entry.decision,
+      similarity: entry.similarity,
+      locked: entry.locked,
+      preferred: sourceHunk?.prefer ?? 'none',
+      queueAction: entry.recommendedCommand === 'queue:auto-apply' ? 'apply' : 'hold',
+    };
+  });
 
   return {
     kind: 'ok',
@@ -353,6 +410,9 @@ export const buildMergePlan = (
       stats,
       hunks: planHunks,
       stages: ['segment', 'score', 'decide', 'queue'],
+      entries: planEntries,
+      summary,
+      phaseB,
     },
   };
 };
@@ -435,6 +495,13 @@ const PRECISION_CONFIG: Record<MergePrecision, {
 const DEFAULT_MAX_PROCESSING_MILLIS = 5_000;
 const DEFAULT_SECTION_SIZE_HINT = 640;
 
+type MaybeNodeProcess = { readonly env?: Record<string, string | undefined> };
+
+function readEnvVar(key: string): string | undefined {
+  const scope = globalThis as typeof globalThis & { process?: MaybeNodeProcess };
+  return scope.process?.env?.[key];
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -458,9 +525,7 @@ function normalizePrecision(value?: string | null): MergePrecision {
 }
 
 function resolvePrecision(overrides?: MergeProfileOverrides): MergePrecision {
-  const envPrecision = typeof process !== 'undefined' && typeof process.env !== 'undefined'
-    ? process.env.MERGE_PRECISION
-    : undefined;
+  const envPrecision = readEnvVar('MERGE_PRECISION');
   const candidate = overrides?.precision ?? envPrecision;
   return normalizePrecision(candidate ?? undefined);
 }
@@ -479,9 +544,7 @@ function parseThreshold(value?: string | null): number | undefined {
 function resolveThreshold(precision: MergePrecision, overrides?: MergeProfileOverrides): number {
   const config = PRECISION_CONFIG[precision];
   const overrideValue = overrides?.threshold;
-  const envThreshold = typeof process !== 'undefined' && typeof process.env !== 'undefined'
-    ? parseThreshold(process.env.CONIMG_MERGE_THRESHOLD ?? null)
-    : undefined;
+  const envThreshold = parseThreshold(readEnvVar('CONIMG_MERGE_THRESHOLD') ?? null);
   const base = overrideValue ?? envThreshold ?? DEFAULT_MERGE_PROFILE.threshold;
   return config.thresholdClamp(base);
 }
@@ -816,9 +879,9 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
     stages.push({ stage: 'emit', startedAt: emitStart, durationMs: now() - emitStart, metadata: { events: decisions.length } });
     const hunks = decisions.map((entry) => entry.hunk);
 
+    const planResult = buildMergePlan(hunks, finalStats, profile, input.sceneId);
     if (options?.queueMergeCommand) {
       const queueStartedAt = now();
-      const planResult = buildMergePlan(hunks, finalStats, profile, input.sceneId);
       if (planResult.kind === 'ok') {
         options.queueMergeCommand(createQueueMergeCommand(planResult.plan));
         stages.push({
@@ -838,7 +901,13 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
     }
 
     const finalTrace = buildTrace(input.sceneId, stages, profile, hunks);
-    const mergeResult: MergeResult = { hunks, mergedText, stats: finalStats, trace: finalTrace };
+    const mergeResult: MergeResult = {
+      hunks,
+      mergedText,
+      stats: finalStats,
+      trace: finalTrace,
+      ...(planResult.kind === 'ok' ? { plan: planResult.plan } : {}),
+    };
 
     options?.telemetry?.({ type: 'merge:finish', sceneId: input.sceneId ?? 'unknown', profile, stats: finalStats, trace: finalTrace });
 

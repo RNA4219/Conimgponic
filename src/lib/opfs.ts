@@ -6,6 +6,12 @@ type IterableFileSystemDirectoryHandle = FileSystemDirectoryHandle & {
   values(): AsyncIterable<FileSystemHandle>
 }
 
+function hasIterableValues(
+  handle: FileSystemDirectoryHandle,
+): handle is IterableFileSystemDirectoryHandle {
+  return typeof (handle as Partial<IterableFileSystemDirectoryHandle>).values === 'function'
+}
+
 async function resolveRootDirectory(): Promise<FileSystemDirectoryHandle> {
   const storage = navigator.storage as StorageManagerWithDirectory
   const getDirectory = storage.getDirectory
@@ -79,9 +85,11 @@ export async function loadJSON<T>(path: string): Promise<T | null> {
 
 export async function listDir(path: string): Promise<string[]> {
   const directory = await ensureDir(path)
-  const iterableDirectory = directory as IterableFileSystemDirectoryHandle
+  if (!hasIterableValues(directory)) {
+    throw new Error('Directory iteration not supported')
+  }
   const names: string[] = []
-  for await (const handle of iterableDirectory.values()) {
+  for await (const handle of directory.values()) {
     if ('name' in handle) {
       names.push(handle.name)
     }
