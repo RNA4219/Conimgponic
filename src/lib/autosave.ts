@@ -788,10 +788,12 @@ const parseIndexFile = (value: unknown): AutoSaveIndexPayload => {
   const current = input.current as AutoSaveHistoryEntry | null | undefined
   const history = Array.isArray(input.history) ? (input.history as AutoSaveHistoryEntry[]) : []
   return {
-    current: current && current.location === 'current' ? { ...current, retained: current.retained !== false } : null,
+    current: current && current.location === 'current'
+      ? { ...current, retained: current.retained !== false, location: 'current' as const }
+      : null,
     history: history
       .filter((entry) => entry?.location === 'history')
-      .map((entry) => ({ ...entry, retained: entry.retained !== false }))
+      .map((entry) => ({ ...entry, retained: entry.retained !== false, location: 'history' as const }))
   }
 }
 
@@ -1206,5 +1208,8 @@ export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 > {
   const index = await loadIndex()
-  return [...index.history].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+  const historyEntries = index.history
+    .filter((entry): entry is AutoSaveHistoryEntry & { location: 'history' } => entry.location === 'history')
+    .map((entry) => ({ ...entry, location: 'history' as const }))
+  return [...historyEntries].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
 }
