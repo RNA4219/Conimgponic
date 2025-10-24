@@ -27,7 +27,7 @@ export interface AutoSaveOptions {
   readonly maxBytes?: never
 }
 
-export const AUTOSAVE_MAX_BYTES = 50 * 1024 * 1024 as const
+export const AUTOSAVE_MAX_BYTES = 50 * 1024 * 1024
 
 export interface AutoSavePolicy {
   readonly debounceMs: 500
@@ -40,13 +40,15 @@ export interface AutoSavePolicy {
 /**
  * 保存ポリシー既定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 の表と同期する必要がある。
  */
-export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze({
+const AUTOSAVE_POLICY_VALUES: AutoSavePolicy = {
   debounceMs: 500,
   idleMs: 2000,
   maxGenerations: 20,
   maxBytes: AUTOSAVE_MAX_BYTES,
   disabled: false
-} as const)
+}
+
+export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze(AUTOSAVE_POLICY_VALUES)
 
 export const AUTOSAVE_DEFAULTS = AUTOSAVE_POLICY
 
@@ -530,8 +532,8 @@ export interface AutoSaveRunnerQueuePolicy {
 export const AUTOSAVE_QUEUE_POLICY: AutoSaveRunnerQueuePolicy = Object.freeze({
   maxPending: 5,
   coalesceWindowMs: AUTOSAVE_POLICY.debounceMs,
-  flushReasons: ['change', 'flushNow'],
-  discardOn: ['dispose', 'retry-exhausted']
+  flushReasons: ['change', 'flushNow'] as const,
+  discardOn: ['dispose', 'retry-exhausted'] as const
 })
 
 export interface AutoSaveRunnerIOContract {
@@ -764,13 +766,16 @@ const createAutoSaveError = (
   cause?: unknown,
   context?: Record<string, unknown>
 ): AutoSaveError => {
-  const error = new Error(message) as AutoSaveError
-  error.name = 'AutoSaveError'
-  error.code = code
-  error.retryable = retryable
-  if (cause instanceof Error) error.cause = cause
-  if (context) error.context = context
-  return error
+  const base = new Error(message)
+  const normalizedCause = cause instanceof Error ? cause : undefined
+  const extras = {
+    name: 'AutoSaveError' as const,
+    code,
+    retryable,
+    ...(normalizedCause ? { cause: normalizedCause } : {}),
+    ...(context ? { context } : {}),
+  }
+  return Object.assign(base, extras) as AutoSaveError
 }
 
 const isAutoSaveError = (value: unknown): value is AutoSaveError => {
@@ -904,7 +909,7 @@ export function initAutoSave(
     retryable: boolean,
     cause?: unknown,
     context?: Record<string, unknown>
-  ): AutoSaveError => Object.assign(Object.assign(new Error(message), { name: 'AutoSaveError' }), { code, retryable, cause, context })
+  ): AutoSaveError => createAutoSaveError(code, message, retryable, cause, context)
   const disabledError = () => makeError('disabled', 'AutoSave is disabled', false)
   const removeFile = async (path: string) => {
     const segs = path.split('/').filter(Boolean)
@@ -948,21 +953,6 @@ export function initAutoSave(
   }
   const encoder = new TextEncoder()
   const pendingQueue: AutoSaveQueueEntry[] = []
-  const phaseGuardEnabled =
-    guard.featureFlag.value === true && guard.optionsDisabled !== true
-      ? true
-      : (() => {
-          if (!flagSnapshot || typeof flagSnapshot !== 'object') return false
-          if ('autosave' in flagSnapshot && flagSnapshot.autosave && typeof flagSnapshot.autosave === 'object') {
-            const candidate = flagSnapshot.autosave as { readonly phase?: unknown }
-            return candidate?.phase === 'phase-a'
-          }
-          if ('phase' in flagSnapshot) {
-            const candidate = flagSnapshot as { readonly phase?: unknown }
-            return candidate?.phase === 'phase-a'
-          }
-          return false
-        })()
   let phase: AutoSavePhase = 'idle'
   let retryCount = 0
   let lastSuccessAt: string | undefined
@@ -1121,8 +1111,8 @@ export function initAutoSave(
         pendingQueue.splice(0, pendingQueue.length - AUTOSAVE_QUEUE_POLICY.maxPending)
       }
       queuedGeneration = pendingQueue.length
-      if (phase === 'idle' || phase === 'debouncing' || phase === 'dirty') {
-        phase = phaseGuardEnabled ? 'dirty' : 'debouncing'
+      if (phase === 'idle' || phase === 'debouncing') {
+        phase = 'debouncing'
       }
       resetSchedule()
       scheduleDebounce()

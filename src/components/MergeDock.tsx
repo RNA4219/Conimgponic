@@ -434,7 +434,7 @@ export interface DiffBackupPolicy {
 }
 
 export const diffBackupPolicy: DiffBackupPolicy = Object.freeze({
-  enabledPrecisions: ['beta', 'stable'],
+  enabledPrecisions: ['beta', 'stable'] as const,
   gateTab: 'diff',
   thresholdMs: DIFF_BACKUP_THRESHOLD_MS,
 })
