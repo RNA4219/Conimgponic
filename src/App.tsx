@@ -13,6 +13,7 @@ import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { buildPackage } from './lib/package'
 import { initAutoSave, type AutoSaveInitResult, type AutoSavePhaseGuardSnapshot } from './lib/autosave'
+import type { Storyboard } from './types'
 
 function HelpModal({onClose}:{onClose:()=>void}){
   return (
@@ -178,7 +179,7 @@ export default function App(){
         <input value={base} onChange={e=>setBase(e.target.value)} placeholder="Ollama Base" style={{width:240, padding:'.35rem .5rem', border:'1px solid #e5e5e5', borderRadius:8}} />
         <button className="btn" onClick={()=>{ setOllamaBase(base); location.reload() }}>Save</button>
         <button className="btn" onClick={async()=>{ const sb = useSB.getState().sb; await saveJSON('project/storyboard.json', sb); alert('Saved to OPFS: project/storyboard.json') }}>Save Project</button>
-        <button className="btn" onClick={async()=>{ const s = await loadJSON('project/storyboard.json'); if (s){ useSB.setState({ sb: s }); alert('Loaded from OPFS') }else alert('No project found') }}>Load Project</button>
+        <button className="btn" onClick={async()=>{ const s = await loadJSON<Storyboard>('project/storyboard.json'); if (s){ useSB.setState({ sb: s }); alert('Loaded from OPFS') }else alert('No project found') }}>Load Project</button>
         <button className="btn" onClick={()=>addScene()}>+ カード</button>
         <button className="btn" onClick={()=>setDockOpen(v=>{ const nv=!v; localStorage.setItem('dockOpen', nv? '1':'0'); return nv })}>{dockOpen?'統合 ⌃':'統合 ⌄'}</button>
         <button className="btn" onClick={async()=>{

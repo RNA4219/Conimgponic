@@ -76,8 +76,21 @@ export async function loadJSON<T>(path: string): Promise<T | null> {
 export async function listDir(path: string): Promise<string[]> {
   const directory = await ensureDir(path)
   const names: string[] = []
-  for await (const [name] of directory.entries()) {
-    names.push(name)
+  const iterator = (directory as FileSystemDirectoryHandle & {
+    entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>
+    keys?: () => AsyncIterableIterator<string>
+  })
+  if (iterator.entries) {
+    for await (const [name] of iterator.entries.call(directory)) {
+      names.push(name)
+    }
+    return names
   }
-  return names
+  if (iterator.keys) {
+    for await (const name of iterator.keys.call(directory)) {
+      names.push(name)
+    }
+    return names
+  }
+  throw new Error('Directory iteration is not supported in this environment')
 }

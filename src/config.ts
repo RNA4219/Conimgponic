@@ -23,3 +23,5 @@ export function setOllamaBase(url: string): void {
     return;
   }
 }
+
+export * from './config/index';

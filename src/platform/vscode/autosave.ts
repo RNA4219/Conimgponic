@@ -32,17 +32,16 @@ type AutoSaveTelemetryLockStrategy = Extract<
  * Collector テレメトリに付与される拡張プロパティ。
  * Bridge 側で state 遷移の `phaseBefore`/`phaseAfter` と Guard/Lock メタデータを注入する。
  */
-export interface AutoSaveTelemetryEventProperties {
+export type AutoSaveTelemetryEventProperties = Record<string, unknown> & {
   readonly phaseBefore: AutoSavePhase
   readonly phaseAfter: AutoSavePhase
   readonly flagSource: AutoSavePhaseGuardSnapshot['featureFlag']['source']
   readonly lockStrategy: AutoSaveTelemetryLockStrategy | 'none'
-  readonly [key: string]: unknown
 }
 
 export interface AutoSaveTelemetryEvent {
   readonly name: string
-  readonly properties?: AutoSaveTelemetryEventProperties
+  readonly properties?: Record<string, unknown>
 }
 
 export interface AutoSaveWarnEvent {

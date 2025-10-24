@@ -8,7 +8,7 @@ export function AssetsTab(){
   const [items, setItems] = useState<AssetRef[]>(sb.assetsCatalog || [])
 
   useEffect(()=>{ (async()=>{
-    const saved = await loadJSON('project/assets.json')
+    const saved = await loadJSON<AssetRef[]>('project/assets.json')
     if (saved) setItems(saved)
   })() }, [])
 

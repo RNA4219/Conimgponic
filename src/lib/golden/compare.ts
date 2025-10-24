@@ -94,7 +94,7 @@ export function compareNormalizedOutputs(
 
   const result: GoldenComparisonResult = { entries, matchRate, ok }
   if (!ok) {
-    result.error = { message: 'Golden comparison failed', retryable: false }
+    return { ...result, error: { message: 'Golden comparison failed', retryable: false } }
   }
   return result
 }
