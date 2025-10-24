@@ -93,10 +93,12 @@ export function compareNormalizedOutputs(
   const ok = entries.length > 0 && matched === entries.length
 
   const result: GoldenComparisonResult = { entries, matchRate, ok }
-  if (!ok) {
-    result.error = { message: 'Golden comparison failed', retryable: false }
-  }
-  return result
+  return ok
+    ? result
+    : {
+        ...result,
+        error: { message: 'Golden comparison failed', retryable: false },
+      }
 }
 
 export function formatComparisonSummary(entries: readonly GoldenComparisonEntry[]): string {
