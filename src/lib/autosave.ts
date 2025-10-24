@@ -1,5 +1,4 @@
 import type { Storyboard } from '../types'
-import { FLAG_MIGRATION_PLAN } from '../config/flags'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
 
@@ -174,7 +173,6 @@ export interface AutoSavePhaseGuardSnapshot {
   readonly optionsDisabled: boolean
 }
 
-const PHASE_GUARD_ROLLOUT_ACTIVE = FLAG_MIGRATION_PLAN.some((step) => step.phase.startsWith('phase-a'))
 
 interface Day8CollectorLike {
   publish(event: Record<string, unknown>): void
@@ -821,22 +819,6 @@ export function initAutoSave(
 ): AutoSaveInitResult {
   const truthy = /^(1|true)$/i, falsy = /^(0|false)$/i
   const asBool = (value: unknown) => (typeof value === 'string' && truthy.test(value) ? true : typeof value === 'string' && falsy.test(value) ? false : null)
-  const resolveFlag = () => {
-    const scope = globalThis as typeof globalThis & {
-      __AUTOSAVE_ENABLED__?: unknown
-      localStorage?: { getItem?: (key: string) => string | null }
-      process?: { env?: Record<string, unknown> }
-      'import'?: { meta?: { env?: Record<string, unknown> } }
-    }
-    const override = scope?.__AUTOSAVE_ENABLED__
-    const storage = asBool(scope?.localStorage?.getItem?.('autosave.enabled'))
-    if (typeof override === 'boolean') return override
-    if (storage != null) return storage
-    const env = asBool(
-      scope?.process?.env?.VITE_AUTOSAVE_ENABLED ?? scope?.['import']?.meta?.env?.VITE_AUTOSAVE_ENABLED
-    )
-    return env ?? !AUTOSAVE_POLICY.disabled
-  }
   const guardSource = (value: unknown): AutoSavePhaseGuardSnapshot['featureFlag']['source'] =>
     value === 'env' || value === 'workspace' || value === 'localStorage' || value === 'default' ? value : 'default'
   const resolveGuardFromEnvironment = (
