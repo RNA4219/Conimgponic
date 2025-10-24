@@ -38,7 +38,16 @@ export interface MergeBridge {
   readonly handleMergeRequest: (message: MergeRequestMessage) => Promise<MergeResultMessage>
 }
 
-const sanitizeThreshold = (value: number | undefined): number | undefined => {
+const THRESHOLD_CLAMP: Record<MergePrecision, { readonly min: number; readonly max?: number }> = {
+  legacy: { min: 0.65 },
+  beta: { min: 0.68, max: 0.9 },
+  stable: { min: 0.7, max: 0.94 },
+}
+
+const sanitizeThreshold = (
+  precision: MergePrecision,
+  value: number | undefined,
+): number | undefined => {
   if (typeof value !== 'number') {
     return undefined
   }
@@ -48,10 +57,18 @@ const sanitizeThreshold = (value: number | undefined): number | undefined => {
   if (value <= 0) {
     return undefined
   }
-  if (value >= 1) {
-    return 0.99
+  const clamp = THRESHOLD_CLAMP[precision]
+  let sanitized = value
+  if (sanitized < clamp.min) {
+    sanitized = clamp.min
   }
-  return value
+  if (clamp.max !== undefined && sanitized > clamp.max) {
+    sanitized = clamp.max
+  }
+  if (sanitized >= 1) {
+    sanitized = clamp.max ?? 0.99
+  }
+  return sanitized
 }
 
 export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): MergeBridge => {
@@ -60,10 +77,16 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
     async handleMergeRequest(message) {
       const precision = resolvePrecision()
       const { threshold: requestThreshold, ...rest } = message.payload
-      const effectiveThreshold = sanitizeThreshold(requestThreshold) ?? sanitizeThreshold(readThreshold())
-      const profile: MergeProfileOverrides = effectiveThreshold !== undefined
-        ? { precision, threshold: effectiveThreshold }
-        : { precision }
+      const sanitizedRequest = sanitizeThreshold(precision, requestThreshold)
+      const sanitizedFallback =
+        sanitizedRequest === undefined
+          ? sanitizeThreshold(precision, readThreshold())
+          : undefined
+      const effectiveThreshold = sanitizedRequest ?? sanitizedFallback
+      const profile: MergeProfileOverrides = { precision }
+      if (effectiveThreshold !== undefined) {
+        profile.threshold = effectiveThreshold
+      }
       const mergeInput = rest as MergeInput
       const result = engine.merge3(mergeInput, { profile })
       return {
