@@ -83,10 +83,10 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
           ? sanitizeThreshold(precision, readThreshold())
           : undefined
       const effectiveThreshold = sanitizedRequest ?? sanitizedFallback
-      const profile: MergeProfileOverrides = { precision }
-      if (effectiveThreshold !== undefined) {
-        profile.threshold = effectiveThreshold
-      }
+      const profile: MergeProfileOverrides =
+        effectiveThreshold !== undefined
+          ? { precision, threshold: effectiveThreshold }
+          : { precision }
       const mergeInput = rest as MergeInput
       const result = engine.merge3(mergeInput, { profile })
       return {
