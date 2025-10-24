@@ -46,7 +46,7 @@ test('planAutoSave returns manual-only decision when optionsDisabled=true', () =
   const decision = planAutoSave(plan)
 
   assert.equal(decision.mode, 'manual-only')
-  assert.equal(decision.reason, 'feature-flag-disabled')
+  assert.equal(decision.reason, 'options-disabled')
   assert.equal(decision.guard.optionsDisabled, true)
 })
 
@@ -64,8 +64,8 @@ test('publishAutoSaveGuard forwards manual-only reason to Day8 collector hook', 
       mode: 'manual-only',
       reason: 'feature-flag-disabled',
       guard: {
-        featureFlag: { value: true, source: 'workspace' },
-        optionsDisabled: true
+        featureFlag: { value: false, source: 'workspace' },
+        optionsDisabled: false
       }
     }
 
@@ -79,6 +79,40 @@ test('publishAutoSaveGuard forwards manual-only reason to Day8 collector hook', 
     assert.equal(event?.reason, 'feature-flag-disabled')
     assert.deepEqual(event?.guard, decision.guard)
     assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
+  } finally {
+    if (originalCollector) {
+      (globalThis as { Day8Collector?: unknown }).Day8Collector = originalCollector
+    } else {
+      delete (globalThis as { Day8Collector?: unknown }).Day8Collector
+    }
+  }
+})
+
+test('publishAutoSaveGuard distinguishes options-disabled reason in Day8 collector hook', () => {
+  const emitted: unknown[] = []
+  const originalCollector = (globalThis as { Day8Collector?: unknown }).Day8Collector
+  ;(globalThis as { Day8Collector?: { publish: (event: unknown) => void } }).Day8Collector = {
+    publish(event) {
+      emitted.push(event)
+    }
+  }
+
+  try {
+    const decision: AutoSaveActivationDecision = {
+      mode: 'manual-only',
+      reason: 'options-disabled',
+      guard: {
+        featureFlag: { value: true, source: 'workspace' },
+        optionsDisabled: true
+      }
+    }
+
+    publishAutoSaveGuard(decision)
+
+    assert.equal(emitted.length, 1)
+    const event = emitted[0] as Record<string, unknown>
+    assert.equal(event?.reason, 'options-disabled')
+    assert.deepEqual(event?.guard, decision.guard)
   } finally {
     if (originalCollector) {
       (globalThis as { Day8Collector?: unknown }).Day8Collector = originalCollector

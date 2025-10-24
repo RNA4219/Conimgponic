@@ -53,7 +53,7 @@ export type AutoSaveActivationDecision =
   | {
       readonly mode: 'manual-only'
       readonly guard: AutoSavePhaseGuardSnapshot
-      readonly reason: 'phase-a0-failsafe' | 'feature-flag-disabled'
+      readonly reason: 'phase-a0-failsafe' | 'feature-flag-disabled' | 'options-disabled'
     }
   | {
       readonly mode: 'autosave'
@@ -63,7 +63,7 @@ export type AutoSaveActivationDecision =
 
 export function planAutoSave(plan: AutoSaveBootstrapPlan): AutoSaveActivationDecision {
   if (plan.guard.optionsDisabled) {
-    return { mode: 'manual-only', guard: plan.guard, reason: 'feature-flag-disabled' }
+    return { mode: 'manual-only', guard: plan.guard, reason: 'options-disabled' }
   }
   if (!plan.guard.featureFlag.value) {
     const reason = plan.failSafePhase === 'phase-a0' ? 'phase-a0-failsafe' : 'feature-flag-disabled'
