@@ -33,10 +33,10 @@ type AutoSaveTelemetryLockStrategy = Extract<
  * Bridge 側で state 遷移の `phaseBefore`/`phaseAfter` と Guard/Lock メタデータを注入する。
  */
 export interface AutoSaveTelemetryEventProperties {
-  readonly phaseBefore: AutoSavePhase
-  readonly phaseAfter: AutoSavePhase
-  readonly flagSource: AutoSavePhaseGuardSnapshot['featureFlag']['source']
-  readonly lockStrategy: AutoSaveTelemetryLockStrategy | 'none'
+  readonly phaseBefore?: AutoSavePhase
+  readonly phaseAfter?: AutoSavePhase
+  readonly flagSource?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
+  readonly lockStrategy?: AutoSaveTelemetryLockStrategy | 'none'
   readonly [key: string]: unknown
 }
 
