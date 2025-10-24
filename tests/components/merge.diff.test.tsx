@@ -42,6 +42,21 @@ test('beta precision enables diff tab when review band is present', () => {
   assert.equal(plan.guard.phaseBRequired, true)
 })
 
+test('beta precision without phase stats keeps diff hidden', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'beta',
+    threshold: 0.7,
+  })
+
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.guard.phaseBRequired, false)
+  assert.deepEqual(
+    plan.tabs.tabs.map((entry) => entry.id),
+    ['compiled', 'shot', 'assets', 'import', 'golden'],
+  )
+})
+
 test('beta precision suppresses diff tab when review band is empty', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'beta',
@@ -60,6 +75,18 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   assert.equal(plan.threshold.autoTarget, 0.9)
   assert.equal(plan.autoApplied.rate, 0.72)
   assert.equal(plan.autoApplied.meetsTarget, false)
+})
+
+test('stable precision without phase stats keeps diff opt-in', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+  })
+
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.guard.phaseBRequired, false)
+  assert.ok(plan.tabs.tabs.every((entry) => entry.id !== 'diff'))
 })
 
 test('stable precision clamps threshold upper bound and keeps diff initial tab when conflicts exist', () => {
