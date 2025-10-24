@@ -133,20 +133,33 @@ export function GoldenCompare({ telemetry }: GoldenCompareProps): JSX.Element {
       return
     }
     setGolden((prev) => {
-      const next: GoldenArtifacts = {
-        markdown: prev.markdown,
-        csv: prev.csv,
-        jsonl: prev.jsonl,
-        package: { ...prev.package },
-      }
+      let nextMarkdown = prev.markdown
+      let nextCsv = prev.csv
+      let nextJsonl = prev.jsonl
+      const nextPackage = { ...prev.package }
       artifacts.forEach((artifact) => {
         if (artifact.format === 'package' && artifact.name) {
-          next.package[artifact.name] = artifact.payload
-        } else if (artifact.format !== 'package') {
-          next[artifact.format] = artifact.payload
+          nextPackage[artifact.name] = artifact.payload
+          return
+        }
+        if (artifact.format === 'markdown') {
+          nextMarkdown = artifact.payload
+          return
+        }
+        if (artifact.format === 'csv') {
+          nextCsv = artifact.payload
+          return
+        }
+        if (artifact.format === 'jsonl') {
+          nextJsonl = artifact.payload
         }
       })
-      return next
+      return {
+        markdown: nextMarkdown,
+        csv: nextCsv,
+        jsonl: nextJsonl,
+        package: nextPackage,
+      }
     })
   }, [])
 

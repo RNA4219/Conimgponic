@@ -106,7 +106,7 @@ export type MergePlanRecommendedCommand =
 
 export type MergePlanPhaseBReason = 'review-band' | 'locked-conflict' | 'low-similarity';
 
-export interface MergePlanEntry {
+export interface MergePlanAnalysisEntry {
   readonly hunkId: string;
   readonly section: string | null;
   readonly decision: MergeDecision;
@@ -117,7 +117,7 @@ export interface MergePlanEntry {
   readonly recommendedCommand: MergePlanRecommendedCommand;
 }
 
-export interface MergePlanSummary {
+export interface MergePlanAnalysisSummary {
   readonly total: number;
   readonly phaseA: number;
   readonly phaseB: number;
@@ -125,16 +125,16 @@ export interface MergePlanSummary {
   readonly locked: number;
 }
 
-export interface MergePlanPhaseB {
+export interface MergePlanAnalysisPhaseB {
   readonly required: boolean;
   readonly reasons: readonly MergePlanPhaseBReason[];
 }
 
-export interface MergePlan {
+export interface MergePlanAnalysis {
   readonly precision: MergePrecision;
-  readonly entries: readonly MergePlanEntry[];
-  readonly summary: MergePlanSummary;
-  readonly phaseB: MergePlanPhaseB;
+  readonly entries: readonly MergePlanAnalysisEntry[];
+  readonly summary: MergePlanAnalysisSummary;
+  readonly phaseB: MergePlanAnalysisPhaseB;
 }
 
 export interface MergeResult {

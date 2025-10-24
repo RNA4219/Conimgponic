@@ -133,7 +133,7 @@ const statusPhaseForState = (state: AutoSaveStatusState): AutoSavePhase => {
     case 'disabled':
       return 'disabled'
     case 'dirty':
-      return 'debouncing'
+      return 'dirty'
     case 'saving':
       return 'awaiting-lock'
     case 'saved':
@@ -204,23 +204,31 @@ const clampHistory = (state: InternalState, policy: AutoSavePolicy): void => {
   state.retainedBytes = retained
 }
 
+type TelemetryEventInput = Omit<AutoSaveTelemetryEvent, 'properties'> & {
+  readonly properties?: Omit<
+    AutoSaveTelemetryEventProperties,
+    'phaseBefore' | 'phaseAfter' | 'flagSource' | 'lockStrategy'
+  >
+}
+
 const emitTelemetry = (
   options: AutoSaveHostBridgeOptions,
-  event: AutoSaveTelemetryEvent,
+  event: TelemetryEventInput,
   context: AutoSaveTelemetryContext
 ): void => {
   const phaseBefore = statusPhaseForState(context.before)
   const phaseAfter = statusPhaseForState(context.after)
-  options.telemetry?.({
+  const telemetryEvent: AutoSaveTelemetryEvent = {
     ...event,
     properties: {
-      ...event.properties,
+      ...(event.properties ?? {}),
       phaseBefore,
       phaseAfter,
       flagSource: context.guard.featureFlag.source,
       lockStrategy: context.lockStrategy ?? 'none'
     }
-  })
+  }
+  options.telemetry?.(telemetryEvent)
 }
 
 const emitWarn = (options: AutoSaveHostBridgeOptions, event: AutoSaveWarnEvent): void => {

@@ -6,7 +6,7 @@ export function TemplatesMenu({ onInsert }:{ onInsert:(t:Template)=>void }){
   const [list, setList] = useState<Template[]>(builtinTemplates)
   const [open, setOpen] = useState(false)
   useEffect(()=>{ (async()=>{
-    const user = await loadJSON('project/templates.json')
+    const user = await loadJSON<Template[]>('project/templates.json')
     if (user && Array.isArray(user)) setList([...builtinTemplates, ...user])
   })() },[])
   return (
@@ -22,7 +22,7 @@ export function TemplatesMenu({ onInsert }:{ onInsert:(t:Template)=>void }){
             const name = prompt('テンプレ名?'); if (!name) return
             const text = prompt('テンプレ本文?'); if (text==null) return
             const id = 'user-' + Math.random().toString(36).slice(2,8)
-            const user = (await loadJSON('project/templates.json')) || []
+            const user = (await loadJSON<Template[]>('project/templates.json')) || []
             user.push({ id, name, text })
             await saveJSON('project/templates.json', user)
             setList([...builtinTemplates, ...user])
