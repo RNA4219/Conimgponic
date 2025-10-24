@@ -60,9 +60,7 @@ const expectedQualitySequence = [
   'pnpm -s test:telemetry',
 ];
 
-const expectedCoverageCommand = 'pnpm -s test:coverage';
-const expectedJunitCommand =
-  'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml';
+const expectedReportsSequence = ['pnpm -s test:coverage', 'pnpm -s test:junit'];
 
 const { load } = await importJsYaml();
 
@@ -103,16 +101,10 @@ describe('ci workflow build job', () => {
 
       const reportCommands = extractPnpmCommands(reportSteps);
 
-      assertCommandPresence(
+      assertCommandSequence(
         reportCommands,
-        expectedCoverageCommand,
-        'reports job must run coverage command',
-      );
-
-      assertCommandPresence(
-        reportCommands,
-        expectedJunitCommand,
-        'reports job must generate JUnit report',
+        expectedReportsSequence,
+        'reports job pnpm commands',
       );
 
       const artifactSteps = reportSteps.filter(isUploadArtifactStep);
@@ -207,12 +199,6 @@ function assertCommandSequence(
 
     cursor = nextIndex;
   }
-}
-
-function assertCommandPresence(commands: string[], expected: string, message: string): void {
-  const index = commands.findIndex((command) => command === expected);
-
-  assert.notStrictEqual(index, -1, message);
 }
 
 function assertStepArray(value: unknown, message: string): asserts value is StepConfig[] {
