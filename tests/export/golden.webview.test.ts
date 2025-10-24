@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 import { strict as assert } from 'node:assert'
@@ -5,16 +6,26 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+process.env.TS_NODE_COMPILER_OPTIONS ??= JSON.stringify({ moduleResolution: 'bundler' })
+
 import type { Storyboard } from '../../src/types'
+import type { GoldenArtifacts as ModuleGoldenArtifacts } from '../../src/lib/golden/compare'
 type CompareModule = typeof import('../../scripts/golden/compare')
 const compareModulePromise = import(
   pathToFileURL(join(process.cwd(), 'scripts/golden/compare.ts')).href
 ) as Promise<CompareModule>
 
 type GoldenCompareModule = typeof import('../../src/lib/golden/compare')
-const goldenCompareModulePromise = import(
-  pathToFileURL(join(process.cwd(), 'src/lib/golden/compare.ts')).href
-) as Promise<GoldenCompareModule>
+const goldenCompareModulePromise: Promise<GoldenCompareModule> = import(
+  pathToFileURL(join(process.cwd(), 'src/lib/golden/compare.ts')).href,
+).catch(async (error) => {
+  const compare = await loadCompareModule()
+  if ('loadComparisonToolkit' in compare) {
+    const toolkit = await compare.loadComparisonToolkit()
+    return toolkit as unknown as GoldenCompareModule
+  }
+  throw error
+})
 
 type ExportersModule = typeof import('../../src/lib/exporters')
 const exportersModulePromise = import(
@@ -41,7 +52,16 @@ async function loadCompareModule(): Promise<CompareModule> {
 }
 
 async function loadGoldenCompareModule(): Promise<GoldenCompareModule> {
-  return goldenCompareModulePromise
+  try {
+    return await goldenCompareModulePromise
+  } catch (error) {
+    const compare = await loadCompareModule()
+    if ('loadComparisonToolkit' in compare) {
+      const toolkit = await compare.loadComparisonToolkit()
+      return toolkit as unknown as GoldenCompareModule
+    }
+    throw error
+  }
 }
 
 function createTempDir(prefix: string): string {
@@ -151,6 +171,30 @@ describe('export bridge golden comparison', () => {
       assert.match(diffReport, /csv: diff -> line/)
     } finally {
       ctx.cleanup()
+    }
+  })
+
+  test('compare.ts CLI は diff サマリを標準出力へ書き出す', async () => {
+    const { goldenDir, outputDir, cleanup } = await setupGolden((outputs) => {
+      outputs.csv = `${outputs.csv}\n"corrupted"`
+    })
+    try {
+      const comparePath = join(process.cwd(), 'scripts/golden/compare.ts')
+      const result = spawnSync(process.execPath, [
+        '--loader',
+        'ts-node/esm',
+        comparePath,
+        storyboardPath,
+        goldenDir,
+        outputDir,
+      ], {
+        encoding: 'utf8',
+      })
+      assert.equal(result.status, 1)
+      assert.match(result.stdout, /\[golden\]\s+csv: diff/)
+      assert.match(result.stdout, /golden-diff\.txt/)
+    } finally {
+      cleanup()
     }
   })
 
@@ -283,11 +327,11 @@ describe('export bridge golden comparison', () => {
   })
 })
 
-function readGoldenArtifacts(dir: string): GoldenCompareModule['GoldenArtifacts'] {
+function readGoldenArtifacts(dir: string): ModuleGoldenArtifacts {
   const markdownPath = join(dir, 'markdown', 'storyboard.md')
   const csvPath = join(dir, 'csv', 'storyboard.csv')
   const jsonlPath = join(dir, 'jsonl', 'storyboard.jsonl')
-  const artifacts: GoldenCompareModule['GoldenArtifacts'] = {
+  const artifacts: { markdown?: string; csv?: string; jsonl?: string; package: Record<string, string> } = {
     package: {},
   }
   if (existsSync(markdownPath)) {
