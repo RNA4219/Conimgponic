@@ -224,7 +224,7 @@ describe('export bridge golden comparison', () => {
       assert.equal(markdownEntry.status, 'matched')
       const diffReport = readFileSync(result.diffPath, 'utf8')
       assert.match(diffReport, /markdown: OK/)
-      assert.match(result.normalizedPath, /runs\/unit\/export/)
+      assert.equal(result.normalizedPath, 'runs/unit/export')
       assert.equal(
         result.runUri,
         pathToFileURL(join(ctx.outputDir, 'runs', 'unit', 'export')).href,

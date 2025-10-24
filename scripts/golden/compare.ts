@@ -303,10 +303,10 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
   const summary = summarizeComparison(comparison.entries)
   await writeFile(diffPath, `${summary}\n`, 'utf8')
 
-  const normalizedPath = comparison.ok
-    ? toPosix(relative(options.outputDir, baseDir))
-    : ''
-  const runUri = comparison.ok ? pathToFileURL(baseDir).href : ''
+  const normalizedBaseDir = toPosix(relative(options.outputDir, baseDir))
+  const absoluteRunUri = pathToFileURL(baseDir).href
+  const normalizedPath = comparison.ok ? normalizedBaseDir : ''
+  const runUri = comparison.ok ? absoluteRunUri : ''
 
   const telemetryEvent = createTelemetryFromComparison(comparison, runId)
   if (telemetryEvent) {
