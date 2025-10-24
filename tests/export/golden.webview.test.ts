@@ -47,8 +47,36 @@ type Mutator = (outputs: NormalizedOutputs) => void
 const storyboardPath = join(process.cwd(), 'tests/fixtures/case-mini-03/project.storyboard.json')
 const baseStoryboard = JSON.parse(readFileSync(storyboardPath, 'utf8')) as Storyboard
 
-async function loadCompareModule(): Promise<CompareModule> {
-  return compareModulePromise
+type GoldenArtifacts = import('../../src/lib/golden/compare').GoldenArtifacts
+type GoldenComparisonEntry = import('../../src/lib/golden/compare').GoldenComparisonEntry
+type GoldenComparisonResult = import('../../src/lib/golden/compare').GoldenComparisonResult
+type ExporterTools = Awaited<ReturnType<typeof loadExporters>>
+type NormalizedOutputsType = import('../../src/lib/exporters').NormalizedOutputs
+type Mutable<T> = { -readonly [P in keyof T]: T[P] }
+type NormalizationTools = Pick<ExporterTools, 'firstLineDiff' | 'normalizeJson' | 'normalizeJsonl' | 'trimLines'>
+type ScalarFormat = Exclude<keyof Pick<NormalizedOutputsType, 'markdown' | 'csv' | 'jsonl'>, 'package'>
+
+const scalarFormats: readonly ScalarFormat[] = ['markdown', 'csv', 'jsonl']
+
+function normalizeGoldenArtifact(
+  format: keyof NormalizedOutputsType | 'package',
+  golden: GoldenArtifacts,
+  tools: NormalizationTools,
+  name?: string,
+): string | undefined {
+  switch (format) {
+    case 'markdown':
+      return golden.markdown ? tools.trimLines(golden.markdown) : undefined
+    case 'csv':
+      return golden.csv ? tools.trimLines(golden.csv) : undefined
+    case 'jsonl':
+      return golden.jsonl ? tools.normalizeJsonl(golden.jsonl) : undefined
+    case 'package':
+      if (!name) return undefined
+      return golden.package[name] ? tools.normalizeJson(golden.package[name]) : undefined
+    default:
+      return undefined
+  }
 }
 
 async function loadGoldenCompareModule(): Promise<GoldenCompareModule> {
@@ -144,7 +172,12 @@ describe('export bridge golden comparison', () => {
       assert.equal(markdownEntry.status, 'matched')
       const diffReport = readFileSync(result.diffPath, 'utf8')
       assert.match(diffReport, /markdown: OK/)
-      assert.match(result.normalizedPath, /runs\/unit\/export/)
+      assert.equal(result.normalizedPath, 'runs/unit/export')
+      assert.equal(
+        result.runUri,
+        pathToFileURL(join(ctx.outputDir, 'runs', 'unit', 'export')).href,
+        'runUri は file://runs/... ではなく絶対 file:// URI を返す必要がある',
+      )
     } finally {
       ctx.cleanup()
     }
@@ -308,15 +341,19 @@ describe('export bridge golden comparison', () => {
 
       const exporters = await loadExporters()
       const normalized = exporters.createNormalizedOutputs(baseStoryboard)
-
-      const { compareNormalizedOutputs, formatComparisonSummary } = await loadGoldenCompareModule()
+      const tools: NormalizationTools = {
+        firstLineDiff: exporters.firstLineDiff,
+        normalizeJson: exporters.normalizeJson,
+        normalizeJsonl: exporters.normalizeJsonl,
+        trimLines: exporters.trimLines,
+      }
 
       const goldenArtifacts = readGoldenArtifacts(ctx.goldenDir)
-      const comparison = compareNormalizedOutputs(normalized, goldenArtifacts)
+      const comparison = compareWithGolden(normalized, goldenArtifacts, tools)
 
       assert.equal(comparison.ok, false)
       const diffReport = readFileSync(compareResult.diffPath, 'utf8').trimEnd()
-      assert.equal(formatComparisonSummary(comparison.entries), diffReport)
+      assert.equal(summarizeComparison(comparison.entries), diffReport)
       const csvEntry = comparison.entries.find((entry) => entry.format === 'csv')
       assert.ok(csvEntry)
       assert.equal(csvEntry.status, 'diff')

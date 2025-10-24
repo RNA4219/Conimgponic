@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { spawn } from 'node:child_process';
 
 const DEFAULT_TEST_GLOB = 'tests/**/*.test.ts';
@@ -8,7 +9,7 @@ const nodeArgs = buildNodeArgs(argv, explicitTargets);
 
 const child = spawn('node', nodeArgs, { stdio: 'inherit', env: process.env });
 
-child.on('exit', (code, signal) => {
+child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
   if (signal !== null) {
     process.kill(process.pid, signal);
     return;
@@ -17,7 +18,7 @@ child.on('exit', (code, signal) => {
   process.exit(code === null ? 1 : code);
 });
 
-child.on('error', (error) => {
+child.on('error', (error: Error) => {
   console.error(error);
   process.exit(1);
 });

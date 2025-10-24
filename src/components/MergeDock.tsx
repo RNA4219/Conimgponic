@@ -238,7 +238,7 @@ type MergeThresholdStorage = Pick<Storage, 'getItem'> | null
 interface MergeThresholdSourceOptions extends MergeThresholdOptions {
   readonly workspace?: WorkspaceConfiguration | null
   readonly storage?: MergeThresholdStorage
-  readonly flags?: FlagSnapshot | null
+  readonly flags?: Pick<FlagSnapshot, 'merge'> | null
 }
 
 const readWorkspaceSetting = (
@@ -278,15 +278,20 @@ export const resolveMergeThresholdSnapshot = (
 ): MergeThresholdSnapshot => {
   const workspace = options.workspace ?? null
   const storage = options.storage ?? null
-  const flags = options.flags ?? null
+  const snapshot: Pick<FlagSnapshot, 'merge'> =
+    options.flags ?? resolveFlags({ workspace, storage })
   const precision =
     options.precision ??
-    flags?.merge.precision ??
-    resolveFlags({ workspace, storage }).merge.precision
+    snapshot.merge.precision
 
   const overrideThreshold = parseMergeThreshold(options.threshold)
   if (overrideThreshold !== undefined) {
     return { precision, threshold: overrideThreshold }
+  }
+
+  const flagThreshold = parseMergeThreshold(snapshot.merge.threshold)
+  if (flagThreshold !== undefined) {
+    return { precision, threshold: flagThreshold }
   }
 
   const workspaceThreshold = parseMergeThreshold(
@@ -297,10 +302,14 @@ export const resolveMergeThresholdSnapshot = (
   }
 
   const storedThreshold = parseMergeThreshold(storage?.getItem(MERGE_THRESHOLD_STORAGE_KEY))
-  return { precision, threshold: storedThreshold }
+  if (storedThreshold !== undefined) {
+    return { precision, threshold: storedThreshold }
+  }
+
+  return { precision, threshold: DEFAULT_THRESHOLD }
 }
 
-type MergeThresholdHookOptions = Omit<MergeThresholdSourceOptions, 'flags'>
+type MergeThresholdHookOptions = MergeThresholdSourceOptions
 
 const useMergeThreshold = (
   options: MergeThresholdHookOptions = {},
@@ -309,7 +318,11 @@ const useMergeThreshold = (
     typeof window !== 'undefined' ? window.localStorage : null
   const storage = options.storage ?? fallbackStorage
   const workspace = options.workspace ?? null
-  const snapshot = useMemo(() => resolveFlags({ workspace, storage }), [workspace, storage])
+  const providedFlags = options.flags ?? null
+  const snapshot = useMemo<Pick<FlagSnapshot, 'merge'>>(
+    () => providedFlags ?? resolveFlags({ workspace, storage }),
+    [providedFlags, workspace, storage],
+  )
 
   return useMemo(
     () =>
@@ -320,7 +333,14 @@ const useMergeThreshold = (
         storage,
         flags: snapshot,
       }),
-    [options.precision, options.threshold, workspace, storage, snapshot],
+    [
+      options.precision,
+      options.threshold,
+      workspace,
+      storage,
+      snapshot.merge.precision,
+      snapshot.merge.threshold,
+    ],
   )
 }
 
@@ -483,6 +503,7 @@ export function MergeDock(props?: MergeDockProps){
   const mergeWindow = typeof window !== 'undefined' ? (window as MergeDockWindow) : undefined
   const autoSave = readAutoSaveState(mergeWindow)
   const { precision, threshold } = useMergeThreshold({
+    flags: flags ?? null,
     precision: flags?.merge.precision ?? null,
     threshold: props?.mergeThreshold ?? null,
     workspace: props?.workspace ?? null,

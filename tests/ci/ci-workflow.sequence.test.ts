@@ -50,7 +50,7 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
 const require = createRequire(import.meta.url);
-const expectedSequence = [
+const expectedQualitySequence = [
   'pnpm -s lint',
   'pnpm -s typecheck',
   'pnpm -s test:autosave',
@@ -58,9 +58,11 @@ const expectedSequence = [
   'pnpm -s test:cli',
   'pnpm -s test:collector',
   'pnpm -s test:telemetry',
-  'pnpm test -- --test-coverage',
-  'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml',
 ];
+
+const expectedCoverageCommand = 'pnpm -s test:coverage';
+const expectedJunitCommand =
+  'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml';
 
 const { load } = await importJsYaml();
 
@@ -93,10 +95,25 @@ describe('ci workflow build job', () => {
       const reportSteps = reports.steps;
       assertStepArray(reportSteps, 'workflow.jobs.reports.steps must be an array');
 
-      const reportCommands = extractPnpmCommands(reportSteps);
-      const runCommands = [...qualityCommands, ...reportCommands];
+      assertCommandSequence(
+        qualityCommands,
+        expectedQualitySequence,
+        'quality job matrix.include',
+      );
 
-      assertCommandSequence(runCommands, expectedSequence);
+      const reportCommands = extractPnpmCommands(reportSteps);
+
+      assertCommandPresence(
+        reportCommands,
+        expectedCoverageCommand,
+        'reports job must run coverage command',
+      );
+
+      assertCommandPresence(
+        reportCommands,
+        expectedJunitCommand,
+        'reports job must generate JUnit report',
+      );
 
       const artifactSteps = reportSteps.filter(isUploadArtifactStep);
 
@@ -133,7 +150,7 @@ function assertArtifactStep(
   });
 
   if (!match) {
-    assert.fail(`build job must upload artifact named "${expectedName}"`);
+    assert.fail(`reports job must upload artifact named "${expectedName}"`);
   }
 
   const config = match.with;
@@ -170,20 +187,32 @@ function extractPnpmCommands(steps: StepConfig[]): string[] {
   });
 }
 
-function assertCommandSequence(commands: string[], expected: string[]): void {
+function assertCommandSequence(
+  commands: string[],
+  expected: string[],
+  context: string,
+): void {
   let cursor = -1;
 
   for (const command of expected) {
-    const nextIndex = commands.findIndex((entry, index) => index > cursor && entry.includes(command));
+    const nextIndex = commands.findIndex(
+      (entry, index) => index > cursor && entry === command,
+    );
 
     assert.notStrictEqual(
       nextIndex,
       -1,
-      `build job must include a pnpm command containing "${command}" after index ${cursor}`,
+      `${context} must include pnpm command "${command}" after index ${cursor}`,
     );
 
     cursor = nextIndex;
   }
+}
+
+function assertCommandPresence(commands: string[], expected: string, message: string): void {
+  const index = commands.findIndex((command) => command === expected);
+
+  assert.notStrictEqual(index, -1, message);
 }
 
 function assertStepArray(value: unknown, message: string): asserts value is StepConfig[] {
