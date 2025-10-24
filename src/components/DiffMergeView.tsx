@@ -149,7 +149,6 @@ export interface DiffMergeTabStorage{readonly getItem:(key:string)=>string|null;
 
 export const resolveDiffMergeStoredTab=({plan,precision,storage,fallback}:{readonly plan:DiffMergeViewPlan;readonly precision:MergePrecision;readonly storage?:DiffMergeTabStorage;readonly fallback?:DiffMergeSubTabKey|null;}):DiffMergeSubTabKey=>{const storageKey=`${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`;const stored=storage?.getItem(storageKey)??null;const isAllowed=(key:DiffMergeSubTabKey|null|undefined):key is DiffMergeSubTabKey=>!!key&&plan.tabs.some((tab)=>tab.key===key);if(stored&&!isAllowed(stored as DiffMergeSubTabKey))storage?.removeItem?.(storageKey);if(isAllowed(stored as DiffMergeSubTabKey|null))return stored as DiffMergeSubTabKey;if(isAllowed(fallback??null))return fallback as DiffMergeSubTabKey;return plan.initialTab}
 
-
 const flowDiagrams = Object.freeze<Record<MergePrecision, string>>({
   legacy: 'mermaid\nstateDiagram-v2\n  [*] --> Review\n  Review --> Review: toggle-select | mark-skipped\n  Review --> Review: override | reopen\n  Review --> [*]: queue-merge\n',
   beta: 'mermaid\nstateDiagram-v2\n  [*] --> Review\n  Review --> Merged: queue-merge\n  Review --> Edit: open-editor\n  Edit --> Review: commit-edit\n  Edit --> Review: cancel-edit\n  Merged --> Review: reopen | queue-result-conflict | queue-result-error\n  Merged --> Done: queue-result-success\n  Done --> Review: reopen\n  Review --> Diff: select-tab(diff)\n  Diff --> Review: select-tab(review)\n',

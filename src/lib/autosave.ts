@@ -173,7 +173,6 @@ export interface AutoSavePhaseGuardSnapshot {
   readonly optionsDisabled: boolean
 }
 
-
 interface Day8CollectorLike {
   publish(event: Record<string, unknown>): void
 }
