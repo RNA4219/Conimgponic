@@ -59,6 +59,52 @@ scenario('markDirty transitions snapshot to debouncing and updates pendingBytes'
   assert.equal(snap.pendingBytes, 2048)
 })
 
+scenario('auto scheduler flushes after debounce+idle windows', async (t, ctx) => {
+  const { initAutoSave, AUTOSAVE_POLICY, opfs } = ctx
+  t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
+  const runner = initAutoSave(() => makeStoryboard(['epsilon']), { disabled: false })
+  runner.markDirty({ pendingBytes: 128 })
+  assert.equal(runner.snapshot().phase, 'debouncing')
+
+  t.mock.timers.tick(AUTOSAVE_POLICY.debounceMs - 1)
+  await Promise.resolve()
+  assert.equal(opfs.files.size, 0)
+  assert.equal(runner.snapshot().phase, 'debouncing')
+
+  t.mock.timers.tick(1)
+  await Promise.resolve()
+  assert.equal(opfs.files.size, 0)
+  assert.equal(runner.snapshot().phase, 'debouncing')
+
+  t.mock.timers.tick(AUTOSAVE_POLICY.idleMs - 1)
+  await Promise.resolve()
+  assert.equal(opfs.files.size, 0)
+  assert.equal(runner.snapshot().phase, 'debouncing')
+
+  t.mock.timers.tick(1)
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.ok(opfs.files.has('project/autosave/current.json'))
+  assert.equal(runner.snapshot().phase, 'idle')
+})
+
+scenario('guard-disabled scheduler never starts timers', async (t, ctx) => {
+  const { initAutoSave, AUTOSAVE_POLICY, opfs } = ctx
+  t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
+  const runner = initAutoSave(
+    () => makeStoryboard(['zeta']),
+    { disabled: false },
+    { featureFlag: { value: false, source: 'env' }, optionsDisabled: false }
+  )
+  assert.equal(runner.snapshot().phase, 'disabled')
+  runner.markDirty({ pendingBytes: 256 })
+  assert.equal(runner.snapshot().phase, 'disabled')
+  t.mock.timers.tick(AUTOSAVE_POLICY.debounceMs + AUTOSAVE_POLICY.idleMs)
+  await Promise.resolve()
+  assert.equal(opfs.files.size, 0)
+  assert.equal(runner.snapshot().phase, 'disabled')
+})
+
 scenario('history guard enforces 20 generations and 50MB capacity', async (_t, ctx) => {
   const { initAutoSave, opfs, AUTOSAVE_POLICY } = ctx
   const runner = initAutoSave(() => makeStoryboard(['beta']), { disabled: false })

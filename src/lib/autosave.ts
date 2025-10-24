@@ -986,7 +986,10 @@ export function initAutoSave(
   let pendingBytes = 0
   let lastError: AutoSaveError | undefined
   let queuedGeneration = 0
-  let disposed = false, retryTimer: ReturnType<typeof setTimeout> | null = null
+  let disposed = false,
+    retryTimer: ReturnType<typeof setTimeout> | null = null,
+    debounceTimer: ReturnType<typeof setTimeout> | null = null,
+    idleTimer: ReturnType<typeof setTimeout> | null = null
   const updateIndex = async (ts: string, bytes: number, payload: string) => {
     const path = 'project/autosave/index.json', tmp = `${path}.tmp`, current = (await loadJSON(path)) as { entries?: AutoSaveHistoryEntry[] } | null, key = sanitizeTimestamp(ts)
     const entries = Array.isArray(current?.entries) ? current!.entries.filter((entry) => typeof entry?.ts === 'string' && typeof entry?.bytes === 'number') : []
@@ -998,6 +1001,22 @@ export function initAutoSave(
     if (total > AUTOSAVE_POLICY.maxBytes) throw makeError('history-overflow', 'Unable to satisfy AutoSave history retention policy', false, undefined, { totalBytes: total })
     await saveText(`project/autosave/history/${key}.json.tmp`, payload); await renameFile(`project/autosave/history/${key}.json.tmp`, `project/autosave/history/${key}.json`)
     await saveJSON(tmp, { lastSuccessAt: ts, entries }); await renameFile(tmp, path)
+  }
+  const clearDebounceTimer = () => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+  }
+  const clearIdleTimer = () => {
+    if (idleTimer) {
+      clearTimeout(idleTimer)
+      idleTimer = null
+    }
+  }
+  const resetSchedule = () => {
+    clearDebounceTimer()
+    clearIdleTimer()
   }
   const runFlush = async (attempt: number): Promise<void> => {
     if (disposed) throw disabledError()
@@ -1047,6 +1066,45 @@ export function initAutoSave(
       throw autoError
     }
   }
+  const startFlush = async (source: 'manual' | 'auto'): Promise<void> => {
+    if (disposed) throw disabledError()
+    if (source === 'manual') {
+      if (retryTimer) {
+        clearTimeout(retryTimer)
+        retryTimer = null
+      }
+    } else if (retryTimer) {
+      return
+    }
+    if (source === 'auto' && pendingQueue.length === 0) {
+      return
+    }
+    if (pendingQueue.length > 0) {
+      pendingQueue.shift()
+      queuedGeneration = pendingQueue.length
+    } else {
+      queuedGeneration = 0
+    }
+    await runFlush(0)
+  }
+  const scheduleIdleFlush = () => {
+    if (disposed) return
+    clearIdleTimer()
+    idleTimer = setTimeout(() => {
+      idleTimer = null
+      if (disposed) return
+      void startFlush('auto').catch(() => undefined)
+    }, AUTOSAVE_POLICY.idleMs)
+  }
+  const scheduleDebounce = () => {
+    if (disposed) return
+    clearDebounceTimer()
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null
+      if (disposed) return
+      scheduleIdleFlush()
+    }, AUTOSAVE_POLICY.debounceMs)
+  }
   const snapshot = (): AutoSaveStatusSnapshot => ({
     phase: disposed ? 'disabled' : phase,
     lastSuccessAt,
@@ -1059,15 +1117,12 @@ export function initAutoSave(
     snapshot,
     flushNow: async () => {
       if (disposed) throw disabledError()
-      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
-      if (pendingQueue.length > 0) {
-        pendingQueue.shift()
-        queuedGeneration = pendingQueue.length
-      }
-      await runFlush(0)
+      resetSchedule()
+      await startFlush('manual')
     },
     dispose: async () => {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+      resetSchedule()
       disposed = true; phase = 'disabled'; pendingBytes = 0; pendingQueue.length = 0; queuedGeneration = 0
     },
     markDirty: (meta) => {
@@ -1086,6 +1141,8 @@ export function initAutoSave(
       if (phase === 'idle' || phase === 'debouncing' || phase === 'dirty') {
         phase = phaseGuardEnabled ? 'dirty' : 'debouncing'
       }
+      resetSchedule()
+      scheduleDebounce()
     }
   }
 }
