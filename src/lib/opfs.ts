@@ -2,6 +2,10 @@ type StorageManagerWithDirectory = StorageManager & {
   getDirectory?: () => Promise<FileSystemDirectoryHandle>
 }
 
+type IterableFileSystemDirectoryHandle = FileSystemDirectoryHandle & {
+  values(): AsyncIterable<FileSystemHandle>
+}
+
 async function resolveRootDirectory(): Promise<FileSystemDirectoryHandle> {
   const storage = navigator.storage as StorageManagerWithDirectory
   const getDirectory = storage.getDirectory
@@ -75,9 +79,12 @@ export async function loadJSON<T>(path: string): Promise<T | null> {
 
 export async function listDir(path: string): Promise<string[]> {
   const directory = await ensureDir(path)
+  const iterableDirectory = directory as IterableFileSystemDirectoryHandle
   const names: string[] = []
-  for await (const [name] of directory.entries()) {
-    names.push(name)
+  for await (const handle of iterableDirectory.values()) {
+    if ('name' in handle) {
+      names.push(handle.name)
+    }
   }
   return names
 }
