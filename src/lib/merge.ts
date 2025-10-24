@@ -39,6 +39,13 @@ export interface MergeProfile {
   readonly seed?: string;
 }
 
+const runtimeProcess =
+  typeof globalThis !== 'undefined' && 'process' in globalThis
+    ? (globalThis as {
+        process?: { env?: Record<string, string | undefined> }
+      }).process ?? undefined
+    : undefined
+
 export type MergeProfileOverrides = Partial<MergeProfile> & { readonly precision?: MergePrecision };
 
 export interface MergeSectionDescriptor {
@@ -132,9 +139,9 @@ export interface MergePlanPhaseB {
 
 export interface MergePlan {
   readonly precision: MergePrecision;
-  readonly entries: readonly MergePlanEntry[];
-  readonly summary: MergePlanSummary;
-  readonly phaseB: MergePlanPhaseB;
+  readonly entries?: readonly MergePlanEntry[];
+  readonly summary?: MergePlanSummary;
+  readonly phaseB?: MergePlanPhaseB;
 }
 
 export interface MergeResult {
@@ -458,9 +465,7 @@ function normalizePrecision(value?: string | null): MergePrecision {
 }
 
 function resolvePrecision(overrides?: MergeProfileOverrides): MergePrecision {
-  const envPrecision = typeof process !== 'undefined' && typeof process.env !== 'undefined'
-    ? process.env.MERGE_PRECISION
-    : undefined;
+  const envPrecision = runtimeProcess?.env?.MERGE_PRECISION;
   const candidate = overrides?.precision ?? envPrecision;
   return normalizePrecision(candidate ?? undefined);
 }
@@ -479,9 +484,7 @@ function parseThreshold(value?: string | null): number | undefined {
 function resolveThreshold(precision: MergePrecision, overrides?: MergeProfileOverrides): number {
   const config = PRECISION_CONFIG[precision];
   const overrideValue = overrides?.threshold;
-  const envThreshold = typeof process !== 'undefined' && typeof process.env !== 'undefined'
-    ? parseThreshold(process.env.CONIMG_MERGE_THRESHOLD ?? null)
-    : undefined;
+  const envThreshold = parseThreshold(runtimeProcess?.env?.CONIMG_MERGE_THRESHOLD ?? null);
   const base = overrideValue ?? envThreshold ?? DEFAULT_MERGE_PROFILE.threshold;
   return config.thresholdClamp(base);
 }
