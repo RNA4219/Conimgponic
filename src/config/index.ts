@@ -1,11 +1,11 @@
-import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave'
+import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
 
-import type { FlagSnapshot, ResolveOptions } from './flags'
+import type { FlagSnapshot, ResolveOptions } from './flags.js'
 
 import {
   FLAG_MIGRATION_PLAN,
   resolveFlags
-} from './flags'
+} from './flags.js'
 
 export {
   DEFAULT_FLAG_SNAPSHOT,
@@ -14,7 +14,7 @@ export {
   FLAG_MIGRATION_PLAN,
   resolveFeatureFlag,
   resolveFlags
-} from './flags'
+} from './flags.js'
 
 export type {
   AutosaveFlagSnapshot,
@@ -30,7 +30,7 @@ export type {
   FlagValueSnapshot,
   MergePrecision,
   ResolveOptions
-} from './flags'
+} from './flags.js'
 
 type FlagRolloutPhase = (typeof FLAG_MIGRATION_PLAN)[number]['phase']
 
@@ -38,6 +38,11 @@ export interface AutoSaveBootstrapPlan {
   readonly snapshot: FlagSnapshot
   readonly guard: AutoSavePhaseGuardSnapshot
   readonly failSafePhase: FlagRolloutPhase | null
+}
+
+export interface PluginBridgeBootstrapPlan {
+  readonly snapshot: FlagSnapshot
+  readonly enableFlag: boolean
 }
 
 export function resolveAutoSaveBootstrapPlan(
@@ -57,5 +62,15 @@ export function resolveAutoSaveBootstrapPlan(
       optionsDisabled: config?.optionsDisabled ?? false
     },
     failSafePhase: phaseA0?.phase ?? null
+  }
+}
+
+export function resolvePluginBridgeBootstrapPlan(
+  options?: ResolveOptions
+): PluginBridgeBootstrapPlan {
+  const snapshot = resolveFlags(options)
+  return {
+    snapshot,
+    enableFlag: snapshot.plugins.enabled
   }
 }
