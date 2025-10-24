@@ -380,14 +380,16 @@ export const resolveMergeDockPhasePlan = ({
   const statsProvided = !!phaseStats
   const reviewBandCount = statsProvided ? Math.max(0, phaseStats.reviewBandCount) : null
   const conflictBandCount = statsProvided ? Math.max(0, phaseStats.conflictBandCount) : null
+  const hasReviewSignals = (reviewBandCount ?? 0) > 0
+  const hasConflictSignals = (conflictBandCount ?? 0) > 0
   const phaseBRequired =
     precision === 'legacy'
       ? false
       : statsProvided
         ? precision === 'beta'
-          ? (reviewBandCount ?? 0) > 0
-          : ((reviewBandCount ?? 0) + (conflictBandCount ?? 0)) > 0
-        : true
+          ? hasReviewSignals
+          : hasReviewSignals || hasConflictSignals
+        : false
   const diffEnabled = !!rawPlan.diff && phaseBRequired
   const effectiveTabs = diffEnabled ? rawPlan.tabs : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
   const effectiveInitial = diffEnabled || rawPlan.initialTab !== 'diff' ? rawPlan.initialTab : effectiveTabs[0]?.id ?? rawPlan.initialTab
