@@ -60,9 +60,10 @@ const expectedQualitySequence = [
   'pnpm -s test:telemetry',
 ];
 
-const expectedCoverageCommand = 'pnpm -s test:coverage';
-const expectedJunitCommand =
-  'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml';
+const expectedSequence = [
+  'pnpm -s test:coverage',
+  'pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml',
+];
 
 const { load } = await importJsYaml();
 
@@ -103,16 +104,10 @@ describe('ci workflow build job', () => {
 
       const reportCommands = extractPnpmCommands(reportSteps);
 
-      assertCommandPresence(
+      assertCommandSequence(
         reportCommands,
-        expectedCoverageCommand,
-        'reports job must run coverage command',
-      );
-
-      assertCommandPresence(
-        reportCommands,
-        expectedJunitCommand,
-        'reports job must generate JUnit report',
+        expectedSequence,
+        'reports job must run coverage and junit commands in order',
       );
 
       const artifactSteps = reportSteps.filter(isUploadArtifactStep);

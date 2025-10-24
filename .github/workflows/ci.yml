@@ -295,17 +295,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Reset coverage directory
+        run: rm -rf coverage
+
       - name: Test with coverage
-        run: |
-          set -euo pipefail
-          rm -rf coverage
-          pnpm -s test:coverage
+        run: pnpm -s test:coverage
+
+      - name: Prepare reports directory
+        run: mkdir -p reports
 
       - name: Generate JUnit report
-        run: |
-          set -euo pipefail
-          mkdir -p reports
-          pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml
+        run: pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml
 
       - name: Upload coverage artifact
         if: always()
