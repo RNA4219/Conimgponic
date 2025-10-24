@@ -959,10 +959,15 @@ export function initAutoSave(
   let pendingBytes = 0
   let lastError: AutoSaveError | undefined
   let queuedGeneration = 0
-  let disposed = false,
-    retryTimer: ReturnType<typeof setTimeout> | null = null,
-    debounceTimer: ReturnType<typeof setTimeout> | null = null,
-    idleTimer: ReturnType<typeof setTimeout> | null = null
+  let disposed = false
+  let disposing = false
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+  let resolveBackoff: (() => void) | null = null
+  let inFlightFlush: Promise<void> | null = null
+  let inFlightBackoff: Promise<void> | null = null
+  let disposePromise: Promise<void> | null = null
   const updateIndex = async (ts: string, bytes: number, payload: string) => {
     const path = 'project/autosave/index.json', tmp = `${path}.tmp`, current = (await loadJSON(path)) as { entries?: AutoSaveHistoryEntry[] } | null, key = sanitizeTimestamp(ts)
     const entries = Array.isArray(current?.entries) ? current!.entries.filter((entry) => typeof entry?.ts === 'string' && typeof entry?.bytes === 'number') : []
@@ -1023,10 +1028,31 @@ export function initAutoSave(
             AUTOSAVE_RETRY_POLICY.initialDelayMs * Math.pow(AUTOSAVE_RETRY_POLICY.multiplier, attempt),
             AUTOSAVE_RETRY_POLICY.maxDelayMs
           )
-          await new Promise<void>((resolve) => {
-            retryTimer = setTimeout(resolve, delay)
+          const wait = new Promise<void>((resolve) => {
+            const settle = () => {
+              if (resolveBackoff === settle) {
+                resolveBackoff = null
+              }
+              if (retryTimer) {
+                clearTimeout(retryTimer)
+                retryTimer = null
+              }
+              resolve()
+            }
+            resolveBackoff = settle
+            retryTimer = setTimeout(settle, delay)
           })
-          retryTimer = null
+          inFlightBackoff = wait
+          try {
+            await wait
+          } finally {
+            if (inFlightBackoff === wait) {
+              inFlightBackoff = null
+            }
+          }
+          if (disposing) {
+            return
+          }
           return runFlush(attempt + 1)
         }
       } else {
@@ -1041,6 +1067,12 @@ export function initAutoSave(
   }
   const startFlush = async (source: 'manual' | 'auto'): Promise<void> => {
     if (disposed) throw disabledError()
+    if (disposing) {
+      if (source === 'auto') {
+        return
+      }
+      throw disabledError()
+    }
     if (source === 'manual') {
       if (retryTimer) {
         clearTimeout(retryTimer)
@@ -1058,28 +1090,36 @@ export function initAutoSave(
     } else {
       queuedGeneration = 0
     }
-    await runFlush(0)
+    const pending = runFlush(0)
+    inFlightFlush = pending
+    try {
+      await pending
+    } finally {
+      if (inFlightFlush === pending) {
+        inFlightFlush = null
+      }
+    }
   }
   const scheduleIdleFlush = () => {
-    if (disposed) return
+    if (disposed || disposing) return
     clearIdleTimer()
     idleTimer = setTimeout(() => {
       idleTimer = null
-      if (disposed) return
+      if (disposed || disposing) return
       void startFlush('auto').catch(() => undefined)
     }, AUTOSAVE_POLICY.idleMs)
   }
   const scheduleDebounce = () => {
-    if (disposed) return
+    if (disposed || disposing) return
     clearDebounceTimer()
     debounceTimer = setTimeout(() => {
       debounceTimer = null
-      if (disposed) return
+      if (disposed || disposing) return
       scheduleIdleFlush()
     }, AUTOSAVE_POLICY.debounceMs)
   }
   const snapshot = (): AutoSaveStatusSnapshot => ({
-    phase: disposed ? 'disabled' : phase,
+    phase: disposed || disposing ? 'disabled' : phase,
     lastSuccessAt,
     pendingBytes,
     lastError,
@@ -1089,17 +1129,42 @@ export function initAutoSave(
   return {
     snapshot,
     flushNow: async () => {
-      if (disposed) throw disabledError()
+      if (disposed || disposing) throw disabledError()
       resetSchedule()
       await startFlush('manual')
     },
     dispose: async () => {
-      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
-      resetSchedule()
-      disposed = true; phase = 'disabled'; pendingBytes = 0; pendingQueue.length = 0; queuedGeneration = 0
+      if (disposePromise) {
+        return disposePromise
+      }
+      disposing = true
+      const pendingFlush = inFlightFlush
+      const pendingBackoff = inFlightBackoff
+      disposePromise = (async () => {
+        const finishBackoff = resolveBackoff
+        resolveBackoff = null
+        if (retryTimer) {
+          clearTimeout(retryTimer)
+          retryTimer = null
+        }
+        if (finishBackoff) {
+          finishBackoff()
+        }
+        await Promise.all(
+          [pendingFlush, pendingBackoff].filter((candidate): candidate is Promise<void> => Boolean(candidate))
+        )
+        resetSchedule()
+        disposed = true
+        disposing = false
+        phase = 'disabled'
+        pendingBytes = 0
+        pendingQueue.length = 0
+        queuedGeneration = 0
+      })()
+      await disposePromise
     },
     markDirty: (meta) => {
-      if (disposed) return
+      if (disposed || disposing) return
       const hasPending = typeof meta?.pendingBytes === 'number' && Number.isFinite(meta.pendingBytes)
       if (hasPending) {
         const normalized = Math.max(0, Math.trunc(meta!.pendingBytes!))
