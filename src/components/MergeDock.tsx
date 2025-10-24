@@ -6,6 +6,7 @@ import { resolveFlags, type FlagSnapshot } from '../config'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
+import type { Storyboard } from '../types'
 import { saveText, loadText, ensureDir } from '../lib/opfs'
 import { sha256Hex } from '../lib/hash'
 import { GoldenCompare } from './GoldenCompare'
@@ -595,31 +596,37 @@ export function MergeDock(props?: MergeDockProps){
     async (file: File, mode: ImportMode) => {
       try {
         const text = await readFileAsText(file)
+        const current = useSB.getState().sb
+        let next: Storyboard | null = null
         if (file.name.endsWith('.jsonl')) {
-          mergeJSONL(sb, text, mode)
+          next = mergeJSONL(current, text, mode)
         } else if (file.name.endsWith('.csv')) {
-          mergeCSV(sb, text, mode)
+          next = mergeCSV(current, text, mode)
         } else if (file.name.endsWith('.md')) {
           const blocks = text.split(/\n##\s*Cut\s+\d+/).slice(1)
-          blocks.forEach((b, i) => {
-            const body = b.replace(/<!--.*?-->/g, '').trim()
-            const scene = sb.scenes[i]
-            if (scene) {
-              const target = scene as { [key in ImportMode]?: string }
-              target[mode] = body
+          const scenes = current.scenes.map((scene, index) => {
+            const body = blocks[index]?.replace(/<!--.*?-->/g, '').trim()
+            if (body == null) {
+              return { ...scene }
             }
+            return { ...scene, [mode]: body }
           })
+          next = { ...current, scenes }
         } else {
           notify('error', 'Unsupported file type. Use .jsonl / .csv / .md')
           return
         }
+        if (!next) {
+          return
+        }
+        useSB.setState({ sb: next })
         notify('info', 'Imported storyboard updates.')
       } catch (error) {
         console.error(error)
         notify('error', 'Import failed. See console for details.')
       }
     },
-    [notify, sb],
+    [notify],
   )
 
   return (
