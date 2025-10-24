@@ -11,11 +11,6 @@ const compareModulePromise = import(
   pathToFileURL(join(process.cwd(), 'scripts/golden/compare.ts')).href
 ) as Promise<CompareModule>
 
-type GoldenCompareModule = typeof import('../../src/lib/golden/compare')
-const goldenCompareModulePromise = import(
-  pathToFileURL(join(process.cwd(), 'src/lib/golden/compare.ts')).href
-) as Promise<GoldenCompareModule>
-
 type ExportersModule = typeof import('../../src/lib/exporters')
 const exportersModulePromise = import(
   pathToFileURL(join(process.cwd(), 'src/lib/exporters.ts')).href
@@ -36,12 +31,117 @@ type Mutator = (outputs: NormalizedOutputs) => void
 const storyboardPath = join(process.cwd(), 'tests/fixtures/case-mini-03/project.storyboard.json')
 const baseStoryboard = JSON.parse(readFileSync(storyboardPath, 'utf8')) as Storyboard
 
-async function loadCompareModule(): Promise<CompareModule> {
-  return compareModulePromise
+type GoldenArtifacts = import('../../src/lib/golden/compare').GoldenArtifacts
+type GoldenComparisonEntry = import('../../src/lib/golden/compare').GoldenComparisonEntry
+type GoldenComparisonResult = import('../../src/lib/golden/compare').GoldenComparisonResult
+type ExporterTools = Awaited<ReturnType<typeof loadExporters>>
+type NormalizedOutputsType = import('../../src/lib/exporters').NormalizedOutputs
+type Mutable<T> = { -readonly [P in keyof T]: T[P] }
+type NormalizationTools = Pick<ExporterTools, 'firstLineDiff' | 'normalizeJson' | 'normalizeJsonl' | 'trimLines'>
+type ScalarFormat = Exclude<keyof Pick<NormalizedOutputsType, 'markdown' | 'csv' | 'jsonl'>, 'package'>
+
+const scalarFormats: readonly ScalarFormat[] = ['markdown', 'csv', 'jsonl']
+
+function normalizeGoldenArtifact(
+  format: keyof NormalizedOutputsType | 'package',
+  golden: GoldenArtifacts,
+  tools: NormalizationTools,
+  name?: string,
+): string | undefined {
+  switch (format) {
+    case 'markdown':
+      return golden.markdown ? tools.trimLines(golden.markdown) : undefined
+    case 'csv':
+      return golden.csv ? tools.trimLines(golden.csv) : undefined
+    case 'jsonl':
+      return golden.jsonl ? tools.normalizeJsonl(golden.jsonl) : undefined
+    case 'package':
+      if (!name) return undefined
+      return golden.package[name] ? tools.normalizeJson(golden.package[name]) : undefined
+    default:
+      return undefined
+  }
 }
 
-async function loadGoldenCompareModule(): Promise<GoldenCompareModule> {
-  return goldenCompareModulePromise
+function compareWithGolden(
+  actual: NormalizedOutputsType,
+  golden: GoldenArtifacts,
+  tools: NormalizationTools,
+): GoldenComparisonResult {
+  const entries: GoldenComparisonEntry[] = []
+
+  scalarFormats.forEach((format) => {
+    const expected = normalizeGoldenArtifact(format, golden, tools)
+    if (!expected) {
+      entries.push({ format, status: 'diff', diff: 'missing golden input' })
+      return
+    }
+    if (expected === actual[format]) {
+      entries.push({ format, status: 'matched' })
+    } else {
+      entries.push({ format, status: 'diff', diff: tools.firstLineDiff(actual[format], expected) })
+    }
+  })
+
+  const packageNames = new Set([
+    ...Object.keys(actual.package),
+    ...Object.keys(golden.package ?? {}),
+  ])
+
+  packageNames.forEach((name) => {
+    const actualPayload = actual.package[name]
+    if (!actualPayload) {
+      entries.push({ format: 'package', name, status: 'diff', diff: 'missing generated artifact' })
+      return
+    }
+    const expected = normalizeGoldenArtifact('package', golden, tools, name)
+    if (!expected) {
+      entries.push({ format: 'package', name, status: 'diff', diff: 'missing golden input' })
+      return
+    }
+    if (expected === actualPayload) {
+      entries.push({ format: 'package', name, status: 'matched' })
+    } else {
+      entries.push({
+        format: 'package',
+        name,
+        status: 'diff',
+        diff: tools.firstLineDiff(actualPayload, expected),
+      })
+    }
+  })
+
+  const matched = entries.filter((entry) => entry.status === 'matched').length
+  const matchRate = entries.length ? matched / entries.length : 0
+  const ok = entries.length > 0 && matched === entries.length
+
+  if (!ok) {
+    return {
+      entries,
+      matchRate,
+      ok,
+      error: { message: 'Golden comparison failed', retryable: false },
+    }
+  }
+
+  return { entries, matchRate, ok }
+}
+
+function summarizeComparison(entries: readonly GoldenComparisonEntry[]): string {
+  if (!entries.length) {
+    return 'No golden artifacts loaded'
+  }
+  return entries
+    .map((entry) =>
+      entry.status === 'matched'
+        ? `${entry.format}${entry.name ? `:${entry.name}` : ''}: OK`
+        : `${entry.format}${entry.name ? `:${entry.name}` : ''}: diff -> ${entry.diff ?? 'mismatch'}`,
+    )
+    .join('\n')
+}
+
+async function loadCompareModule(): Promise<CompareModule> {
+  return compareModulePromise
 }
 
 function createTempDir(prefix: string): string {
@@ -125,6 +225,11 @@ describe('export bridge golden comparison', () => {
       const diffReport = readFileSync(result.diffPath, 'utf8')
       assert.match(diffReport, /markdown: OK/)
       assert.match(result.normalizedPath, /runs\/unit\/export/)
+      assert.equal(
+        result.runUri,
+        pathToFileURL(join(ctx.outputDir, 'runs', 'unit', 'export')).href,
+        'runUri は file://runs/... ではなく絶対 file:// URI を返す必要がある',
+      )
     } finally {
       ctx.cleanup()
     }
@@ -264,15 +369,19 @@ describe('export bridge golden comparison', () => {
 
       const exporters = await loadExporters()
       const normalized = exporters.createNormalizedOutputs(baseStoryboard)
-
-      const { compareNormalizedOutputs, formatComparisonSummary } = await loadGoldenCompareModule()
+      const tools: NormalizationTools = {
+        firstLineDiff: exporters.firstLineDiff,
+        normalizeJson: exporters.normalizeJson,
+        normalizeJsonl: exporters.normalizeJsonl,
+        trimLines: exporters.trimLines,
+      }
 
       const goldenArtifacts = readGoldenArtifacts(ctx.goldenDir)
-      const comparison = compareNormalizedOutputs(normalized, goldenArtifacts)
+      const comparison = compareWithGolden(normalized, goldenArtifacts, tools)
 
       assert.equal(comparison.ok, false)
       const diffReport = readFileSync(compareResult.diffPath, 'utf8').trimEnd()
-      assert.equal(formatComparisonSummary(comparison.entries), diffReport)
+      assert.equal(summarizeComparison(comparison.entries), diffReport)
       const csvEntry = comparison.entries.find((entry) => entry.format === 'csv')
       assert.ok(csvEntry)
       assert.equal(csvEntry.status, 'diff')
@@ -283,11 +392,11 @@ describe('export bridge golden comparison', () => {
   })
 })
 
-function readGoldenArtifacts(dir: string): GoldenCompareModule['GoldenArtifacts'] {
+function readGoldenArtifacts(dir: string): GoldenArtifacts {
   const markdownPath = join(dir, 'markdown', 'storyboard.md')
   const csvPath = join(dir, 'csv', 'storyboard.csv')
   const jsonlPath = join(dir, 'jsonl', 'storyboard.jsonl')
-  const artifacts: GoldenCompareModule['GoldenArtifacts'] = {
+  const artifacts: Mutable<GoldenArtifacts> = {
     package: {},
   }
   if (existsSync(markdownPath)) {
