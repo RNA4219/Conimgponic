@@ -131,6 +131,17 @@ export const AUTOSAVE_PHASE_STATE_MAP = Object.freeze({
       note: '履歴への追加はまだ発生していないため既存エントリのみを表示（編集は許可）'
     }
   },
+  dirty: {
+    label: '手動介入待ち',
+    description:
+      'Phase Guard により自動保存を一時停止。オプション再評価または手動保存を待つ',
+    nextPhases: ['debouncing', 'disabled'],
+    indicator: 'warning',
+    history: {
+      access: 'available',
+      note: '履歴表示は維持しつつ、ガード解除後の再保存を促す'
+    }
+  },
   'awaiting-lock': {
     label: 'ロック取得中',
     description:

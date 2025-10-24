@@ -76,7 +76,13 @@ export async function loadJSON<T>(path: string): Promise<T | null> {
 export async function listDir(path: string): Promise<string[]> {
   const directory = await ensureDir(path)
   const names: string[] = []
-  for await (const [name] of directory.entries()) {
+  const entries = (directory as FileSystemDirectoryHandle & {
+    entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>
+  }).entries
+  if (!entries) {
+    return names
+  }
+  for await (const [name] of entries.call(directory)) {
     names.push(name)
   }
   return names

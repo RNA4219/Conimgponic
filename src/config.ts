@@ -11,6 +11,8 @@ export const OLLAMA_BASE: string =
   env?.VITE_OLLAMA_BASE ||
   'http://localhost:11434';
 
+export * from './config/index';
+
 export function setOllamaBase(url: string): void {
   if (typeof localStorage === 'undefined') {
     return;
