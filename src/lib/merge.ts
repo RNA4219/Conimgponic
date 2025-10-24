@@ -130,13 +130,6 @@ export interface MergePlanPhaseB {
   readonly reasons: readonly MergePlanPhaseBReason[];
 }
 
-export interface MergePlan {
-  readonly precision: MergePrecision;
-  readonly entries: readonly MergePlanEntry[];
-  readonly summary: MergePlanSummary;
-  readonly phaseB: MergePlanPhaseB;
-}
-
 export interface MergeResult {
   readonly hunks: readonly MergeHunk[];
   readonly mergedText: string;
@@ -248,6 +241,9 @@ export interface MergePlan {
   readonly stats: MergeStats;
   readonly hunks: readonly MergePlanHunk[];
   readonly stages: readonly MergePipelineStage[];
+  readonly entries: readonly MergePlanEntry[];
+  readonly summary: MergePlanSummary;
+  readonly phaseB: MergePlanPhaseB;
 }
 
 export interface MergeDecisionError {
@@ -345,6 +341,58 @@ export const buildMergePlan = (
     queueAction: hunk.decision === 'auto' && precisionState.allowsAutoApply ? 'apply' : 'hold',
   }));
 
+  let phaseACount = 0, reviewBandCount = 0, lockedCount = 0;
+  let hasReviewBand = false, hasLockedConflict = false, hasLowSimilarity = false;
+
+  const entries = hunks.map<MergePlanEntry>((hunk) => {
+    const isStrictLock = hunk.locked && profile.lockPolicy === 'strict';
+    const band: MergePlanBand = hunk.decision === 'auto'
+      ? 'auto'
+      : !isStrictLock && hunk.similarity >= profile.similarityBands.review
+        ? 'review'
+        : 'conflict';
+    const phase: MergePlanPhase = band === 'auto' ? 'phase-a' : 'phase-b';
+    const recommendedCommand: MergePlanRecommendedCommand = hunk.decision === 'auto'
+      ? 'queue:auto-apply'
+      : isStrictLock
+        ? 'queue:force-lock-resolution'
+        : band === 'review'
+          ? 'queue:request-review'
+          : 'queue:manual-intervention';
+
+    if (band === 'auto') {
+      phaseACount += 1;
+    } else {
+      if (band === 'review') {
+        reviewBandCount += 1;
+        hasReviewBand = true;
+      } else if (isStrictLock) {
+        hasLockedConflict = true;
+      } else {
+        hasLowSimilarity = true;
+      }
+    }
+    if (isStrictLock) {
+      lockedCount += 1;
+    }
+
+    return {
+      hunkId: hunk.id,
+      section: hunk.section,
+      decision: hunk.decision,
+      similarity: hunk.similarity,
+      locked: isStrictLock,
+      band,
+      phase,
+      recommendedCommand,
+    };
+  });
+
+  const reasons: MergePlanPhaseBReason[] = [];
+  if (hasReviewBand) reasons.push('review-band');
+  if (hasLockedConflict) reasons.push('locked-conflict');
+  if (hasLowSimilarity) reasons.push('low-similarity');
+
   return {
     kind: 'ok',
     plan: {
@@ -353,6 +401,22 @@ export const buildMergePlan = (
       stats,
       hunks: planHunks,
       stages: ['segment', 'score', 'decide', 'queue'],
+      entries,
+      summary: {
+        total: entries.length,
+        phaseA: phaseACount,
+        phaseB: entries.length - phaseACount,
+        reviewBand: reviewBandCount,
+        locked: lockedCount,
+      },
+      phaseB: {
+        required: profile.precision === 'legacy'
+          ? false
+          : profile.precision === 'beta'
+            ? hasReviewBand || hasLockedConflict
+            : reasons.length > 0,
+        reasons,
+      },
     },
   };
 };
@@ -439,6 +503,10 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+type ProcessEnvSnapshot = Record<string, string | undefined>;
+const getProcessEnv = (): ProcessEnvSnapshot | undefined =>
+  (globalThis as { process?: { env?: ProcessEnvSnapshot } }).process?.env;
+
 function now(): number {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
     return performance.now();
@@ -458,9 +526,7 @@ function normalizePrecision(value?: string | null): MergePrecision {
 }
 
 function resolvePrecision(overrides?: MergeProfileOverrides): MergePrecision {
-  const envPrecision = typeof process !== 'undefined' && typeof process.env !== 'undefined'
-    ? process.env.MERGE_PRECISION
-    : undefined;
+  const envPrecision = getProcessEnv()?.MERGE_PRECISION;
   const candidate = overrides?.precision ?? envPrecision;
   return normalizePrecision(candidate ?? undefined);
 }
@@ -479,9 +545,7 @@ function parseThreshold(value?: string | null): number | undefined {
 function resolveThreshold(precision: MergePrecision, overrides?: MergeProfileOverrides): number {
   const config = PRECISION_CONFIG[precision];
   const overrideValue = overrides?.threshold;
-  const envThreshold = typeof process !== 'undefined' && typeof process.env !== 'undefined'
-    ? parseThreshold(process.env.CONIMG_MERGE_THRESHOLD ?? null)
-    : undefined;
+  const envThreshold = parseThreshold(getProcessEnv()?.CONIMG_MERGE_THRESHOLD ?? null);
   const base = overrideValue ?? envThreshold ?? DEFAULT_MERGE_PROFILE.threshold;
   return config.thresholdClamp(base);
 }
@@ -816,9 +880,9 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
     stages.push({ stage: 'emit', startedAt: emitStart, durationMs: now() - emitStart, metadata: { events: decisions.length } });
     const hunks = decisions.map((entry) => entry.hunk);
 
+    const planResult = buildMergePlan(hunks, finalStats, profile, input.sceneId);
     if (options?.queueMergeCommand) {
       const queueStartedAt = now();
-      const planResult = buildMergePlan(hunks, finalStats, profile, input.sceneId);
       if (planResult.kind === 'ok') {
         options.queueMergeCommand(createQueueMergeCommand(planResult.plan));
         stages.push({
@@ -838,7 +902,9 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
     }
 
     const finalTrace = buildTrace(input.sceneId, stages, profile, hunks);
-    const mergeResult: MergeResult = { hunks, mergedText, stats: finalStats, trace: finalTrace };
+    const mergeResult: MergeResult = planResult.kind === 'ok'
+      ? { hunks, mergedText, stats: finalStats, trace: finalTrace, plan: planResult.plan }
+      : { hunks, mergedText, stats: finalStats, trace: finalTrace };
 
     options?.telemetry?.({ type: 'merge:finish', sceneId: input.sceneId ?? 'unknown', profile, stats: finalStats, trace: finalTrace });
 
