@@ -1,0 +1,17 @@
+
+> imgponic-pwa@0.1.4 test /workspace/Conimgponic
+> node --loader ts-node/esm scripts/test/run-selected.ts "--test-coverage"
+
+(node:4230) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
+--import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register("ts-node/esm", pathToFileURL("./"));'
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+[Object: null prototype] {
+  [Symbol(nodejs.util.inspect.custom)]: [Function: [nodejs.util.inspect.custom]]
+}
+
+Node.js v20.19.4
+ ELIFECYCLE  Test failed. See above for more details.
