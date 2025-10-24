@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSB } from './store'
+import type { Storyboard } from './types'
 import { LeftRight } from './components/LeftRightPanes'
 import { StoryboardList } from './components/StoryboardList'
 import { MergeDock } from './components/MergeDock'
@@ -53,7 +54,7 @@ export type AutoSaveActivationDecision =
   | {
       readonly mode: 'manual-only'
       readonly guard: AutoSavePhaseGuardSnapshot
-      readonly reason: 'phase-a0-failsafe' | 'feature-flag-disabled'
+      readonly reason: 'phase-a0-failsafe' | 'feature-flag-disabled' | 'options-disabled'
     }
   | {
       readonly mode: 'autosave'
@@ -63,7 +64,7 @@ export type AutoSaveActivationDecision =
 
 export function planAutoSave(plan: AutoSaveBootstrapPlan): AutoSaveActivationDecision {
   if (plan.guard.optionsDisabled) {
-    return { mode: 'manual-only', guard: plan.guard, reason: 'feature-flag-disabled' }
+    return { mode: 'manual-only', guard: plan.guard, reason: 'options-disabled' }
   }
   if (!plan.guard.featureFlag.value) {
     const reason = plan.failSafePhase === 'phase-a0' ? 'phase-a0-failsafe' : 'feature-flag-disabled'
@@ -178,7 +179,26 @@ export default function App(){
         <input value={base} onChange={e=>setBase(e.target.value)} placeholder="Ollama Base" style={{width:240, padding:'.35rem .5rem', border:'1px solid #e5e5e5', borderRadius:8}} />
         <button className="btn" onClick={()=>{ setOllamaBase(base); location.reload() }}>Save</button>
         <button className="btn" onClick={async()=>{ const sb = useSB.getState().sb; await saveJSON('project/storyboard.json', sb); alert('Saved to OPFS: project/storyboard.json') }}>Save Project</button>
-        <button className="btn" onClick={async()=>{ const s = await loadJSON('project/storyboard.json'); if (s){ useSB.setState({ sb: s }); alert('Loaded from OPFS') }else alert('No project found') }}>Load Project</button>
+        <button
+          className="btn"
+          onClick={async () => {
+            const storyboard = await loadJSON<Storyboard>('project/storyboard.json')
+            if (
+              storyboard &&
+              typeof storyboard.id === 'string' &&
+              typeof storyboard.title === 'string' &&
+              Array.isArray(storyboard.scenes) &&
+              Array.isArray(storyboard.selection)
+            ) {
+              useSB.setState({ sb: storyboard })
+              alert('Loaded from OPFS')
+            } else {
+              alert('No project found')
+            }
+          }}
+        >
+          Load Project
+        </button>
         <button className="btn" onClick={()=>addScene()}>+ カード</button>
         <button className="btn" onClick={()=>setDockOpen(v=>{ const nv=!v; localStorage.setItem('dockOpen', nv? '1':'0'); return nv })}>{dockOpen?'統合 ⌃':'統合 ⌄'}</button>
         <button className="btn" onClick={async()=>{

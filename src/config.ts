@@ -1,3 +1,5 @@
+export * from './config/index'
+
 type OllamaImportMeta = ImportMeta & {
   readonly env?: {
     readonly VITE_OLLAMA_BASE?: string;

@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { MergeDock, planMergeDockTabs } from '../../src/components/MergeDock.tsx'
 import type { FlagSnapshot } from '../../src/config/flags.ts'
+import { mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'
 
 type MergePrecision = Parameters<typeof planMergeDockTabs>[0]
@@ -322,3 +323,33 @@ test('merge-ui: shot tab exposes OPFS snapshot controls', () => {
     })
   }
 })
+test('merge-import: jsonl importer replaces storyboard scenes array reference', () => {
+  const base = structuredClone(useSB.getState().sb)
+  useSB.setState({
+    sb: {
+      ...base,
+      scenes: [
+        {
+          id: 'cut-1',
+          manual: 'Old text',
+          ai: '',
+          status: 'idle',
+          assets: [],
+        },
+      ],
+    },
+  })
+
+  const { sb: beforeImport } = useSB.getState()
+  const previousScenes = beforeImport.scenes
+  const fileText = JSON.stringify({ id: 'cut-1', text: 'New text' })
+
+  const merged = mergeJSONL(beforeImport, `${fileText}\n`, 'manual')
+  useSB.setState({ sb: merged })
+
+  const { sb } = useSB.getState()
+  assert.notStrictEqual(sb.scenes, previousScenes, 'scenes array should be replaced')
+  assert.equal(sb.scenes[0]?.manual, 'New text')
+  useSB.setState({ sb: base })
+})
+

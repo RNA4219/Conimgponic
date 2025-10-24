@@ -3,13 +3,29 @@ import { useSB } from '../store'
 import type { AssetRef } from '../types'
 import { saveJSON, loadJSON } from '../lib/opfs'
 
+const isAssetRef = (value: unknown): value is AssetRef => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Partial<AssetRef>
+  return (
+    typeof candidate.id === 'string' &&
+    (candidate.kind === 'character' || candidate.kind === 'prop' || candidate.kind === 'background') &&
+    typeof candidate.label === 'string'
+  )
+}
+
 export function AssetsTab(){
   const { sb } = useSB()
-  const [items, setItems] = useState<AssetRef[]>(sb.assetsCatalog || [])
+  const [items, setItems] = useState<AssetRef[]>(() =>
+    Array.isArray(sb.assetsCatalog) ? sb.assetsCatalog.filter(isAssetRef) : []
+  )
 
   useEffect(()=>{ (async()=>{
-    const saved = await loadJSON('project/assets.json')
-    if (saved) setItems(saved)
+    const saved = await loadJSON<AssetRef[]>('project/assets.json')
+    if (Array.isArray(saved) && saved.every(isAssetRef)) {
+      setItems(saved)
+    }
   })() }, [])
 
   function add(){
