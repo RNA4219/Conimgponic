@@ -2,12 +2,27 @@ import React, { useEffect, useState } from 'react'
 import { builtinTemplates, type Template } from '../lib/templates'
 import { saveJSON, loadJSON } from '../lib/opfs'
 
+const isTemplate = (value: unknown): value is Template => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Partial<Template>
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.name === 'string' &&
+    typeof candidate.text === 'string'
+  )
+}
+
 export function TemplatesMenu({ onInsert }:{ onInsert:(t:Template)=>void }){
   const [list, setList] = useState<Template[]>(builtinTemplates)
   const [open, setOpen] = useState(false)
   useEffect(()=>{ (async()=>{
-    const user = await loadJSON('project/templates.json')
-    if (user && Array.isArray(user)) setList([...builtinTemplates, ...user])
+    const user = await loadJSON<Template[]>('project/templates.json')
+    if (Array.isArray(user)) {
+      const sanitized = user.filter(isTemplate)
+      setList([...builtinTemplates, ...sanitized])
+    }
   })() },[])
   return (
     <div style={{position:'relative'}}>
@@ -22,10 +37,11 @@ export function TemplatesMenu({ onInsert }:{ onInsert:(t:Template)=>void }){
             const name = prompt('テンプレ名?'); if (!name) return
             const text = prompt('テンプレ本文?'); if (text==null) return
             const id = 'user-' + Math.random().toString(36).slice(2,8)
-            const user = (await loadJSON('project/templates.json')) || []
-            user.push({ id, name, text })
-            await saveJSON('project/templates.json', user)
-            setList([...builtinTemplates, ...user])
+            const user = await loadJSON<Template[]>('project/templates.json')
+            const templates = Array.isArray(user) ? user.filter(isTemplate) : []
+            const next = [...templates, { id, name, text }]
+            await saveJSON('project/templates.json', next)
+            setList([...builtinTemplates, ...next])
           }}>+ 追加</button>
         </div>
       )}
