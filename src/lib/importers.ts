@@ -13,13 +13,14 @@ export type ImportMode = 'manual'|'ai'
 
 export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'manual'){
   const lines = text.split(/\r?\n/).filter(Boolean)
-  const idx = new Map(sb.scenes.map((s,i)=> [s.id, i]))
+  const next: Storyboard = { ...sb, scenes: sb.scenes.map(s => ({ ...s })) }
+  const idx = new Map(next.scenes.map((s,i)=> [s.id, i]))
   for (const ln of lines){
     try{
       const o = JSON.parse(ln)
       const i = idx.get(o.id)
       if (i != null){
-        const sc = sb.scenes[i]
+        const sc = next.scenes[i]
         const patch: Partial<Scene> & Record<ImportMode, string> = {
           seed: o.seed ?? sc.seed,
           tone: o.tone ?? sc.tone,
@@ -30,18 +31,19 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
           ai: sc.ai
         }
         patch[mode] = String(o.text||'')
-        sb.scenes[i] = { ...sc, ...patch }
+        next.scenes[i] = { ...sc, ...patch }
       }else{
-        sb.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed:o.seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take:o.take })
+        next.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed:o.seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take:o.take })
       }
     }catch{ /* ignore bad line */ }
   }
-  return sb
+  return next
 }
 
 export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual'){
   const lines = csv.split(/\r?\n/).filter(Boolean)
-  if (!lines.length) return sb
+  const next: Storyboard = { ...sb, scenes: sb.scenes.map(s => ({ ...s })) }
+  if (!lines.length) return next
   const head = lines[0].split(',').map(s=> s.trim().replace(/^"|"$/g,''))
   const idIdx = head.indexOf('id')
   const textIdx = head.indexOf('text')
@@ -50,7 +52,7 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
   const slateIdx = head.indexOf('slate')
   const shotIdx = head.indexOf('shot')
   const takeIdx = head.indexOf('take')
-  const idx = new Map(sb.scenes.map((s,i)=> [s.id, i]))
+  const idx = new Map(next.scenes.map((s,i)=> [s.id, i]))
   for (let i=1;i<lines.length;i++){
     const cols = parseCSVLine(lines[i])
     const id = cols[idIdx]?.replace(/^"|"$/g,'')
@@ -63,7 +65,7 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
     if (!id) continue
     const j = idx.get(id)
     if (j != null){
-      const sc = sb.scenes[j]
+      const sc = next.scenes[j]
       const patch: Partial<Scene> & Record<ImportMode, string> = {
         seed: Number.isFinite(seed)? seed: sc.seed,
         tone: tone ?? sc.tone,
@@ -74,12 +76,12 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
         ai: sc.ai
       }
       patch[mode] = text
-      sb.scenes[j] = { ...sc, ...patch }
+      next.scenes[j] = { ...sc, ...patch }
     }else{
-      sb.scenes.push({ id, manual: mode==='manual'? text:'', ai: mode==='ai'? text:'', status:'idle', seed: (Number.isFinite(seed)? seed: undefined), tone, assets: [], slate, shot, take })
+      next.scenes.push({ id, manual: mode==='manual'? text:'', ai: mode==='ai'? text:'', status:'idle', seed: (Number.isFinite(seed)? seed: undefined), tone, assets: [], slate, shot, take })
     }
   }
-  return sb
+  return next
 }
 
 function parseCSVLine(line: string){
