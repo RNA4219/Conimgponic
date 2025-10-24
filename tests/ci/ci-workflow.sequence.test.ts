@@ -9,10 +9,23 @@ import { describe, test } from 'node:test';
 
 type WorkflowYaml = {
   jobs?: {
-    build?: {
+    quality?: QualityJobConfig;
+    reports?: {
       steps?: StepConfig[];
     };
   };
+};
+
+type QualityJobConfig = {
+  strategy?: {
+    matrix?: {
+      include?: QualityMatrixEntry[];
+    };
+  };
+};
+
+type QualityMatrixEntry = {
+  command?: unknown;
 };
 
 type StepConfig = {
@@ -40,11 +53,11 @@ const require = createRequire(import.meta.url);
 const expectedSequence = [
   'pnpm -s lint',
   'pnpm -s typecheck',
-  'pnpm test --filter autosave',
-  'pnpm test --filter merge',
-  'pnpm test --filter cli',
-  'pnpm test --filter collector',
-  'pnpm test --filter telemetry',
+  'pnpm -s test:autosave',
+  'pnpm -s test:merge',
+  'pnpm -s test:cli',
+  'pnpm -s test:collector',
+  'pnpm -s test:telemetry',
   'pnpm test -- --test-coverage',
   'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml',
 ];
@@ -62,33 +75,30 @@ describe('ci workflow build job', () => {
       }
 
       const workflow = parsed as WorkflowYaml;
-      const build = workflow.jobs?.build;
-      if (!build) {
-        assert.fail('workflow.jobs.build must exist');
+      const quality = workflow.jobs?.quality;
+      if (!quality) {
+        assert.fail('workflow.jobs.quality must exist');
       }
 
-      const steps = build.steps;
-      assertStepArray(steps, 'workflow.jobs.build.steps must be an array');
+      const matrixEntries = quality.strategy?.matrix?.include;
+      assertMatrixEntries(matrixEntries, 'quality job must configure matrix.include array');
 
-      const pnpmCommands = extractPnpmCommands(steps);
+      const qualityCommands = extractMatrixCommands(matrixEntries);
 
-      assertCommandSequence(pnpmCommands, expectedSequence);
-
-      let cursor = -1;
-
-      for (const expected of expectedSequence) {
-        const nextIndex = pnpmCommands.findIndex((command, index) => index > cursor && command.includes(expected));
-
-        assert.notStrictEqual(
-          nextIndex,
-          -1,
-          `build job must include a step running "${expected}" after index ${cursor}`,
-        );
-
-        cursor = nextIndex;
+      const reports = workflow.jobs?.reports;
+      if (!reports) {
+        assert.fail('workflow.jobs.reports must exist');
       }
 
-      const artifactSteps = steps.filter(isUploadArtifactStep);
+      const reportSteps = reports.steps;
+      assertStepArray(reportSteps, 'workflow.jobs.reports.steps must be an array');
+
+      const reportCommands = extractPnpmCommands(reportSteps);
+      const runCommands = [...qualityCommands, ...reportCommands];
+
+      assertCommandSequence(runCommands, expectedSequence);
+
+      const artifactSteps = reportSteps.filter(isUploadArtifactStep);
 
       assertArtifactStep(artifactSteps, 'coverage', 'coverage/');
       assertArtifactStep(artifactSteps, 'junit-report', 'reports/junit.xml');
@@ -180,6 +190,22 @@ function assertStepArray(value: unknown, message: string): asserts value is Step
   if (!Array.isArray(value)) {
     assert.fail(message);
   }
+}
+
+function assertMatrixEntries(value: unknown, message: string): asserts value is QualityMatrixEntry[] {
+  if (!Array.isArray(value)) {
+    assert.fail(message);
+  }
+}
+
+function extractMatrixCommands(entries: QualityMatrixEntry[]): string[] {
+  return entries.flatMap((entry) => {
+    if (typeof entry.command !== 'string') {
+      return [];
+    }
+
+    return [entry.command.trim()];
+  });
 }
 
 async function importJsYaml(): Promise<JsYamlModule> {
