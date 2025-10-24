@@ -58,8 +58,8 @@ const expectedSequence = [
   'pnpm -s test:cli',
   'pnpm -s test:collector',
   'pnpm -s test:telemetry',
-  'pnpm test -- --test-coverage',
-  'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml',
+  'pnpm -s test:coverage',
+  'pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml',
 ];
 
 const { load } = await importJsYaml();
