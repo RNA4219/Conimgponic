@@ -11,6 +11,7 @@ const RETRY_LABEL_THRESHOLD = 3
 const HISTORY_USAGE_WARNING_RATIO = 0.9
 const ANIMATING_PHASES: ReadonlySet<AutoSavePhase> = new Set([
   'debouncing',
+  'dirty',
   'awaiting-lock',
   'writing-current',
   'updating-index',
@@ -113,7 +114,7 @@ export const AUTOSAVE_PHASE_STATE_MAP = Object.freeze({
     label: '最新状態',
     description:
       '直近の書き込みが成功し、次の変更を待機中。`lastSuccessAt` を履歴リストの最新エントリとして扱う',
-    nextPhases: ['debouncing', 'disabled'],
+    nextPhases: ['debouncing', 'dirty', 'disabled'],
     indicator: 'idle',
     history: {
       access: 'available',
@@ -140,6 +141,17 @@ export const AUTOSAVE_PHASE_STATE_MAP = Object.freeze({
     history: {
       access: 'disabled',
       note: '同一タブ二重保存を避けるため履歴操作をブロックし、Collector ログも 1 行に抑制'
+    }
+  },
+  dirty: {
+    label: '変更検知 (Phase Guard)',
+    description:
+      'Phase Guard により自動保存を保留中。UI には dirty 状態を表示し、解除後に通常フローへ移行',
+    nextPhases: ['debouncing', 'awaiting-lock', 'disabled'],
+    indicator: 'progress',
+    history: {
+      access: 'disabled',
+      note: 'Phase Guard 解除待ちの間は履歴操作を抑止し、pendingBytes を UI に表示'
     }
   },
   'writing-current': {
