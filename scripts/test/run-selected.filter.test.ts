@@ -55,6 +55,7 @@ test('runSelected resolves autosave filter in autorun scenario', async () => {
     'tests/app/autosave.plan.test.ts',
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
+    'tests/lib/autosave/history.flow.test.ts',
     'tests/lib/autosave/init.test.ts',
     'tests/lib/autosave/restore.flow.test.ts',
     'tests/lib/autosave/scheduler.test.ts',
@@ -76,6 +77,7 @@ test('maps --filter autosave to autosave test glob', async () => {
     'tests/app/autosave.plan.test.ts',
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
+    'tests/lib/autosave/history.flow.test.ts',
     'tests/lib/autosave/init.test.ts',
     'tests/lib/autosave/restore.flow.test.ts',
     'tests/lib/autosave/scheduler.test.ts',
@@ -106,7 +108,7 @@ test('includes tsx component tests when filtering merge suite', async () => {
   );
 });
 
-test('falls back to default glob when filter is unknown', async () => {
+test('maps --filter collector to collector suite tests', async () => {
   const module = await importRunSelectedModule();
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'collector']);
 
@@ -114,7 +116,6 @@ test('falls back to default glob when filter is unknown', async () => {
     '--loader',
     'ts-node/esm',
     '--test',
-    'tests/platform/vscode/plugins.bootstrap.test.ts',
     'tests/platform/vscode/plugins.reload.test.ts',
     'tests/plugins/reload.flow.test.ts',
     'tests/plugins/vscode.reload.test.ts',
