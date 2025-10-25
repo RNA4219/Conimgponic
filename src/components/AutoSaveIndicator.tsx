@@ -10,6 +10,7 @@ import type { ProjectLockEvent, ProjectLockReadonlyReason } from '../lib/locks'
 const RETRY_LABEL_THRESHOLD = 3
 const HISTORY_USAGE_WARNING_RATIO = 0.9
 const ANIMATING_PHASES: ReadonlySet<AutoSavePhase> = new Set([
+  'dirty',
   'debouncing',
   'awaiting-lock',
   'writing-current',
@@ -113,11 +114,22 @@ export const AUTOSAVE_PHASE_STATE_MAP = Object.freeze({
     label: '最新状態',
     description:
       '直近の書き込みが成功し、次の変更を待機中。`lastSuccessAt` を履歴リストの最新エントリとして扱う',
-    nextPhases: ['debouncing', 'disabled'],
+    nextPhases: ['dirty', 'debouncing', 'disabled'],
     indicator: 'idle',
     history: {
       access: 'available',
       note: '`index.json` の降順一覧をそのまま表示し、復元・削除操作を許可する'
+    }
+  },
+  dirty: {
+    label: '保存待機',
+    description:
+      '入力変化を検知し 500ms デバウンス中。`pendingBytes` を見積もりつつタイマー完了を待つ',
+    nextPhases: ['idle', 'awaiting-lock'],
+    indicator: 'progress',
+    history: {
+      access: 'available',
+      note: '履歴への追加はまだ発生していないため既存エントのみを表示（編集は許可）'
     }
   },
   debouncing: {

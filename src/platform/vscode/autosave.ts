@@ -168,7 +168,7 @@ const createBootstrapMessage = (
   type: 'bridge.bootstrap',
   apiVersion: API_VERSION,
   phase: PHASE_BOOTSTRAP,
-  bridgePhase: 'bridge.bootstrap',
+  bridgePhase: 'bootstrap',
   reqId,
   correlationId,
   ts,

@@ -9,7 +9,14 @@ import { describe, test } from 'node:test';
 
 type WorkflowYaml = { jobs?: { sbom?: WorkflowJob; golden?: WorkflowJob } };
 type WorkflowJob = { steps?: StepConfig[]; needs?: JobNeeds };
-type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown; if?: unknown };
+type StepConfig = {
+  name?: unknown;
+  run?: unknown;
+  uses?: unknown;
+  with?: unknown;
+  if?: unknown;
+  'continue-on-error'?: unknown;
+};
 type UploadStep = StepConfig & { uses: string; with?: { name?: unknown; path?: unknown } };
 type JobNeeds = string | string[] | undefined;
 type JsYamlModule = { load: (input: string) => unknown };
@@ -38,6 +45,29 @@ describe('ci workflow golden job', () => {
         throw new Error('golden job must execute pnpm golden comparison');
       }
       assert.ok(goldenRun.run.includes('pnpm -s golden:ci'), 'golden job must run pnpm -s golden:ci');
+
+      const goldenExecution = goldenSteps.find(
+        (step) => typeof step.name === 'string' && step.name.trim() === 'Run golden comparison',
+      );
+      if (!goldenExecution) {
+        throw new Error('golden job must name golden comparison step');
+      }
+      const continueOnError = goldenExecution['continue-on-error'];
+      if (typeof continueOnError === 'string') {
+        assert.strictEqual(
+          continueOnError.trim(),
+          'true',
+          "golden comparison step must set continue-on-error to string 'true'",
+        );
+      } else if (typeof continueOnError === 'boolean') {
+        assert.strictEqual(
+          continueOnError,
+          true,
+          'golden comparison step must set continue-on-error to true',
+        );
+      } else {
+        throw new TypeError('golden comparison step must configure continue-on-error');
+      }
 
       const goldenUpload = expectUploadStep(goldenSteps, 'golden-artifacts', 'golden job must upload golden artifacts');
       const uploadPath = goldenUpload.with?.path;

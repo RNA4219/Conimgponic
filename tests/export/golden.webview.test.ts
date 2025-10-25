@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, 
 import { describe, test } from 'node:test'
 import { strict as assert } from 'node:assert'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 process.env.TS_NODE_COMPILER_OPTIONS ??= JSON.stringify({ moduleResolution: 'bundler' })
@@ -200,13 +200,7 @@ describe('export bridge golden comparison', () => {
       assert.equal(markdownEntry.status, 'matched')
       const diffReport = readFileSync(result.diffPath, 'utf8')
       assert.match(diffReport, /markdown: OK/)
-      const normalizedRelative = relative(
-        process.cwd(),
-        join(ctx.outputDir, 'runs', 'unit', 'export'),
-      )
-      const expectedNormalizedPath = (normalizedRelative || join(ctx.outputDir, 'runs', 'unit', 'export'))
-        .split(sep)
-        .join('/')
+      const expectedNormalizedPath = ['runs', 'unit', 'export'].join('/')
       assert.equal(result.normalizedPath, expectedNormalizedPath)
       const runOutputUrl = pathToFileURL(join(ctx.outputDir, 'runs', 'unit', 'export'))
       const runUriUrl = new URL(result.runUri)
