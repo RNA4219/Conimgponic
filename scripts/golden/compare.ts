@@ -193,8 +193,8 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
 
   const diffReportRelative = relative(process.cwd(), diffPath) || diffPath
   const diffReportPosix = toPosix(diffReportRelative)
-  const normalizedRelative = relative(process.cwd(), baseDir) || baseDir
-  const normalizedPosix = toPosix(normalizedRelative)
+  const normalizedRelative = relative(options.outputDir, baseDir)
+  const normalizedPosix = normalizedRelative ? toPosix(normalizedRelative) : ''
   const logSummaryLines = summary.split('\n')
   const statusLabel = comparison.ok ? 'OK' : 'DIFF'
   console.info(`[golden] comparison ${statusLabel}`)
