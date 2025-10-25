@@ -86,14 +86,7 @@ const { load } = await importJsYaml();
 describe('ci workflow build job', () => {
   test('runs recommended pnpm commands for autosave and reports', async () => {
     try {
-      const source = await readFile(workflowPath, 'utf8');
-      const parsed = load(source) as unknown;
-
-      if (!parsed || typeof parsed !== 'object') {
-        assert.fail('workflow must parse to an object');
-      }
-
-      const workflow = parsed as WorkflowYaml;
+      const workflow = await readWorkflowYaml();
       const quality = workflow.jobs?.quality;
       if (!quality) {
         assert.fail('workflow.jobs.quality must exist');
@@ -215,6 +208,48 @@ describe('ci workflow build job', () => {
       console.error('CI workflow verification failed:', error);
       throw error;
     }
+  });
+
+  test('uploads suite logs artifact on quality job matrix runs', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const uploadLogsStep = assertStepWithName(
+      steps,
+      'Upload suite logs',
+      'quality job must include "Upload suite logs" step',
+    );
+
+    if (!isUploadArtifactStep(uploadLogsStep)) {
+      assert.fail('"Upload suite logs" step must upload an artifact');
+    }
+
+    assertStepUsesEquals(
+      uploadLogsStep,
+      'actions/upload-artifact@v4',
+      '"Upload suite logs" step must use actions/upload-artifact@v4',
+    );
+
+    assertStepIfEquals(
+      uploadLogsStep,
+      'always()',
+      '"Upload suite logs" step must run on all outcomes',
+    );
+
+    assertUploadArtifactPaths(
+      uploadLogsStep,
+      [
+        'logs/${{ matrix.suite }}.log',
+        'logs/${{ matrix.suite }}-failures.log',
+      ],
+      '"Upload suite logs" artifact must include suite and failure logs',
+    );
   });
 });
 
@@ -521,6 +556,32 @@ function assertStepArray(value: unknown, message: string): asserts value is Step
   }
 }
 
+function assertUploadArtifactPaths(
+  step: UploadArtifactStep,
+  expectedPaths: string[],
+  message: string,
+): void {
+  const config = step.with;
+  if (!config || typeof config !== 'object') {
+    assert.fail(`${message}; step.with must be configured`);
+  }
+
+  const { path } = config as { path?: unknown };
+  if (typeof path !== 'string') {
+    assert.fail(`${message}; path must be configured as a multi-line string`);
+  }
+
+  const configuredPaths = path
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  for (const expectedPath of expectedPaths) {
+    const hasMatch = configuredPaths.includes(expectedPath);
+    assert.ok(hasMatch, `${message}; path must include "${expectedPath}"`);
+  }
+}
+
 function assertMatrixEntries(value: unknown, message: string): asserts value is QualityMatrixEntry[] {
   if (!Array.isArray(value)) {
     assert.fail(message);
@@ -557,6 +618,17 @@ async function importJsYaml(): Promise<JsYamlModule> {
   const moduleDir = resolve(pnpmDir, match.name, 'node_modules', 'js-yaml');
   const moduleRequire = createRequire(resolve(moduleDir, 'index.js'));
   return moduleRequire('.') as JsYamlModule;
+}
+
+async function readWorkflowYaml(): Promise<WorkflowYaml> {
+  const source = await readFile(workflowPath, 'utf8');
+  const parsed = load(source) as unknown;
+
+  if (!parsed || typeof parsed !== 'object') {
+    assert.fail('workflow must parse to an object');
+  }
+
+  return parsed as WorkflowYaml;
 }
 
 type NodeError = Error & {
