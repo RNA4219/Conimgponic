@@ -73,6 +73,7 @@ const expectedQualitySequence = [
 ];
 
 const expectedCoverageCommand = 'pnpm -s test:coverage';
+const expectedCoverageCleanup = 'rm -rf coverage';
 const expectedJunitCommand =
   'pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml';
 
@@ -119,6 +120,13 @@ describe('ci workflow build job', () => {
         reportCommands,
         expectedCoverageCommand,
         'reports job must run coverage command',
+      );
+
+      assertRunScriptHasPrecedingLine(
+        reportSteps,
+        expectedCoverageCommand,
+        expectedCoverageCleanup,
+        'reports job must remove coverage directory before running coverage command',
       );
 
       assertCommandPresence(
@@ -273,6 +281,36 @@ function assertCommandPresence(commands: string[], expected: string, message: st
   const index = commands.findIndex((command) => command === expected);
 
   assert.notStrictEqual(index, -1, message);
+}
+
+function assertRunScriptHasPrecedingLine(
+  steps: StepConfig[],
+  targetLine: string,
+  precedingLine: string,
+  message: string,
+): void {
+  const script = steps.find((step) => typeof step.run === 'string' && step.run.includes(targetLine))?.run;
+
+  if (typeof script !== 'string') {
+    assert.fail(`${message}; run script containing "${targetLine}" not found`);
+  }
+
+  const lines = script
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const targetIndex = lines.findIndex((line) => line === targetLine);
+
+  if (targetIndex === -1) {
+    assert.fail(`${message}; run script must include exact line "${targetLine}"`);
+  }
+
+  const precedingIndex = lines.findIndex(
+    (line, index) => index < targetIndex && line === precedingLine,
+  );
+
+  assert.notStrictEqual(precedingIndex, -1, message);
 }
 
 function assertJobNeedsInclude(
