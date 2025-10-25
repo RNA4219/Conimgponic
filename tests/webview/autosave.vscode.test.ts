@@ -100,7 +100,7 @@ describe('createVscodeAutoSaveBridge', () => {
       optionsDisabled: !snapshot.autosave.value
     }
 
-    createVscodeAutoSaveBridge({
+    const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: expectedGuard,
       flags: snapshot,
@@ -111,13 +111,42 @@ describe('createVscodeAutoSaveBridge', () => {
       }
     })
 
-    const bootstrap = sent.find(isBootstrapMessage)
-    assert.ok(bootstrap, 'workspace 由来の FlagSnapshot を含む bootstrap メッセージが必要')
-    assert.equal(bootstrap.payload.guard.featureFlag.value, expectedGuard.featureFlag.value)
-    assert.equal(bootstrap.payload.guard.featureFlag.source, expectedGuard.featureFlag.source)
+    assert.equal(sent.length, 1, 'create 時に送る初回メッセージは bridge.bootstrap のみ')
+    const bootstrap = sent[0]
+    assert.ok(bootstrap && isBootstrapMessage(bootstrap), 'bridge.bootstrap メッセージが必要')
+    assert.equal(bootstrap.payload.version, 1)
+    assert.strictEqual(
+      bootstrap.payload.policy,
+      AUTOSAVE_POLICY,
+      '初期化時に保存ポリシーを Webview に伝搬する'
+    )
+    assert.strictEqual(
+      bootstrap.payload.flags,
+      snapshot,
+      'resolveFlags の結果をそのまま flags として送出する'
+    )
+    assert.strictEqual(
+      bootstrap.payload.guard,
+      expectedGuard,
+      'initialGuard を bridge.bootstrap で共有する'
+    )
+    assert.deepEqual(
+      bootstrap.payload.guard,
+      {
+        featureFlag: {
+          value: snapshot.autosave.value,
+          source: snapshot.autosave.source
+        },
+        optionsDisabled: !snapshot.autosave.value
+      },
+      'guard は resolveFlags のスナップショットと一致する必要がある'
+    )
     assert.equal(bootstrap.payload.flags.autosave.value, snapshot.autosave.value)
     assert.equal(bootstrap.payload.flags.autosave.source, snapshot.autosave.source)
     assert.equal(bootstrap.payload.flags.merge.source, snapshot.merge.source)
+
+    const state = bridge.inspectState()
+    assert.strictEqual(state.guard, expectedGuard, 'ブートストラップ後の guard 状態は initialGuard と一致する')
   })
 
   it('emits dirty→saving→saved status transitions with atomic write', async () => {
