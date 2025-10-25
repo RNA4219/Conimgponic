@@ -1,5 +1,6 @@
 import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
 
+import { publishFlagResolution } from '../telemetry/day8Collector.js'
 import type { FlagSnapshot, ResolveOptions } from './flags.js'
 
 import {
@@ -49,7 +50,9 @@ export function resolveAutoSaveBootstrapPlan(
   options?: ResolveOptions,
   config?: { readonly optionsDisabled?: boolean }
 ): AutoSaveBootstrapPlan {
-  const snapshot = resolveFlags(options)
+  const { snapshot, errors } = resolveFlags(options, { withErrors: true })
+
+  publishFlagResolution('app.autosave', 'bootstrap', snapshot, errors)
   const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
 
   return {
@@ -68,7 +71,9 @@ export function resolveAutoSaveBootstrapPlan(
 export function resolvePluginBridgeBootstrapPlan(
   options?: ResolveOptions
 ): PluginBridgeBootstrapPlan {
-  const snapshot = resolveFlags(options)
+  const { snapshot, errors } = resolveFlags(options, { withErrors: true })
+
+  publishFlagResolution('vscode.plugins', 'bootstrap', snapshot, errors)
   return {
     snapshot,
     enableFlag: snapshot.plugins.enabled
