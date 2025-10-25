@@ -86,7 +86,8 @@ test('maps --filter autosave to autosave test glob', async () => {
 });
 
 test('maps --filter golden to golden comparison tests', async () => {
-  const nodeArgs = await collectNodeArgs(['--filter', 'golden']);
+  const module = await importRunSelectedModule();
+  const nodeArgs = await collectNodeArgs(module, ['--filter', 'golden']);
 
   assert.deepStrictEqual(nodeArgs, [
     '--loader',
@@ -113,8 +114,23 @@ test('falls back to default glob when filter is unknown', async () => {
     '--loader',
     'ts-node/esm',
     '--test',
+    'tests/platform/vscode/plugins.bootstrap.test.ts',
+    'tests/platform/vscode/plugins.reload.test.ts',
+    'tests/plugins/reload.flow.test.ts',
+    'tests/plugins/vscode.reload.test.ts',
+  ]);
+});
+
+test('falls back to default glob when filter is unknown', async () => {
+  const module = await importRunSelectedModule();
+  const nodeArgs = await collectNodeArgs(module, ['--filter', 'missing']);
+
+  assert.deepStrictEqual(nodeArgs, [
+    '--loader',
+    'ts-node/esm',
+    '--test',
     '--filter',
-    'collector',
+    'missing',
     'tests/**/*.test.ts',
   ]);
 });

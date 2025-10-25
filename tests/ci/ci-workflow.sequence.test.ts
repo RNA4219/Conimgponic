@@ -32,6 +32,7 @@ type QualityJobConfig = {
       include?: QualityMatrixEntry[];
     };
   };
+  steps?: StepConfig[];
 };
 
 type QualityMatrixEntry = {
@@ -44,6 +45,8 @@ type StepConfig = {
   run?: unknown;
   uses?: unknown;
   with?: unknown;
+  name?: unknown;
+  if?: unknown;
 };
 
 type UploadArtifactStep = StepConfig & {
@@ -99,6 +102,27 @@ describe('ci workflow build job', () => {
       assertMatrixEntries(matrixEntries, 'quality job must configure matrix.include array');
 
       const qualityCommands = extractMatrixCommands(matrixEntries);
+
+      const qualitySteps = quality.steps;
+      assertStepArray(qualitySteps, 'workflow.jobs.quality.steps must be an array');
+
+      const reportFailureStep = assertStepWithName(
+        qualitySteps,
+        'Report suite failure',
+        'quality job must include "Report suite failure" step',
+      );
+
+      assertStepIfEquals(
+        reportFailureStep,
+        "steps.run_suite.outcome == 'failure'",
+        '"Report suite failure" step must run only when the suite fails',
+      );
+
+      assertStepRunIncludesLine(
+        reportFailureStep,
+        'exit 1',
+        '"Report suite failure" step must terminate the job with exit 1',
+      );
 
       const reports = workflow.jobs?.reports;
       if (!reports) {
@@ -169,10 +193,10 @@ describe('ci workflow build job', () => {
         assert.fail('workflow.jobs.build must exist');
       }
 
-      assertJobNeedsInclude(
+      assertJobNeedsIncludeAll(
         build.needs,
-        'audit',
-        'build job must depend on audit job',
+        ['sbom', 'license', 'quality', 'audit'],
+        'build job must depend on sbom, license, quality, and audit jobs',
       );
     } catch (error) {
       console.error('CI workflow verification failed:', error);
@@ -283,6 +307,45 @@ function assertCommandPresence(commands: string[], expected: string, message: st
   assert.notStrictEqual(index, -1, message);
 }
 
+function assertStepWithName(
+  steps: StepConfig[],
+  expectedName: string,
+  message: string,
+): StepConfig {
+  const match = steps.find(
+    (step) => typeof step.name === 'string' && step.name.trim() === expectedName,
+  );
+
+  if (!match) {
+    assert.fail(message);
+  }
+
+  return match;
+}
+
+function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
+  if (typeof step.if !== 'string') {
+    assert.fail(`${message}; step.if must be configured as a string`);
+  }
+
+  assert.strictEqual(step.if.trim(), expected, message);
+}
+
+function assertStepRunIncludesLine(step: StepConfig, expectedLine: string, message: string): void {
+  if (typeof step.run !== 'string') {
+    assert.fail(`${message}; step.run must be configured as a string`);
+  }
+
+  const lines = step.run
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const index = lines.findIndex((line) => line === expectedLine);
+
+  assert.notStrictEqual(index, -1, message);
+}
+
 function assertRunScriptHasPrecedingLine(
   steps: StepConfig[],
   targetLine: string,
@@ -313,23 +376,29 @@ function assertRunScriptHasPrecedingLine(
   assert.notStrictEqual(precedingIndex, -1, message);
 }
 
-function assertJobNeedsInclude(
+function assertJobNeedsIncludeAll(
   value: JobNeedsConfig,
-  expected: string,
+  expected: string[],
   message: string,
 ): void {
+  const needs = normalizeJobNeeds(value);
+
+  for (const dependency of expected) {
+    const hasMatch = needs.includes(dependency);
+    assert.ok(hasMatch, `${message}; needs must include "${dependency}"`);
+  }
+}
+
+function normalizeJobNeeds(value: JobNeedsConfig): string[] {
   if (typeof value === 'string') {
-    assert.strictEqual(value, expected, message);
-    return;
+    return [value];
   }
 
   if (Array.isArray(value)) {
-    const hasMatch = value.some((entry) => entry === expected);
-    assert.ok(hasMatch, message);
-    return;
+    return value;
   }
 
-  assert.fail(`${message}; needs must be configured as a string or array of strings`);
+  assert.fail('build job must configure needs as a string or array of strings');
 }
 
 function assertLineIncludes(lines: string[], expected: string, message: string): void {

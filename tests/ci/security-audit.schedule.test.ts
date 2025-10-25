@@ -90,6 +90,23 @@ describe('security-audit workflow schedule', () => {
         );
       });
 
+      const cronExpressions = schedule.map((entry, index) => {
+        if (!isRecord(entry)) {
+          assert.fail(`schedule entry #${index + 1} must be an object`);
+        }
+
+        if (typeof entry.cron !== 'string') {
+          assert.fail(`schedule entry #${index + 1} must set cron`);
+        }
+
+        return entry.cron.trim();
+      });
+
+      assert.ok(
+        cronExpressions.includes('0 3 * * *'),
+        "workflow.on.schedule must include cron expression '0 3 * * *'"
+      );
+
       const push = triggers.push;
       if (!isRecord(push)) {
         assert.fail('workflow.on.push must be an object');
