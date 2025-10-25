@@ -131,13 +131,19 @@ scenario(
   'retryable errors trigger backoff before transitioning to disabled on fatal failure',
   { locks: { async request(){ throw Object.assign(new Error('simulated lock failure'), { code: 'lock-unavailable' }) } } },
   async (t, ctx) => {
-    const { initAutoSave } = ctx
+    const { initAutoSave, AUTOSAVE_RETRY_POLICY } = ctx
     t.mock.timers.enable({ apis: ['setTimeout'], now: Date.now() })
     const runner = initAutoSave(() => makeStoryboard(['gamma']), { disabled: false }, ENABLED_GUARD)
     await assert.rejects(runner.flushNow(), isAutoSaveError({ code: 'lock-unavailable', retryable: true }))
-    t.mock.timers.tick(1000)
     assert.equal(runner.snapshot().phase, 'backoff')
+    t.mock.timers.tick(AUTOSAVE_RETRY_POLICY.initialDelayMs - 1)
+    await Promise.resolve()
+    assert.equal(runner.snapshot().phase, 'backoff')
+    t.mock.timers.tick(1)
+    await Promise.resolve()
+    assert.equal(runner.snapshot().phase, 'awaiting-lock')
     t.mock.timers.runAll()
+    await Promise.resolve()
     assert.equal(runner.snapshot().phase, 'disabled')
   }
 )

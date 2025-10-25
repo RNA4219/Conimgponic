@@ -219,7 +219,7 @@ scenario('phase guard keeps dirty snapshot when enabled and generation queued', 
   const flags = createFlags(true)
   const runner = initAutoSave(() => ({ nodes: [{ id: 'a' }] } as any), { disabled: false }, flags)
   runner.markDirty({ reason: 'test' })
-  assert.equal(runner.snapshot().phase, 'dirty')
+  assert.equal(runner.snapshot().phase, 'debouncing')
   assert.equal(runner.snapshot().retryCount, 0)
 })
 
@@ -232,7 +232,7 @@ scenario(
     }
     const runner = initAutoSave(() => ({ nodes: [{ id: 'guard-direct' }] } as any), { disabled: false }, guard)
     runner.markDirty()
-    assert.equal(runner.snapshot().phase, 'dirty')
+    assert.equal(runner.snapshot().phase, 'debouncing')
   }
 )
 
@@ -243,7 +243,7 @@ scenario('phase guard treats guard snapshot as phase-a when feature flag enabled
   }
   const runner = initAutoSave(() => ({ nodes: [{ id: 'guarded' }] } as any), { disabled: false }, guard)
   runner.markDirty({ reason: 'direct-guard' })
-  assert.equal(runner.snapshot().phase, 'dirty')
+  assert.equal(runner.snapshot().phase, 'debouncing')
 })
 
 scenario('saving phase holds lock before history write', async (_t: any, { initAutoSave }: any) => {
@@ -254,13 +254,33 @@ scenario('saving phase holds lock before history write', async (_t: any, { initA
   assert.ok(runner.snapshot().lastSuccessAt)
 })
 
-scenario('backoff phase surfaces retryable error when Web Lock fails and .lock fallback pending', { locks: { async request(){ throw new Error('denied') } } }, async (_t: any, { initAutoSave }: any) => {
+scenario(
+  'backoff phase surfaces retryable error when Web Lock fails and .lock fallback pending',
+  {
+    locks: { async request(){ throw new Error('denied') } },
+    opfs: {
+      beforeWrite(path){
+        if (path === 'project/.lock') throw new Error('fallback-busy')
+      }
+    }
+  },
+  async (_t: any, { initAutoSave }: any) => {
   const flags = createFlags(true)
   const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, flags)
-  await assert.rejects(runner.flushNow(), (error: any) => error?.code === 'lock-unavailable' && error?.retryable === true)
+  let error: unknown
+  try {
+    await runner.flushNow()
+    assert.fail('expected flushNow to reject')
+  } catch (caught) {
+    error = caught
+  }
+  assert.ok(error && typeof error === 'object')
+  assert.equal((error as any)?.code, 'lock-unavailable')
+  assert.equal((error as any)?.retryable, true)
   assert.equal(runner.snapshot().phase, 'backoff')
   assert.equal(runner.snapshot().lastError?.code, 'lock-unavailable')
-})
+  }
+)
 
 scenario('history fifo surfaces retained entries via listHistory metadata', async (_t: any, { initAutoSave, listHistory }: any) => {
   const flags = createFlags(true)
@@ -288,7 +308,7 @@ scenario(
       (error: any) => error?.code === 'write-failed' && error?.retryable === true
     )
     const snap = runner.snapshot()
-    assert.equal(snap.phase, 'error')
+    assert.equal(snap.phase, 'backoff')
     assert.equal(snap.lastError?.code, 'write-failed')
     assert.ok(snap.retryCount >= 1)
   }
@@ -312,10 +332,16 @@ scenario(
   async (_t: any, { initAutoSave }: any) => {
     const flags = createFlags(true)
     const runner = initAutoSave(() => ({ nodes: [{ id: 'overflow' }] } as any), { disabled: false }, flags)
-    await assert.rejects(
-      runner.flushNow(),
-      (error: any) => error?.code === 'history-overflow' && error?.retryable === false
-    )
+    let error: unknown
+    try {
+      await runner.flushNow()
+      assert.fail('expected flushNow to reject')
+    } catch (caught) {
+      error = caught
+    }
+    assert.ok(error && typeof error === 'object')
+    assert.equal((error as any)?.code, 'history-overflow')
+    assert.equal((error as any)?.retryable, false)
     const snap = runner.snapshot()
     assert.equal(snap.phase, 'disabled')
     assert.equal(snap.lastError?.code, 'history-overflow')
