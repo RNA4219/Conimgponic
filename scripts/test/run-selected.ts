@@ -336,6 +336,7 @@ function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   const requiredCompilerOptions: Record<string, unknown> = {
     moduleResolution: 'nodenext',
+    allowSyntheticDefaultImports: true,
     types: ['node'],
   };
 
