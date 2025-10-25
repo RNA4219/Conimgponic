@@ -3,6 +3,7 @@
 process.env.TS_NODE_COMPILER_OPTIONS ??= JSON.stringify({ moduleResolution: 'bundler' });
 
 import { readFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -144,4 +145,54 @@ test('run-selected strips unsupported coverage flag', async () => {
       process.env.RUN_SELECTED_SKIP_AUTORUN = originalValue;
     }
   }
+});
+
+test('run-selected preserves bundler module resolution and enables synthetic defaults', async () => {
+  const skipAutorunOriginal = process.env.RUN_SELECTED_SKIP_AUTORUN;
+  const compilerOptionsOriginal = process.env.TS_NODE_COMPILER_OPTIONS;
+  process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
+  process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ moduleResolution: 'bundler' });
+
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const { runSelected } = await import(moduleUrl);
+
+  const capturedEnvs: NodeJS.ProcessEnv[] = [];
+  const spawnMock = ((command, args, options) => {
+    assert.strictEqual(command, 'node');
+
+    const child = new EventEmitter();
+    const env: NodeJS.ProcessEnv = { ...(options?.env ?? {}) };
+    capturedEnvs.push(env);
+
+    queueMicrotask(() => {
+      child.emit('exit', 0, null);
+    });
+
+    return child;
+  }) as typeof import('node:child_process').spawn;
+
+  try {
+    runSelected([], spawnMock, []);
+  } finally {
+    if (skipAutorunOriginal === undefined) {
+      delete process.env.RUN_SELECTED_SKIP_AUTORUN;
+    } else {
+      process.env.RUN_SELECTED_SKIP_AUTORUN = skipAutorunOriginal;
+    }
+
+    if (compilerOptionsOriginal === undefined) {
+      delete process.env.TS_NODE_COMPILER_OPTIONS;
+    } else {
+      process.env.TS_NODE_COMPILER_OPTIONS = compilerOptionsOriginal;
+    }
+  }
+
+  assert.ok(capturedEnvs.length > 0, 'runSelected should invoke spawn with custom env');
+  const compilerOptions = capturedEnvs[capturedEnvs.length - 1]?.TS_NODE_COMPILER_OPTIONS;
+  assert.ok(compilerOptions, 'TS_NODE_COMPILER_OPTIONS should be defined for child process');
+
+  const parsed = JSON.parse(compilerOptions) as Record<string, unknown>;
+  assert.strictEqual(parsed.moduleResolution, 'bundler');
+  assert.strictEqual(parsed.allowSyntheticDefaultImports, true);
+  assert.deepStrictEqual(parsed.types, ['node']);
 });
