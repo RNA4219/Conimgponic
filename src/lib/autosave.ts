@@ -930,7 +930,21 @@ export function initAutoSave(
 ): AutoSaveInitResult {
   const policy = options?.policy ?? resolveAutoSavePolicy()
   const truthy = /^(1|true)$/i, falsy = /^(0|false)$/i
-  const asBool = (value: unknown) => (typeof value === 'string' && truthy.test(value) ? true : typeof value === 'string' && falsy.test(value) ? false : null)
+  const asBool = (value: unknown): boolean | null => {
+    if (typeof value === 'boolean') {
+      return value
+    }
+    if (typeof value === 'number') {
+      if (value === 1) return true
+      if (value === 0) return false
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim()
+      if (truthy.test(normalized)) return true
+      if (falsy.test(normalized)) return false
+    }
+    return null
+  }
   const guardSource = (value: unknown): AutoSavePhaseGuardSnapshot['featureFlag']['source'] =>
     value === 'env' || value === 'workspace' || value === 'localStorage' || value === 'default' ? value : 'default'
   const resolveGuardFromEnvironment = (
@@ -938,13 +952,29 @@ export function initAutoSave(
   ): AutoSavePhaseGuardSnapshot => {
     const scope = globalThis as typeof globalThis & {
       __AUTOSAVE_ENABLED__?: boolean
+      __AUTOSAVE_WORKSPACE__?: WorkspaceConfiguration | null
       localStorage?: { getItem?: (key: string) => string | null }
       process?: { env?: Record<string, unknown> }
       import?: { meta?: { env?: Record<string, unknown> } }
     }
-    if (typeof scope.__AUTOSAVE_ENABLED__ === 'boolean') {
+    const runtimeEnv =
+      typeof scope.__AUTOSAVE_ENABLED__ === 'boolean' ? scope.__AUTOSAVE_ENABLED__ : null
+    const envVar = asBool(
+      scope.process?.env?.VITE_AUTOSAVE_ENABLED ?? scope.import?.meta?.env?.VITE_AUTOSAVE_ENABLED
+    )
+    const env = runtimeEnv ?? envVar
+    if (env != null) {
       return {
-        featureFlag: { value: scope.__AUTOSAVE_ENABLED__, source: 'env' },
+        featureFlag: { value: env, source: 'env' },
+        optionsDisabled: fallbackOptionsDisabled
+      }
+    }
+    const workspaceValue = asBool(
+      readWorkspaceValue(scope.__AUTOSAVE_WORKSPACE__ ?? null, 'conimg.autosave.enabled')
+    )
+    if (workspaceValue != null) {
+      return {
+        featureFlag: { value: workspaceValue, source: 'workspace' },
         optionsDisabled: fallbackOptionsDisabled
       }
     }
@@ -952,15 +982,6 @@ export function initAutoSave(
     if (storage != null) {
       return {
         featureFlag: { value: storage, source: 'localStorage' },
-        optionsDisabled: fallbackOptionsDisabled
-      }
-    }
-    const env = asBool(
-      scope.process?.env?.VITE_AUTOSAVE_ENABLED ?? scope.import?.meta?.env?.VITE_AUTOSAVE_ENABLED
-    )
-    if (env != null) {
-      return {
-        featureFlag: { value: env, source: 'env' },
         optionsDisabled: fallbackOptionsDisabled
       }
     }

@@ -150,9 +150,66 @@ scenario(
 
     assert.equal(runner.snapshot().phase, 'disabled')
     assert.equal(events.length, 1)
-    const event = events[0] as { guard?: { featureFlag?: { value?: boolean; source?: string } } }
-    assert.equal(event?.guard?.featureFlag?.source, plan.snapshot.autosave.source)
-    assert.equal(event?.guard?.featureFlag?.value, plan.snapshot.autosave.enabled)
+    const event = events[0] as { guard?: { featureFlag?: { value?: boolean; source?: string }; optionsDisabled?: boolean } }
+    assert.deepEqual(event.guard, plan.guard)
+    assert.equal(plan.guard.featureFlag.source, plan.snapshot.autosave.source)
+    assert.equal(plan.guard.featureFlag.value, plan.snapshot.autosave.enabled)
+    assert.doesNotThrow(() => runner.dispose())
+  }
+)
+
+scenario(
+  'fallback guard prefers workspace configuration over localStorage',
+  async (t: any, { initAutoSave }: any) => {
+    const storage = new Map<string, string>([['autosave.enabled', '1']])
+    const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem(key: string){ return storage.get(key) ?? null }
+      },
+      configurable: true
+    })
+    const workspace = {
+      get(key: string){ return key === 'conimg.autosave.enabled' ? false : undefined }
+    }
+    const originalWorkspace = Object.getOwnPropertyDescriptor(globalThis, '__AUTOSAVE_WORKSPACE__')
+    Object.defineProperty(globalThis, '__AUTOSAVE_WORKSPACE__', {
+      value: workspace,
+      configurable: true
+    })
+    const events: Record<string, unknown>[] = []
+    const originalCollector = Object.getOwnPropertyDescriptor(globalThis, 'Day8Collector')
+    Object.defineProperty(globalThis, 'Day8Collector', {
+      value: { publish(event: Record<string, unknown>){ events.push(event) } },
+      configurable: true
+    })
+
+    t.after(() => {
+      if (originalLocalStorage) {
+        Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
+      } else {
+        delete (globalThis as any).localStorage
+      }
+      if (originalWorkspace) {
+        Object.defineProperty(globalThis, '__AUTOSAVE_WORKSPACE__', originalWorkspace)
+      } else {
+        delete (globalThis as any).__AUTOSAVE_WORKSPACE__
+      }
+      if (originalCollector) {
+        Object.defineProperty(globalThis, 'Day8Collector', originalCollector)
+      } else {
+        delete (globalThis as any).Day8Collector
+      }
+    })
+
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false })
+
+    assert.equal(runner.snapshot().phase, 'disabled')
+    assert.equal(events.length, 1)
+    const guard = events[0]?.guard as { featureFlag?: { value?: boolean; source?: string } }
+    assert.equal(guard?.featureFlag?.source, 'workspace')
+    assert.equal(guard?.featureFlag?.value, false)
+    assert.doesNotThrow(() => runner.dispose())
   }
 )
 
