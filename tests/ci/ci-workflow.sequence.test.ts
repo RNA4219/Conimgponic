@@ -50,6 +50,7 @@ type StepConfig = {
   with?: unknown;
   name?: unknown;
   if?: unknown;
+  'continue-on-error'?: unknown;
 };
 
 type UploadArtifactStep = StepConfig & {
@@ -102,6 +103,14 @@ describe('ci workflow build job', () => {
 
       const qualitySteps = quality.steps;
       assertStepArray(qualitySteps, 'workflow.jobs.quality.steps must be an array');
+
+      const runSuiteStep = assertStepWithName(
+        qualitySteps,
+        'Run ${{ matrix.suite }} suite',
+        'quality job must include "Run ${{ matrix.suite }} suite" step',
+      );
+
+      assertStepContinueOnError(runSuiteStep, '"Run ${{ matrix.suite }} suite" step must enable continue-on-error');
 
       const reportFailureStep = assertStepWithName(
         qualitySteps,
@@ -495,6 +504,14 @@ function assertStepIfEquals(step: StepConfig, expected: string, message: string)
   }
 
   assert.strictEqual(step.if.trim(), expected, message);
+}
+
+function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
+  if (typeof step.uses !== 'string') {
+    assert.fail(`${message}; step.uses must be configured as a string`);
+  }
+
+  assert.strictEqual(step.uses.trim(), expected, message);
 }
 
 function assertStepRunIncludesLine(step: StepConfig, expectedLine: string, message: string): void {

@@ -26,9 +26,18 @@ describe('ci workflow triggers', () => {
       const triggers = (parsed as WorkflowYaml).on;
       if (!isRecord(triggers)) assert.fail('workflow.on must be defined');
       assert.ok(Object.prototype.hasOwnProperty.call(triggers, 'pull_request'), 'workflow.on must define pull_request trigger');
+      const pullRequest = triggers.pull_request;
+      if (!isRecord(pullRequest)) assert.fail('workflow.on.pull_request must be an object');
+      assert.ok(
+        normalizeBranches(pullRequest.branches, 'workflow.on.pull_request.branches').includes('main'),
+        'workflow.on.pull_request.branches must include main',
+      );
       const push = triggers.push;
       if (!isRecord(push)) assert.fail('workflow.on.push must be an object');
-      assert.ok(normalizeBranches(push.branches).includes('main'), 'workflow.on.push.branches must include main');
+      assert.ok(
+        normalizeBranches(push.branches, 'workflow.on.push.branches').includes('main'),
+        'workflow.on.push.branches must include main',
+      );
       const schedule = triggers.schedule;
       if (!Array.isArray(schedule)) assert.fail('workflow.on.schedule must be an array');
       const cronExpressions = schedule.map((entry, index) => {
@@ -47,23 +56,23 @@ describe('ci workflow triggers', () => {
   });
 });
 
-function normalizeBranches(branches: unknown): string[] {
+function normalizeBranches(branches: unknown, context: string): string[] {
   if (typeof branches === 'string') {
     const branch = branches.trim();
-    assert.notStrictEqual(branch, '', 'workflow.on.push.branches string must be non-empty');
+    assert.notStrictEqual(branch, '', `${context} string must be non-empty`);
     return [branch];
   }
   if (Array.isArray(branches)) {
     const values = branches.map((entry, index) => {
-      if (typeof entry !== 'string') assert.fail(`workflow.on.push.branches entry #${index + 1} must be a string`);
+      if (typeof entry !== 'string') assert.fail(`${context} entry #${index + 1} must be a string`);
       const branch = entry.trim();
-      assert.notStrictEqual(branch, '', `workflow.on.push.branches entry #${index + 1} must be non-empty`);
+      assert.notStrictEqual(branch, '', `${context} entry #${index + 1} must be non-empty`);
       return branch;
     });
-    assert.ok(values.length > 0, 'workflow.on.push.branches must include at least one branch');
+    assert.ok(values.length > 0, `${context} must include at least one branch`);
     return values;
   }
-  assert.fail('workflow.on.push.branches must be a string or an array of strings');
+  assert.fail(`${context} must be a string or an array of strings`);
 }
 
 function isRecord(value: unknown): value is Record<string | number | symbol, unknown> {
