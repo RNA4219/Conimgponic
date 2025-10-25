@@ -103,7 +103,7 @@ describe('createVscodeAutoSaveBridge', () => {
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: expectedGuard,
-      flags: snapshot,
+      workspace,
       now: () => new Date('2024-01-02T00:00:00.000Z'),
       sendMessage: (message) => sent.push(message),
       atomicWrite: async () => {
@@ -120,7 +120,7 @@ describe('createVscodeAutoSaveBridge', () => {
       AUTOSAVE_POLICY,
       '初期化時に保存ポリシーを Webview に伝搬する'
     )
-    assert.strictEqual(
+    assert.deepEqual(
       bootstrap.payload.flags,
       snapshot,
       'resolveFlags の結果をそのまま flags として送出する'
