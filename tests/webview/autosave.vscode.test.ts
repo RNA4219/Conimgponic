@@ -20,6 +20,9 @@ import {
 } from '../../src/platform/vscode/autosave'
 import type { Storyboard } from '../../src/types'
 
+const createDefaultFlags = () =>
+  resolveFlags({ clock: () => new Date('2024-01-01T00:00:00.000Z') })
+
 const guardEnabled: AutoSavePhaseGuardSnapshot = {
   featureFlag: { value: true, source: 'env' },
   optionsDisabled: false
@@ -100,6 +103,7 @@ describe('createVscodeAutoSaveBridge', () => {
     createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: expectedGuard,
+      flags: snapshot,
       now: () => new Date('2024-01-02T00:00:00.000Z'),
       sendMessage: (message) => sent.push(message),
       atomicWrite: async () => {
@@ -123,6 +127,7 @@ describe('createVscodeAutoSaveBridge', () => {
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
       now: () => {
         const ts = new Date('2024-01-01T00:00:00.000Z')
         ts.setMilliseconds(tick * 250)
@@ -176,6 +181,7 @@ describe('createVscodeAutoSaveBridge', () => {
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
       now: () => {
         const ts = new Date('2024-01-01T00:00:00.000Z')
         ts.setMilliseconds(tick * 250)
@@ -223,6 +229,7 @@ describe('createVscodeAutoSaveBridge', () => {
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
       now: () => {
         const ts = new Date('2024-01-01T00:00:00.000Z')
         ts.setMilliseconds(tick * 250)
@@ -282,6 +289,7 @@ describe('createVscodeAutoSaveBridge', () => {
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
       now: () => new Date('2024-01-01T00:00:00.000Z'),
       sendMessage: (msg) => sent.push(msg),
       atomicWrite: async ({ request }) => ({
@@ -316,6 +324,7 @@ describe('createVscodeAutoSaveBridge', () => {
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
       now: () => new Date('2024-01-01T00:00:00.000Z'),
       sendMessage: (msg) => sent.push(msg),
       atomicWrite: async () => ({
@@ -343,6 +352,7 @@ describe('createVscodeAutoSaveBridge', () => {
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
       now: () => new Date('2024-01-01T00:00:00.000Z'),
       sendMessage: (msg) => sent.push(msg),
       atomicWrite: async () => ({

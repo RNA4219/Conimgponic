@@ -11,6 +11,7 @@ import type {
   AutoSavePolicy,
   AutoSaveError
 } from '../../lib/autosave'
+import type { FlagSnapshot } from '../../config/index.js'
 
 const toIso = (input: Date): string => input.toISOString()
 
@@ -76,6 +77,7 @@ export type AutoSaveAtomicWriteResult =
 export interface AutoSaveHostBridgeOptions {
   readonly policy: AutoSavePolicy
   readonly initialGuard: AutoSavePhaseGuardSnapshot
+  readonly flags: FlagSnapshot
   readonly now: () => Date
   readonly sendMessage: (message: AutoSaveBridgeMessage) => void
   readonly atomicWrite: (input: AutoSaveAtomicWriteInput) => Promise<AutoSaveAtomicWriteResult>
@@ -150,6 +152,7 @@ const statusPhaseForState = (state: AutoSaveStatusState): AutoSavePhase => {
 }
 
 const API_VERSION = 1
+const PHASE_BOOTSTRAP: AutoSaveEnvelopePhase = 'A-0'
 const PHASE_STATUS: AutoSaveEnvelopePhase = 'A-1'
 const PHASE_SNAPSHOT: AutoSaveEnvelopePhase = 'A-2'
 
@@ -301,6 +304,24 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     history: [],
     retainedBytes: 0
   }
+
+  const bootstrapReqId = nextReqId(state)
+  const bootstrapCorrelationId = nextCorrelationId(state)
+  options.sendMessage({
+    type: 'bridge.bootstrap',
+    apiVersion: API_VERSION,
+    phase: PHASE_BOOTSTRAP,
+    bridgePhase: 'bridge.bootstrap',
+    reqId: bootstrapReqId,
+    correlationId: bootstrapCorrelationId,
+    ts: toIso(options.now()),
+    payload: {
+      version: 1,
+      policy: options.policy,
+      guard: options.initialGuard,
+      flags: options.flags
+    }
+  })
 
   const reportDirty = (pendingBytes: number, guard: AutoSavePhaseGuardSnapshot): void => {
     const previousStatus = state.status

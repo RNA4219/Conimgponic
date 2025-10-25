@@ -7,6 +7,7 @@ import {
   resolveAutoSaveBootstrapPlan,
   type AutoSaveBootstrapPlan
 } from '../../src/config'
+import { AUTOSAVE_POLICY } from '../../src/lib/autosave'
 import { planAutoSave } from '../../src/App'
 
 function createPlan(enabled: boolean): AutoSaveBootstrapPlan {
@@ -25,7 +26,8 @@ function createPlan(enabled: boolean): AutoSaveBootstrapPlan {
       featureFlag: { value: enabled, source: enabled ? 'workspace' : 'default' },
       optionsDisabled: false
     },
-    failSafePhase: 'phase-a0'
+    failSafePhase: 'phase-a0',
+    policy: AUTOSAVE_POLICY
   }
 }
 
