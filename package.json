@@ -20,7 +20,8 @@
     "test:junit": "node --input-type=module --eval \"import { mkdirSync } from 'node:fs'; const dir = process.argv.at(-1); if (!dir) throw new Error('missing dir'); mkdirSync(dir, { recursive: true });\" reports && node --loader ts-node/esm --test --test-reporter=junit --test-reporter-destination=file=reports/junit.xml tests/**/*.test.ts",
     "license:check": "node --loader ts-node/esm scripts/license/verify.ts",
     "golden": "pnpm -s ts-node --files scripts/golden/compare.ts",
-    "golden:ci": "pnpm -s ts-node --files scripts/golden/compare.ts tests/fixtures/case-mini-03/project.storyboard.json tests/fixtures/case-mini-03 ."
+    "golden:ci": "pnpm -s ts-node --files scripts/golden/compare.ts tests/fixtures/case-mini-03/project.storyboard.json tests/fixtures/case-mini-03 .",
+    "postinstall": "node scripts/postinstall/harden-esbuild.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -41,7 +42,7 @@
   "pnpm": {
     "auditConfig": {
       "ignore": {
-        "GHSA-67mh-4wv8-2f99": "pending upstream esbuild upgrade"
+        "GHSA-67mh-4wv8-2f99": "local esbuild serve() hardening applied"
       }
     }
   },
