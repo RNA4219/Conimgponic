@@ -45,7 +45,7 @@ const args = [
   'ts-node/esm',
   '--test',
   '--test-reporter=junit',
-  '--test-reporter-destination=reports/junit.xml',
+  '--test-reporter-destination=file=reports/junit.xml',
   ...testFiles,
 ];
 

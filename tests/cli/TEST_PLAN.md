@@ -75,4 +75,4 @@ export interface CollectorEntry {
 2. `pnpm typecheck`
 3. `pnpm test --filter cli`
 4. `pnpm test --filter collector`
-5. `pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml`（CI レポート提出用）
+5. `pnpm test -- --test-reporter=junit --test-reporter-destination=file=reports/junit.xml`（CI レポート提出用）
