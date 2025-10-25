@@ -66,8 +66,7 @@ const expectedQualitySequence = [
 ];
 
 const expectedCoverageCommand = 'pnpm -s test:coverage';
-const expectedJunitCommand =
-  'pnpm test -- --test-reporter=junit --test-reporter-destination=file=reports/junit.xml';
+const expectedJunitCommand = 'pnpm -s test:junit';
 
 const { load } = await importJsYaml();
 
