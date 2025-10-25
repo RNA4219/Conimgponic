@@ -304,9 +304,7 @@ jobs:
       - name: Generate JUnit report
         run: |
           set -euo pipefail
-          mkdir -p reports
-          # Keep in sync with tests/ci/ci-workflow.sequence.test.ts expectation.
-          pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml
+          pnpm -s test:junit
 
       - name: Upload coverage artifact
         if: always()
