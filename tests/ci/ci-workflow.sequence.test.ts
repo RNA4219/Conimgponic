@@ -193,10 +193,10 @@ describe('ci workflow build job', () => {
         assert.fail('workflow.jobs.build must exist');
       }
 
-      assertJobNeedsInclude(
+      assertJobNeedsIncludeAll(
         build.needs,
-        'audit',
-        'build job must depend on audit job',
+        ['sbom', 'license', 'quality', 'audit'],
+        'build job must depend on sbom, license, quality, and audit jobs',
       );
     } catch (error) {
       console.error('CI workflow verification failed:', error);
@@ -376,23 +376,29 @@ function assertRunScriptHasPrecedingLine(
   assert.notStrictEqual(precedingIndex, -1, message);
 }
 
-function assertJobNeedsInclude(
+function assertJobNeedsIncludeAll(
   value: JobNeedsConfig,
-  expected: string,
+  expected: string[],
   message: string,
 ): void {
+  const needs = normalizeJobNeeds(value);
+
+  for (const dependency of expected) {
+    const hasMatch = needs.includes(dependency);
+    assert.ok(hasMatch, `${message}; needs must include "${dependency}"`);
+  }
+}
+
+function normalizeJobNeeds(value: JobNeedsConfig): string[] {
   if (typeof value === 'string') {
-    assert.strictEqual(value, expected, message);
-    return;
+    return [value];
   }
 
   if (Array.isArray(value)) {
-    const hasMatch = value.some((entry) => entry === expected);
-    assert.ok(hasMatch, message);
-    return;
+    return value;
   }
 
-  assert.fail(`${message}; needs must be configured as a string or array of strings`);
+  assert.fail('build job must configure needs as a string or array of strings');
 }
 
 function assertLineIncludes(lines: string[], expected: string, message: string): void {
