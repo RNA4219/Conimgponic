@@ -35,15 +35,33 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   ],
   golden: ['tests/export/golden*.test.ts'],
   ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
-  cli: ['tests/ci/test-commands.test.ts'],
-  collector: [
-    'tests/plugins/*.test.ts',
-    'tests/platform/vscode/plugins.*.test.ts',
-  ],
+  cli: ['tests/ci/test-commands.test.ts', 'tests/cli/*.test.ts', 'tests/cli/**/*.test.ts'],
   telemetry: ['tests/telemetry/*.test.ts'],
 };
 
 let cachedTestFiles: string[] | undefined;
+
+export function clearFilterCacheForTest(): void {
+  cachedTestFiles = undefined;
+}
+
+export function setTestFilesForTest(files: readonly string[] | undefined): void {
+  cachedTestFiles = files === undefined ? undefined : [...files];
+}
+
+export function resolveFilterTargetsForTest(suite: string): readonly string[] | undefined {
+  const patterns = FILTER_TARGETS[suite];
+
+  if (patterns === undefined) {
+    return undefined;
+  }
+
+  return matchFilterTargets(patterns);
+}
+
+export function getFilterTargetPatternsForTest(suite: string): readonly string[] | undefined {
+  return FILTER_TARGETS[suite];
+}
 
 export function runSelected(
   args: readonly string[] = process.argv.slice(2),
