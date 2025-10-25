@@ -1,9 +1,11 @@
 /// <reference types="node" />
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+const DEFAULT_TEST_ROOT = 'tests';
+const DEFAULT_TEST_SUFFIX = '.test.ts';
 const DEFAULT_TEST_GLOB = 'tests/**/*.test.ts';
 const FILTER_TARGETS: Record<string, readonly string[]> = {
   autosave: [
@@ -28,10 +30,14 @@ let cachedTestFiles: string[] | undefined;
 
 export function runSelected(
   args: readonly string[] = process.argv.slice(2),
-  spawnImpl: typeof spawn = spawn
+  spawnImpl: typeof spawn = spawn,
+  defaultTargets?: readonly string[],
 ): void {
-  const explicitTargets = collectExplicitTargets(args);
-  const nodeArgs = buildNodeArgs(args, explicitTargets);
+  const { filteredArgs, explicitTargets, resolvedDefaultTargets } = resolveRunConfiguration(
+    args,
+    defaultTargets,
+  );
+  const nodeArgs = buildNodeArgs(filteredArgs, explicitTargets, resolvedDefaultTargets);
 
   const child = spawnImpl('node', nodeArgs, { stdio: 'inherit', env: process.env });
 
@@ -50,10 +56,7 @@ export function runSelected(
   });
 }
 
-if (
-  process.env.RUN_SELECTED_SKIP_AUTORUN !== '1' &&
-  import.meta.url === pathToFileURL(process.argv[1] ?? '').href
-) {
+if (process.env.RUN_SELECTED_SKIP_AUTORUN !== '1' && isMainModule(import.meta.url)) {
   run();
 }
 
@@ -124,6 +127,44 @@ export function buildNodeArgs(
   return [...baseArgs, ...args, ...defaultTargets];
 }
 
+function run(): void {
+  const args = process.argv.slice(2);
+  const { filteredArgs, resolvedDefaultTargets } = resolveRunConfiguration(args);
+  runSelected(filteredArgs, spawn, resolvedDefaultTargets);
+}
+
+function resolveRunConfiguration(
+  args: readonly string[],
+  defaultTargets?: readonly string[],
+): {
+  filteredArgs: readonly string[];
+  explicitTargets: string[];
+  resolvedDefaultTargets: readonly string[];
+} {
+  const filterResult = resolveFilter(args);
+  const filteredArgs = filterResult?.filteredArgs ?? args;
+  const explicitTargets = collectExplicitTargets(filteredArgs);
+  const resolvedDefaultTargets =
+    defaultTargets ??
+    filterResult?.targets ??
+    (includesFilterToken(args) ? [DEFAULT_TEST_GLOB] : determineDefaultTargets());
+
+  return { filteredArgs, explicitTargets, resolvedDefaultTargets };
+}
+
+function determineDefaultTargets(): readonly string[] {
+  const discovered = collectDefaultTargets();
+  if (discovered.length > 0) {
+    return discovered;
+  }
+
+  return [DEFAULT_TEST_GLOB];
+}
+
+function includesFilterToken(args: readonly string[]): boolean {
+  return args.includes('--filter');
+}
+
 function resolveFilter(args: readonly string[]): { filteredArgs: string[]; targets: readonly string[] } | undefined {
   const mutableArgs = [...args];
 
@@ -181,7 +222,7 @@ function listAllTests(): string[] {
   }
 
   const result: string[] = [];
-  const queue: string[] = ['tests'];
+  const queue: string[] = [DEFAULT_TEST_ROOT];
 
   while (queue.length > 0) {
     const current = queue.pop();
@@ -200,7 +241,7 @@ function listAllTests(): string[] {
         continue;
       }
 
-      if (entry.isFile() && entry.name.endsWith('.test.ts')) {
+      if (entry.isFile() && entry.name.endsWith(DEFAULT_TEST_SUFFIX)) {
         result.push(entryPath);
       }
     }
