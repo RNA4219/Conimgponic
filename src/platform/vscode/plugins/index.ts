@@ -183,10 +183,12 @@ function normalizeManifestDependencies(dependencies: PluginManifestDependencies)
 }
 
 function normalizeManifest(manifest: PluginManifest): NormalizedPluginManifest {
+  const permissions = Array.isArray(manifest.permissions) ? manifest.permissions : [];
+  const hooks = Array.isArray(manifest.hooks) ? manifest.hooks : [];
   return {
     ...manifest,
-    permissions: [...(manifest.permissions ?? [])],
-    hooks: [...(manifest.hooks ?? [])],
+    permissions: [...permissions],
+    hooks: [...hooks],
   };
 }
 
@@ -322,33 +324,88 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
   const { request, config, manifest } = context;
   switch (spec.name) {
     case 'manifest-validation': {
-      const engines = manifest.engines;
+      const rawManifest = request.manifest;
+      const fail = (
+        message: string,
+        detail?: Record<string, unknown>,
+      ): StageOutcome => ({
+        ok: false,
+        error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, message, false, true, detail),
+      });
+
+      const id = rawManifest.id;
+      if (typeof id !== 'string' || id.trim() === '') {
+        return fail('Manifest is missing mandatory fields.', { field: 'id', issue: 'required' });
+      }
+      const idPattern = /^(?:@[a-z0-9][a-z0-9._-]{0,31}\/)?[a-z0-9][a-z0-9._-]{0,31}$/i;
+      if (!idPattern.test(id.trim())) {
+        return fail('Manifest validation failed: invalid plugin identifier.', {
+          field: 'id',
+          issue: 'invalid-format',
+          value: id,
+        });
+      }
+
+      const version = rawManifest.version;
+      if (typeof version !== 'string' || version.trim() === '') {
+        return fail('Manifest is missing mandatory fields.', { field: 'version', issue: 'required' });
+      }
+      const semverPattern = /^\d+\.\d+\.\d+$/;
+      if (!semverPattern.test(version.trim())) {
+        return fail('Manifest validation failed: version must follow semver (major.minor.patch).', {
+          field: 'version',
+          issue: 'invalid-semver',
+          value: version,
+        });
+      }
+
+      const engines = rawManifest.engines;
       const vscodeEngine = engines?.vscode;
-      const conimgApi = manifest['conimg-api'];
-      if (typeof manifest.id !== 'string' || manifest.id.trim() === '') {
-        return {
-          ok: false,
-          error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true),
-        };
-      }
-      if (typeof manifest.version !== 'string' || manifest.version.trim() === '') {
-        return {
-          ok: false,
-          error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true),
-        };
-      }
       if (!engines || typeof vscodeEngine !== 'string' || vscodeEngine.trim() === '') {
-        return {
-          ok: false,
-          error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true),
-        };
+        return fail('Manifest is missing mandatory fields.', { field: 'engines.vscode', issue: 'required' });
       }
+      if (!semverPattern.test(vscodeEngine.trim())) {
+        return fail('Manifest validation failed: engines.vscode must follow semver (major.minor.patch).', {
+          field: 'engines.vscode',
+          issue: 'invalid-semver',
+          value: vscodeEngine,
+        });
+      }
+
+      const conimgApi = rawManifest['conimg-api'];
       if (typeof conimgApi !== 'string' || conimgApi.trim() === '') {
-        return {
-          ok: false,
-          error: buildError(spec.name, PluginReloadErrorCode.ManifestInvalid, 'Manifest is missing mandatory fields.', false, true),
-        };
+        return fail('Manifest is missing mandatory fields.', { field: 'conimg-api', issue: 'required' });
       }
+      const conimgApiPattern = /^\d+(?:\.x)?$/i;
+      if (!conimgApiPattern.test(conimgApi.trim())) {
+        return fail('Manifest validation failed: conimg-api must be like "1" or "1.x".', {
+          field: 'conimg-api',
+          issue: 'invalid-format',
+          value: conimgApi,
+        });
+      }
+
+      const permissionsField = rawManifest.permissions;
+      if (permissionsField !== undefined && !Array.isArray(permissionsField)) {
+        const actualType = Array.isArray(permissionsField) ? 'array' : typeof permissionsField;
+        return fail('Manifest validation failed: permissions must be an array of non-empty strings.', {
+          field: 'permissions',
+          issue: 'invalid-type',
+          actual: actualType,
+        });
+      }
+      const invalidPermissionIndex = manifest.permissions.findIndex(
+        (permission) => typeof permission !== 'string' || permission.trim() === '',
+      );
+      if (invalidPermissionIndex !== -1) {
+        return fail('Manifest validation failed: permissions must be an array of non-empty strings.', {
+          field: 'permissions',
+          issue: 'invalid-element',
+          index: invalidPermissionIndex,
+          value: manifest.permissions[invalidPermissionIndex],
+        });
+      }
+
       return { ok: true };
     }
     case 'compatibility-check': {
