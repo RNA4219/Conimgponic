@@ -44,10 +44,13 @@ export function runSelected(
   spawnImpl: typeof spawn = spawn,
   defaultTargets?: readonly string[],
 ): void {
-  const { filteredArgs, explicitTargets, resolvedDefaultTargets } = resolveRunConfiguration(
-    args,
-    defaultTargets,
-  );
+  const filterResult = resolveFilter(args);
+  const filteredArgs = filterResult?.filteredArgs ?? args;
+  const explicitTargets = collectExplicitTargets(filteredArgs);
+  const resolvedDefaultTargets =
+    defaultTargets ??
+    filterResult?.targets ??
+    (includesFilterToken(args) ? [DEFAULT_TEST_GLOB] : determineDefaultTargets());
   const nodeArgs = buildNodeArgs(filteredArgs, explicitTargets, resolvedDefaultTargets);
 
   const child = spawnImpl('node', nodeArgs, { stdio: 'inherit', env: process.env });
@@ -68,7 +71,7 @@ export function runSelected(
 }
 
 if (process.env.RUN_SELECTED_SKIP_AUTORUN !== '1' && isMainModule(import.meta.url)) {
-  run();
+  runSelected();
 }
 
 export function collectExplicitTargets(args: readonly string[]): string[] {
