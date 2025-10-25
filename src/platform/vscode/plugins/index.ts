@@ -1,5 +1,7 @@
 import {
   resolvePluginBridgeBootstrapPlan,
+  type FlagSnapshot,
+  type FlagValidationError,
   type ResolveOptions,
 } from '../../../config/index.js';
 
@@ -97,8 +99,23 @@ export interface PluginBridgeLogMessage {
   readonly detail?: Record<string, unknown>;
 }
 
+export interface PluginCollectorFlagResolutionEvent {
+  readonly kind: 'telemetry';
+  readonly feature: 'config.flags';
+  readonly event: 'flag_resolution';
+  readonly source: 'vscode.plugins';
+  readonly phase: 'bootstrap';
+  readonly snapshot: FlagSnapshot;
+  readonly errors: readonly FlagValidationError[];
+  readonly ts: string;
+}
+
+export type PluginCollectorEvent =
+  | PluginBridgeLogMessage
+  | PluginCollectorFlagResolutionEvent;
+
 export interface PluginCollector {
-  publish(message: PluginBridgeLogMessage): void;
+  publish(message: PluginCollectorEvent): void;
 }
 
 export interface PluginPhaseGuard {
@@ -141,6 +158,17 @@ export function bootstrapPluginBridge(
   options: PluginBridgeBootstrapOptions
 ): PluginBridge | undefined {
   const plan = resolvePluginBridgeBootstrapPlan(options.resolveOptions);
+  const telemetryEvent: PluginCollectorFlagResolutionEvent = {
+    kind: 'telemetry',
+    feature: 'config.flags',
+    event: 'flag_resolution',
+    source: 'vscode.plugins',
+    phase: 'bootstrap',
+    snapshot: plan.snapshot,
+    errors: plan.errors,
+    ts: new Date().toISOString(),
+  };
+  options.collector.publish(telemetryEvent);
   return maybeCreatePluginBridge({
     enableFlag: plan.enableFlag,
     platformVersion: options.platformVersion,
