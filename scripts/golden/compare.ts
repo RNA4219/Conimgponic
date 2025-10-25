@@ -93,6 +93,7 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
 
   const runId = options.runId ?? 'mock-run'
   const baseDir = join(options.outputDir, 'runs', runId, EXPORT_DIR)
+  const runDirUrl = pathToFileURL(baseDir)
   const entries: CompareEntry[] = []
 
   let storyboard: Storyboard
@@ -201,10 +202,10 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
     console.info(`[golden]   ${line}`)
   }
   console.info(`[golden] diff report: ${diffReportPosix}`)
-  console.info(`[golden] normalized outputs: ${normalizedPosix}`)
+  console.info(`[golden] normalized outputs: ${runDirUrl.href}`)
 
   const normalizedPath = comparison.ok ? normalizedPosix : ''
-  const runUri = comparison.ok ? pathToFileURL(baseDir).href : ''
+  const runUri = comparison.ok ? runDirUrl.href : ''
 
   const telemetryEvent = toolkit.createTelemetryEvent(comparison, runId)
   if (telemetryEvent) {

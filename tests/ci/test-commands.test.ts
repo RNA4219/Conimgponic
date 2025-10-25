@@ -1,3 +1,7 @@
+/// <reference types="node" />
+
+process.env.TS_NODE_COMPILER_OPTIONS ??= JSON.stringify({ moduleResolution: 'bundler' });
+
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
@@ -12,8 +16,9 @@ const ensureCommand =
   "node --input-type=module --eval \"import { mkdirSync } from 'node:fs'; const dir = process.argv.at(-1); if (!dir) throw new Error('missing dir'); mkdirSync(dir, { recursive: true });\"";
 
 const resolveScript = (name: string): string => {
-  assert.ok(packageJson.scripts, 'package.json.scripts is missing');
-  const script = packageJson.scripts[name];
+  const scripts = packageJson.scripts;
+  assert.ok(scripts, 'package.json.scripts is missing');
+  const script = scripts[name];
   assert.ok(script, `script ${name} is missing`);
   return script;
 };
@@ -42,4 +47,34 @@ test('test:junit script prepares reports directory before writing junit report',
     script.includes('reports/junit.xml'),
     'junit report should be written to reports/junit.xml',
   );
+});
+
+test('run-selected respects tests root when autorun is skipped', async () => {
+  const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
+  process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
+
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const { collectDefaultTargets, buildNodeArgs } = await import(moduleUrl);
+
+  try {
+    const defaultTargets = collectDefaultTargets();
+
+    assert.ok(
+      defaultTargets.includes('tests/ci/test-commands.test.ts'),
+      'default target discovery should include tests root files',
+    );
+
+    const nodeArgs = buildNodeArgs([], [], defaultTargets);
+    assert.deepStrictEqual(nodeArgs.slice(0, 3), ['--loader', 'ts-node/esm', '--test']);
+    assert.ok(
+      nodeArgs.includes('tests/ci/test-commands.test.ts'),
+      'default targets should be appended to node arguments when none are provided',
+    );
+  } finally {
+    if (originalValue === undefined) {
+      delete process.env.RUN_SELECTED_SKIP_AUTORUN;
+    } else {
+      process.env.RUN_SELECTED_SKIP_AUTORUN = originalValue;
+    }
+  }
 });

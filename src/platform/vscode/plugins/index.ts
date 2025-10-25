@@ -204,6 +204,14 @@ const STAGES: readonly StageSpec[] = [
   { name: 'hook-registration', retryable: true },
 ];
 
+const ALLOWED_PLUGIN_HOOKS = new Set<NormalizedPluginManifest['hooks'][number]>([
+  'onCompile',
+  'onExport',
+  'onMerge',
+  'commands',
+  'widgets',
+]);
+
 export function maybeCreatePluginBridge(config: PluginBridgeConfig): PluginBridge | undefined {
   if (!config.enableFlag) {
     return undefined;
@@ -486,6 +494,23 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
       };
     }
     case 'hook-registration':
+      if (manifest.hooks.length === 0) {
+        return { ok: true };
+      }
+      const invalidHooks = manifest.hooks.filter((hook) => !ALLOWED_PLUGIN_HOOKS.has(hook));
+      if (invalidHooks.length > 0) {
+        return {
+          ok: false,
+          error: buildError(
+            spec.name,
+            PluginReloadErrorCode.HookRegistrationFailed,
+            `Unsupported hooks declared: ${invalidHooks.join(', ')}`,
+            true,
+            false,
+            { invalidHooks },
+          ),
+        };
+      }
       return { ok: true };
     default:
       return { ok: true };

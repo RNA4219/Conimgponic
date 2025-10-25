@@ -1242,13 +1242,28 @@ export async function restoreFromCurrent(): Promise<boolean> {
  * 例外: `code='data-corrupted'` または `code='lock-unavailable'` の `AutoSaveError` を throw。
  */
 export async function restoreFrom(ts: string): Promise<boolean> {
-  const text = await loadText(`${HISTORY_DIRECTORY}/${sanitizeTimestamp(ts)}.json`)
-  if (!text) return false
   try {
-    JSON.parse(text)
-    return true
+    return await projectLockApi.withProjectLock(async () => {
+      const text = await loadText(`${HISTORY_DIRECTORY}/${sanitizeTimestamp(ts)}.json`)
+      if (!text) {
+        throw createAutoSaveError('history-overflow', 'Missing autosave history payload', false, undefined, {
+          ts
+        })
+      }
+      try {
+        JSON.parse(text)
+        return true
+      } catch (error) {
+        throw createAutoSaveError('data-corrupted', 'Corrupted autosave history payload', false, error, { ts })
+      }
+    })
   } catch (error) {
-    throw createAutoSaveError('data-corrupted', 'Corrupted autosave history payload', false, error)
+    if (error instanceof ProjectLockError) {
+      throw createAutoSaveError('lock-unavailable', 'Failed to acquire autosave project lock', true, error, {
+        operation: error.operation
+      })
+    }
+    throw error
   }
 }
 
