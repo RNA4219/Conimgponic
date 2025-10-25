@@ -38,10 +38,6 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   collector: [
     'tests/plugins/*.test.ts',
     'tests/platform/vscode/plugins.*.test.ts',
-  ],
-  ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
-  cli: ['tests/ci/test-commands.test.ts', 'tests/cli/*.test.ts', 'tests/cli/**/*.test.ts'],
-  collector: [
     'tests/plugins/*collector*.test.ts',
     'tests/plugins/**/*collector*.test.ts',
     'tests/plugins/*reload*.test.ts',
@@ -51,6 +47,8 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/platform/vscode/*reload*.test.ts',
     'tests/platform/vscode/**/*reload*.test.ts',
   ],
+  ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
+  cli: ['tests/ci/test-commands.test.ts', 'tests/cli/*.test.ts', 'tests/cli/**/*.test.ts'],
   telemetry: ['tests/telemetry/*.test.ts'],
 };
 
@@ -92,7 +90,8 @@ export function runSelected(
     (includesFilterToken(args) ? [...DEFAULT_TEST_GLOBS] : determineDefaultTargets());
   const nodeArgs = buildNodeArgs(filteredArgs, explicitTargets, resolvedDefaultTargets);
 
-  const child = spawnImpl('node', nodeArgs, { stdio: 'inherit', env: process.env });
+  const childEnv = buildSpawnEnv(process.env);
+  const child = spawnImpl('node', nodeArgs, { stdio: 'inherit', env: childEnv });
 
   child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
     if (signal !== null) {
@@ -331,4 +330,71 @@ function supportsTestCoverage(nodeVersion: string): boolean {
 
 function hasDefaultTestSuffix(fileName: string): boolean {
   return DEFAULT_TEST_SUFFIXES.some((suffix) => fileName.endsWith(suffix));
+}
+
+function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...baseEnv };
+  const requiredCompilerOptions: Record<string, unknown> = {
+    moduleResolution: 'nodenext',
+    types: ['node'],
+  };
+
+  const existing = env.TS_NODE_COMPILER_OPTIONS;
+
+  if (existing) {
+    const merged = mergeCompilerOptions(existing, requiredCompilerOptions);
+    env.TS_NODE_COMPILER_OPTIONS = merged;
+    return env;
+  }
+
+  env.TS_NODE_COMPILER_OPTIONS = JSON.stringify(requiredCompilerOptions);
+  return env;
+}
+
+function mergeCompilerOptions(
+  serialized: string,
+  required: Record<string, unknown>,
+): string {
+  try {
+    const parsed = JSON.parse(serialized) as Record<string, unknown>;
+    const types = mergeTypes(parsed.types, required.types);
+
+    return JSON.stringify({
+      ...required,
+      ...parsed,
+      moduleResolution: parsed.moduleResolution ?? required.moduleResolution,
+      types,
+    });
+  } catch {
+    return JSON.stringify(required);
+  }
+}
+
+function mergeTypes(
+  existing: unknown,
+  required: unknown,
+): ReadonlyArray<string> {
+  const next = new Set<string>();
+
+  if (Array.isArray(required)) {
+    for (const value of required) {
+      if (typeof value === 'string') {
+        next.add(value);
+      }
+    }
+  }
+
+  if (Array.isArray(existing)) {
+    for (const value of existing) {
+      if (typeof value === 'string') {
+        next.add(value);
+      }
+    }
+  }
+
+  if (next.size === 0) {
+    return ['node'];
+  }
+
+  return [...next];
 }
