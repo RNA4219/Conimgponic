@@ -3,7 +3,7 @@ import { useStore } from 'zustand'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
 import { resolveFlags, type FlagSnapshot } from '../config'
-import { useSB } from '../store'
+import { useSB } from '../store.ts'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
 import type { Storyboard } from '../types'
@@ -163,6 +163,13 @@ const isBaseTabId = (value: unknown): value is BaseTabId => typeof value === 'st
 
 const MERGE_THRESHOLD_STORAGE_KEY = 'conimg.merge.threshold'
 
+const parseMergePrecision = (value: unknown): MergePrecision | undefined => {
+  if (value === 'legacy' || value === 'beta' || value === 'stable') {
+    return value
+  }
+  return undefined
+}
+
 const getDefaultPreference = (precision: MergePrecision, diffEnabled: boolean): MergeDockPreference =>
   precision === 'stable' && diffEnabled ? 'diff-merge' : 'manual-first'
 
@@ -280,13 +287,21 @@ export const resolveMergeThresholdSnapshot = (
   const storage = options.storage ?? null
   const snapshot: Pick<FlagSnapshot, 'merge'> =
     options.flags ?? resolveFlags({ workspace, storage })
+  const envPrecision = parseMergePrecision(process.env?.VITE_MERGE_PRECISION)
   const precision =
     options.precision ??
+    envPrecision ??
     snapshot.merge.precision
+  const envOverrides =
+    envPrecision !== undefined && options.precision === undefined && options.threshold === undefined
 
   const overrideThreshold = parseMergeThreshold(options.threshold)
   if (overrideThreshold !== undefined) {
     return { precision, threshold: overrideThreshold }
+  }
+
+  if (envOverrides) {
+    return { precision, threshold: DEFAULT_THRESHOLD }
   }
 
   const flagThreshold = parseMergeThreshold(snapshot.merge.threshold)
@@ -348,10 +363,17 @@ export const planMergeDockTabs = (precision: MergePrecision, lastTab?: MergeDock
   const plan = MERGE_DOCK_TAB_PLAN[precision]
   const requested = lastTab && (lastTab === 'diff' || isBaseTabId(lastTab)) ? lastTab : undefined
   const sanitized = requested && plan.tabs.some((entry) => entry.id === requested) ? requested : undefined
-  if (precision === 'stable') return { tabs: plan.tabs, initialTab: sanitized ?? plan.initialTab }
-  if (precision === 'legacy') return { tabs: plan.tabs, initialTab: sanitized && sanitized !== 'diff' ? sanitized : plan.initialTab }
-  return { tabs: plan.tabs, initialTab: sanitized ?? plan.initialTab }
+  const diffConfig = plan.diff ? { diff: plan.diff } : {}
+  if (precision === 'stable') {
+    return { tabs: plan.tabs, initialTab: plan.initialTab, ...diffConfig }
+  }
+  if (precision === 'legacy') {
+    const initial = sanitized && sanitized !== 'diff' ? sanitized : plan.initialTab
+    return { tabs: plan.tabs, initialTab: initial }
+  }
+  return { tabs: plan.tabs, initialTab: sanitized ?? plan.initialTab, ...diffConfig }
 }
+
 
 const clampValue = (value: number, min: number, max: number | null): number => {
   const upper = typeof max === 'number' ? max : 1
@@ -471,17 +493,39 @@ export const shouldShowDiffBackupCTA = (
   return Number.isFinite(ts) && now - ts > policy.thresholdMs
 }
 
-function Checks(){
-  const { sb } = useSB()
-  const warns: string[] = []
-  sb.scenes.forEach((s, i)=>{
-    if (!(s.manual||s.ai)) warns.push(`#${i+1} text empty`)
-    if (!s.tone) warns.push(`#${i+1} tone missing`)
-  })
+const computeStoryboardWarnings = (storyboard: Storyboard): string[] => {
+  const results: string[] = []
+  for (let index = 0; index < storyboard.scenes.length; index += 1) {
+    const scene = storyboard.scenes[index]!
+    if (!(scene.manual || scene.ai)) {
+      results.push(`#${index + 1} text empty`)
+    }
+    if (!scene.tone) {
+      results.push(`#${index + 1} tone missing`)
+    }
+  }
+  return results
+}
+
+function Checks(): JSX.Element {
+  const warnings = useSB((state) => computeStoryboardWarnings(state.sb))
+  const snapshot = Reflect.get(globalThis, '__conimgponic_sb_snapshot__') as Storyboard | undefined
+  const effectiveWarnings = snapshot ? computeStoryboardWarnings(snapshot) : warnings
+  const hasWarnings = effectiveWarnings.length > 0
+
   return (
-    <div style={{padding:'6px 10px', color: warns.length? '#b45309':'#15803d'}}>
-      {warns.length? `Warnings: ${warns.length}` : 'OK: No issues found'}
-      {warns.length? <ul>{warns.map((w,i)=><li key={i}>{w}</li>)}</ul> : null}
+    <div
+      style={{ padding: '6px 10px', color: hasWarnings ? '#b45309' : '#15803d' }}
+      data-warning-count={effectiveWarnings.length}
+    >
+      {hasWarnings ? `Warnings: ${effectiveWarnings.length}` : 'OK: No issues found'}
+      {hasWarnings ? (
+        <ul>
+          {effectiveWarnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   )
 }
@@ -495,7 +539,7 @@ interface MergeDockProps {
 }
 
 export function MergeDock(props?: MergeDockProps){
-  const { sb } = useSB()
+  const sb = useSB((state) => state.sb)
   const flags = props?.flags
   const autoAppliedRate = props?.autoAppliedRate ?? null
   const phaseStats = props?.phaseStats ?? null
