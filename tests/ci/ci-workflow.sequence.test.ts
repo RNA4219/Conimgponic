@@ -498,16 +498,6 @@ function assertStepUsesEquals(step: StepConfig, expected: string, message: strin
   assert.strictEqual(step.uses.trim(), expected, message);
 }
 
-function assertStepContinueOnError(step: StepConfig, message: string): void {
-  const value = step['continue-on-error'];
-
-  if (typeof value !== 'boolean') {
-    assert.fail(`${message}; continue-on-error must be configured as a boolean`);
-  }
-
-  assert.strictEqual(value, true, message);
-}
-
 function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.if !== 'string') {
     assert.fail(`${message}; step.if must be configured as a string`);
