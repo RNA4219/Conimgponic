@@ -91,8 +91,8 @@ export interface AutoSaveExpectation {
 `tests/autosave/__mocks__/opfs.ts` で上記 API を提供し、`beforeEach` で `reset()` を行う。容量は `Map<string, number>` で保持し、`cleanupOrphans` を検証する際は `history` ディレクトリの孤児キーを自動削除する。
 
 ## 6. CI コマンド順序
-1. `pnpm lint` — ruff 相当の静的解析（※Node 環境で ESLint 代替として設定予定）。
-2. `pnpm typecheck` — `tsc --noEmit` を想定。
+1. `pnpm -s lint` — ruff 相当の静的解析（※Node 環境で ESLint 代替として設定予定）。
+2. `pnpm -s typecheck` — `tsc --noEmit` を想定。
 3. `pnpm -s test:autosave` — Node Test Runner で AutoSave 系のユニット/統合を順次実行。
 4. `pnpm -s test:coverage` — 回帰時のスナップショット更新前に全体の差分を確認。
 
