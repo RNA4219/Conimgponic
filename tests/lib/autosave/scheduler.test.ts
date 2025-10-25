@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import type { TestContext } from 'node:test'
 
-import { scenario } from './setup'
+import { ENABLED_GUARD, scenario } from './setup'
 
 import type { AutoSaveError } from '../../../src/lib/autosave'
 import type { Storyboard } from '../../../src/types'
@@ -33,7 +33,7 @@ scenario('scheduler transitions debouncing → awaiting-lock → gc with fake ti
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'], now: 0 })
   const phases: string[] = []
   const collectorEvents: unknown[] = []
-  const runner = initAutoSave(() => makeStoryboard(['alpha']), { disabled: false })
+  const runner = initAutoSave(() => makeStoryboard(['alpha']), { disabled: false }, ENABLED_GUARD)
   phases.push(runner.snapshot().phase)
   const pending = runner.flushNow().catch((error: unknown) => {
     collectorEvents.push(error)
@@ -52,7 +52,7 @@ scenario('scheduler transitions debouncing → awaiting-lock → gc with fake ti
 
 scenario('markDirty transitions snapshot to debouncing and updates pendingBytes', async (_t, ctx) => {
   const { initAutoSave } = ctx
-  const runner = initAutoSave(() => makeStoryboard(['delta']), { disabled: false })
+  const runner = initAutoSave(() => makeStoryboard(['delta']), { disabled: false }, ENABLED_GUARD)
   runner.markDirty({ pendingBytes: 2048 })
   const snap = runner.snapshot()
   assert.equal(snap.phase, 'debouncing')
@@ -62,7 +62,7 @@ scenario('markDirty transitions snapshot to debouncing and updates pendingBytes'
 scenario('auto scheduler flushes after debounce+idle windows', async (t, ctx) => {
   const { initAutoSave, AUTOSAVE_POLICY, opfs } = ctx
   t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
-  const runner = initAutoSave(() => makeStoryboard(['epsilon']), { disabled: false })
+  const runner = initAutoSave(() => makeStoryboard(['epsilon']), { disabled: false }, ENABLED_GUARD)
   runner.markDirty({ pendingBytes: 128 })
   assert.equal(runner.snapshot().phase, 'debouncing')
 
@@ -107,7 +107,7 @@ scenario('guard-disabled scheduler never starts timers', async (t, ctx) => {
 
 scenario('history guard enforces 20 generations and 50MB capacity', async (_t, ctx) => {
   const { initAutoSave, opfs, AUTOSAVE_POLICY } = ctx
-  const runner = initAutoSave(() => makeStoryboard(['beta']), { disabled: false })
+  const runner = initAutoSave(() => makeStoryboard(['beta']), { disabled: false }, ENABLED_GUARD)
   const collectorEvents: unknown[] = []
   for (let i = 0; i < AUTOSAVE_POLICY.maxGenerations + 2; i++){
     try {
@@ -133,7 +133,7 @@ scenario(
   async (t, ctx) => {
     const { initAutoSave } = ctx
     t.mock.timers.enable({ apis: ['setTimeout'], now: Date.now() })
-    const runner = initAutoSave(() => makeStoryboard(['gamma']), { disabled: false })
+    const runner = initAutoSave(() => makeStoryboard(['gamma']), { disabled: false }, ENABLED_GUARD)
     await assert.rejects(runner.flushNow(), isAutoSaveError({ code: 'lock-unavailable', retryable: true }))
     t.mock.timers.tick(1000)
     assert.equal(runner.snapshot().phase, 'backoff')

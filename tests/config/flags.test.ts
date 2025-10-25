@@ -72,7 +72,7 @@ test('resolveFlags falls back to default autosave and merge threshold when all s
     clock: () => new Date('2025-01-08T00:00:00.000Z')
   })
 
-  assert.equal(snapshot.autosave.enabled, true)
+  assert.equal(snapshot.autosave.enabled, false)
   assert.equal(snapshot.autosave.source, 'default')
   assert.equal(snapshot.merge.threshold, 0.72)
   assert.equal(snapshot.merge.source, 'default')
@@ -85,8 +85,8 @@ test('collector fallback applies default autosave and merge threshold when no in
     { withErrors: true }
   )
 
-  assert.equal(DEFAULT_FLAGS.autosave.enabled, true)
-  assert.equal(resolution.snapshot.autosave.enabled, true)
+  assert.equal(DEFAULT_FLAGS.autosave.enabled, false)
+  assert.equal(resolution.snapshot.autosave.enabled, false)
   assert.equal(resolution.snapshot.autosave.source, 'default')
   assert.equal(resolution.snapshot.merge.precision, DEFAULT_FLAGS.merge.precision)
   assert.equal(resolution.snapshot.merge.source, 'default')

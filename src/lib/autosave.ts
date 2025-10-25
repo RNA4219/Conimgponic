@@ -51,7 +51,7 @@ const AUTOSAVE_POLICY_VALUES: AutoSavePolicy = {
   idleMs: 2000,
   maxGenerations: 20,
   maxBytes: AUTOSAVE_MAX_BYTES,
-  disabled: false
+  disabled: true
 }
 
 export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze(AUTOSAVE_POLICY_VALUES)

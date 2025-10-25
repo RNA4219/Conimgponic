@@ -4,7 +4,7 @@ export type FlagRolloutPhase = 'phase-a0' | 'phase-a1' | 'phase-b0'
 
 export const DEFAULT_FLAGS = {
   autosave: {
-    enabled: true,
+    enabled: false,
     debounceMs: 500,
     idleMs: 2000,
     maxGenerations: 20,

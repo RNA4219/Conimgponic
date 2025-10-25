@@ -8,6 +8,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 import type * as AutoSaveModule from '../../../src/lib/autosave'
+import type { AutoSavePhaseGuardSnapshot } from '../../../src/lib/autosave'
 
 interface LockHandleLike {
   release(): Promise<void>
@@ -29,6 +30,11 @@ export interface SetupOverrides {
   readonly navigator?: NavigatorOverrides
   readonly locks?: Partial<LockManagerLike>
 }
+
+export const ENABLED_GUARD: AutoSavePhaseGuardSnapshot = Object.freeze({
+  featureFlag: { value: true, source: 'env' },
+  optionsDisabled: false
+})
 
 const root = resolve(fileURLToPath(new URL('../../../', import.meta.url)))
 const req = createRequire(import.meta.url)
