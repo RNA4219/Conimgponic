@@ -10,7 +10,12 @@ import { describe, test } from 'node:test';
 type WorkflowYaml = { jobs?: { sbom?: WorkflowJob } };
 type WorkflowJob = { steps?: StepConfig[] };
 type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown; if?: unknown };
-type UploadStep = StepConfig & { uses: string; with?: { name?: unknown; path?: unknown } };
+type UploadArtifactConfig = {
+  name: string;
+  path: string;
+  'if-no-files-found': string;
+};
+type UploadStep = StepConfig & { uses: string; with: UploadArtifactConfig };
 type JsYamlModule = { load: (input: string) => unknown };
 const require = createRequire(import.meta.url);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -36,9 +41,14 @@ describe('ci workflow sbom job', () => {
         throw new TypeError('upload step if condition must be a string when present');
       }
       assert.strictEqual(uploadIf?.trim(), 'always()', 'sbom artifact upload must run unconditionally via always()');
-      const uploadPath = uploadStep.with?.path;
-      if (typeof uploadPath !== 'string') throw new TypeError('sbom artifact path must be a string');
+      const uploadPath = uploadStep.with.path;
       assert.strictEqual(uploadPath.trim(), 'sbom.json', 'sbom artifact must point to sbom.json');
+      const ifNoFilesFound = uploadStep.with['if-no-files-found'];
+      assert.strictEqual(
+        ifNoFilesFound,
+        'error',
+        "sbom artifact upload must fail if sbom.json isn't produced",
+      );
     } catch (error) {
       console.error('CI SBOM workflow verification failed:', error);
       throw error;
@@ -68,7 +78,12 @@ function findUploadStep(steps: StepConfig[], name: string): UploadStep | undefin
     if (step.uses.trim() !== 'actions/upload-artifact@v4') return false;
     const config = step.with;
     if (!config || typeof config !== 'object') return false;
-    return 'name' in config && (config as { name: unknown }).name === name;
+    const typedConfig = config as Partial<UploadArtifactConfig> & { [key: string]: unknown };
+    if (typeof typedConfig.name !== 'string') return false;
+    if (typedConfig.name !== name) return false;
+    if (typeof typedConfig.path !== 'string') return false;
+    if (typeof typedConfig['if-no-files-found'] !== 'string') return false;
+    return true;
   });
 }
 
