@@ -11,6 +11,14 @@ type RunSelectedModule = typeof import('./run-selected.js');
 const moduleTsUrl = new URL('./run-selected.ts', import.meta.url);
 const moduleJsUrl = new URL('./run-selected.js', import.meta.url);
 
+const EXPECTED_BASE_NODE_ARGS = [
+  '--experimental-vm-modules',
+  '--loader',
+  'ts-node/esm',
+  '--experimental-specifier-resolution=node',
+  '--test',
+] as const;
+
 test('runSelected resolves autosave filter in autorun scenario', async () => {
   const module = await importRunSelectedModule();
   const originalArgv = process.argv;
@@ -47,12 +55,10 @@ test('runSelected resolves autosave filter in autorun scenario', async () => {
   assert.strictEqual(spawnCalls.length, 1);
   const [command, nodeArgs] = spawnCalls[0];
   assert.strictEqual(command, 'node');
-  assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
+  assertNodeArgsEqual(nodeArgs, [
     'tests/app/autosave.integration.test.ts',
     'tests/app/autosave.plan.test.ts',
+    'tests/autosave/restore.flow.test.ts',
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
     'tests/lib/autosave/history.flow.test.ts',
@@ -65,16 +71,26 @@ test('runSelected resolves autosave filter in autorun scenario', async () => {
   ]);
 });
 
+test('autosave filter resolves restore flow regression tests', async () => {
+  const module = await importRunSelectedModule();
+  module.clearFilterCacheForTest();
+
+  const targets = module.resolveFilterTargetsForTest('autosave');
+
+  assert.ok(
+    targets?.includes('tests/autosave/restore.flow.test.ts'),
+    'expected autosave filter to include restore flow scenario tests',
+  );
+});
+
 test('maps --filter autosave to autosave test glob', async () => {
   const module = await importRunSelectedModule();
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'autosave']);
 
-  assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
+  assertNodeArgsEqual(nodeArgs, [
     'tests/app/autosave.integration.test.ts',
     'tests/app/autosave.plan.test.ts',
+    'tests/autosave/restore.flow.test.ts',
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
     'tests/lib/autosave/history.flow.test.ts',
@@ -91,12 +107,7 @@ test('maps --filter golden to golden comparison tests', async () => {
   const module = await importRunSelectedModule();
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'golden']);
 
-  assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
-    'tests/export/golden.webview.test.ts',
-  ]);
+  assertNodeArgsEqual(nodeArgs, ['tests/export/golden.webview.test.ts']);
 });
 
 test('includes tsx component tests when filtering merge suite', async () => {
@@ -119,14 +130,11 @@ test('includes tsx component tests in default discovery', async () => {
 
 test('falls back to default glob when filter is unknown', async () => {
   const module = await importRunSelectedModule();
-  const nodeArgs = await collectNodeArgs(module, ['--filter', 'collector']);
+  const nodeArgs = await collectNodeArgs(module, ['--filter', 'unknown-suite']);
 
-  assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
+  assertNodeArgsEqual(nodeArgs, [
     '--filter',
-    'collector',
+    'unknown-suite',
     'tests/**/*.test.ts',
     'tests/**/*.test.tsx',
   ]);
@@ -136,10 +144,7 @@ test('falls back to default glob when filter is unknown', async () => {
   const module = await importRunSelectedModule();
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'missing']);
 
-  assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
+  assertNodeArgsEqual(nodeArgs, [
     '--filter',
     'missing',
     'tests/**/*.test.ts',
@@ -149,6 +154,13 @@ test('falls back to default glob when filter is unknown', async () => {
 
 async function importRunSelectedModule(): Promise<RunSelectedModule> {
   return import(moduleJsUrl.href);
+}
+
+function assertNodeArgsEqual(
+  actual: readonly string[],
+  expectedTargets: readonly string[],
+): void {
+  assert.deepStrictEqual(actual, [...EXPECTED_BASE_NODE_ARGS, ...expectedTargets]);
 }
 
 async function collectNodeArgs(argvTail: readonly string[]): Promise<readonly string[]>;
