@@ -27,6 +27,17 @@ test('maps --filter autosave to autosave test glob', async () => {
   ]);
 });
 
+test('maps --filter golden to golden comparison tests', async () => {
+  const nodeArgs = await collectNodeArgs(['--filter', 'golden']);
+
+  assert.deepStrictEqual(nodeArgs, [
+    '--loader',
+    'ts-node/esm',
+    '--test',
+    'tests/export/golden.webview.test.ts',
+  ]);
+});
+
 test('falls back to default glob when filter is unknown', async () => {
   const nodeArgs = await collectNodeArgs(['--filter', 'collector']);
 
