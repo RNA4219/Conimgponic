@@ -173,15 +173,21 @@ describe('export bridge golden comparison', () => {
       const diffReport = readFileSync(result.diffPath, 'utf8')
       assert.match(diffReport, /markdown: OK/)
       assert.equal(result.normalizedPath, 'runs/unit/export')
+      const runOutputUrl = pathToFileURL(join(ctx.outputDir, 'runs', 'unit', 'export'))
+      const runUriUrl = new URL(result.runUri)
       assert.equal(
         result.runUri,
-        pathToFileURL(join(ctx.outputDir, 'runs', 'unit', 'export')).href,
+        runOutputUrl.href,
         'runUri は file://runs/... ではなく絶対 file:// URI を返す必要がある',
       )
       assert.equal(
-        new URL(result.runUri).pathname,
-        pathToFileURL(join(ctx.outputDir, 'runs', 'unit', 'export')).pathname,
+        runUriUrl.pathname,
+        runOutputUrl.pathname,
         'runUri の pathname が実際の runs/<runId>/export ディレクトリに対応する必要がある',
+      )
+      assert.ok(
+        runUriUrl.pathname.startsWith(pathToFileURL(ctx.outputDir).pathname),
+        'runUri の pathname は outputDir 配下を指す必要がある',
       )
     } finally {
       ctx.cleanup()
