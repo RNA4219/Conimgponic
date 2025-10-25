@@ -66,7 +66,16 @@ test('run-selected respects tests root when autorun is skipped', async () => {
     );
 
     const nodeArgs = buildNodeArgs([], [], defaultTargets);
-    assert.deepStrictEqual(nodeArgs.slice(0, 3), ['--loader', 'ts-node/esm', '--test']);
+    assert.deepStrictEqual(
+      nodeArgs.slice(0, 5),
+      [
+        '--experimental-vm-modules',
+        '--loader',
+        'ts-node/esm',
+        '--experimental-specifier-resolution=node',
+        '--test',
+      ],
+    );
     assert.ok(
       nodeArgs.includes('tests/ci/test-commands.test.ts'),
       'default targets should be appended to node arguments when none are provided',
@@ -112,6 +121,74 @@ test('run-selected cli filter covers cli test directory', async () => {
       matches,
       ['tests/ci/test-commands.test.ts', 'tests/cli/run-selected-cli-example.test.ts'],
       'cli filter should resolve both ci and cli implementation tests',
+    );
+  } finally {
+    setTestFilesForTest(undefined);
+    clearFilterCacheForTest();
+
+    if (originalValue === undefined) {
+      delete process.env.RUN_SELECTED_SKIP_AUTORUN;
+    } else {
+      process.env.RUN_SELECTED_SKIP_AUTORUN = originalValue;
+    }
+  }
+});
+
+test('run-selected collector filter isolates collector tests', async () => {
+  const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
+  process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
+
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const {
+    clearFilterCacheForTest,
+    getFilterTargetPatternsForTest,
+    resolveFilterTargetsForTest,
+    setTestFilesForTest,
+  } = await import(moduleUrl);
+
+  const simulatedTests = [
+    'tests/plugins/reload.flow.test.ts',
+    'tests/plugins/unrelated.test.ts',
+    'tests/platform/vscode/plugins.bootstrap.test.ts',
+    'tests/platform/vscode/plugins.reload.test.ts',
+    'tests/platform/vscode/other.test.ts',
+  ];
+
+  try {
+    clearFilterCacheForTest();
+    setTestFilesForTest(simulatedTests);
+
+    assert.deepStrictEqual(
+      getFilterTargetPatternsForTest('collector'),
+      [
+        'tests/plugins/*.test.ts',
+        'tests/plugins/*.test.tsx',
+        'tests/plugins/**/*.test.ts',
+        'tests/plugins/**/*.test.tsx',
+        'tests/plugins/*collector*.test.ts',
+        'tests/plugins/**/*collector*.test.ts',
+        'tests/plugins/*reload*.test.ts',
+        'tests/plugins/**/*reload*.test.ts',
+        'tests/platform/vscode/plugins.*.test.ts',
+        'tests/platform/vscode/plugins.*.test.tsx',
+        'tests/platform/vscode/*collector*.test.ts',
+        'tests/platform/vscode/**/*collector*.test.ts',
+        'tests/platform/vscode/*reload*.test.ts',
+        'tests/platform/vscode/**/*reload*.test.ts',
+      ],
+      'collector filter should include plugin and vscode collector test patterns',
+    );
+
+    const matches = resolveFilterTargetsForTest('collector');
+    assert.deepStrictEqual(
+      matches,
+      [
+        'tests/platform/vscode/plugins.bootstrap.test.ts',
+        'tests/platform/vscode/plugins.reload.test.ts',
+        'tests/plugins/reload.flow.test.ts',
+        'tests/plugins/unrelated.test.ts',
+      ],
+      'collector filter should only include collector-related test targets',
     );
   } finally {
     setTestFilesForTest(undefined);
