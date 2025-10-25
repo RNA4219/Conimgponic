@@ -11,14 +11,17 @@ type WorkflowYaml = {
   jobs?: {
     quality?: QualityJobConfig;
     audit?: AuditJobConfig;
-    reports?: {
-      steps?: StepConfig[];
-    };
+    reports?: ReportsJobConfig;
     build?: BuildJobConfig;
   };
 };
 
 type AuditJobConfig = {
+  steps?: StepConfig[];
+};
+
+type ReportsJobConfig = {
+  needs?: JobNeedsConfig;
   steps?: StepConfig[];
 };
 
@@ -122,6 +125,12 @@ describe('ci workflow build job', () => {
       if (!reports) {
         assert.fail('workflow.jobs.reports must exist');
       }
+
+      assertJobNeedsIncludeAll(
+        reports.needs,
+        ['quality'],
+        'reports job must depend on quality job',
+      );
 
       const reportSteps = reports.steps;
       assertStepArray(reportSteps, 'workflow.jobs.reports.steps must be an array');

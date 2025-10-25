@@ -331,17 +331,21 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
 
   const bootstrapReqId = nextReqId(state)
   const bootstrapCorrelationId = nextCorrelationId(state)
-  clampHistory(state, options.policy)
-  options.sendMessage(
-    createBootstrapMessage(
-      bootstrapReqId,
-      bootstrapCorrelationId,
-      toIso(options.now()),
-      options.policy,
-      options.initialGuard,
-      options.flags
-    )
-  )
+  options.sendMessage({
+    type: 'bridge.bootstrap',
+    apiVersion: API_VERSION,
+    phase: PHASE_BOOTSTRAP,
+    bridgePhase: 'bootstrap',
+    reqId: bootstrapReqId,
+    correlationId: bootstrapCorrelationId,
+    ts: toIso(options.now()),
+    payload: {
+      version: 1,
+      policy: options.policy,
+      guard: options.initialGuard,
+      flags: options.flags
+    }
+  })
 
   const reportDirty = (pendingBytes: number, guard: AutoSavePhaseGuardSnapshot): void => {
     const previousStatus = state.status
