@@ -1,37 +1,27 @@
 /// <reference types="node" />
 import { spawn } from 'node:child_process';
-import { readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const DEFAULT_TEST_GLOB = 'tests/**/*.test.ts';
-const FILTER_TARGETS: Record<string, readonly string[]> = {
-  autosave: [
-    'tests/app/autosave.*.test.ts',
-    'tests/lib/autosave/*.test.ts',
-    'tests/lib/autosave.phase-guard.test.ts',
-    'tests/views/*autosave*.test.ts',
-    'tests/webview/autosave.*.test.ts',
-  ],
-  merge: [
-    'tests/merge/*.test.ts',
-    'tests/webview/merge.*.test.ts',
-    'tests/extensions/vscode/merge-bridge.sanitize.test.ts',
-  ],
-  cli: ['tests/ci/test-commands.test.ts'],
-  telemetry: ['tests/telemetry/*.test.ts'],
-};
+export const DEFAULT_TEST_GLOB = 'tests/**/*.test.ts';
+const DEFAULT_TEST_SUFFIX = '.test.ts';
+const DEFAULT_TEST_ROOT = DEFAULT_TEST_GLOB.includes('/**')
+  ? DEFAULT_TEST_GLOB.slice(0, DEFAULT_TEST_GLOB.indexOf('/**'))
+  : DEFAULT_TEST_GLOB;
 
-let cachedTestFiles: string[] | undefined;
+export function run(argv: readonly string[] = process.argv.slice(2)): void {
+  const explicitTargets = collectExplicitTargets(argv);
+  const defaultTargets = explicitTargets.length > 0 ? [] : collectDefaultTargets();
 
-export function runSelected(
-  args: readonly string[] = process.argv.slice(2),
-  spawnImpl: typeof spawn = spawn
-): void {
-  const explicitTargets = collectExplicitTargets(args);
-  const nodeArgs = buildNodeArgs(args, explicitTargets);
+  if (explicitTargets.length === 0 && defaultTargets.length === 0) {
+    console.error(`No test files matched pattern "${DEFAULT_TEST_GLOB}".`);
+    process.exit(1);
+  }
 
-  const child = spawnImpl('node', nodeArgs, { stdio: 'inherit', env: process.env });
+  const nodeArgs = buildNodeArgs(argv, explicitTargets, defaultTargets);
+
+  const child = spawn('node', nodeArgs, { stdio: 'inherit', env: process.env });
 
   child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
     if (signal !== null) {
@@ -48,11 +38,14 @@ export function runSelected(
   });
 }
 
-if (isMainModule(import.meta.url)) {
-  runSelected();
+if (
+  process.env.RUN_SELECTED_SKIP_AUTORUN !== '1' &&
+  import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+) {
+  run();
 }
 
-function collectExplicitTargets(args: readonly string[]): string[] {
+export function collectExplicitTargets(args: readonly string[]): string[] {
   const targets: string[] = [];
   const targetPattern = /[\\\/*\.]/;
   let inExplicitSection = false;
@@ -76,21 +69,47 @@ function collectExplicitTargets(args: readonly string[]): string[] {
   return targets;
 }
 
-function buildNodeArgs(args: readonly string[], targets: readonly string[]): string[] {
+export function collectDefaultTargets(): string[] {
+  if (!DEFAULT_TEST_ROOT || !existsSync(DEFAULT_TEST_ROOT)) {
+    return [];
+  }
+
+  const results: string[] = [];
+  const stack: string[] = [DEFAULT_TEST_ROOT];
+
+  while (stack.length > 0) {
+    const current = stack.pop() as string;
+    const entries = readdirSync(current, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+        continue;
+      }
+
+      if (entry.isFile() && entry.name.endsWith(DEFAULT_TEST_SUFFIX)) {
+        results.push(fullPath);
+      }
+    }
+  }
+
+  results.sort();
+  return results;
+}
+
+export function buildNodeArgs(
+  args: readonly string[],
+  targets: readonly string[],
+  defaultTargets: readonly string[],
+): string[] {
   const baseArgs = ['--loader', 'ts-node/esm', '--test'];
 
   if (targets.length > 0) {
     return [...baseArgs, ...args];
   }
 
-  const filterResolution = resolveFilter(args);
-
-  if (filterResolution !== undefined) {
-    const { filteredArgs, targets: resolvedTargets } = filterResolution;
-    return [...baseArgs, ...filteredArgs, ...resolvedTargets];
-  }
-
-  return [...baseArgs, ...args, DEFAULT_TEST_GLOB];
+  return [...baseArgs, ...args, ...defaultTargets];
 }
 
 function resolveFilter(args: readonly string[]): { filteredArgs: string[]; targets: readonly string[] } | undefined {
