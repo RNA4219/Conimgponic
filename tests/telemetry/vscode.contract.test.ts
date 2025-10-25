@@ -1,7 +1,7 @@
-import assert from 'node:assert/strict'
+import { ok as assertOk } from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { COLLECT_METRICS_CONTRACT } from '../../scripts/monitor/collect-metrics'
+import { COLLECT_METRICS_CONTRACT } from '../../scripts/monitor/collect-metrics.js'
 
 const findTelemetrySpec = (event: string) =>
   COLLECT_METRICS_CONTRACT.telemetry.events.find((spec) => spec.event === event)
@@ -11,7 +11,8 @@ describe('vscode extension telemetry contract (RED)', () => {
   test.todo('message envelope: {type,apiVersion,reqId,ts} を全方向で必須化し、phase.guard への観測フックを持つ')
   test('status.autosave telemetry は phase 情報と guard スナップショットを記録する', () => {
     const spec = findTelemetrySpec('status.autosave')
-    assert(spec, 'status.autosave telemetry spec is missing')
+    assertOk(spec, 'status.autosave telemetry spec is missing')
+    const telemetrySpec = spec
 
     const requiredFields = [
       'payload.state',
@@ -24,8 +25,8 @@ describe('vscode extension telemetry contract (RED)', () => {
     ]
 
     for (const field of requiredFields) {
-      assert(
-        spec.jsonlFields.includes(field),
+      assertOk(
+        telemetrySpec.jsonlFields.includes(field),
         `status.autosave must require ${field} in Collector JSONL`
       )
     }
@@ -33,7 +34,8 @@ describe('vscode extension telemetry contract (RED)', () => {
 
   test('flag_resolution telemetry は evaluation_ms を必須にし Phase ガード指標へ渡す', () => {
     const spec = findTelemetrySpec('flag_resolution')
-    assert(spec, 'flag_resolution telemetry spec is missing')
+    assertOk(spec, 'flag_resolution telemetry spec is missing')
+    const telemetrySpec = spec
 
     const requiredFields = [
       'payload.flag',
@@ -44,8 +46,8 @@ describe('vscode extension telemetry contract (RED)', () => {
     ]
 
     for (const field of requiredFields) {
-      assert(
-        spec.jsonlFields.includes(field),
+      assertOk(
+        telemetrySpec.jsonlFields.includes(field),
         `flag_resolution must require ${field} in Collector JSONL`
       )
     }
@@ -53,7 +55,8 @@ describe('vscode extension telemetry contract (RED)', () => {
 
   test('merge.trace telemetry は Phase 情報と ±5% 監視用メトリクスを保持する', () => {
     const spec = findTelemetrySpec('merge.trace')
-    assert(spec, 'merge.trace telemetry spec is missing')
+    assertOk(spec, 'merge.trace telemetry spec is missing')
+    const telemetrySpec = spec
 
     const requiredFields = [
       'payload.phase',
@@ -66,8 +69,8 @@ describe('vscode extension telemetry contract (RED)', () => {
     ]
 
     for (const field of requiredFields) {
-      assert(
-        spec.jsonlFields.includes(field),
+      assertOk(
+        telemetrySpec.jsonlFields.includes(field),
         `merge.trace must require ${field} in Collector JSONL`
       )
     }
