@@ -97,6 +97,22 @@ const CASES: readonly ManifestValidationCase[] = [
     detailField: 'permissions',
     detailIssue: 'invalid-element',
   },
+  {
+    description: 'rejects manifest with non-array dependencies.workspace',
+    manifest: { ...validManifestBase, dependencies: { workspace: { './foo': true } as unknown as string[] } },
+    message: 'Manifest validation failed: dependencies.workspace must be an array of non-empty strings.',
+    detailField: 'dependencies.workspace',
+    detailIssue: 'invalid-type',
+    notifyUser: true,
+  },
+  {
+    description: 'rejects manifest with non-string dependencies.npm version',
+    manifest: { ...validManifestBase, dependencies: { npm: { 'left-pad': 123 as unknown as string } } },
+    message: 'Manifest validation failed: dependencies.npm must be a record of string package versions.',
+    detailField: 'dependencies.npm',
+    detailIssue: 'invalid-value',
+    notifyUser: true,
+  },
 ];
 
 for (const { description, manifest, message, detailField, detailIssue, notifyUser } of CASES) {
@@ -115,5 +131,6 @@ for (const { description, manifest, message, detailField, detailIssue, notifyUse
     assert.equal(failedLog?.stage, 'manifest-validation');
     assert.equal(failedLog?.detail?.field, detailField);
     assert.equal(failedLog?.detail?.issue, detailIssue);
+    assert.equal(failedLog?.detail?.reason, message);
   });
 }
