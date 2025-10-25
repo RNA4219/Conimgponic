@@ -198,6 +198,7 @@ describe('ci workflow build job', () => {
         'audit-report',
         'audit-report.json',
         'error',
+        'always()',
       );
 
       const build = workflow.jobs?.build;
