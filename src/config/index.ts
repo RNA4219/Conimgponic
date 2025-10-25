@@ -119,6 +119,7 @@ export interface AutoSaveBootstrapPlan {
 export interface PluginBridgeBootstrapPlan {
   readonly snapshot: FlagSnapshot
   readonly enableFlag: boolean
+  readonly errors: readonly FlagValidationError[]
 }
 
 export function resolveAutoSaveBootstrapPlan(
@@ -154,6 +155,7 @@ export function resolvePluginBridgeBootstrapPlan(
   publishFlagResolution('vscode.plugins', 'bootstrap', snapshot, errors)
   return {
     snapshot,
-    enableFlag: snapshot.plugins.enabled
+    enableFlag: snapshot.plugins.enabled,
+    errors
   }
 }

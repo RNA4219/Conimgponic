@@ -16,6 +16,14 @@ const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
 const ensureCommand =
   "node --input-type=module --eval \"import { mkdirSync } from 'node:fs'; const dir = process.argv.at(-1); if (!dir) throw new Error('missing dir'); mkdirSync(dir, { recursive: true });\"";
 
+const NODE_BASE_ARGS = [
+  '--experimental-vm-modules',
+  '--loader',
+  'ts-node/esm',
+  '--experimental-specifier-resolution=node',
+  '--test',
+] as const;
+
 const resolveScript = (name: string): string => {
   const scripts = packageJson.scripts;
   assert.ok(scripts, 'package.json.scripts is missing');
@@ -66,16 +74,7 @@ test('run-selected respects tests root when autorun is skipped', async () => {
     );
 
     const nodeArgs = buildNodeArgs([], [], defaultTargets);
-    assert.deepStrictEqual(
-      nodeArgs.slice(0, 5),
-      [
-        '--experimental-vm-modules',
-        '--loader',
-        'ts-node/esm',
-        '--experimental-specifier-resolution=node',
-        '--test',
-      ],
-    );
+    assert.deepStrictEqual(nodeArgs.slice(0, NODE_BASE_ARGS.length), NODE_BASE_ARGS);
     assert.ok(
       nodeArgs.includes('tests/ci/test-commands.test.ts'),
       'default targets should be appended to node arguments when none are provided',

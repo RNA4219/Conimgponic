@@ -79,7 +79,7 @@ const expectedQualitySequence = [
 const expectedCoverageCommand = 'pnpm -s test:coverage';
 const expectedCoverageCleanup = 'rm -rf coverage';
 const expectedJunitCommand =
-  'pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml';
+  'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml';
 
 const { load } = await importJsYaml();
 
@@ -162,12 +162,12 @@ describe('ci workflow build job', () => {
 
       const artifactSteps = reportSteps.filter(isUploadArtifactStep);
 
-      assertArtifactStep(artifactSteps, 'coverage', 'coverage/', undefined, 'always()');
+      assertArtifactStep(artifactSteps, 'coverage', 'coverage/', 'error', 'always()');
       assertArtifactStep(
         artifactSteps,
         'junit-report',
         'reports/junit.xml',
-        undefined,
+        'error',
         'always()',
       );
 
@@ -198,6 +198,7 @@ describe('ci workflow build job', () => {
         'audit-report',
         'audit-report.json',
         'error',
+        'always()',
       );
 
       const build = workflow.jobs?.build;

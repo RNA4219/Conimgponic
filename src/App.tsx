@@ -111,7 +111,20 @@ export default function App(){
   }, [])
 
   useEffect(()=>{
-    setAutoSavePlan(resolveAutoSaveBootstrapPlan())
+    const plan = resolveAutoSaveBootstrapPlan()
+    setAutoSavePlan(plan)
+    const collector = getDay8Collector()
+    if (collector){
+      collector.publish({
+        feature: 'config.flags',
+        event: 'flag_resolution',
+        source: 'app.autosave',
+        phase: 'bootstrap',
+        snapshot: plan.snapshot,
+        errors: plan.errors,
+        ts: new Date().toISOString()
+      })
+    }
   }, [])
 
   useEffect(()=>{
