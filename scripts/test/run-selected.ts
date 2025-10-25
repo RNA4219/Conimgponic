@@ -111,3 +111,110 @@ export function buildNodeArgs(
 
   return [...baseArgs, ...args, ...defaultTargets];
 }
+
+function resolveFilter(args: readonly string[]): { filteredArgs: string[]; targets: readonly string[] } | undefined {
+  const mutableArgs = [...args];
+
+  for (let index = 0; index < mutableArgs.length; index += 1) {
+    const token = mutableArgs[index];
+
+    if (token !== '--filter') {
+      continue;
+    }
+
+    const suite = mutableArgs[index + 1];
+
+    if (typeof suite !== 'string') {
+      return undefined;
+    }
+
+    const targetPatterns = FILTER_TARGETS[suite];
+
+    if (targetPatterns === undefined) {
+      return undefined;
+    }
+
+    const matchedTargets = matchFilterTargets(targetPatterns);
+
+    if (matchedTargets.length === 0) {
+      return undefined;
+    }
+
+    mutableArgs.splice(index, 2);
+    return { filteredArgs: mutableArgs, targets: matchedTargets };
+  }
+
+  return undefined;
+}
+
+function matchFilterTargets(patterns: readonly string[]): string[] {
+  const tests = listAllTests();
+  const matchers = patterns.map(toPatternRegExp);
+  const matches = new Set<string>();
+
+  for (const file of tests) {
+    const normalized = file.replace(/\\/g, '/');
+
+    if (matchers.some((regex) => regex.test(normalized))) {
+      matches.add(normalized);
+    }
+  }
+
+  return [...matches].sort();
+}
+
+function listAllTests(): string[] {
+  if (cachedTestFiles !== undefined) {
+    return cachedTestFiles;
+  }
+
+  const result: string[] = [];
+  const queue: string[] = ['tests'];
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+
+    if (current === undefined) {
+      continue;
+    }
+
+    const entries = readdirSync(current, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const entryPath = join(current, entry.name);
+
+      if (entry.isDirectory()) {
+        queue.push(entryPath);
+        continue;
+      }
+
+      if (entry.isFile() && entry.name.endsWith('.test.ts')) {
+        result.push(entryPath);
+      }
+    }
+  }
+
+  cachedTestFiles = result;
+  return result;
+}
+
+function toPatternRegExp(pattern: string): RegExp {
+  const placeholder = '__DOUBLE_STAR__';
+  const normalized = pattern.replace(/\\/g, '/');
+  const withPlaceholder = normalized.replace(/\*\*/g, placeholder);
+  const escaped = withPlaceholder.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  const singleStarReplaced = escaped.replace(/\*/g, '[^/]*');
+  const finalPattern = singleStarReplaced.replace(new RegExp(placeholder, 'g'), '.*');
+  return new RegExp(`^${finalPattern}$`);
+}
+
+function isMainModule(moduleUrl: string): boolean {
+  const entryPath = process.argv[1];
+
+  if (!entryPath) {
+    return false;
+  }
+
+  const entryUrl = pathToFileURL(resolve(entryPath)).href;
+  return entryUrl === moduleUrl;
+}

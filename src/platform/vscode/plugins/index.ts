@@ -1,3 +1,8 @@
+import {
+  resolvePluginBridgeBootstrapPlan,
+  type ResolveOptions,
+} from '../../../config/index.js';
+
 export type PluginReloadStageName =
   | 'manifest-validation'
   | 'compatibility-check'
@@ -121,6 +126,29 @@ export interface PluginBridgeConfig {
   readonly collector: PluginCollector;
   readonly phaseGuard: PluginPhaseGuard;
   readonly state: PluginBridgeBackingState;
+}
+
+export interface PluginBridgeBootstrapOptions {
+  readonly resolveOptions?: ResolveOptions;
+  readonly platformVersion: string;
+  readonly conimgApiVersion: string;
+  readonly collector: PluginCollector;
+  readonly phaseGuard: PluginPhaseGuard;
+  readonly state: PluginBridgeBackingState;
+}
+
+export function bootstrapPluginBridge(
+  options: PluginBridgeBootstrapOptions
+): PluginBridge | undefined {
+  const plan = resolvePluginBridgeBootstrapPlan(options.resolveOptions);
+  return maybeCreatePluginBridge({
+    enableFlag: plan.enableFlag,
+    platformVersion: options.platformVersion,
+    conimgApiVersion: options.conimgApiVersion,
+    collector: options.collector,
+    phaseGuard: options.phaseGuard,
+    state: options.state,
+  });
 }
 
 export interface PluginBridge {
