@@ -14,11 +14,16 @@ type WorkflowYaml = {
     reports?: {
       steps?: StepConfig[];
     };
+    build?: BuildJobConfig;
   };
 };
 
 type AuditJobConfig = {
   steps?: StepConfig[];
+};
+
+type BuildJobConfig = {
+  needs?: JobNeedsConfig;
 };
 
 type QualityJobConfig = {
@@ -32,6 +37,8 @@ type QualityJobConfig = {
 type QualityMatrixEntry = {
   command?: unknown;
 };
+
+type JobNeedsConfig = string | string[] | undefined;
 
 type StepConfig = {
   run?: unknown;
@@ -148,6 +155,17 @@ describe('ci workflow build job', () => {
 
       const auditArtifactSteps = auditSteps.filter(isUploadArtifactStep);
       assertArtifactStep(auditArtifactSteps, 'audit-report', 'audit-report.json');
+
+      const build = workflow.jobs?.build;
+      if (!build) {
+        assert.fail('workflow.jobs.build must exist');
+      }
+
+      assertJobNeedsInclude(
+        build.needs,
+        'audit',
+        'build job must depend on audit job',
+      );
     } catch (error) {
       console.error('CI workflow verification failed:', error);
       throw error;
@@ -179,7 +197,7 @@ function assertArtifactStep(
   });
 
   if (!match) {
-    assert.fail(`reports job must upload artifact named "${expectedName}"`);
+    assert.fail(`workflow must upload artifact named "${expectedName}"`);
   }
 
   const config = match.with;
@@ -255,6 +273,25 @@ function assertCommandPresence(commands: string[], expected: string, message: st
   const index = commands.findIndex((command) => command === expected);
 
   assert.notStrictEqual(index, -1, message);
+}
+
+function assertJobNeedsInclude(
+  value: JobNeedsConfig,
+  expected: string,
+  message: string,
+): void {
+  if (typeof value === 'string') {
+    assert.strictEqual(value, expected, message);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    const hasMatch = value.some((entry) => entry === expected);
+    assert.ok(hasMatch, message);
+    return;
+  }
+
+  assert.fail(`${message}; needs must be configured as a string or array of strings`);
 }
 
 function assertLineIncludes(lines: string[], expected: string, message: string): void {

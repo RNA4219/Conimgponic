@@ -163,6 +163,7 @@ jobs:
       - sbom
       - license
       - quality
+      - audit
     runs-on: ubuntu-latest
 
     steps:
