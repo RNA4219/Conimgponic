@@ -108,7 +108,16 @@ test('includes tsx component tests when filtering merge suite', async () => {
   );
 });
 
-test('maps --filter collector to collector plugin tests', async () => {
+test('collects node args when module parameter is omitted', async () => {
+  const nodeArgs = await collectNodeArgs(undefined, ['--filter', 'merge']);
+
+  assert.ok(
+    nodeArgs.includes('tests/components/DiffMergeView.test.tsx'),
+    'expected merge filter to include DiffMergeView tsx test when module is omitted',
+  );
+});
+
+test('falls back to default glob when filter is unknown', async () => {
   const module = await importRunSelectedModule();
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'collector']);
 
@@ -116,10 +125,9 @@ test('maps --filter collector to collector plugin tests', async () => {
     '--loader',
     'ts-node/esm',
     '--test',
-    'tests/platform/vscode/plugins.bootstrap.test.ts',
-    'tests/platform/vscode/plugins.reload.test.ts',
-    'tests/plugins/reload.flow.test.ts',
-    'tests/plugins/vscode.reload.test.ts',
+    '--filter',
+    'collector',
+    'tests/**/*.test.ts',
   ]);
 });
 
@@ -143,12 +151,12 @@ async function importRunSelectedModule(): Promise<RunSelectedModule> {
 
 async function collectNodeArgs(argvTail: readonly string[]): Promise<readonly string[]>;
 async function collectNodeArgs(
-  module: RunSelectedModule,
+  module: RunSelectedModule | undefined,
   argvTail: readonly string[],
 ): Promise<readonly string[]>;
 async function collectNodeArgs(
-  moduleOrArgvTail: RunSelectedModule | readonly string[],
-  maybeArgvTail?: readonly string[],
+  moduleOrArgvTail?: RunSelectedModule | readonly string[],
+  maybeArgvTail: readonly string[] = [],
 ): Promise<readonly string[]> {
   const originalArgv = process.argv;
   const spawnCalls: Array<Parameters<SpawnFn>> = [];
@@ -171,21 +179,22 @@ async function collectNodeArgs(
 
   const exitMock = mock.method(process, 'exit', () => undefined as never);
 
-  let module: RunSelectedModule;
+  let module: RunSelectedModule | undefined;
   let argvTail: readonly string[];
 
   if (Array.isArray(moduleOrArgvTail)) {
-    module = await importRunSelectedModule();
+    module = undefined;
     argvTail = moduleOrArgvTail;
   } else {
-    module = moduleOrArgvTail as RunSelectedModule;
-    argvTail = maybeArgvTail ?? [];
+    module = moduleOrArgvTail as RunSelectedModule | undefined;
+    argvTail = maybeArgvTail;
   }
 
   process.argv = [...originalArgv.slice(0, 2), ...argvTail];
 
   try {
-    module.runSelected(undefined, spawnStub);
+    const resolvedModule = module ?? (await importRunSelectedModule());
+    resolvedModule.runSelected(undefined, spawnStub);
     await new Promise<void>((resolve) => setImmediate(resolve));
   } finally {
     process.argv = originalArgv;
