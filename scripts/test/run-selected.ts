@@ -170,7 +170,13 @@ export function buildNodeArgs(
   targets: readonly string[],
   defaultTargets: readonly string[],
 ): string[] {
-  const baseArgs = ['--loader', 'ts-node/esm', '--test'];
+  const baseArgs = [
+    '--experimental-vm-modules',
+    '--loader',
+    'ts-node/esm',
+    '--experimental-specifier-resolution=node',
+    '--test',
+  ];
   const sanitizedArgs = sanitizeArgs(args);
 
   if (targets.length > 0) {
@@ -335,8 +341,9 @@ function hasDefaultTestSuffix(fileName: string): boolean {
 function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   const requiredCompilerOptions: Record<string, unknown> = {
-    moduleResolution: 'nodenext',
+    moduleResolution: 'bundler',
     types: ['node'],
+    allowSyntheticDefaultImports: true,
   };
 
   const existing = env.TS_NODE_COMPILER_OPTIONS;
@@ -344,10 +351,22 @@ function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (existing) {
     const merged = mergeCompilerOptions(existing, requiredCompilerOptions);
     env.TS_NODE_COMPILER_OPTIONS = merged;
+    if (!env.TS_NODE_PROJECT) {
+      env.TS_NODE_PROJECT = 'tests/tsconfig.json';
+    }
+    if (!env.TS_NODE_TRANSPILE_ONLY) {
+      env.TS_NODE_TRANSPILE_ONLY = '1';
+    }
     return env;
   }
 
   env.TS_NODE_COMPILER_OPTIONS = JSON.stringify(requiredCompilerOptions);
+  if (!env.TS_NODE_PROJECT) {
+    env.TS_NODE_PROJECT = 'tests/tsconfig.json';
+  }
+  if (!env.TS_NODE_TRANSPILE_ONLY) {
+    env.TS_NODE_TRANSPILE_ONLY = '1';
+  }
   return env;
 }
 
