@@ -36,11 +36,11 @@ export interface AutoSaveOptions {
 export const AUTOSAVE_MAX_BYTES = 50 * 1024 * 1024
 
 export interface AutoSavePolicy {
-  readonly debounceMs: 500
-  readonly idleMs: 2000
-  readonly maxGenerations: 20
-  readonly maxBytes: typeof AUTOSAVE_MAX_BYTES
-  readonly disabled: false
+  readonly debounceMs: number
+  readonly idleMs: number
+  readonly maxGenerations: number
+  readonly maxBytes: number
+  readonly disabled: boolean
 }
 
 /**

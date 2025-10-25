@@ -2,7 +2,12 @@ import { AUTOSAVE_POLICY } from '../lib/autosave.js'
 import type { AutoSavePhaseGuardSnapshot, AutoSavePolicy } from '../lib/autosave.js'
 
 import { publishFlagResolution } from '../telemetry/day8Collector.js'
-import type { FlagSnapshot, ResolveOptions, WorkspaceConfiguration } from './flags.js'
+import type {
+  FlagSnapshot,
+  FlagValidationError,
+  ResolveOptions,
+  WorkspaceConfiguration
+} from './flags.js'
 
 import {
   FLAG_MIGRATION_PLAN,
@@ -114,6 +119,7 @@ export interface AutoSaveBootstrapPlan {
   readonly guard: AutoSavePhaseGuardSnapshot
   readonly failSafePhase: FlagRolloutPhase | null
   readonly policy: AutoSavePolicy
+  readonly errors: readonly FlagValidationError[]
 }
 
 export interface PluginBridgeBootstrapPlan {
@@ -143,7 +149,8 @@ export function resolveAutoSaveBootstrapPlan(
       optionsDisabled: config?.optionsDisabled ?? false
     },
     failSafePhase: phaseA0?.phase ?? null,
-    policy: workspacePolicy
+    policy: workspacePolicy,
+    errors
   }
 }
 

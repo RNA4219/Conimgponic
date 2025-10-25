@@ -311,7 +311,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     type: 'bridge.bootstrap',
     apiVersion: API_VERSION,
     phase: PHASE_BOOTSTRAP,
-    bridgePhase: 'bridge.bootstrap',
+    bridgePhase: 'bootstrap',
     reqId: bootstrapReqId,
     correlationId: bootstrapCorrelationId,
     ts: toIso(options.now()),
