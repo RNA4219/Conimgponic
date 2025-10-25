@@ -10,7 +10,10 @@ import { describe, test } from 'node:test';
 type WorkflowYaml = { jobs?: { license?: WorkflowJob } };
 type WorkflowJob = { steps?: StepConfig[] };
 type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown };
-type UploadStep = StepConfig & { uses: string; with?: { name?: unknown; path?: unknown } };
+type UploadStep = StepConfig & {
+  uses: string;
+  with?: { name?: unknown; path?: unknown; ['if-no-files-found']?: unknown };
+};
 type JsYamlModule = { load: (input: string) => unknown };
 
 const require = createRequire(import.meta.url);
@@ -30,6 +33,11 @@ describe('ci workflow license job', () => {
       assert.ok(runStep.run.includes('pnpm -s license:check'), 'license job must invoke pnpm -s license:check');
 
       const upload = expectUploadStep(steps, 'license-artifacts', 'license job must upload license artifacts');
+      const uploadIfNoFilesFound = upload.with?.['if-no-files-found'];
+      if (typeof uploadIfNoFilesFound !== 'string') {
+        throw new TypeError('license artifact upload must configure if-no-files-found policy');
+      }
+      assert.equal(uploadIfNoFilesFound, 'error', 'license artifact upload must fail when files are missing');
       const uploadPath = upload.with?.path;
       if (typeof uploadPath !== 'string') {
         throw new TypeError('license artifact upload must configure string path');
