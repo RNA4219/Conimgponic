@@ -4,24 +4,35 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const DEFAULT_TEST_GLOB = 'tests/**/*.test.ts';
-const DEFAULT_TEST_SUFFIX = '.test.ts';
-const DEFAULT_TEST_ROOT = DEFAULT_TEST_GLOB.includes('/**')
-  ? DEFAULT_TEST_GLOB.slice(0, DEFAULT_TEST_GLOB.indexOf('/**'))
-  : DEFAULT_TEST_GLOB;
+const DEFAULT_TEST_GLOB = 'tests/**/*.test.ts';
+const FILTER_TARGETS: Record<string, readonly string[]> = {
+  autosave: [
+    'tests/app/autosave.*.test.ts',
+    'tests/lib/autosave/*.test.ts',
+    'tests/lib/autosave.*.test.ts',
+    'tests/lib/autosave.phase-guard.test.ts',
+    'tests/views/*autosave*.test.ts',
+    'tests/webview/autosave.*.test.ts',
+  ],
+  merge: [
+    'tests/merge/*.test.ts',
+    'tests/webview/merge.*.test.ts',
+    'tests/extensions/vscode/merge-bridge.sanitize.test.ts',
+  ],
+  cli: ['tests/ci/test-commands.test.ts'],
+  telemetry: ['tests/telemetry/*.test.ts'],
+};
 
-export function run(argv: readonly string[] = process.argv.slice(2)): void {
-  const explicitTargets = collectExplicitTargets(argv);
-  const defaultTargets = explicitTargets.length > 0 ? [] : collectDefaultTargets();
+let cachedTestFiles: string[] | undefined;
 
-  if (explicitTargets.length === 0 && defaultTargets.length === 0) {
-    console.error(`No test files matched pattern "${DEFAULT_TEST_GLOB}".`);
-    process.exit(1);
-  }
+export function runSelected(
+  args: readonly string[] = process.argv.slice(2),
+  spawnImpl: typeof spawn = spawn
+): void {
+  const explicitTargets = collectExplicitTargets(args);
+  const nodeArgs = buildNodeArgs(args, explicitTargets);
 
-  const nodeArgs = buildNodeArgs(argv, explicitTargets, defaultTargets);
-
-  const child = spawn('node', nodeArgs, { stdio: 'inherit', env: process.env });
+  const child = spawnImpl('node', nodeArgs, { stdio: 'inherit', env: process.env });
 
   child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
     if (signal !== null) {
