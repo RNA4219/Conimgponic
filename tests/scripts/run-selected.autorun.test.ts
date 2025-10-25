@@ -43,7 +43,7 @@ const createFakeNodeEnvironment = () => {
 
 test('autoruns via CLI when RUN_SELECTED_SKIP_AUTORUN is unset', () => {
   const { env, readArgs } = createFakeNodeEnvironment()
-  delete env.RUN_SELECTED_SKIP_AUTORUN
+  Reflect.deleteProperty(env, 'RUN_SELECTED_SKIP_AUTORUN')
   const status = spawnSync(process.execPath, ['--loader', 'ts-node/esm', 'scripts/test/run-selected.ts', '--test-name-pattern=__noop__'], { cwd: repoRoot, env, encoding: 'utf8' }).status
   assert.equal(status, 0)
   const recorded = readArgs() ?? []
@@ -85,7 +85,7 @@ test('RUN_SELECTED_SKIP_AUTORUN=1 keeps CI filter flows manual', async (t) => {
     }
   } finally {
     if (originalSkip === undefined) {
-      delete process.env.RUN_SELECTED_SKIP_AUTORUN
+      Reflect.deleteProperty(process.env, 'RUN_SELECTED_SKIP_AUTORUN')
     } else {
       process.env.RUN_SELECTED_SKIP_AUTORUN = originalSkip
     }
