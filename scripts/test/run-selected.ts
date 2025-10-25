@@ -35,10 +35,13 @@ export function runSelected(
   spawnImpl: typeof spawn = spawn,
   defaultTargets?: readonly string[],
 ): void {
-  const { filteredArgs, explicitTargets, resolvedDefaultTargets } = resolveRunConfiguration(
-    args,
-    defaultTargets,
-  );
+  const filterResult = resolveFilter(args);
+  const filteredArgs = filterResult?.filteredArgs ?? args;
+  const explicitTargets = collectExplicitTargets(filteredArgs);
+  const resolvedDefaultTargets =
+    defaultTargets ??
+    filterResult?.targets ??
+    (includesFilterToken(args) ? [DEFAULT_TEST_GLOB] : determineDefaultTargets());
   const nodeArgs = buildNodeArgs(filteredArgs, explicitTargets, resolvedDefaultTargets);
 
   const child = spawnImpl('node', nodeArgs, { stdio: 'inherit', env: process.env });
@@ -59,7 +62,7 @@ export function runSelected(
 }
 
 if (process.env.RUN_SELECTED_SKIP_AUTORUN !== '1' && isMainModule(import.meta.url)) {
-  run();
+  runSelected();
 }
 
 export function collectExplicitTargets(args: readonly string[]): string[] {
@@ -143,31 +146,6 @@ export function sanitizeArgs(
   }
 
   return args.filter((arg) => arg !== TEST_COVERAGE_FLAG);
-}
-
-function run(): void {
-  const args = process.argv.slice(2);
-  const { filteredArgs, resolvedDefaultTargets } = resolveRunConfiguration(args);
-  runSelected(filteredArgs, spawn, resolvedDefaultTargets);
-}
-
-function resolveRunConfiguration(
-  args: readonly string[],
-  defaultTargets?: readonly string[],
-): {
-  filteredArgs: readonly string[];
-  explicitTargets: string[];
-  resolvedDefaultTargets: readonly string[];
-} {
-  const filterResult = resolveFilter(args);
-  const filteredArgs = filterResult?.filteredArgs ?? args;
-  const explicitTargets = collectExplicitTargets(filteredArgs);
-  const resolvedDefaultTargets =
-    defaultTargets ??
-    filterResult?.targets ??
-    (includesFilterToken(args) ? [DEFAULT_TEST_GLOB] : determineDefaultTargets());
-
-  return { filteredArgs, explicitTargets, resolvedDefaultTargets };
 }
 
 function determineDefaultTargets(): readonly string[] {
