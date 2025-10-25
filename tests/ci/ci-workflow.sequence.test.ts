@@ -162,8 +162,14 @@ describe('ci workflow build job', () => {
 
       const artifactSteps = reportSteps.filter(isUploadArtifactStep);
 
-      assertArtifactStep(artifactSteps, 'coverage', 'coverage/');
-      assertArtifactStep(artifactSteps, 'junit-report', 'reports/junit.xml');
+      assertArtifactStep(artifactSteps, 'coverage', 'coverage/', undefined, 'always()');
+      assertArtifactStep(
+        artifactSteps,
+        'junit-report',
+        'reports/junit.xml',
+        undefined,
+        'always()',
+      );
 
       const audit = workflow.jobs?.audit;
       if (!audit) {
@@ -224,6 +230,7 @@ function assertArtifactStep(
   expectedName: string,
   expectedPath: string,
   expectedIfNoFilesFound?: string,
+  expectedIf?: string,
 ): void {
   const match = steps.find((step) => {
     const config = step.with;
@@ -271,6 +278,18 @@ function assertArtifactStep(
       ifNoFilesFound.trim(),
       expectedIfNoFilesFound,
       `artifact "${expectedName}" must set if-no-files-found to "${expectedIfNoFilesFound}"`,
+    );
+  }
+
+  if (expectedIf !== undefined) {
+    if (typeof match.if !== 'string') {
+      assert.fail(`artifact "${expectedName}" must configure if as a string`);
+    }
+
+    assert.strictEqual(
+      match.if.trim(),
+      expectedIf,
+      `artifact "${expectedName}" must set if to "${expectedIf}"`,
     );
   }
 }
