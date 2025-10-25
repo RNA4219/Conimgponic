@@ -1,7 +1,11 @@
 import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
 
 import { publishFlagResolution } from '../telemetry/day8Collector.js'
-import type { FlagSnapshot, ResolveOptions } from './flags.js'
+import type {
+  FlagSnapshot,
+  FlagValidationError,
+  ResolveOptions
+} from './flags.js'
 
 import {
   FLAG_MIGRATION_PLAN,
@@ -39,11 +43,13 @@ export interface AutoSaveBootstrapPlan {
   readonly snapshot: FlagSnapshot
   readonly guard: AutoSavePhaseGuardSnapshot
   readonly failSafePhase: FlagRolloutPhase | null
+  readonly errors: readonly FlagValidationError[]
 }
 
 export interface PluginBridgeBootstrapPlan {
   readonly snapshot: FlagSnapshot
   readonly enableFlag: boolean
+  readonly errors: readonly FlagValidationError[]
 }
 
 export function resolveAutoSaveBootstrapPlan(
@@ -64,7 +70,8 @@ export function resolveAutoSaveBootstrapPlan(
       },
       optionsDisabled: config?.optionsDisabled ?? false
     },
-    failSafePhase: phaseA0?.phase ?? null
+    failSafePhase: phaseA0?.phase ?? null,
+    errors
   }
 }
 
@@ -76,6 +83,7 @@ export function resolvePluginBridgeBootstrapPlan(
   publishFlagResolution('vscode.plugins', 'bootstrap', snapshot, errors)
   return {
     snapshot,
-    enableFlag: snapshot.plugins.enabled
+    enableFlag: snapshot.plugins.enabled,
+    errors
   }
 }
