@@ -178,6 +178,11 @@ describe('export bridge golden comparison', () => {
         pathToFileURL(join(ctx.outputDir, 'runs', 'unit', 'export')).href,
         'runUri は file://runs/... ではなく絶対 file:// URI を返す必要がある',
       )
+      assert.equal(
+        new URL(result.runUri).pathname,
+        pathToFileURL(join(ctx.outputDir, 'runs', 'unit', 'export')).pathname,
+        'runUri の pathname が実際の runs/<runId>/export ディレクトリに対応する必要がある',
+      )
     } finally {
       ctx.cleanup()
     }
