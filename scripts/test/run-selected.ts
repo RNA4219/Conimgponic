@@ -26,6 +26,15 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   golden: ['tests/export/golden*.test.ts'],
   ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
   cli: ['tests/ci/test-commands.test.ts'],
+  collector: [
+    'tests/app/autosave.plan.test.ts',
+    'tests/autosave/restore.flow.test.ts',
+    'tests/export/*.test.ts',
+    'tests/platform/vscode/*.test.ts',
+    'tests/plugins/*.test.ts',
+    'tests/webview/*.test.ts',
+    'tests/extensions/vscode/merge-bridge.sanitize.test.ts',
+  ],
   telemetry: ['tests/telemetry/*.test.ts'],
 };
 
@@ -147,6 +156,31 @@ export function sanitizeArgs(
   }
 
   return args.filter((arg) => arg !== TEST_COVERAGE_FLAG);
+}
+
+function run(): void {
+  const args = process.argv.slice(2);
+  const { filteredArgs, resolvedDefaultTargets } = resolveRunConfiguration(args);
+  runSelected(filteredArgs, spawn, resolvedDefaultTargets);
+}
+
+export function resolveRunConfiguration(
+  args: readonly string[],
+  defaultTargets?: readonly string[],
+): {
+  filteredArgs: readonly string[];
+  explicitTargets: string[];
+  resolvedDefaultTargets: readonly string[];
+} {
+  const filterResult = resolveFilter(args);
+  const filteredArgs = filterResult?.filteredArgs ?? args;
+  const explicitTargets = collectExplicitTargets(filteredArgs);
+  const resolvedDefaultTargets =
+    defaultTargets ??
+    filterResult?.targets ??
+    (includesFilterToken(args) ? [DEFAULT_TEST_GLOB] : determineDefaultTargets());
+
+  return { filteredArgs, explicitTargets, resolvedDefaultTargets };
 }
 
 function determineDefaultTargets(): readonly string[] {
