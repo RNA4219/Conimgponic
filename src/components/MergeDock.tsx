@@ -3,7 +3,7 @@ import { useStore } from 'zustand'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
 import { resolveFlags, type FlagSnapshot } from '../config'
-import { useSB } from '../store.ts'
+import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
 import type { Storyboard } from '../types'
@@ -287,7 +287,13 @@ export const resolveMergeThresholdSnapshot = (
   const storage = options.storage ?? null
   const snapshot: Pick<FlagSnapshot, 'merge'> =
     options.flags ?? resolveFlags({ workspace, storage })
-  const envPrecision = parseMergePrecision(process.env?.VITE_MERGE_PRECISION)
+  const envPrecision = parseMergePrecision(
+    (() => {
+      const meta = (import.meta as ImportMeta & { env?: Record<string, unknown> })
+      const candidate = meta.env?.VITE_MERGE_PRECISION
+      return typeof candidate === 'string' ? candidate : undefined
+    })(),
+  )
   const precision =
     options.precision ??
     envPrecision ??

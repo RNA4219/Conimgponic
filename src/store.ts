@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import type { StoreApi, UseBoundStore } from 'zustand'
+
 import type { Storyboard, Scene } from './types'
 
 const urlAlphabet = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
@@ -22,7 +24,7 @@ type State = {
   setSBTitle(title: string): void
 }
 
-type UseSBStore = ReturnType<typeof create<State>>
+type UseSBStore = UseBoundStore<StoreApi<State>>
 
 interface StoreGlobal {
   __conimgponic_sb_store__?: UseSBStore
@@ -35,7 +37,7 @@ const setSnapshot = (sb: Storyboard): void => {
 }
 
 const createSBStore = (): UseSBStore => {
-  const store = create<State>((set, get)=> ({
+  const store = create<State>()((set, get)=> ({
   sb: { id: 'sb-1', title: 'New Storyboard', scenes: [], selection: [], version: 1, tokens: {
     cinematic: "cinematic tone, dynamic camera, subtle color grading",
     noir: "film noir tone, high contrast lighting, 50mm lens, smoke-filled room",
@@ -97,7 +99,7 @@ const resolveSBStore = (): UseSBStore => {
   return store
 }
 
-export const useSB = resolveSBStore()
+export const useSB: UseSBStore = resolveSBStore()
 
 export const useSBMeta = () => {
   const { updateScene } = useSB.getState()
