@@ -54,6 +54,7 @@ type UploadArtifactStep = StepConfig & {
   with?: {
     name?: unknown;
     path?: unknown;
+    'if-no-files-found'?: unknown;
   };
 };
 
@@ -186,7 +187,12 @@ describe('ci workflow build job', () => {
       );
 
       const auditArtifactSteps = auditSteps.filter(isUploadArtifactStep);
-      assertArtifactStep(auditArtifactSteps, 'audit-report', 'audit-report.json');
+      assertArtifactStep(
+        auditArtifactSteps,
+        'audit-report',
+        'audit-report.json',
+        'error',
+      );
 
       const build = workflow.jobs?.build;
       if (!build) {
@@ -217,6 +223,7 @@ function assertArtifactStep(
   steps: UploadArtifactStep[],
   expectedName: string,
   expectedPath: string,
+  expectedIfNoFilesFound?: string,
 ): void {
   const match = steps.find((step) => {
     const config = step.with;
@@ -251,6 +258,21 @@ function assertArtifactStep(
     expectedPath,
     `artifact "${expectedName}" must target path "${expectedPath}"`,
   );
+
+  if (expectedIfNoFilesFound !== undefined) {
+    const { 'if-no-files-found': ifNoFilesFound } = config;
+    if (typeof ifNoFilesFound !== 'string') {
+      assert.fail(
+        `artifact "${expectedName}" must configure if-no-files-found as a string`,
+      );
+    }
+
+    assert.strictEqual(
+      ifNoFilesFound.trim(),
+      expectedIfNoFilesFound,
+      `artifact "${expectedName}" must set if-no-files-found to "${expectedIfNoFilesFound}"`,
+    );
+  }
 }
 
 function extractPnpmCommands(steps: StepConfig[]): string[] {
