@@ -10,10 +10,15 @@ import { describe, test } from 'node:test';
 type WorkflowYaml = {
   jobs?: {
     quality?: QualityJobConfig;
+    audit?: AuditJobConfig;
     reports?: {
       steps?: StepConfig[];
     };
   };
+};
+
+type AuditJobConfig = {
+  steps?: StepConfig[];
 };
 
 type QualityJobConfig = {
@@ -119,6 +124,30 @@ describe('ci workflow build job', () => {
 
       assertArtifactStep(artifactSteps, 'coverage', 'coverage/');
       assertArtifactStep(artifactSteps, 'junit-report', 'reports/junit.xml');
+
+      const audit = workflow.jobs?.audit;
+      if (!audit) {
+        assert.fail('workflow.jobs.audit must exist');
+      }
+
+      const auditSteps = audit.steps;
+      assertStepArray(auditSteps, 'workflow.jobs.audit.steps must be an array');
+      const auditRunLines = extractRunLines(auditSteps);
+
+      assertCommandPresence(
+        auditRunLines,
+        'pnpm audit --audit-level=moderate',
+        'audit job must run pnpm audit with moderate threshold',
+      );
+
+      assertLineIncludes(
+        auditRunLines,
+        'osv-scanner',
+        'audit job must run osv-scanner',
+      );
+
+      const auditArtifactSteps = auditSteps.filter(isUploadArtifactStep);
+      assertArtifactStep(auditArtifactSteps, 'audit-report', 'audit-report.json');
     } catch (error) {
       console.error('CI workflow verification failed:', error);
       throw error;
@@ -187,6 +216,19 @@ function extractPnpmCommands(steps: StepConfig[]): string[] {
   });
 }
 
+function extractRunLines(steps: StepConfig[]): string[] {
+  return steps.flatMap((step) => {
+    if (typeof step.run !== 'string') {
+      return [];
+    }
+
+    return step.run
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  });
+}
+
 function assertCommandSequence(
   commands: string[],
   expected: string[],
@@ -211,6 +253,12 @@ function assertCommandSequence(
 
 function assertCommandPresence(commands: string[], expected: string, message: string): void {
   const index = commands.findIndex((command) => command === expected);
+
+  assert.notStrictEqual(index, -1, message);
+}
+
+function assertLineIncludes(lines: string[], expected: string, message: string): void {
+  const index = lines.findIndex((line) => line.includes(expected));
 
   assert.notStrictEqual(index, -1, message);
 }
