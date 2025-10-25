@@ -489,6 +489,14 @@ function assertStepIfEquals(step: StepConfig, expected: string, message: string)
   assert.strictEqual(step.if.trim(), expected, message);
 }
 
+function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
+  if (typeof step.uses !== 'string') {
+    assert.fail(`${message}; step.uses must be configured as a string`);
+  }
+
+  assert.strictEqual(step.uses.trim(), expected, message);
+}
+
 function assertStepRunIncludesLine(step: StepConfig, expectedLine: string, message: string): void {
   if (typeof step.run !== 'string') {
     assert.fail(`${message}; step.run must be configured as a string`);
