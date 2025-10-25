@@ -84,8 +84,10 @@ test('RUN_SELECTED_SKIP_AUTORUN=1 keeps CI filter flows manual', async (t) => {
       })
     }
   } finally {
-    originalSkip === undefined
-      ? delete process.env.RUN_SELECTED_SKIP_AUTORUN
-      : (process.env.RUN_SELECTED_SKIP_AUTORUN = originalSkip)
+    if (originalSkip === undefined) {
+      delete process.env.RUN_SELECTED_SKIP_AUTORUN
+    } else {
+      process.env.RUN_SELECTED_SKIP_AUTORUN = originalSkip
+    }
   }
 })
