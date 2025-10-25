@@ -28,7 +28,8 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
 
     const plan = resolveAutoSaveBootstrapPlan(resolveOptions)
     assert.ok(plan)
-    assert.ok(Array.isArray(plan.errors))
+    const planErrors = plan.errors
+    assert.ok(Array.isArray(planErrors), 'AutoSave bootstrap plan should expose validation errors as an array')
 
     assert.equal(emitted.length, 1)
     const event = emitted[0] as Record<string, unknown>
@@ -44,7 +45,7 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
     const errors = event?.errors as readonly FlagValidationError[]
     assert.ok(Array.isArray(errors))
     assert.ok(errors.length > 0)
-    assert.equal(errors, plan.errors)
+    assert.equal(errors, planErrors)
     const [firstError] = errors
     assert.equal(firstError?.flag, 'autosave.enabled')
     assert.equal(firstError?.source, 'env')
