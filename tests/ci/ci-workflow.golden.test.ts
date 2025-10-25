@@ -9,7 +9,7 @@ import { describe, test } from 'node:test';
 
 type WorkflowYaml = { jobs?: { sbom?: WorkflowJob; golden?: WorkflowJob } };
 type WorkflowJob = { steps?: StepConfig[] };
-type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown };
+type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown; if?: unknown };
 type UploadStep = StepConfig & { uses: string; with?: { name?: unknown; path?: unknown } };
 type JsYamlModule = { load: (input: string) => unknown };
 const require = createRequire(import.meta.url);
@@ -41,6 +41,27 @@ describe('ci workflow golden job', () => {
       for (const expected of ['golden.log', 'golden-diff.txt', 'runs']) {
         assert.ok(entries.includes(expected), `golden artifact upload must include ${expected}`);
       }
+
+      const assertStep = goldenSteps.find(
+        (step) => typeof step.name === 'string' && step.name.trim() === 'Assert golden comparison passed',
+      );
+      if (!assertStep) {
+        throw new Error('golden job must assert golden comparison outcome');
+      }
+      const ifCondition = assertStep.if;
+      if (typeof ifCondition !== 'string') {
+        throw new TypeError('assertion step must configure string if condition');
+      }
+      assert.strictEqual(
+        ifCondition.trim(),
+        "steps.golden.outcome == 'failure'",
+        'assertion step must guard on golden step failure',
+      );
+      const assertRun = assertStep.run;
+      if (typeof assertRun !== 'string') {
+        throw new TypeError('assertion step must configure string run command');
+      }
+      assert.strictEqual(assertRun.trim(), 'exit 1', 'assertion step must exit 1 on failure');
     } catch (error) {
       console.error('CI golden workflow verification failed:', error);
       throw error;
