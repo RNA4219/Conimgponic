@@ -154,7 +154,7 @@ describe('ci workflow build job', () => {
         'reports job must remove coverage directory before running coverage command',
       );
 
-      assertCommandPresence(
+      assertJunitCommand(
         reportCommands,
         expectedJunitCommand,
         'reports job must generate JUnit report',
@@ -347,6 +347,72 @@ function assertCommandPresence(commands: string[], expected: string, message: st
   const index = commands.findIndex((command) => command === expected);
 
   assert.notStrictEqual(index, -1, message);
+}
+
+function assertJunitCommand(
+  commands: string[],
+  expected: string,
+  message: string,
+): void {
+  if (commands.includes(expected)) {
+    return;
+  }
+
+  assert.fail(`${message}\n\n${formatCommandDiff(commands, expected)}`);
+}
+
+function formatCommandDiff(commands: string[], expected: string): string {
+  const pnpmTestCommands = commands.filter((command) => command.startsWith('pnpm test'));
+
+  if (pnpmTestCommands.length === 0) {
+    return `expected command:\n  ${expected}\nno pnpm test command found in workflow`;
+  }
+
+  const closest = pnpmTestCommands.reduce((best, candidate) =>
+    prefixScore(candidate, expected) >= prefixScore(best, expected) ? candidate : best,
+  );
+
+  return [
+    'expected command:',
+    `  ${expected}`,
+    'closest actual command:',
+    `  ${highlightTokenDiff(closest, expected)}`,
+  ].join('\n');
+}
+
+function highlightTokenDiff(actual: string, expected: string): string {
+  const red = (value: string) => `\u001B[31m${value}\u001B[0m`;
+  const actualTokens = actual.split(/\s+/u).filter(Boolean);
+  const expectedTokens = expected.split(/\s+/u).filter(Boolean);
+  const maxLength = Math.max(actualTokens.length, expectedTokens.length);
+  const highlighted: string[] = [];
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const actualToken = actualTokens[index];
+    const expectedToken = expectedTokens[index];
+
+    if (actualToken === expectedToken) {
+      highlighted.push(actualToken ?? red('<missing>'));
+      continue;
+    }
+
+    highlighted.push(
+      actualToken === undefined ? red('<missing>') : red(actualToken),
+    );
+  }
+
+  return highlighted.join(' ');
+}
+
+function prefixScore(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length);
+  let index = 0;
+
+  while (index < limit && left[index] === right[index]) {
+    index += 1;
+  }
+
+  return index;
 }
 
 function assertStepWithName(
