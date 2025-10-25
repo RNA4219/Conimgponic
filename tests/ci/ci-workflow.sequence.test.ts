@@ -89,14 +89,7 @@ const { load } = await importJsYaml();
 describe('ci workflow build job', () => {
   test('runs recommended pnpm commands for autosave and reports', async () => {
     try {
-      const source = await readFile(workflowPath, 'utf8');
-      const parsed = load(source) as unknown;
-
-      if (!parsed || typeof parsed !== 'object') {
-        assert.fail('workflow must parse to an object');
-      }
-
-      const workflow = parsed as WorkflowYaml;
+      const workflow = await readWorkflowYaml();
       const quality = workflow.jobs?.quality;
       if (!quality) {
         assert.fail('workflow.jobs.quality must exist');
@@ -163,7 +156,7 @@ describe('ci workflow build job', () => {
         'reports job must remove coverage directory before running coverage command',
       );
 
-      assertCommandPresence(
+      assertJunitCommand(
         reportCommands,
         expectedJunitCommand,
         'reports job must generate JUnit report',
@@ -224,6 +217,48 @@ describe('ci workflow build job', () => {
       console.error('CI workflow verification failed:', error);
       throw error;
     }
+  });
+
+  test('uploads suite logs artifact on quality job matrix runs', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const uploadLogsStep = assertStepWithName(
+      steps,
+      'Upload suite logs',
+      'quality job must include "Upload suite logs" step',
+    );
+
+    if (!isUploadArtifactStep(uploadLogsStep)) {
+      assert.fail('"Upload suite logs" step must upload an artifact');
+    }
+
+    assertStepUsesEquals(
+      uploadLogsStep,
+      'actions/upload-artifact@v4',
+      '"Upload suite logs" step must use actions/upload-artifact@v4',
+    );
+
+    assertStepIfEquals(
+      uploadLogsStep,
+      'always()',
+      '"Upload suite logs" step must run on all outcomes',
+    );
+
+    assertUploadArtifactPaths(
+      uploadLogsStep,
+      [
+        'logs/${{ matrix.suite }}.log',
+        'logs/${{ matrix.suite }}-failures.log',
+      ],
+      '"Upload suite logs" artifact must include suite and failure logs',
+    );
   });
 });
 
@@ -358,6 +393,72 @@ function assertCommandPresence(commands: string[], expected: string, message: st
   assert.notStrictEqual(index, -1, message);
 }
 
+function assertJunitCommand(
+  commands: string[],
+  expected: string,
+  message: string,
+): void {
+  if (commands.includes(expected)) {
+    return;
+  }
+
+  assert.fail(`${message}\n\n${formatCommandDiff(commands, expected)}`);
+}
+
+function formatCommandDiff(commands: string[], expected: string): string {
+  const pnpmTestCommands = commands.filter((command) => command.startsWith('pnpm test'));
+
+  if (pnpmTestCommands.length === 0) {
+    return `expected command:\n  ${expected}\nno pnpm test command found in workflow`;
+  }
+
+  const closest = pnpmTestCommands.reduce((best, candidate) =>
+    prefixScore(candidate, expected) >= prefixScore(best, expected) ? candidate : best,
+  );
+
+  return [
+    'expected command:',
+    `  ${expected}`,
+    'closest actual command:',
+    `  ${highlightTokenDiff(closest, expected)}`,
+  ].join('\n');
+}
+
+function highlightTokenDiff(actual: string, expected: string): string {
+  const red = (value: string) => `\u001B[31m${value}\u001B[0m`;
+  const actualTokens = actual.split(/\s+/u).filter(Boolean);
+  const expectedTokens = expected.split(/\s+/u).filter(Boolean);
+  const maxLength = Math.max(actualTokens.length, expectedTokens.length);
+  const highlighted: string[] = [];
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const actualToken = actualTokens[index];
+    const expectedToken = expectedTokens[index];
+
+    if (actualToken === expectedToken) {
+      highlighted.push(actualToken ?? red('<missing>'));
+      continue;
+    }
+
+    highlighted.push(
+      actualToken === undefined ? red('<missing>') : red(actualToken),
+    );
+  }
+
+  return highlighted.join(' ');
+}
+
+function prefixScore(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length);
+  let index = 0;
+
+  while (index < limit && left[index] === right[index]) {
+    index += 1;
+  }
+
+  return index;
+}
+
 function assertStepWithName(
   steps: StepConfig[],
   expectedName: string,
@@ -464,6 +565,32 @@ function assertStepArray(value: unknown, message: string): asserts value is Step
   }
 }
 
+function assertUploadArtifactPaths(
+  step: UploadArtifactStep,
+  expectedPaths: string[],
+  message: string,
+): void {
+  const config = step.with;
+  if (!config || typeof config !== 'object') {
+    assert.fail(`${message}; step.with must be configured`);
+  }
+
+  const { path } = config as { path?: unknown };
+  if (typeof path !== 'string') {
+    assert.fail(`${message}; path must be configured as a multi-line string`);
+  }
+
+  const configuredPaths = path
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  for (const expectedPath of expectedPaths) {
+    const hasMatch = configuredPaths.includes(expectedPath);
+    assert.ok(hasMatch, `${message}; path must include "${expectedPath}"`);
+  }
+}
+
 function assertMatrixEntries(value: unknown, message: string): asserts value is QualityMatrixEntry[] {
   if (!Array.isArray(value)) {
     assert.fail(message);
@@ -500,6 +627,17 @@ async function importJsYaml(): Promise<JsYamlModule> {
   const moduleDir = resolve(pnpmDir, match.name, 'node_modules', 'js-yaml');
   const moduleRequire = createRequire(resolve(moduleDir, 'index.js'));
   return moduleRequire('.') as JsYamlModule;
+}
+
+async function readWorkflowYaml(): Promise<WorkflowYaml> {
+  const source = await readFile(workflowPath, 'utf8');
+  const parsed = load(source) as unknown;
+
+  if (!parsed || typeof parsed !== 'object') {
+    assert.fail('workflow must parse to an object');
+  }
+
+  return parsed as WorkflowYaml;
 }
 
 type NodeError = Error & {

@@ -273,11 +273,14 @@ jobs:
             const heading = blocked.length === 0
               ? '✅ allowlist 済み / 新規検出なし'
               : `⚠️ allowlist 外の脆弱性が ${blocked.length} 件あります`;
-            const body = `${marker}
-### pnpm audit 結果
-${heading}
-
-${markdownRows.join('\n')}`;
+            const bodyLines = [
+              marker,
+              '### pnpm audit 結果',
+              heading,
+              '',
+              ...markdownRows,
+            ];
+            const body = bodyLines.join('\n');
 
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;

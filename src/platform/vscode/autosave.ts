@@ -1,4 +1,5 @@
 import type {
+  AutoSaveBridgeBootstrapMessage,
   AutoSaveBridgeMessage,
   AutoSavePhase,
   AutoSaveEnvelopePhase,
@@ -155,6 +156,29 @@ const API_VERSION = 1
 const PHASE_BOOTSTRAP: AutoSaveEnvelopePhase = 'A-0'
 const PHASE_STATUS: AutoSaveEnvelopePhase = 'A-1'
 const PHASE_SNAPSHOT: AutoSaveEnvelopePhase = 'A-2'
+
+const createBootstrapMessage = (
+  reqId: string,
+  correlationId: string,
+  ts: string,
+  policy: AutoSavePolicy,
+  guard: AutoSavePhaseGuardSnapshot,
+  flags: FlagSnapshot
+): AutoSaveBridgeBootstrapMessage => ({
+  type: 'bridge.bootstrap',
+  apiVersion: API_VERSION,
+  phase: PHASE_BOOTSTRAP,
+  bridgePhase: 'bridge.bootstrap',
+  reqId,
+  correlationId,
+  ts,
+  payload: {
+    version: 1,
+    policy,
+    guard,
+    flags
+  }
+})
 
 const createStatusMessage = (
   reqId: string,

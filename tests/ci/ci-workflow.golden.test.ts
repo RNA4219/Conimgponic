@@ -8,9 +8,10 @@ import { createRequire } from 'node:module';
 import { describe, test } from 'node:test';
 
 type WorkflowYaml = { jobs?: { sbom?: WorkflowJob; golden?: WorkflowJob } };
-type WorkflowJob = { steps?: StepConfig[] };
+type WorkflowJob = { steps?: StepConfig[]; needs?: JobNeeds };
 type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown; if?: unknown };
 type UploadStep = StepConfig & { uses: string; with?: { name?: unknown; path?: unknown } };
+type JobNeeds = string | string[] | undefined;
 type JsYamlModule = { load: (input: string) => unknown };
 const require = createRequire(import.meta.url);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -25,7 +26,11 @@ describe('ci workflow golden job', () => {
       const sbomPath = sbomUpload.with?.path;
       if (typeof sbomPath !== 'string') throw new TypeError('sbom artifact upload must configure string path');
       assert.strictEqual(sbomPath.trim(), 'sbom.json', 'sbom artifact must target sbom.json');
-      const goldenSteps = expectJobSteps(workflow.jobs?.golden, 'golden job must exist');
+      const goldenJob = workflow.jobs?.golden;
+      if (!goldenJob) throw new Error('golden job must exist');
+      const goldenNeeds = normalizeJobNeeds(goldenJob.needs);
+      assert.ok(goldenNeeds.includes('build'), 'golden job must depend on build job');
+      const goldenSteps = expectJobSteps(goldenJob, 'golden job must exist');
       const goldenRun = goldenSteps.find(
         (step) => typeof step.run === 'string' && step.run.includes('pnpm -s golden:ci'),
       );
@@ -98,6 +103,27 @@ async function loadWorkflow(): Promise<WorkflowYaml> {
     throw new Error('workflow must parse to an object');
   }
   return parsed as WorkflowYaml;
+}
+
+function normalizeJobNeeds(needs: JobNeeds): string[] {
+  if (typeof needs === 'undefined') return [];
+  if (typeof needs === 'string') {
+    const normalized = needs.trim();
+    return normalized.length > 0 ? [normalized] : [];
+  }
+  if (Array.isArray(needs)) {
+    return needs.map((entry) => {
+      if (typeof entry !== 'string') {
+        throw new TypeError('job needs entries must be strings');
+      }
+      const normalized = entry.trim();
+      if (normalized.length === 0) {
+        throw new TypeError('job needs entries must be non-empty strings');
+      }
+      return normalized;
+    });
+  }
+  throw new TypeError('job needs must be a string or string array');
 }
 
 function expectJobSteps(job: WorkflowJob | undefined, message: string): StepConfig[] {
