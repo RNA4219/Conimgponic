@@ -14,6 +14,7 @@ import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { buildPackage } from './lib/package'
 import { initAutoSave, type AutoSaveInitResult, type AutoSavePhaseGuardSnapshot } from './lib/autosave'
+import { getDay8Collector } from './telemetry/day8Collector'
 
 function HelpModal({onClose}:{onClose:()=>void}){
   return (
@@ -29,25 +30,6 @@ function HelpModal({onClose}:{onClose:()=>void}){
       </div>
     </div>
   )
-}
-
-type Day8CollectorGuardEvent = {
-  readonly feature: 'autosave-diff-merge'
-  readonly event: 'autosave.guard'
-  readonly blocked: boolean
-  readonly reason: AutoSaveActivationDecision['reason']
-  readonly guard: AutoSavePhaseGuardSnapshot
-  readonly ts: string
-}
-
-interface Day8Collector {
-  publish(event: Day8CollectorGuardEvent): void
-}
-
-const getDay8Collector = (): Day8Collector | undefined => {
-  const scope = globalThis as { Day8Collector?: Day8Collector }
-  const candidate = scope.Day8Collector
-  return candidate && typeof candidate.publish === 'function' ? candidate : undefined
 }
 
 export type AutoSaveActivationDecision =
