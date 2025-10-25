@@ -33,15 +33,14 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/extensions/vscode/merge-bridge.sanitize.test.tsx',
     'tests/components/*.test.tsx',
   ],
-  golden: ['tests/export/golden*.test.ts', 'tests/export/golden*.test.tsx'],
-  ci: [
-    'tests/ci/ci-*.test.ts',
-    'tests/ci/ci-*.test.tsx',
-    'tests/ci/security-*.test.ts',
-    'tests/ci/security-*.test.tsx',
+  golden: ['tests/export/golden*.test.ts'],
+  ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
+  cli: ['tests/ci/test-commands.test.ts'],
+  collector: [
+    'tests/plugins/*.test.ts',
+    'tests/platform/vscode/plugins.*.test.ts',
   ],
-  cli: ['tests/ci/test-commands.test.ts', 'tests/ci/test-commands.test.tsx'],
-  telemetry: ['tests/telemetry/*.test.ts', 'tests/telemetry/*.test.tsx'],
+  telemetry: ['tests/telemetry/*.test.ts'],
 };
 
 let cachedTestFiles: string[] | undefined;
