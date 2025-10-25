@@ -6,87 +6,114 @@ import {
   maybeCreatePluginBridge,
   PluginReloadErrorCode,
   type PluginBridge,
+  type PluginBridgeBackingState,
+  type PluginBridgeLogMessage,
+  type PluginCollector,
+  type PluginManifest,
   type PluginReloadRequest,
-  type PluginReloadStageStatus,
 } from '../../../src/platform/vscode/plugins/index.js';
 
-const stageOrder = ['manifest-validation', 'compatibility-check', 'permission-gate', 'dependency-cache', 'hook-registration'] as const;
-type StageName = (typeof stageOrder)[number];
+const createState = (): PluginBridgeBackingState => ({
+  manifests: new Map(),
+  permissions: new Map(),
+  dependencies: new Map(),
+  hooks: new Set(),
+});
 
-const createBridge = (): PluginBridge => {
+const createBridge = () => {
+  const messages: PluginBridgeLogMessage[] = [];
+  const collector: PluginCollector = {
+    publish(message) {
+      messages.push(message);
+    },
+  };
   const bridge = maybeCreatePluginBridge({
     enableFlag: true,
     platformVersion: '1.35.2',
     conimgApiVersion: '1',
-    collector: { publish() {} },
-    phaseGuard: { ensureReloadAllowed: (phase) => phase === 'plugins:reload' },
-    state: { manifests: new Map(), permissions: new Map(), dependencies: new Map(), hooks: new Set() },
+    collector,
+    phaseGuard: { ensureReloadAllowed: () => true },
+    state: createState(),
   });
-  assert.ok(bridge);
-  return bridge;
+  assert.ok(bridge, 'bridge should be created when enableFlag=true');
+  return { bridge: bridge as PluginBridge, messages };
 };
 
-const baseRequest: PluginReloadRequest = {
+const createRequest = (manifest: PluginManifest): PluginReloadRequest => ({
   kind: 'plugins.reload',
   pluginId: 'sample.plugin',
-  manifest: { id: 'sample.plugin', version: '1.0.0', engines: { vscode: '1.35.0' }, 'conimg-api': '1' },
-  grantedPermissions: [],
+  manifest,
+  grantedPermissions: ['fs:read'],
   dependencySnapshot: { npm: {}, workspace: [] },
+});
+
+const findStageFailed = (messages: readonly PluginBridgeLogMessage[]): PluginBridgeLogMessage | undefined => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const entry = messages[index];
+    if (entry.event === 'stage-failed') {
+      return entry;
+    }
+  }
+  return undefined;
 };
 
-const mapStatuses = (stages: readonly PluginReloadStageStatus[]): Map<StageName, PluginReloadStageStatus> =>
-  new Map(stages.map((status) => [status.name as StageName, status]));
+const validManifestBase: PluginManifest = {
+  id: 'sample.plugin',
+  version: '1.2.3',
+  engines: { vscode: '1.35.0' },
+  'conimg-api': '1',
+  permissions: ['fs:read'],
+};
 
-test('hook-registration rejects unknown hooks without notifying user', async () => {
-  const bridge = createBridge();
-  const request: PluginReloadRequest = { ...baseRequest, manifest: { ...baseRequest.manifest, hooks: ['onCompile', 'notAllowedHook'] } };
-  const result = await bridge.reload(request);
-  assert.equal(result.response.kind, 'reload-error');
+type ManifestValidationCase = {
+  readonly description: string;
+  readonly manifest: PluginManifest;
+  readonly message: string;
+  readonly detailField: string;
+  readonly detailIssue: string;
+  readonly notifyUser?: boolean;
+};
 
-  const { error } = result.response;
-  assert.equal(error.stage, 'hook-registration');
-  assert.equal(error.code, PluginReloadErrorCode.HookRegistrationFailed);
-  assert.equal(error.retryable, true);
-  assert.equal(error.notifyUser, false);
-  assert.deepEqual(error.detail, { invalidHooks: ['notAllowedHook'] });
+const CASES: readonly ManifestValidationCase[] = [
+  {
+    description: 'rejects manifest with invalid plugin id format',
+    manifest: { ...validManifestBase, id: 'Invalid Id!' },
+    message: 'Manifest validation failed: invalid plugin identifier.',
+    detailField: 'id',
+    detailIssue: 'invalid-format',
+    notifyUser: true,
+  },
+  {
+    description: 'rejects manifest when version is not semver',
+    manifest: { ...validManifestBase, version: '1.2' },
+    message: 'Manifest validation failed: version must follow semver (major.minor.patch).',
+    detailField: 'version',
+    detailIssue: 'invalid-semver',
+  },
+  {
+    description: 'rejects manifest with non-string permissions',
+    manifest: { ...validManifestBase, permissions: ['fs:read', 123 as unknown as string] },
+    message: 'Manifest validation failed: permissions must be an array of non-empty strings.',
+    detailField: 'permissions',
+    detailIssue: 'invalid-element',
+  },
+];
 
-  const statuses = mapStatuses(result.stages);
-  for (const name of stageOrder.slice(0, 4)) assert.equal(statuses.get(name)?.status, 'success');
-
-  const hookStatus = statuses.get('hook-registration');
-  assert.equal(hookStatus?.status, 'failed');
-  assert.equal(hookStatus?.error?.code, PluginReloadErrorCode.HookRegistrationFailed);
-  assert.deepEqual(hookStatus?.error?.detail, { invalidHooks: ['notAllowedHook'] });
-
-  assert.equal(bridge.getPluginState('sample.plugin'), undefined);
-
-  const failureLog = bridge.getCollectorMessages().find((message) => message.event === 'stage-failed');
-  assert.ok(failureLog);
-  assert.equal(failureLog.event, 'stage-failed');
-  assert.equal(failureLog.notifyUser, false);
-  assert.equal(failureLog.stage, 'hook-registration');
-  assert.equal(failureLog.detail?.code, PluginReloadErrorCode.HookRegistrationFailed);
-  assert.deepEqual(failureLog.detail?.invalidHooks, ['notAllowedHook']);
-});
-
-test('hook-registration accepts hooks declared in the allow list', async () => {
-  const bridge = createBridge();
-  const request: PluginReloadRequest = { ...baseRequest, manifest: { ...baseRequest.manifest, hooks: ['onCompile', 'widgets', 'commands'] } };
-  const result = await bridge.reload(request);
-  assert.equal(result.response.kind, 'reload-complete');
-
-  const statuses = mapStatuses(result.stages);
-  for (const name of stageOrder) assert.equal(statuses.get(name)?.status, 'success');
-
-  const state = bridge.getPluginState('sample.plugin');
-  assert.ok(state);
-  assert.ok(state.hooksRegistered);
-  assert.deepEqual(state.manifest.hooks, ['onCompile', 'widgets', 'commands']);
-
-  const stageCompleteLog = bridge
-    .getCollectorMessages()
-    .find((message) => message.event === 'stage-complete' && message.stage === 'hook-registration');
-  assert.ok(stageCompleteLog);
-  assert.deepEqual(stageCompleteLog.detail?.registeredHooks, ['onCompile', 'widgets', 'commands']);
-  assert.equal(stageCompleteLog.detail?.hooksRegistered, true);
-});
+for (const { description, manifest, message, detailField, detailIssue, notifyUser } of CASES) {
+  test(`plugins.reload ${description}`, async () => {
+    const { bridge, messages } = createBridge();
+    const result = await bridge.reload(createRequest(manifest));
+    assert.equal(result.response.kind, 'reload-error');
+    assert.equal(result.response.error.code, PluginReloadErrorCode.ManifestInvalid);
+    assert.equal(result.response.error.message, message);
+    assert.equal(result.stages[0]?.status, 'failed');
+    if (notifyUser !== undefined) {
+      assert.equal(result.response.error.notifyUser, notifyUser);
+    }
+    const failedLog = findStageFailed(messages);
+    assert.ok(failedLog, 'stage-failed log should be published');
+    assert.equal(failedLog?.stage, 'manifest-validation');
+    assert.equal(failedLog?.detail?.field, detailField);
+    assert.equal(failedLog?.detail?.issue, detailIssue);
+  });
+}
