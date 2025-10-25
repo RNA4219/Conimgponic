@@ -19,6 +19,7 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/webview/merge.*.test.ts',
     'tests/extensions/vscode/merge-bridge.sanitize.test.ts',
   ],
+  ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
   cli: ['tests/ci/test-commands.test.ts'],
   telemetry: ['tests/telemetry/*.test.ts'],
 };
