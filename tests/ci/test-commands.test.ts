@@ -78,3 +78,25 @@ test('run-selected respects tests root when autorun is skipped', async () => {
     }
   }
 });
+
+test('run-selected strips unsupported coverage flag', async () => {
+  const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
+  process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
+
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const { sanitizeArgs } = await import(moduleUrl);
+
+  try {
+    assert.deepStrictEqual(
+      sanitizeArgs(['--test-coverage', '--foo'], '20.19.4'),
+      ['--foo'],
+    );
+    assert.deepStrictEqual(sanitizeArgs(['--test-coverage'], '22.0.0'), ['--test-coverage']);
+  } finally {
+    if (originalValue === undefined) {
+      delete process.env.RUN_SELECTED_SKIP_AUTORUN;
+    } else {
+      process.env.RUN_SELECTED_SKIP_AUTORUN = originalValue;
+    }
+  }
+});

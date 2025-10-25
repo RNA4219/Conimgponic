@@ -7,6 +7,8 @@ import { pathToFileURL } from 'node:url';
 const DEFAULT_TEST_ROOT = 'tests';
 const DEFAULT_TEST_SUFFIX = '.test.ts';
 const DEFAULT_TEST_GLOB = 'tests/**/*.test.ts';
+const TEST_COVERAGE_FLAG = '--test-coverage';
+const TEST_COVERAGE_MINIMUM_MAJOR_VERSION = 22;
 const FILTER_TARGETS: Record<string, readonly string[]> = {
   autosave: [
     'tests/app/autosave.*.test.ts',
@@ -119,12 +121,28 @@ export function buildNodeArgs(
   defaultTargets: readonly string[],
 ): string[] {
   const baseArgs = ['--loader', 'ts-node/esm', '--test'];
+  const sanitizedArgs = sanitizeArgs(args);
 
   if (targets.length > 0) {
-    return [...baseArgs, ...args];
+    return [...baseArgs, ...sanitizedArgs];
   }
 
-  return [...baseArgs, ...args, ...defaultTargets];
+  return [...baseArgs, ...sanitizedArgs, ...defaultTargets];
+}
+
+export function sanitizeArgs(
+  args: readonly string[],
+  nodeVersion: string = process.versions.node,
+): string[] {
+  if (!args.includes(TEST_COVERAGE_FLAG)) {
+    return [...args];
+  }
+
+  if (supportsTestCoverage(nodeVersion)) {
+    return [...args];
+  }
+
+  return args.filter((arg) => arg !== TEST_COVERAGE_FLAG);
 }
 
 function run(): void {
@@ -270,4 +288,15 @@ function isMainModule(moduleUrl: string): boolean {
 
   const entryUrl = pathToFileURL(resolve(entryPath)).href;
   return entryUrl === moduleUrl;
+}
+
+function supportsTestCoverage(nodeVersion: string): boolean {
+  const [majorToken] = nodeVersion.split('.', 1);
+  const major = Number.parseInt(majorToken, 10);
+
+  if (Number.isNaN(major)) {
+    return false;
+  }
+
+  return major >= TEST_COVERAGE_MINIMUM_MAJOR_VERSION;
 }
