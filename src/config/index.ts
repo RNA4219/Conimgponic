@@ -60,8 +60,9 @@ export function resolveAutoSaveBootstrapPlan(
   config?: { readonly optionsDisabled?: boolean }
 ): AutoSaveBootstrapPlan {
   const { snapshot, errors } = resolveFlags(options, { withErrors: true })
+  const planErrors = errors satisfies readonly FlagValidationError[]
 
-  publishFlagResolution('app.autosave', 'bootstrap', snapshot, errors)
+  publishFlagResolution('app.autosave', 'bootstrap', snapshot, planErrors)
   const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
 
   const workspacePolicy = resolveAutoSavePolicy(options?.workspace)
@@ -77,7 +78,7 @@ export function resolveAutoSaveBootstrapPlan(
     },
     failSafePhase: phaseA0?.phase ?? null,
     policy: workspacePolicy,
-    errors
+    errors: planErrors
   }
 }
 
