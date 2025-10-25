@@ -56,6 +56,7 @@ test('runSelected resolves autosave filter in autorun scenario', async () => {
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
     'tests/lib/autosave/init.test.ts',
+    'tests/lib/autosave/restore.flow.test.ts',
     'tests/lib/autosave/scheduler.test.ts',
     'tests/views/view-switch.autosave.test.ts',
     'tests/webview/autosave.bridge.test.ts',
@@ -76,6 +77,7 @@ test('maps --filter autosave to autosave test glob', async () => {
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
     'tests/lib/autosave/init.test.ts',
+    'tests/lib/autosave/restore.flow.test.ts',
     'tests/lib/autosave/scheduler.test.ts',
     'tests/views/view-switch.autosave.test.ts',
     'tests/webview/autosave.bridge.test.ts',
@@ -84,7 +86,8 @@ test('maps --filter autosave to autosave test glob', async () => {
 });
 
 test('maps --filter golden to golden comparison tests', async () => {
-  const nodeArgs = await collectNodeArgs(['--filter', 'golden']);
+  const module = await importRunSelectedModule();
+  const nodeArgs = await collectNodeArgs(module, ['--filter', 'golden']);
 
   assert.deepStrictEqual(nodeArgs, [
     '--loader',
