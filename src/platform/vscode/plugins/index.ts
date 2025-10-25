@@ -493,7 +493,7 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
         ),
       };
     }
-    case 'hook-registration':
+    case 'hook-registration': {
       if (manifest.hooks.length === 0) {
         return { ok: true };
       }
@@ -512,6 +512,7 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
         };
       }
       return { ok: true };
+    }
     default:
       return { ok: true };
   }
