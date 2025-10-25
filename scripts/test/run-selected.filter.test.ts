@@ -108,7 +108,16 @@ test('includes tsx component tests when filtering merge suite', async () => {
   );
 });
 
-test('maps --filter collector to collector suite tests', async () => {
+test('includes tsx component tests in default discovery', async () => {
+  const nodeArgs = await collectNodeArgs([]);
+
+  assert.ok(
+    nodeArgs.includes('tests/components/DiffMergeView.test.tsx'),
+    'expected default discovery to include DiffMergeView tsx test',
+  );
+});
+
+test('falls back to default glob when filter is unknown', async () => {
   const module = await importRunSelectedModule();
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'collector']);
 
@@ -116,9 +125,10 @@ test('maps --filter collector to collector suite tests', async () => {
     '--loader',
     'ts-node/esm',
     '--test',
-    'tests/platform/vscode/plugins.reload.test.ts',
-    'tests/plugins/reload.flow.test.ts',
-    'tests/plugins/vscode.reload.test.ts',
+    '--filter',
+    'collector',
+    'tests/**/*.test.ts',
+    'tests/**/*.test.tsx',
   ]);
 });
 
@@ -133,6 +143,7 @@ test('falls back to default glob when filter is unknown', async () => {
     '--filter',
     'missing',
     'tests/**/*.test.ts',
+    'tests/**/*.test.tsx',
   ]);
 });
 
