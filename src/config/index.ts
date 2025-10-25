@@ -2,12 +2,7 @@ import { resolveAutoSavePolicy } from '../lib/autosave.js'
 import type { AutoSavePhaseGuardSnapshot, AutoSavePolicy } from '../lib/autosave.js'
 
 import { publishFlagResolution } from '../telemetry/day8Collector.js'
-import type {
-  FlagSnapshot,
-  FlagValidationError,
-  ResolveOptions,
-  WorkspaceConfiguration
-} from './flags.js'
+import type { FlagSnapshot, FlagValidationError, ResolveOptions } from './flags.js'
 
 import {
   FLAG_MIGRATION_PLAN,
