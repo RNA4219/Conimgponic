@@ -34,6 +34,10 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/components/*.test.tsx',
   ],
   golden: ['tests/export/golden*.test.ts'],
+  collector: [
+    'tests/plugins/*.test.ts',
+    'tests/platform/vscode/plugins.*.test.ts',
+  ],
   ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
   cli: ['tests/ci/test-commands.test.ts', 'tests/cli/*.test.ts', 'tests/cli/**/*.test.ts'],
   collector: [
@@ -240,15 +244,17 @@ function resolveFilter(args: readonly string[]): { filteredArgs: string[]; targe
 }
 
 function matchFilterTargets(patterns: readonly string[]): string[] {
-  const tests = listAllTests();
+  if (patterns.length === 0) {
+    return [];
+  }
+
+  const tests = listAllTests().map((file) => file.replace(/\\/g, '/'));
   const matchers = patterns.map(toPatternRegExp);
   const matches = new Set<string>();
 
-  for (const file of tests) {
-    const normalized = file.replace(/\\/g, '/');
-
-    if (matchers.some((regex) => regex.test(normalized))) {
-      matches.add(normalized);
+  for (const testPath of tests) {
+    if (matchers.some((regex) => regex.test(testPath))) {
+      matches.add(testPath);
     }
   }
 
