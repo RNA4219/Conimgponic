@@ -238,6 +238,7 @@ export const AUTOSAVE_DISABLED_CONDITIONS = Object.freeze({
 export type AutoSavePhase =
   | 'disabled'
   | 'idle'
+  | 'dirty'
   | 'debouncing'
   | 'awaiting-lock'
   | 'writing-current'
@@ -424,8 +425,24 @@ export type AutoSavePhaseTransitionMap = Readonly<Record<AutoSavePhase, readonly
 
 export const AUTOSAVE_STATE_TRANSITION_MAP: AutoSavePhaseTransitionMap = Object.freeze({
   disabled: ['idle:init|タイマー初期化+監視開始'],
-  idle: ['debouncing:change-detected|debounce セット+pendingBytes 集計', 'awaiting-lock:flushNow|手動保存→即時ロック取得', 'disabled:dispose|監視解除+ロック解放+タイマー停止'],
-  debouncing: ['idle:debounce-cancelled|pendingBytes リセット', 'awaiting-lock:idle-confirmed|ロック要求開始+phase 更新', 'awaiting-lock:flushNow|手動保存→デバウンスキャンセル+即時ロック', 'disabled:dispose|監視解除+ジョブキャンセル'],
+  idle: [
+    'dirty:change-detected|debounce セット+pendingBytes 集計',
+    'debouncing:change-detected|debounce セット+pendingBytes 集計',
+    'awaiting-lock:flushNow|手動保存→即時ロック取得',
+    'disabled:dispose|監視解除+ロック解放+タイマー停止'
+  ],
+  dirty: [
+    'idle:debounce-cancelled|pendingBytes リセット',
+    'awaiting-lock:idle-confirmed|ロック要求開始+phase 更新',
+    'awaiting-lock:flushNow|手動保存→デバウンスキャンセル+即時ロック',
+    'disabled:dispose|監視解除+ジョブキャンセル'
+  ],
+  debouncing: [
+    'idle:debounce-cancelled|pendingBytes リセット',
+    'awaiting-lock:idle-confirmed|ロック要求開始+phase 更新',
+    'awaiting-lock:flushNow|手動保存→デバウンスキャンセル+即時ロック',
+    'disabled:dispose|監視解除+ジョブキャンセル'
+  ],
   'awaiting-lock': ['writing-current:lock-acquired|current.json.tmp 書込+retryCount リセット', 'debouncing:lock-retry|retryable&&attempts<maxAttempts→バックオフ', 'error:flight-error|retryable=false or attempts>=maxAttempts', 'disabled:dispose|ロック要求取消+バックオフ解除'],
   'writing-current': ['updating-index:write-committed|rename+index 更新準備', 'error:flight-error|ロールバック+retryCount++', 'disabled:dispose|フライト完了待機後ロック解放'],
   'updating-index': ['gc:index-committed|履歴 FIFO+容量再計算', 'error:flight-error|index ロールバック+retryCount++', 'disabled:dispose|フライト完了待機+整合維持'],
@@ -442,6 +459,7 @@ export interface AutoSavePhaseDescription {
 export const AUTOSAVE_PHASE_DESCRIPTIONS: Readonly<Record<AutoSavePhase, AutoSavePhaseDescription>> = Object.freeze({
   disabled: { summary: 'AutoSave 全停止状態。監視やロック取得を行わない。', entry: ['scheduleFlush を解除', 'Web Lock/ファイルロックを解放', 'Telemetry を抑制'], exit: ['StoryboardProvider を即時評価', '監視タイマーを初期化'] },
   idle: { summary: '変更待ちの安定状態。次の保存を監視する。', entry: ['pendingBytes を 0 にリセット', 'retryCount を 0 にリセット'], exit: ['debounce タイマーをセット', 'flushNow でロック要求へ移行'] },
+  dirty: { summary: 'UI に保存待機中を示す公開フェーズ。内部状態は debouncing と同一。', entry: ['pendingBytes を算出', 'idle タイマーをセット'], exit: ['pendingBytes を確定', 'idle タイマーをクリア'] },
   debouncing: { summary: '変更を集約し、最小保存間隔を担保する。', entry: ['pendingBytes を算出', 'idle タイマーをセット'], exit: ['pendingBytes を確定', 'idle タイマーをクリア'] },
   'awaiting-lock': { summary: 'ロック取得中。Web Lock 優先でフォールバックに繋ぐ。', entry: ['lock request を発行', 'retryCount を監視'], exit: ['バックオフタイマーを解除', 'ロックハンドルを確保または解放'] },
   'writing-current': { summary: 'current.json.tmp へアトミックに書き込み中。', entry: ['StoryboardProvider の出力を serialize', 'writeCurrent を呼び出す'], exit: ['writeCurrent の Promise 解決を待つ', 'pendingBytes を更新'] },
@@ -509,8 +527,18 @@ export interface AutoSaveControlResponsibility {
 }
 
 export const AUTOSAVE_CONTROL_RESPONSIBILITIES = Object.freeze<readonly AutoSaveControlResponsibility[]>([
-  { name: 'flushNow', allowedPhases: ['idle', 'debouncing', 'awaiting-lock', 'error'], operations: ['debounce タイマーを解除', 'ロック取得を要求', 'retryable error の場合はバックオフ完了後に再実行'], failureModes: ['lock-unavailable', 'write-failed'] },
-  { name: 'dispose', allowedPhases: ['disabled', 'idle', 'debouncing', 'awaiting-lock', 'writing-current', 'updating-index', 'gc', 'error'], operations: ['scheduler/タイマーの停止', '保留ロック/バックオフの破棄', 'final snapshot を phase=\'disabled\' で確定'], failureModes: ['lock-unavailable', 'write-failed'] }
+  {
+    name: 'flushNow',
+    allowedPhases: ['idle', 'dirty', 'debouncing', 'awaiting-lock', 'error'],
+    operations: ['debounce タイマーを解除', 'ロック取得を要求', 'retryable error の場合はバックオフ完了後に再実行'],
+    failureModes: ['lock-unavailable', 'write-failed']
+  },
+  {
+    name: 'dispose',
+    allowedPhases: ['disabled', 'idle', 'dirty', 'debouncing', 'awaiting-lock', 'writing-current', 'updating-index', 'gc', 'error'],
+    operations: ['scheduler/タイマーの停止', '保留ロック/バックオフの破棄', "final snapshot を phase='disabled' で確定"],
+    failureModes: ['lock-unavailable', 'write-failed']
+  }
 ])
 
 export interface AutoSaveTelemetryEvent {
@@ -1042,6 +1070,7 @@ export function initAutoSave(
   const guard = guardSnapshot ?? resolveGuardFromEnvironment(fallbackOptionsDisabled)
   const flagEnabled = guard.featureFlag.value
   const effectiveOptionsDisabled = guard.optionsDisabled
+  const guardAllowsDirtyExposure = flagEnabled && !effectiveOptionsDisabled
   if (effectiveOptionsDisabled || !flagEnabled) {
     const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
     publishGuardCollectorEvent(
@@ -1276,8 +1305,17 @@ export function initAutoSave(
       scheduleIdleFlush()
     }, policy.debounceMs)
   }
+  const resolveSnapshotPhase = (): AutoSavePhase => {
+    if (disposed || disposing) {
+      return 'disabled'
+    }
+    if (phase === 'debouncing' && guardAllowsDirtyExposure && (queuedGeneration > 0 || pendingQueue.length > 0)) {
+      return 'dirty'
+    }
+    return phase
+  }
   const snapshot = (): AutoSaveStatusSnapshot => ({
-    phase: disposed || disposing ? 'disabled' : phase,
+    phase: resolveSnapshotPhase(),
     lastSuccessAt,
     pendingBytes,
     lastError,
