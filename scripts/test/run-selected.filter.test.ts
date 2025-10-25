@@ -108,7 +108,7 @@ test('includes tsx component tests when filtering merge suite', async () => {
   );
 });
 
-test('maps --filter collector to collector plugin tests', async () => {
+test('maps --filter collector to collector suite tests', async () => {
   const module = await importRunSelectedModule();
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'collector']);
 
@@ -116,7 +116,6 @@ test('maps --filter collector to collector plugin tests', async () => {
     '--loader',
     'ts-node/esm',
     '--test',
-    'tests/platform/vscode/plugins.bootstrap.test.ts',
     'tests/platform/vscode/plugins.reload.test.ts',
     'tests/plugins/reload.flow.test.ts',
     'tests/plugins/vscode.reload.test.ts',

@@ -40,6 +40,16 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   ],
   ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
   cli: ['tests/ci/test-commands.test.ts', 'tests/cli/*.test.ts', 'tests/cli/**/*.test.ts'],
+  collector: [
+    'tests/plugins/*collector*.test.ts',
+    'tests/plugins/**/*collector*.test.ts',
+    'tests/plugins/*reload*.test.ts',
+    'tests/plugins/**/*reload*.test.ts',
+    'tests/platform/vscode/*collector*.test.ts',
+    'tests/platform/vscode/**/*collector*.test.ts',
+    'tests/platform/vscode/*reload*.test.ts',
+    'tests/platform/vscode/**/*reload*.test.ts',
+  ],
   telemetry: ['tests/telemetry/*.test.ts'],
 };
 
