@@ -9,6 +9,7 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   autosave: [
     'tests/app/autosave.*.test.ts',
     'tests/lib/autosave/*.test.ts',
+    'tests/lib/autosave.*.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
     'tests/views/*autosave*.test.ts',
     'tests/webview/autosave.*.test.ts',
