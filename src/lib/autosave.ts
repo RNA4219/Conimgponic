@@ -240,6 +240,7 @@ export type AutoSavePhase =
   | 'idle'
   | 'debouncing'
   | 'awaiting-lock'
+  | 'backoff'
   | 'writing-current'
   | 'updating-index'
   | 'gc'
@@ -426,10 +427,11 @@ export const AUTOSAVE_STATE_TRANSITION_MAP: AutoSavePhaseTransitionMap = Object.
   disabled: ['idle:init|タイマー初期化+監視開始'],
   idle: ['debouncing:change-detected|debounce セット+pendingBytes 集計', 'awaiting-lock:flushNow|手動保存→即時ロック取得', 'disabled:dispose|監視解除+ロック解放+タイマー停止'],
   debouncing: ['idle:debounce-cancelled|pendingBytes リセット', 'awaiting-lock:idle-confirmed|ロック要求開始+phase 更新', 'awaiting-lock:flushNow|手動保存→デバウンスキャンセル+即時ロック', 'disabled:dispose|監視解除+ジョブキャンセル'],
-  'awaiting-lock': ['writing-current:lock-acquired|current.json.tmp 書込+retryCount リセット', 'debouncing:lock-retry|retryable&&attempts<maxAttempts→バックオフ', 'error:flight-error|retryable=false or attempts>=maxAttempts', 'disabled:dispose|ロック要求取消+バックオフ解除'],
+  'awaiting-lock': ['writing-current:lock-acquired|current.json.tmp 書込+retryCount リセット', 'backoff:lock-retry|retryable&&attempts<maxAttempts→バックオフ開始', 'error:flight-error|retryable=false or attempts>=maxAttempts', 'disabled:dispose|ロック要求取消+バックオフ解除'],
   'writing-current': ['updating-index:write-committed|rename+index 更新準備', 'error:flight-error|ロールバック+retryCount++', 'disabled:dispose|フライト完了待機後ロック解放'],
   'updating-index': ['gc:index-committed|履歴 FIFO+容量再計算', 'error:flight-error|index ロールバック+retryCount++', 'disabled:dispose|フライト完了待機+整合維持'],
   gc: ["idle:gc-complete|lastSuccessAt 更新+pendingBytes クリア", 'disabled:dispose|GC 完了待ち→容量監査結果破棄'],
+  backoff: ['debouncing:retry-ready|バックオフ完了→再試行準備', 'disabled:dispose|バックオフ中止'],
   error: ['awaiting-lock:retry-scheduled|retryable=true→バックオフ完了で復帰', 'disabled:dispose|再試行キュークリア+phase disabled']
 } as const)
 
@@ -447,6 +449,7 @@ export const AUTOSAVE_PHASE_DESCRIPTIONS: Readonly<Record<AutoSavePhase, AutoSav
   'writing-current': { summary: 'current.json.tmp へアトミックに書き込み中。', entry: ['StoryboardProvider の出力を serialize', 'writeCurrent を呼び出す'], exit: ['writeCurrent の Promise 解決を待つ', 'pendingBytes を更新'] },
   'updating-index': { summary: 'index.json を更新し履歴メタデータを整備する。', entry: ['updateIndex を呼び出し最新世代を先頭に挿入'], exit: ['index.json の整合性を検証', 'GC 判定の入力を準備'] },
   gc: { summary: '履歴世代/容量制限を満たすようクリーンアップする。', entry: ['rotateHistory を呼び出し', '削除対象を決定'], exit: ['lastSuccessAt を更新', 'pendingBytes をクリア'] },
+  backoff: { summary: 'retryable エラー後の待機フェーズ。指数バックオフで再試行を制御する。', entry: ['バックオフタイマーをセット', 'snapshot.retryCount を更新'], exit: ['再試行用に pendingQueue を再キュー', 'startFlush(auto) で復帰'] },
   error: { summary: 'UI/Collector へ公開する致命/警告状態。', entry: ['AutoSaveError を snapshot.lastError に格納', 'telemetry に code/retryable を添付'], exit: ['retryCount を次試行へ引き継ぐ', 'バックオフ完了を待機'] }
 } as const)
 
@@ -887,8 +890,20 @@ const isAutoSaveError = (value: unknown): value is AutoSaveError => {
   if (!value || typeof value !== 'object') {
     return false
   }
-  const candidate = value as { code?: unknown; retryable?: unknown }
-  return typeof candidate.code === 'string' && typeof candidate.retryable === 'boolean'
+  const candidate = value as { code?: unknown; retryable?: unknown; name?: unknown }
+  if (typeof candidate.code !== 'string' || typeof candidate.retryable !== 'boolean') {
+    return false
+  }
+  if (
+    candidate.code !== 'lock-unavailable' &&
+    candidate.code !== 'write-failed' &&
+    candidate.code !== 'data-corrupted' &&
+    candidate.code !== 'history-overflow' &&
+    candidate.code !== 'disabled'
+  ) {
+    return false
+  }
+  return candidate.name === 'AutoSaveError' || candidate.name === 'Error'
 }
 
 const parseIndexFile = (value: unknown): AutoSaveIndexPayload => {
@@ -1154,7 +1169,19 @@ export function initAutoSave(
     clearDebounceTimer()
     clearIdleTimer()
   }
-  const runFlush = async (attempt: number): Promise<void> => {
+  const enqueueRetryEntry = (reason: AutoSaveQueueEntry['reason'], retries: number): void => {
+    pendingQueue.unshift({
+      ts: new Date().toISOString(),
+      reason,
+      estimatedBytes: pendingBytes,
+      retries
+    })
+    while (pendingQueue.length > AUTOSAVE_QUEUE_POLICY.maxPending) {
+      pendingQueue.pop()
+    }
+    queuedGeneration = pendingQueue.length
+  }
+  const runFlush = async (attempt: number, source: 'manual' | 'auto'): Promise<void> => {
     if (disposed) throw disabledError()
     const storyboard = getStoryboard()
     if (!storyboard) throw disabledError()
@@ -1169,19 +1196,27 @@ export function initAutoSave(
       }, { preferredStrategy: 'web-lock' })
     } catch (error: unknown) {
       if (disposed) throw disabledError()
+      const stage = phase
       const autoError =
         isAutoSaveError(error)
           ? error
           : error instanceof ProjectLockError
           ? makeError('lock-unavailable', error.message, error.retryable, error, { operation: error.operation })
+          : stage === 'awaiting-lock'
+          ? error instanceof Error
+            ? makeError('lock-unavailable', error.message, true, error)
+            : makeError('lock-unavailable', 'Failed to acquire autosave project lock', true, undefined, {
+                value: error
+              })
           : error instanceof Error
           ? makeError('write-failed', error.message, true, error)
           : makeError('write-failed', 'Unexpected AutoSave failure', true, undefined, { value: error })
       lastError = autoError
       if (autoError.retryable) {
-        retryCount = attempt + 1
-        phase = 'error'
-        if (attempt + 1 < AUTOSAVE_RETRY_POLICY.maxAttempts) {
+        const nextAttempt = attempt + 1
+        retryCount = nextAttempt
+        if (nextAttempt < AUTOSAVE_RETRY_POLICY.maxAttempts) {
+          phase = 'backoff'
           const delay = Math.min(
             AUTOSAVE_RETRY_POLICY.initialDelayMs * Math.pow(AUTOSAVE_RETRY_POLICY.multiplier, attempt),
             AUTOSAVE_RETRY_POLICY.maxDelayMs
@@ -1201,17 +1236,32 @@ export function initAutoSave(
             retryTimer = setTimeout(settle, delay)
           })
           inFlightBackoff = wait
-          try {
-            await wait
-          } finally {
-            if (inFlightBackoff === wait) {
-              inFlightBackoff = null
-            }
-          }
+          void wait
+            .then(() => {
+              if (inFlightBackoff === wait) {
+                inFlightBackoff = null
+              }
+              if (disposing || disposed) {
+                return
+              }
+              enqueueRetryEntry(source === 'manual' ? 'flushNow' : 'change', nextAttempt)
+              void startFlush('auto').catch(() => undefined)
+            })
+            .catch(() => {
+              if (inFlightBackoff === wait) {
+                inFlightBackoff = null
+              }
+            })
           if (disposing) {
             return
           }
-          return runFlush(attempt + 1)
+        } else {
+          phase = 'error'
+          pendingBytes = 0
+          pendingQueue.length = 0
+          queuedGeneration = 0
+          disposed = true
+          phase = 'disabled'
         }
       } else {
         retryCount = 0
@@ -1242,13 +1292,14 @@ export function initAutoSave(
     if (source === 'auto' && pendingQueue.length === 0) {
       return
     }
+    phase = 'debouncing'
     if (pendingQueue.length > 0) {
       pendingQueue.shift()
       queuedGeneration = pendingQueue.length
     } else {
       queuedGeneration = 0
     }
-    const pending = runFlush(0)
+    const pending = runFlush(0, source)
     inFlightFlush = pending
     try {
       await pending
