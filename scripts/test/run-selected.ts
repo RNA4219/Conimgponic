@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 const DEFAULT_TEST_ROOT = 'tests';
 const DEFAULT_TEST_SUFFIXES = ['.test.ts', '.test.tsx'] as const;
-const DEFAULT_TEST_GLOB = 'tests/**/*.test.ts';
+const DEFAULT_TEST_GLOBS = ['tests/**/*.test.ts', 'tests/**/*.test.tsx'] as const;
 const TEST_COVERAGE_FLAG = '--test-coverage';
 const TEST_COVERAGE_MINIMUM_MAJOR_VERSION = 22;
 const FILTER_TARGETS: Record<string, readonly string[]> = {
@@ -31,6 +31,7 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/webview/merge.*.test.tsx',
     'tests/extensions/vscode/merge-bridge.sanitize.test.ts',
     'tests/extensions/vscode/merge-bridge.sanitize.test.tsx',
+    'tests/components/*.test.ts',
     'tests/components/*.test.tsx',
   ],
   golden: ['tests/export/golden*.test.ts'],
@@ -39,7 +40,7 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   telemetry: ['tests/telemetry/*.test.ts'],
 };
 
-let cachedTestFiles: string[] | undefined;
+let cachedTestFiles: readonly string[] | undefined;
 
 export function clearFilterCacheForTest(): void {
   cachedTestFiles = undefined;
@@ -74,7 +75,7 @@ export function runSelected(
   const resolvedDefaultTargets =
     defaultTargets ??
     filterResult?.targets ??
-    (includesFilterToken(args) ? [DEFAULT_TEST_GLOB] : determineDefaultTargets());
+    (includesFilterToken(args) ? [...DEFAULT_TEST_GLOBS] : determineDefaultTargets());
   const nodeArgs = buildNodeArgs(filteredArgs, explicitTargets, resolvedDefaultTargets);
 
   const child = spawnImpl('node', nodeArgs, { stdio: 'inherit', env: process.env });
@@ -122,7 +123,7 @@ export function collectExplicitTargets(args: readonly string[]): string[] {
   return targets;
 }
 
-export function collectDefaultTargets(): string[] {
+export function collectDefaultTargets(): readonly string[] {
   if (!DEFAULT_TEST_ROOT || !existsSync(DEFAULT_TEST_ROOT)) {
     return [];
   }
@@ -187,7 +188,7 @@ function determineDefaultTargets(): readonly string[] {
     return discovered;
   }
 
-  return [DEFAULT_TEST_GLOB];
+  return [...DEFAULT_TEST_GLOBS];
 }
 
 function includesFilterToken(args: readonly string[]): boolean {
@@ -245,7 +246,7 @@ function matchFilterTargets(patterns: readonly string[]): string[] {
   return [...matches].sort();
 }
 
-function listAllTests(): string[] {
+function listAllTests(): readonly string[] {
   if (cachedTestFiles !== undefined) {
     return cachedTestFiles;
   }
@@ -276,8 +277,8 @@ function listAllTests(): string[] {
     }
   }
 
-  cachedTestFiles = result;
-  return result;
+  cachedTestFiles = [...result];
+  return cachedTestFiles;
 }
 
 function toPatternRegExp(pattern: string): RegExp {
