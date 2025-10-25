@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowSyntheticDefaultImports": true,
+    "moduleResolution": "bundler"
+  },
+  "include": [
+    "../src/**/*.ts",
+    "../src/**/*.tsx",
+    "./**/*.ts",
+    "./**/*.tsx"
+  ]
+}
