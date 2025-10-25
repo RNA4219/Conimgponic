@@ -175,11 +175,36 @@ type StageContext = {
 
 const EMPTY_DEPENDENCIES: PluginDependencySnapshot = { npm: {}, workspace: [] };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function describeType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
 function normalizeManifestDependencies(dependencies: PluginManifestDependencies): PluginDependencySnapshot {
-  return {
-    npm: { ...(dependencies?.npm ?? {}) },
-    workspace: [...(dependencies?.workspace ?? [])],
-  };
+  const npm: Record<string, string> = {}; const workspace: string[] = [];
+  if (isRecord(dependencies)) {
+    const npmSource = dependencies.npm;
+    if (isRecord(npmSource)) {
+      for (const [packageName, version] of Object.entries(npmSource)) {
+        if (typeof version === 'string') {
+          npm[packageName] = version;
+        }
+      }
+    }
+    const workspaceSource = dependencies.workspace;
+    if (Array.isArray(workspaceSource)) {
+      for (const entry of workspaceSource) {
+        if (typeof entry === 'string') {
+          workspace.push(entry);
+        }
+      }
+    }
+  }
+  return { npm, workspace };
 }
 
 function normalizeManifest(manifest: PluginManifest): NormalizedPluginManifest {
@@ -412,6 +437,56 @@ function runStage(spec: StageSpec, context: StageContext): StageOutcome {
           index: invalidPermissionIndex,
           value: manifest.permissions[invalidPermissionIndex],
         });
+      }
+
+      const dependenciesField = rawManifest.dependencies;
+      if (dependenciesField !== undefined) {
+        if (!isRecord(dependenciesField)) {
+          return fail('Manifest validation failed: dependencies must be an object.', {
+            field: 'dependencies',
+            issue: 'invalid-type',
+            actual: describeType(dependenciesField),
+          });
+        }
+        const workspaceField = dependenciesField.workspace;
+        if (Array.isArray(workspaceField)) {
+          const invalidWorkspaceIndex = workspaceField.findIndex(
+            (entry) => typeof entry !== 'string' || entry.trim() === '',
+          );
+          if (invalidWorkspaceIndex !== -1) {
+            return fail('Manifest validation failed: dependencies.workspace must be an array of non-empty strings.', {
+              field: 'dependencies.workspace',
+              issue: 'invalid-element',
+              index: invalidWorkspaceIndex,
+              value: workspaceField[invalidWorkspaceIndex],
+            });
+          }
+        } else if (workspaceField !== undefined) {
+          return fail('Manifest validation failed: dependencies.workspace must be an array of non-empty strings.', {
+            field: 'dependencies.workspace',
+            issue: 'invalid-type',
+            actual: describeType(workspaceField),
+          });
+        }
+        const npmField = dependenciesField.npm;
+        if (isRecord(npmField)) {
+          for (const [packageName, version] of Object.entries(npmField)) {
+            if (typeof version !== 'string' || version.trim() === '') {
+              return fail('Manifest validation failed: dependencies.npm must be a record of string package versions.', {
+                field: 'dependencies.npm',
+                issue: 'invalid-value',
+                package: packageName,
+                value: version,
+              });
+            }
+          }
+        } else if (npmField !== undefined) {
+          return fail('Manifest validation failed: dependencies.npm must be a record of string package versions.', {
+            field: 'dependencies.npm',
+            issue: 'invalid-type',
+            actual: describeType(npmField),
+          });
+        }
       }
 
       return { ok: true };
