@@ -25,6 +25,15 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   ],
   ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
   cli: ['tests/ci/test-commands.test.ts'],
+  collector: [
+    'tests/app/autosave.plan.test.ts',
+    'tests/autosave/restore.flow.test.ts',
+    'tests/export/*.test.ts',
+    'tests/platform/vscode/*.test.ts',
+    'tests/plugins/*.test.ts',
+    'tests/webview/*.test.ts',
+    'tests/extensions/vscode/merge-bridge.sanitize.test.ts',
+  ],
   telemetry: ['tests/telemetry/*.test.ts'],
 };
 
@@ -151,7 +160,7 @@ function run(): void {
   runSelected(filteredArgs, spawn, resolvedDefaultTargets);
 }
 
-function resolveRunConfiguration(
+export function resolveRunConfiguration(
   args: readonly string[],
   defaultTargets?: readonly string[],
 ): {

@@ -100,3 +100,26 @@ test('run-selected strips unsupported coverage flag', async () => {
     }
   }
 });
+
+test('run-selected resolves collector filter into explicit suite targets', async () => {
+  const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
+  process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
+
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const { resolveRunConfiguration } = (await import(moduleUrl)) as typeof import('../../scripts/test/run-selected.ts');
+
+  try {
+    const { filteredArgs, resolvedDefaultTargets } = resolveRunConfiguration(['--filter', 'collector']);
+    assert.deepStrictEqual(filteredArgs, []);
+    assert.ok(
+      resolvedDefaultTargets.some((target) => target.includes('tests/app/autosave.plan.test.ts')),
+      'collector filter should expand to autosave plan tests',
+    );
+  } finally {
+    if (originalValue === undefined) {
+      delete process.env.RUN_SELECTED_SKIP_AUTORUN;
+    } else {
+      process.env.RUN_SELECTED_SKIP_AUTORUN = originalValue;
+    }
+  }
+});
