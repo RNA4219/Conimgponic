@@ -2,6 +2,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join, relative, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import type { Storyboard } from '../../src/types'
 import type { ExportFormat, TelemetryCollector } from '../../src/lib/exporters'
@@ -203,7 +204,7 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
   console.info(`[golden] normalized outputs: ${normalizedPosix}`)
 
   const normalizedPath = comparison.ok ? normalizedPosix : ''
-  const runUri = comparison.ok ? `file://${normalizedPosix}` : ''
+  const runUri = comparison.ok ? pathToFileURL(baseDir).href : ''
 
   const telemetryEvent = toolkit.createTelemetryEvent(comparison, runId)
   if (telemetryEvent) {
