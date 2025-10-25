@@ -1,4 +1,4 @@
-import type { FlagSnapshot } from '../config/flags.js'
+import type { FlagSnapshot, WorkspaceConfiguration } from '../config/flags.js'
 import type { Storyboard } from '../types'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
@@ -57,6 +57,104 @@ const AUTOSAVE_POLICY_VALUES: AutoSavePolicy = {
 export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze(AUTOSAVE_POLICY_VALUES)
 
 export const AUTOSAVE_DEFAULTS = AUTOSAVE_POLICY
+
+const BYTES_PER_MEGABYTE = 1024 * 1024
+
+const readWorkspaceValue = (
+  workspace: WorkspaceConfiguration | null | undefined,
+  key: string
+): unknown => {
+  if (!workspace) {
+    return undefined
+  }
+  const candidate = workspace as { get?: (name: string) => unknown }
+  if (typeof candidate.get === 'function') {
+    return candidate.get(key)
+  }
+  if (Object.prototype.hasOwnProperty.call(workspace, key)) {
+    return (workspace as Record<string, unknown>)[key]
+  }
+  return key.split('.').reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== 'object') {
+      return undefined
+    }
+    const record = current as Record<string, unknown>
+    return segment in record ? record[segment] : undefined
+  }, workspace)
+}
+
+const asFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+  return null
+}
+
+const asPositiveInteger = (value: unknown): number | null => {
+  const numeric = asFiniteNumber(value)
+  if (numeric == null) {
+    return null
+  }
+  const truncated = Math.floor(numeric)
+  return truncated > 0 ? truncated : null
+}
+
+const asPositiveMegabytes = (value: unknown): number | null => {
+  const numeric = asFiniteNumber(value)
+  if (numeric == null || numeric <= 0) {
+    return null
+  }
+  const rounded = Math.round(numeric * BYTES_PER_MEGABYTE)
+  return rounded > 0 ? rounded : null
+}
+
+const readEnvValue = (key: string): unknown => {
+  const scope = globalThis as typeof globalThis & {
+    process?: { env?: Record<string, unknown> }
+    import?: { meta?: { env?: Record<string, unknown> } }
+  }
+  return scope.process?.env?.[key] ?? scope.import?.meta?.env?.[key]
+}
+
+export interface AutoSavePolicyResolutionOptions {
+  readonly workspace?: WorkspaceConfiguration | null
+}
+
+type AutoSavePolicyResolutionInput =
+  | WorkspaceConfiguration
+  | null
+  | undefined
+  | AutoSavePolicyResolutionOptions
+
+export const resolveAutoSavePolicy = (
+  input?: AutoSavePolicyResolutionInput
+): AutoSavePolicy => {
+  const workspace =
+    input && typeof input === 'object' && 'workspace' in input
+      ? (input as AutoSavePolicyResolutionOptions).workspace ?? null
+      : ((input as WorkspaceConfiguration | null | undefined) ?? null)
+  const workspaceHistory = asPositiveInteger(
+    readWorkspaceValue(workspace, 'conimg.autosave.historyLimit')
+  )
+  const workspaceSize = asPositiveMegabytes(
+    readWorkspaceValue(workspace, 'conimg.autosave.sizeLimitMB')
+  )
+
+  const envHistory = asPositiveInteger(readEnvValue('VITE_AUTOSAVE_HISTORY_LIMIT'))
+  const envSize = asPositiveMegabytes(readEnvValue('VITE_AUTOSAVE_SIZE_LIMIT_MB'))
+
+  return {
+    ...AUTOSAVE_POLICY,
+    maxGenerations: workspaceHistory ?? envHistory ?? AUTOSAVE_POLICY.maxGenerations,
+    maxBytes: workspaceSize ?? envSize ?? AUTOSAVE_POLICY.maxBytes
+  }
+}
 
 export type AutoSaveErrorCode =
   | 'lock-unavailable'
@@ -830,7 +928,7 @@ export function initAutoSave(
   options?: AutoSaveOptions,
   flagSnapshot?: AutoSaveInitGuardInput
 ): AutoSaveInitResult {
-  const policy = options?.policy ?? AUTOSAVE_POLICY
+  const policy = options?.policy ?? resolveAutoSavePolicy()
   const truthy = /^(1|true)$/i, falsy = /^(0|false)$/i
   const asBool = (value: unknown) => (typeof value === 'string' && truthy.test(value) ? true : typeof value === 'string' && falsy.test(value) ? false : null)
   const guardSource = (value: unknown): AutoSavePhaseGuardSnapshot['featureFlag']['source'] =>
