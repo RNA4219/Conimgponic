@@ -11,6 +11,14 @@ type RunSelectedModule = typeof import('./run-selected.js');
 const moduleTsUrl = new URL('./run-selected.ts', import.meta.url);
 const moduleJsUrl = new URL('./run-selected.js', import.meta.url);
 
+const expectedBaseArgs = [
+  '--experimental-vm-modules',
+  '--loader',
+  'ts-node/esm',
+  '--experimental-specifier-resolution=node',
+  '--test',
+] as const;
+
 test('runSelected resolves autosave filter in autorun scenario', async () => {
   const module = await importRunSelectedModule();
   const originalArgv = process.argv;
@@ -48,9 +56,7 @@ test('runSelected resolves autosave filter in autorun scenario', async () => {
   const [command, nodeArgs] = spawnCalls[0];
   assert.strictEqual(command, 'node');
   assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
+    ...expectedBaseArgs,
     'tests/app/autosave.integration.test.ts',
     'tests/app/autosave.plan.test.ts',
     'tests/lib/autosave.dispose.test.ts',
@@ -70,9 +76,7 @@ test('maps --filter autosave to autosave test glob', async () => {
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'autosave']);
 
   assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
+    ...expectedBaseArgs,
     'tests/app/autosave.integration.test.ts',
     'tests/app/autosave.plan.test.ts',
     'tests/lib/autosave.dispose.test.ts',
@@ -91,11 +95,19 @@ test('maps --filter golden to golden comparison tests', async () => {
   const module = await importRunSelectedModule();
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'golden']);
 
+  assert.deepStrictEqual(nodeArgs, [...expectedBaseArgs, 'tests/export/golden.webview.test.ts']);
+});
+
+test('maps --filter collector to plugin tests', async () => {
+  const module = await importRunSelectedModule();
+  const nodeArgs = await collectNodeArgs(module, ['--filter', 'collector']);
+
   assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
-    'tests/export/golden.webview.test.ts',
+    ...expectedBaseArgs,
+    'tests/platform/vscode/plugins.bootstrap.test.ts',
+    'tests/platform/vscode/plugins.reload.test.ts',
+    'tests/plugins/reload.flow.test.ts',
+    'tests/plugins/vscode.reload.test.ts',
   ]);
 });
 
@@ -119,27 +131,10 @@ test('includes tsx component tests in default discovery', async () => {
 
 test('falls back to default glob when filter is unknown', async () => {
   const module = await importRunSelectedModule();
-  const nodeArgs = await collectNodeArgs(module, ['--filter', 'collector']);
-
-  assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
-    '--filter',
-    'collector',
-    'tests/**/*.test.ts',
-    'tests/**/*.test.tsx',
-  ]);
-});
-
-test('falls back to default glob when filter is unknown', async () => {
-  const module = await importRunSelectedModule();
   const nodeArgs = await collectNodeArgs(module, ['--filter', 'missing']);
 
   assert.deepStrictEqual(nodeArgs, [
-    '--loader',
-    'ts-node/esm',
-    '--test',
+    ...expectedBaseArgs,
     '--filter',
     'missing',
     'tests/**/*.test.ts',
