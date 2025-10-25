@@ -355,7 +355,8 @@ jobs:
       - name: Generate JUnit report
         run: |
           set -euo pipefail
-          pnpm -s test:junit
+          mkdir -p reports
+          pnpm test -- --test-reporter junit --test-reporter-destination reports/junit.xml
 
       - name: Upload coverage artifact
         if: always()
