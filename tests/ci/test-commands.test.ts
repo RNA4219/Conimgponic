@@ -79,6 +79,51 @@ test('run-selected respects tests root when autorun is skipped', async () => {
   }
 });
 
+test('run-selected cli filter covers cli test directory', async () => {
+  const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
+  process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
+
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const {
+    clearFilterCacheForTest,
+    getFilterTargetPatternsForTest,
+    resolveFilterTargetsForTest,
+    setTestFilesForTest,
+  } = await import(moduleUrl);
+
+  const simulatedTests = [
+    'tests/ci/test-commands.test.ts',
+    'tests/cli/run-selected-cli-example.test.ts',
+  ];
+
+  try {
+    clearFilterCacheForTest();
+    setTestFilesForTest(simulatedTests);
+
+    assert.deepStrictEqual(
+      getFilterTargetPatternsForTest('cli'),
+      ['tests/ci/test-commands.test.ts', 'tests/cli/*.test.ts', 'tests/cli/**/*.test.ts'],
+      'cli filter should be configured with ci and cli directories',
+    );
+
+    const matches = resolveFilterTargetsForTest('cli');
+    assert.deepStrictEqual(
+      matches,
+      ['tests/ci/test-commands.test.ts', 'tests/cli/run-selected-cli-example.test.ts'],
+      'cli filter should resolve both ci and cli implementation tests',
+    );
+  } finally {
+    setTestFilesForTest(undefined);
+    clearFilterCacheForTest();
+
+    if (originalValue === undefined) {
+      delete process.env.RUN_SELECTED_SKIP_AUTORUN;
+    } else {
+      process.env.RUN_SELECTED_SKIP_AUTORUN = originalValue;
+    }
+  }
+});
+
 test('run-selected strips unsupported coverage flag', async () => {
   const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
   process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
