@@ -481,6 +481,14 @@ function assertStepWithName(
   return match;
 }
 
+function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
+  if (typeof step.uses !== 'string') {
+    assert.fail(`${message}; step.uses must be configured as a string`);
+  }
+
+  assert.strictEqual(step.uses.trim(), expected, message);
+}
+
 function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.if !== 'string') {
     assert.fail(`${message}; step.if must be configured as a string`);
