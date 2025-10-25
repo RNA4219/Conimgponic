@@ -162,12 +162,12 @@ describe('ci workflow build job', () => {
 
       const artifactSteps = reportSteps.filter(isUploadArtifactStep);
 
-      assertArtifactStep(artifactSteps, 'coverage', 'coverage/', undefined, 'always()');
+      assertArtifactStep(artifactSteps, 'coverage', 'coverage/', 'error', 'always()');
       assertArtifactStep(
         artifactSteps,
         'junit-report',
         'reports/junit.xml',
-        undefined,
+        'error',
         'always()',
       );
 
