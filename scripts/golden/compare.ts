@@ -2,175 +2,26 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join, relative, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
 
 import type { Storyboard } from '../../src/types'
 import type { ExportFormat, TelemetryCollector } from '../../src/lib/exporters'
+import type {
+  GoldenArtifacts,
+  GoldenComparisonEntry,
+  GoldenComparisonResult,
+} from '../../src/lib/golden/compare'
 
 type ExporterModule = typeof import('../../src/lib/exporters')
-type NormalizedOutputs = ReturnType<ExporterModule['createNormalizedOutputs']>
+type GoldenCompareModule = typeof import('../../src/lib/golden/compare')
 
-interface GoldenArtifacts {
-  readonly markdown?: string
-  readonly csv?: string
-  readonly jsonl?: string
-  readonly package: Record<string, string>
-}
-
-interface GoldenComparisonEntry {
-  readonly format: ExportFormat
-  readonly name?: string
-  readonly status: 'matched' | 'diff'
-  readonly diff?: string
-}
-
-interface GoldenComparisonResult {
-  readonly entries: GoldenComparisonEntry[]
-  readonly matchRate: number
-  readonly ok: boolean
-  readonly error?: { message: string; retryable: boolean }
-}
-
-const scalarFormats: readonly Exclude<ExportFormat, 'package'>[] = ['markdown', 'csv', 'jsonl']
-
-interface ExporterHelpers {
-  readonly trimLines: (input: string) => string
-  readonly normalizeJson: (input: string) => string
-  readonly normalizeJsonl: (input: string) => string
-  readonly firstLineDiff: (actual: string, expected: string) => string
-}
-
-function createComparisonToolkit(helpers: ExporterHelpers) {
-  const normalizeGoldenArtifact = (
-    format: ExportFormat,
-    golden: GoldenArtifacts,
-    name?: string,
-  ): string | undefined => {
-    switch (format) {
-      case 'markdown':
-        return golden.markdown ? helpers.trimLines(golden.markdown) : undefined
-      case 'csv':
-        return golden.csv ? helpers.trimLines(golden.csv) : undefined
-      case 'jsonl':
-        return golden.jsonl ? helpers.normalizeJsonl(golden.jsonl) : undefined
-      case 'package':
-        if (!name) return undefined
-        return golden.package[name] ? helpers.normalizeJson(golden.package[name]) : undefined
-      default:
-        return undefined
-    }
-  }
-
-  const compareNormalizedOutputs = (
-    actual: NormalizedOutputs,
-    golden: GoldenArtifacts,
-  ): GoldenComparisonResult => {
-    const entries: GoldenComparisonEntry[] = []
-
-    scalarFormats.forEach((format) => {
-      const expected = normalizeGoldenArtifact(format, golden)
-      if (!expected) {
-        entries.push({ format, status: 'diff', diff: 'missing golden input' })
-        return
-      }
-      if (expected === actual[format]) {
-        entries.push({ format, status: 'matched' })
-        return
-      }
-      entries.push({ format, status: 'diff', diff: helpers.firstLineDiff(actual[format], expected) })
-    })
-
-    const packageNames = new Set([
-      ...Object.keys(actual.package),
-      ...Object.keys(golden.package ?? {}),
-    ])
-
-    packageNames.forEach((name) => {
-      const actualPayload = actual.package[name]
-      if (!actualPayload) {
-        entries.push({ format: 'package', name, status: 'diff', diff: 'missing generated artifact' })
-        return
-      }
-      const expected = normalizeGoldenArtifact('package', golden, name)
-      if (!expected) {
-        entries.push({ format: 'package', name, status: 'diff', diff: 'missing golden input' })
-        return
-      }
-      if (expected === actualPayload) {
-        entries.push({ format: 'package', name, status: 'matched' })
-        return
-      }
-      entries.push({ format: 'package', name, status: 'diff', diff: helpers.firstLineDiff(actualPayload, expected) })
-    })
-
-    const matched = entries.filter((entry) => entry.status === 'matched').length
-    const matchRate = entries.length ? matched / entries.length : 0
-    const ok = entries.length > 0 && matched === entries.length
-
-    if (!ok) {
-      return {
-        entries,
-        matchRate,
-        ok,
-        error: { message: 'Golden comparison failed', retryable: false },
-      }
-    }
-    return { entries, matchRate, ok }
-  }
-
-  const formatComparisonSummary = (entries: readonly GoldenComparisonEntry[]): string => {
-    if (!entries.length) {
-      return 'No golden artifacts loaded'
-    }
-    return entries
-      .map((entry) =>
-        entry.status === 'matched'
-          ? `${entry.format}${entry.name ? `:${entry.name}` : ''}: OK`
-          : `${entry.format}${entry.name ? `:${entry.name}` : ''}: diff -> ${entry.diff ?? 'mismatch'}`,
-      )
-      .join('\n')
-  }
-
-  const createTelemetryEvent = (
-    comparison: GoldenComparisonResult,
-    runId: string,
-  ): { event: 'export.success' | 'export.failed'; payload: Record<string, unknown> } | null => {
-    if (!comparison.entries.length) {
-      return null
-    }
-    const formats = Array.from(
-      new Set(
-        comparison.entries.map((entry) =>
-          entry.format === 'package' && entry.name ? `package:${entry.name}` : entry.format,
-        ),
-      ),
-    )
-    const basePayload: Record<string, unknown> = {
-      runId,
-      matchRate: comparison.matchRate,
-      formats,
-    }
-    if (comparison.ok) {
-      return { event: 'export.success', payload: basePayload }
-    }
-    basePayload.retryable = comparison.error?.retryable ?? false
-    basePayload.entries = comparison.entries.map((entry) => ({
-      format: entry.format,
-      name: entry.name ?? null,
-      status: entry.status,
-      diff: entry.diff ?? null,
-    }))
-    return { event: 'export.failed', payload: basePayload }
-  }
-
-  return { compareNormalizedOutputs, formatComparisonSummary, createTelemetryEvent, normalizeGoldenArtifact }
-}
-
-let toolkitPromise:
-  | Promise<ReturnType<typeof createComparisonToolkit>>
-  | null = null
+type ComparisonToolkit = Pick<
+  GoldenCompareModule,
+  'normalizeGoldenArtifact' | 'compareNormalizedOutputs' | 'formatComparisonSummary' | 'createTelemetryEvent'
+>
 
 let exporterModulePromise: Promise<ExporterModule> | null = null
+let goldenCompareModulePromise: Promise<GoldenCompareModule> | null = null
+let comparisonToolkitPromise: Promise<ComparisonToolkit> | null = null
 
 const EXPORT_DIR = 'export'
 
@@ -181,140 +32,13 @@ async function loadExporterModule(): Promise<ExporterModule> {
   return exporterModulePromise
 }
 
-type NormalizationTools = Pick<ExporterModule, 'firstLineDiff' | 'normalizeJson' | 'normalizeJsonl' | 'trimLines'>
-type ScalarFormat = Exclude<ExportFormat, 'package'>
-
-const scalarFormats: readonly ScalarFormat[] = ['markdown', 'csv', 'jsonl']
-
-function normalizeGoldenArtifact(
-  format: ExportFormat,
-  golden: GoldenArtifacts,
-  tools: NormalizationTools,
-  name?: string,
-): string | undefined {
-  switch (format) {
-    case 'markdown':
-      return golden.markdown ? tools.trimLines(golden.markdown) : undefined
-    case 'csv':
-      return golden.csv ? tools.trimLines(golden.csv) : undefined
-    case 'jsonl':
-      return golden.jsonl ? tools.normalizeJsonl(golden.jsonl) : undefined
-    case 'package':
-      if (!name) return undefined
-      return golden.package[name] ? tools.normalizeJson(golden.package[name]) : undefined
-    default:
-      return undefined
+async function loadGoldenCompareModule(): Promise<GoldenCompareModule> {
+  if (!goldenCompareModulePromise) {
+    goldenCompareModulePromise = import(new URL('../../src/lib/golden/compare.ts', import.meta.url).href)
   }
+  return goldenCompareModulePromise
 }
 
-function compareToGolden(
-  actual: NormalizedOutputs,
-  golden: GoldenArtifacts,
-  tools: NormalizationTools,
-): GoldenComparisonResult {
-  const entries: GoldenComparisonEntry[] = []
-
-  scalarFormats.forEach((format) => {
-    const expected = normalizeGoldenArtifact(format, golden, tools)
-    if (!expected) {
-      entries.push({ format, status: 'diff', diff: 'missing golden input' })
-      return
-    }
-    if (expected === actual[format]) {
-      entries.push({ format, status: 'matched' })
-    } else {
-      entries.push({ format, status: 'diff', diff: tools.firstLineDiff(actual[format], expected) })
-    }
-  })
-
-  const packageNames = new Set([
-    ...Object.keys(actual.package),
-    ...Object.keys(golden.package ?? {}),
-  ])
-
-  packageNames.forEach((name) => {
-    const actualPayload = actual.package[name]
-    if (!actualPayload) {
-      entries.push({ format: 'package', name, status: 'diff', diff: 'missing generated artifact' })
-      return
-    }
-    const expected = normalizeGoldenArtifact('package', golden, tools, name)
-    if (!expected) {
-      entries.push({ format: 'package', name, status: 'diff', diff: 'missing golden input' })
-      return
-    }
-    if (expected === actualPayload) {
-      entries.push({ format: 'package', name, status: 'matched' })
-    } else {
-      entries.push({
-        format: 'package',
-        name,
-        status: 'diff',
-        diff: tools.firstLineDiff(actualPayload, expected),
-      })
-    }
-  })
-
-  const matched = entries.filter((entry) => entry.status === 'matched').length
-  const matchRate = entries.length ? matched / entries.length : 0
-  const ok = entries.length > 0 && matched === entries.length
-
-  if (!ok) {
-    return {
-      entries,
-      matchRate,
-      ok,
-      error: { message: 'Golden comparison failed', retryable: false },
-    }
-  }
-
-  return { entries, matchRate, ok }
-}
-
-function summarizeComparison(entries: readonly GoldenComparisonEntry[]): string {
-  if (!entries.length) {
-    return 'No golden artifacts loaded'
-  }
-  return entries
-    .map((entry) =>
-      entry.status === 'matched'
-        ? `${entry.format}${entry.name ? `:${entry.name}` : ''}: OK`
-        : `${entry.format}${entry.name ? `:${entry.name}` : ''}: diff -> ${entry.diff ?? 'mismatch'}`,
-    )
-    .join('\n')
-}
-
-function createTelemetryFromComparison(
-  comparison: GoldenComparisonResult,
-  runId: string,
-): { event: 'export.success' | 'export.failed'; payload: Record<string, unknown> } | null {
-  if (!comparison.entries.length) {
-    return null
-  }
-  const formats = Array.from(
-    new Set(
-      comparison.entries.map((entry) =>
-        entry.format === 'package' && entry.name ? `package:${entry.name}` : entry.format,
-      ),
-    ),
-  )
-  const basePayload: Record<string, unknown> = {
-    runId,
-    matchRate: comparison.matchRate,
-    formats,
-  }
-  if (comparison.ok) {
-    return { event: 'export.success', payload: basePayload }
-  }
-  basePayload.retryable = comparison.error?.retryable ?? false
-  basePayload.entries = comparison.entries.map((entry) => ({
-    format: entry.format,
-    name: entry.name ?? null,
-    status: entry.status,
-    diff: entry.diff ?? null,
-  }))
-  return { event: 'export.failed', payload: basePayload }
-}
 
 export interface CompareOptions {
   storyboardPath: string
@@ -326,6 +50,7 @@ export interface CompareOptions {
 
 export interface CompareEntry {
   format: ExportFormat
+  name?: string
   expectedPath: string
   actualPath: string
   status: 'matched' | 'diff'
@@ -362,11 +87,8 @@ async function readExpected(pathname: string): Promise<string> {
 
 export async function compareStoryboardToGolden(options: CompareOptions): Promise<CompareResult> {
   const exporterModule = await loadExporterModule()
-  const { createNormalizedOutputs, firstLineDiff, normalizeJson, normalizeJsonl, trimLines } = exporterModule
-  const toolkit = createComparisonToolkit({ firstLineDiff, normalizeJson, normalizeJsonl, trimLines })
-  if (!toolkitPromise) {
-    toolkitPromise = Promise.resolve(toolkit)
-  }
+  const { createNormalizedOutputs } = exporterModule
+  const toolkit = await loadComparisonToolkit()
 
   const runId = options.runId ?? 'mock-run'
   const baseDir = join(options.outputDir, 'runs', runId, EXPORT_DIR)
@@ -453,6 +175,7 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
         : join(baseDir, entry.format, `storyboard.${entry.format === 'markdown' ? 'md' : entry.format}`)
     return {
       format: entry.format,
+      name: entry.name,
       expectedPath,
       actualPath,
       status: entry.status,
@@ -467,18 +190,20 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
   await writeFile(diffPath, `${summary}\n`, 'utf8')
 
   const diffReportRelative = relative(process.cwd(), diffPath) || diffPath
+  const diffReportPosix = toPosix(diffReportRelative)
   const normalizedRelative = relative(process.cwd(), baseDir) || baseDir
+  const normalizedPosix = toPosix(normalizedRelative)
   const logSummaryLines = summary.split('\n')
   const statusLabel = comparison.ok ? 'OK' : 'DIFF'
   console.info(`[golden] comparison ${statusLabel}`)
   for (const line of logSummaryLines) {
     console.info(`[golden]   ${line}`)
   }
-  console.info(`[golden] diff report: ${toPosix(diffReportRelative)}`)
-  console.info(`[golden] normalized outputs: ${toPosix(normalizedRelative)}`)
+  console.info(`[golden] diff report: ${diffReportPosix}`)
+  console.info(`[golden] normalized outputs: ${normalizedPosix}`)
 
-  const normalizedPath = comparison.ok ? toPosix(relative(process.cwd(), baseDir)) : ''
-  const runUri = comparison.ok ? `file://${normalizedPath}` : ''
+  const normalizedPath = comparison.ok ? normalizedPosix : ''
+  const runUri = comparison.ok ? `file://${normalizedPosix}` : ''
 
   const telemetryEvent = toolkit.createTelemetryEvent(comparison, runId)
   if (telemetryEvent) {
@@ -500,20 +225,16 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
   return result
 }
 
-export async function loadComparisonToolkit(): Promise<ReturnType<typeof createComparisonToolkit>> {
-  if (toolkitPromise) {
-    return toolkitPromise
+export async function loadComparisonToolkit(): Promise<ComparisonToolkit> {
+  if (!comparisonToolkitPromise) {
+    comparisonToolkitPromise = loadGoldenCompareModule().then((module) => ({
+      normalizeGoldenArtifact: module.normalizeGoldenArtifact,
+      compareNormalizedOutputs: module.compareNormalizedOutputs,
+      formatComparisonSummary: module.formatComparisonSummary,
+      createTelemetryEvent: module.createTelemetryEvent,
+    }))
   }
-  const exporterModule = await loadExporterModule()
-  toolkitPromise = Promise.resolve(
-    createComparisonToolkit({
-      firstLineDiff: exporterModule.firstLineDiff,
-      normalizeJson: exporterModule.normalizeJson,
-      normalizeJsonl: exporterModule.normalizeJsonl,
-      trimLines: exporterModule.trimLines,
-    }),
-  )
-  return toolkitPromise
+  return comparisonToolkitPromise
 }
 
 export default async function main(): Promise<void> {
@@ -542,4 +263,4 @@ export type {
   GoldenArtifacts,
   GoldenComparisonEntry,
   GoldenComparisonResult,
-}
+} from '../../src/lib/golden/compare'
