@@ -8,9 +8,17 @@ import { describe, test } from 'node:test';
 import { createRequire } from 'node:module';
 
 type WorkflowYaml = {
-  on?: {
-    schedule?: ScheduleEntry[];
-  };
+  on?: OnDefinition;
+};
+
+type OnDefinition = {
+  schedule?: ScheduleEntry[];
+  pull_request?: unknown;
+  push?: PushDefinition;
+};
+
+type PushDefinition = {
+  branches?: unknown;
 };
 
 type ScheduleEntry = {
@@ -39,11 +47,22 @@ describe('security-audit workflow schedule', () => {
       }
 
       const workflow = parsed as WorkflowYaml;
-      if (!workflow.on || typeof workflow.on !== 'object') {
+      const onDefinition = workflow.on;
+
+      if (!isRecord(onDefinition)) {
         assert.fail('workflow.on must be defined');
       }
 
-      const schedule = workflow.on.schedule;
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(onDefinition, 'pull_request'),
+        'workflow.on must define pull_request trigger'
+      );
+
+      assert.ok(Object.prototype.hasOwnProperty.call(onDefinition, 'push'), 'workflow.on must define push trigger');
+
+      const triggers = onDefinition as OnDefinition;
+
+      const schedule = triggers.schedule;
       if (!Array.isArray(schedule)) {
         assert.fail('workflow.on.schedule must be an array');
       }
@@ -70,6 +89,14 @@ describe('security-audit workflow schedule', () => {
           `schedule entry #${index + 1} cron must include 5 space-separated fields`
         );
       });
+
+      const push = triggers.push;
+      if (!isRecord(push)) {
+        assert.fail('workflow.on.push must be an object');
+      }
+
+      const branches = normalizeBranches(push.branches);
+      assert.ok(branches.includes('main'), 'workflow.on.push.branches must include main');
     } catch (error) {
       console.error('Failed to verify schedule trigger:', error);
       throw error;
@@ -103,8 +130,33 @@ function extractOnSection(source: string): string {
   return `${collected.join('\n')}\n`;
 }
 
-function isRecord(value: unknown): value is ScheduleEntry {
+function isRecord(value: unknown): value is Record<string | number | symbol, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function normalizeBranches(branches: unknown): string[] {
+  if (typeof branches === 'string') {
+    const branch = branches.trim();
+    assert.notStrictEqual(branch, '', 'workflow.on.push.branches string must be non-empty');
+    return [branch];
+  }
+
+  if (Array.isArray(branches)) {
+    const values = branches.map((entry, index) => {
+      if (typeof entry !== 'string') {
+        assert.fail(`workflow.on.push.branches entry #${index + 1} must be a string`);
+      }
+
+      const branch = entry.trim();
+      assert.notStrictEqual(branch, '', `workflow.on.push.branches entry #${index + 1} must be non-empty`);
+      return branch;
+    });
+
+    assert.ok(values.length > 0, 'workflow.on.push.branches must include at least one branch');
+    return values;
+  }
+
+  assert.fail('workflow.on.push.branches must be a string or an array of strings');
 }
 
 async function importJsYaml(): Promise<JsYamlModule> {
