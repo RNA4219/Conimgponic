@@ -190,6 +190,12 @@ describe('ci workflow build job', () => {
 
       assertLineIncludes(
         auditRunLines,
+        'raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh',
+        'audit job must install osv-scanner via official install script',
+      );
+
+      assertLineIncludes(
+        auditRunLines,
         'osv-scanner',
         'audit job must run osv-scanner',
       );
