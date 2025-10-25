@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import type { TestContext } from 'node:test'
 
-import { scenario } from './setup'
+import { ENABLED_GUARD, scenario } from './setup'
 
 import type { AutoSaveError } from '../../../src/lib/autosave'
 import type { Storyboard } from '../../../src/types'
@@ -30,7 +30,7 @@ const isAutoSaveError = (
   }
 
 scenario('flushNow persists storyboard and restorePrompt exposes metadata', async (_t, { initAutoSave, restorePrompt, opfs }) => {
-  const runner = initAutoSave(() => makeStoryboard(['hero']), { disabled: false })
+  const runner = initAutoSave(() => makeStoryboard(['hero']), { disabled: false }, ENABLED_GUARD)
   await runner.flushNow()
   const meta = await restorePrompt()
   assert.equal(runner.snapshot().phase, 'idle')
@@ -51,7 +51,7 @@ scenario('flushNow persists storyboard and restorePrompt exposes metadata', asyn
 })
 
 scenario('history rotation keeps at most 20 generations', async (_t, { initAutoSave, opfs }) => {
-  const runner = initAutoSave(() => makeStoryboard([]), { disabled: false })
+  const runner = initAutoSave(() => makeStoryboard([]), { disabled: false }, ENABLED_GUARD)
   for (let i = 0; i < 22; i++) await runner.flushNow()
   const historyCount = Array.from(opfs.files.keys()).filter((k) => k.startsWith('project/autosave/history/')).length
   assert.ok(historyCount <= 20)
@@ -96,7 +96,7 @@ scenario(
   'lock failure surfaces AutoSaveError with retryable flag',
   { locks: { async request(){ throw new Error('denied') } } },
   async (_t, { initAutoSave }) => {
-    const runner = initAutoSave(() => makeStoryboard([]), { disabled: false })
+    const runner = initAutoSave(() => makeStoryboard([]), { disabled: false }, ENABLED_GUARD)
     await assert.rejects(runner.flushNow(), isAutoSaveError({ code: 'lock-unavailable', retryable: true }))
   }
 )

@@ -90,6 +90,7 @@ test('defaults are used when no sources apply', () => {
     updatedAt: snapshot.updatedAt
   } satisfies FlagSnapshot)
 
+  assert.equal(snapshot.autosave.enabled, false)
   assert.equal(snapshot.autosave.source, 'default')
   assert.equal(snapshot.merge.source, 'default')
   assert.ok(Number.isFinite(Date.parse(snapshot.updatedAt)))

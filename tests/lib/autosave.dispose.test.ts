@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 
-import { scenario } from './autosave/setup'
+import { ENABLED_GUARD, scenario } from './autosave/setup'
 
 import type { Storyboard } from '../../src/types'
 
@@ -54,7 +54,7 @@ scenario(
   async (_t, { initAutoSave }) => {
     gate = deferred<void>()
     lockRequested = deferred<void>()
-    const runner = initAutoSave(makeStoryboard, { disabled: false })
+    const runner = initAutoSave(makeStoryboard, { disabled: false }, ENABLED_GUARD)
 
     const flushPromise = runner.flushNow()
     await lockRequested.promise

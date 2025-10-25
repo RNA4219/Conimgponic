@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { scenario } from './setup'
+import { ENABLED_GUARD, scenario } from './setup'
 
 import type { Storyboard } from '../../../src/types'
 
@@ -25,7 +25,7 @@ scenario('autosave persistence exposes latest generation via restore APIs', asyn
   const now = Date.UTC(2024, 0, 1, 12, 0, 0)
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now })
 
-  const runner = initAutoSave(makeStoryboard, { disabled: false })
+  const runner = initAutoSave(makeStoryboard, { disabled: false }, ENABLED_GUARD)
   await runner.flushNow()
 
   const prompt = await restorePrompt()
