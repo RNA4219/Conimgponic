@@ -56,6 +56,7 @@ test('runSelected resolves autosave filter in autorun scenario', async () => {
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
     'tests/lib/autosave/init.test.ts',
+    'tests/lib/autosave/restore.flow.test.ts',
     'tests/lib/autosave/scheduler.test.ts',
     'tests/views/view-switch.autosave.test.ts',
     'tests/webview/autosave.bridge.test.ts',
@@ -76,6 +77,7 @@ test('maps --filter autosave to autosave test glob', async () => {
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
     'tests/lib/autosave/init.test.ts',
+    'tests/lib/autosave/restore.flow.test.ts',
     'tests/lib/autosave/scheduler.test.ts',
     'tests/views/view-switch.autosave.test.ts',
     'tests/webview/autosave.bridge.test.ts',
@@ -84,7 +86,8 @@ test('maps --filter autosave to autosave test glob', async () => {
 });
 
 test('maps --filter golden to golden comparison tests', async () => {
-  const nodeArgs = await collectNodeArgs(['--filter', 'golden']);
+  const module = await importRunSelectedModule();
+  const nodeArgs = await collectNodeArgs(module, ['--filter', 'golden']);
 
   assert.deepStrictEqual(nodeArgs, [
     '--loader',
@@ -92,6 +95,15 @@ test('maps --filter golden to golden comparison tests', async () => {
     '--test',
     'tests/export/golden.webview.test.ts',
   ]);
+});
+
+test('includes tsx component tests when filtering merge suite', async () => {
+  const nodeArgs = await collectNodeArgs(['--filter', 'merge']);
+
+  assert.ok(
+    nodeArgs.includes('tests/components/DiffMergeView.test.tsx'),
+    'expected merge filter to include DiffMergeView tsx test',
+  );
 });
 
 test('falls back to default glob when filter is unknown', async () => {
@@ -102,8 +114,23 @@ test('falls back to default glob when filter is unknown', async () => {
     '--loader',
     'ts-node/esm',
     '--test',
+    'tests/platform/vscode/plugins.bootstrap.test.ts',
+    'tests/platform/vscode/plugins.reload.test.ts',
+    'tests/plugins/reload.flow.test.ts',
+    'tests/plugins/vscode.reload.test.ts',
+  ]);
+});
+
+test('falls back to default glob when filter is unknown', async () => {
+  const module = await importRunSelectedModule();
+  const nodeArgs = await collectNodeArgs(module, ['--filter', 'missing']);
+
+  assert.deepStrictEqual(nodeArgs, [
+    '--loader',
+    'ts-node/esm',
+    '--test',
     '--filter',
-    'collector',
+    'missing',
     'tests/**/*.test.ts',
   ]);
 });
@@ -112,9 +139,14 @@ async function importRunSelectedModule(): Promise<RunSelectedModule> {
   return import(moduleJsUrl.href);
 }
 
+async function collectNodeArgs(argvTail: readonly string[]): Promise<readonly string[]>;
 async function collectNodeArgs(
   module: RunSelectedModule,
   argvTail: readonly string[],
+): Promise<readonly string[]>;
+async function collectNodeArgs(
+  moduleOrArgvTail: RunSelectedModule | readonly string[],
+  maybeArgvTail?: readonly string[],
 ): Promise<readonly string[]> {
   const originalArgv = process.argv;
   const spawnCalls: Array<Parameters<SpawnFn>> = [];
@@ -136,6 +168,17 @@ async function collectNodeArgs(
   }) as SpawnFn;
 
   const exitMock = mock.method(process, 'exit', () => undefined as never);
+
+  let module: RunSelectedModule;
+  let argvTail: readonly string[];
+
+  if (Array.isArray(moduleOrArgvTail)) {
+    module = await importRunSelectedModule();
+    argvTail = moduleOrArgvTail;
+  } else {
+    module = moduleOrArgvTail as RunSelectedModule;
+    argvTail = maybeArgvTail ?? [];
+  }
 
   process.argv = [...originalArgv.slice(0, 2), ...argvTail];
 

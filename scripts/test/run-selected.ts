@@ -5,23 +5,33 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const DEFAULT_TEST_ROOT = 'tests';
-const DEFAULT_TEST_SUFFIX = '.test.ts';
+const DEFAULT_TEST_SUFFIXES = ['.test.ts', '.test.tsx'] as const;
 const DEFAULT_TEST_GLOB = 'tests/**/*.test.ts';
 const TEST_COVERAGE_FLAG = '--test-coverage';
 const TEST_COVERAGE_MINIMUM_MAJOR_VERSION = 22;
 const FILTER_TARGETS: Record<string, readonly string[]> = {
   autosave: [
     'tests/app/autosave.*.test.ts',
+    'tests/app/autosave.*.test.tsx',
     'tests/lib/autosave/*.test.ts',
+    'tests/lib/autosave/*.test.tsx',
     'tests/lib/autosave.*.test.ts',
+    'tests/lib/autosave.*.test.tsx',
     'tests/lib/autosave.phase-guard.test.ts',
+    'tests/lib/autosave.phase-guard.test.tsx',
     'tests/views/*autosave*.test.ts',
+    'tests/views/*autosave*.test.tsx',
     'tests/webview/autosave.*.test.ts',
+    'tests/webview/autosave.*.test.tsx',
   ],
   merge: [
     'tests/merge/*.test.ts',
+    'tests/merge/*.test.tsx',
     'tests/webview/merge.*.test.ts',
+    'tests/webview/merge.*.test.tsx',
     'tests/extensions/vscode/merge-bridge.sanitize.test.ts',
+    'tests/extensions/vscode/merge-bridge.sanitize.test.tsx',
+    'tests/components/*.test.tsx',
   ],
   golden: ['tests/export/golden*.test.ts'],
   ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
@@ -131,7 +141,7 @@ export function collectDefaultTargets(): string[] {
         continue;
       }
 
-      if (entry.isFile() && entry.name.endsWith(DEFAULT_TEST_SUFFIX)) {
+      if (entry.isFile() && hasDefaultTestSuffix(entry.name)) {
         results.push(fullPath);
       }
     }
@@ -260,7 +270,7 @@ function listAllTests(): string[] {
         continue;
       }
 
-      if (entry.isFile() && entry.name.endsWith(DEFAULT_TEST_SUFFIX)) {
+      if (entry.isFile() && hasDefaultTestSuffix(entry.name)) {
         result.push(entryPath);
       }
     }
@@ -300,4 +310,8 @@ function supportsTestCoverage(nodeVersion: string): boolean {
   }
 
   return major >= TEST_COVERAGE_MINIMUM_MAJOR_VERSION;
+}
+
+function hasDefaultTestSuffix(fileName: string): boolean {
+  return DEFAULT_TEST_SUFFIXES.some((suffix) => fileName.endsWith(suffix));
 }
