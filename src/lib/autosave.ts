@@ -1,3 +1,4 @@
+import type { FlagSnapshot } from '../config/flags.js'
 import type { Storyboard } from '../types'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
@@ -9,6 +10,11 @@ export interface AutoSaveOptions {
    * フラグ/ユーザー設定による完全無効化。`true` の場合は initAutoSave が no-op を返し、副作用を発生させない。
    */
   readonly disabled?: boolean
+  /**
+   * 保存ポリシーをフラグ/VSCode 設定から受け取り、履歴 FIFO や容量制限を同期する。
+   * `docs/AUTOSAVE-DESIGN-IMPL.md` §1 を参照。
+   */
+  readonly policy?: AutoSavePolicy
   /**
    * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
    */
@@ -283,6 +289,7 @@ export type AutoSaveBridgeBootstrapMessage = AutoSaveBridgeEnvelope<
     readonly version: 1
     readonly policy: AutoSavePolicy
     readonly guard: AutoSavePhaseGuardSnapshot
+    readonly flags: FlagSnapshot
   }
 >
 
@@ -823,6 +830,7 @@ export function initAutoSave(
   options?: AutoSaveOptions,
   flagSnapshot?: AutoSaveInitGuardInput
 ): AutoSaveInitResult {
+  const policy = options?.policy ?? AUTOSAVE_POLICY
   const truthy = /^(1|true)$/i, falsy = /^(0|false)$/i
   const asBool = (value: unknown) => (typeof value === 'string' && truthy.test(value) ? true : typeof value === 'string' && falsy.test(value) ? false : null)
   const guardSource = (value: unknown): AutoSavePhaseGuardSnapshot['featureFlag']['source'] =>
@@ -859,7 +867,7 @@ export function initAutoSave(
       }
     }
     return {
-      featureFlag: { value: !AUTOSAVE_POLICY.disabled, source: 'default' },
+      featureFlag: { value: !policy.disabled, source: 'default' },
       optionsDisabled: fallbackOptionsDisabled
     }
   }
@@ -1009,14 +1017,14 @@ export function initAutoSave(
     ]
     let total = nextHistory.reduce((sum, entry) => sum + entry.bytes, 0)
     while (
-      (nextHistory.length > AUTOSAVE_POLICY.maxGenerations || total > AUTOSAVE_POLICY.maxBytes) &&
+      (nextHistory.length > policy.maxGenerations || total > policy.maxBytes) &&
       nextHistory.length > 0
     ) {
       const drop = nextHistory.pop()!
       total -= drop.bytes
       await removeFile(`${HISTORY_DIRECTORY}/${sanitizeTimestamp(drop.ts)}.json`)
     }
-    if (total > AUTOSAVE_POLICY.maxBytes) {
+    if (total > policy.maxBytes) {
       throw makeError('history-overflow', 'Unable to satisfy AutoSave history retention policy', false, undefined, {
         totalBytes: total
       })
@@ -1159,7 +1167,7 @@ export function initAutoSave(
       idleTimer = null
       if (disposed || disposing) return
       void startFlush('auto').catch(() => undefined)
-    }, AUTOSAVE_POLICY.idleMs)
+    }, policy.idleMs)
   }
   const scheduleDebounce = () => {
     if (disposed || disposing) return
@@ -1168,7 +1176,7 @@ export function initAutoSave(
       debounceTimer = null
       if (disposed || disposing) return
       scheduleIdleFlush()
-    }, AUTOSAVE_POLICY.debounceMs)
+    }, policy.debounceMs)
   }
   const snapshot = (): AutoSaveStatusSnapshot => ({
     phase: disposed || disposing ? 'disabled' : phase,

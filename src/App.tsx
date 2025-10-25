@@ -130,7 +130,8 @@ export default function App(){
     const runner = initAutoSave(
       () => useSB.getState().sb,
       {
-        disabled: decision.guard.optionsDisabled
+        disabled: decision.guard.optionsDisabled,
+        policy: autoSavePlan.policy
       },
       autoSavePlan.snapshot.autosave
     )

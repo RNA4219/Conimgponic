@@ -10,7 +10,11 @@ type FlagSnapshot = { readonly autosave: { readonly enabled: boolean; readonly p
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)))
 const req = createRequire(import.meta.url)
 const cache = new Map<string, vm.SourceTextModule>()
-const withExt = (spec: string) => (spec.endsWith('.ts') || spec.endsWith('.js') ? spec : `${spec}.ts`)
+const withExt = (spec: string) => {
+  if (spec.endsWith('.ts')) return spec
+  if (spec.endsWith('.js')) return `${spec.slice(0, -3)}.ts`
+  return `${spec}.ts`
+}
 const resolveImport = (spec: string, parent: string) => (spec.startsWith('.') || spec.startsWith('/') ? resolve(dirname(parent), withExt(spec)) : req.resolve(spec, { paths: [dirname(parent)] }))
 const loadModule = async (path: string) => {
   if (cache.has(path)) return cache.get(path)!
