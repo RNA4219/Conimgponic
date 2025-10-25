@@ -6,7 +6,56 @@ import vm from 'node:vm'; import ts from 'typescript'
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const req = createRequire(import.meta.url)
 const cache = new Map<string, vm.SourceTextModule>()
+
+const createOpfsMock = () => {
+  const files = new Map<string, string>()
+  const dirs = new Map<string, any>()
+  const makeDir = (prefix: string): any => {
+    if (dirs.has(prefix)) return dirs.get(prefix)
+    const dir = {
+      async getDirectoryHandle(name: string) {
+        return makeDir(join(prefix, name))
+      },
+      async getFileHandle(name: string) {
+        const full = join(prefix, name).replace(/^\/+/, '')
+        return {
+          async createWritable() {
+            return {
+              async write(data: string) {
+                files.set(full, data)
+              },
+              async close() {}
+            }
+          },
+          async getFile() {
+            if (!files.has(full)) throw new Error('missing file')
+            const text = files.get(full)!
+            return { async text() { return text } }
+          }
+        }
+      },
+      async removeEntry(name: string) {
+        files.delete(join(prefix, name).replace(/^\/+/, ''))
+      },
+      async *entries() {
+        const seen = new Set<string>()
+        for (const key of files.keys()) {
+          if (!key.startsWith(prefix)) continue
+          const head = key.slice(prefix.length).replace(/^\//, '').split('/')[0]
+          if (head && !seen.has(head)) {
+            seen.add(head)
+            yield [head, {}] as const
+          }
+        }
+      }
+    }
+    dirs.set(prefix, dir)
+    return dir
+  }
+  return { files, storage: { async getDirectory() { return makeDir('') } } }
+}
 const withExt = (spec: string) => {
+  if (spec.startsWith('node:')) return spec
   if (spec.endsWith('.ts')) return spec
   if (spec.endsWith('.js')) return `${spec.slice(0, -3)}.ts`
   return `${spec}.ts`
@@ -120,4 +169,101 @@ test('workspace autosave policy overrides history GC constraints', async () => {
   assert.equal(results.length, 3)
   const last = results[results.length - 1]
   assert.equal(last.payload.retainedBytes, history.retainedBytes)
+})
+
+test('initAutoSave respects resolved autosave policy from env and workspace', async () => {
+  cache.clear()
+  const { resolveAutoSaveBootstrapPlan } = await importTs(join(root, 'src/config/index.ts'))
+  const { initAutoSave, resolveAutoSavePolicy } = await importTs(join(root, 'src/lib/autosave.ts'))
+
+  const originalHistory = process.env.VITE_AUTOSAVE_HISTORY_LIMIT
+  const originalSize = process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB
+
+  try {
+    process.env.VITE_AUTOSAVE_HISTORY_LIMIT = '2'
+    process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = '1'
+
+    const plan = resolveAutoSaveBootstrapPlan({ workspace: null })
+    assert.equal(plan.policy.maxGenerations, 2)
+    assert.equal(plan.policy.maxBytes, 1 * 1024 * 1024)
+
+    const envPolicy = resolveAutoSavePolicy()
+    assert.equal(envPolicy.maxGenerations, 2)
+    assert.equal(envPolicy.maxBytes, 1 * 1024 * 1024)
+
+    const workspace = {
+      get(key: string): unknown {
+        switch (key) {
+          case 'conimg.autosave.historyLimit':
+            return 3
+          case 'conimg.autosave.sizeLimitMB':
+            return 2
+          default:
+            return undefined
+        }
+      }
+    }
+
+    const workspacePolicyPlan = resolveAutoSaveBootstrapPlan({ workspace })
+    assert.equal(workspacePolicyPlan.policy.maxGenerations, 3)
+    assert.equal(workspacePolicyPlan.policy.maxBytes, 2 * 1024 * 1024)
+
+    const opfs = createOpfsMock()
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        storage: opfs.storage,
+        locks: {
+          async request(_name: string, cb: (lock: { release(): Promise<void> }) => unknown) {
+            return cb({ async release() {} })
+          }
+        }
+      },
+      configurable: true
+    })
+
+    const payloads = ['a'.repeat(450_000), 'b'.repeat(450_000), 'c'.repeat(450_000)]
+    let flushCount = 0
+    const runner = initAutoSave(() => {
+      const index = Math.min(flushCount, payloads.length - 1)
+      const manual = payloads[index]
+      flushCount += 1
+      return {
+        id: 'storyboard',
+        title: `Storyboard-${index}`,
+        scenes: [
+          { id: `scene-${index}`, manual, ai: '', status: 'idle', assets: [] }
+        ],
+        selection: [],
+        version: 1
+      }
+    }, { disabled: false })
+
+    await runner.flushNow()
+    await runner.flushNow()
+    await runner.flushNow()
+
+    const historyKeys = Array.from(opfs.files.keys()).filter((key) =>
+      key.startsWith('project/autosave/history/')
+    )
+    assert.ok(historyKeys.length <= envPolicy.maxGenerations)
+    const totalBytes = historyKeys.reduce((sum, key) => {
+      const content = opfs.files.get(key) ?? ''
+      return sum + Buffer.byteLength(content, 'utf8')
+    }, 0)
+    assert.ok(totalBytes <= envPolicy.maxBytes)
+
+    await runner.dispose()
+  } finally {
+    if (originalHistory == null) {
+      delete process.env.VITE_AUTOSAVE_HISTORY_LIMIT
+    } else {
+      process.env.VITE_AUTOSAVE_HISTORY_LIMIT = originalHistory
+    }
+    if (originalSize == null) {
+      delete process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB
+    } else {
+      process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = originalSize
+    }
+    delete (globalThis as { navigator?: unknown }).navigator
+  }
 })
