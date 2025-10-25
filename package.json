@@ -34,14 +34,10 @@
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "esbuild": "^0.25.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.3",
     "vite": "^5.4.8"
-  },
-  "pnpm": {
-    "overrides": {
-      "esbuild": "^0.25.0"
-    }
   },
   "eslintConfig": {
     "root": true,
