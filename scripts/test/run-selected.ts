@@ -5,8 +5,12 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const DEFAULT_TEST_ROOT = 'tests';
-const DEFAULT_TEST_SUFFIXES = ['.test.ts', '.test.tsx'] as const;
-const DEFAULT_TEST_GLOBS = ['tests/**/*.test.ts', 'tests/**/*.test.tsx'] as const;
+const DEFAULT_TEST_SUFFIXES = ['.test.ts', '.test.tsx', '.test.mjs'] as const;
+const DEFAULT_TEST_GLOBS = [
+  'tests/**/*.test.ts',
+  'tests/**/*.test.tsx',
+  'tests/**/*.test.mjs',
+] as const;
 const TEST_COVERAGE_FLAG = '--test-coverage';
 const TEST_COVERAGE_MINIMUM_MAJOR_VERSION = 22;
 const FILTER_TARGETS: Record<string, readonly string[]> = {
@@ -27,12 +31,16 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   merge: [
     'tests/merge/*.test.ts',
     'tests/merge/*.test.tsx',
+    'tests/merge/*.test.mjs',
     'tests/webview/merge.*.test.ts',
     'tests/webview/merge.*.test.tsx',
+    'tests/webview/merge.*.test.mjs',
     'tests/extensions/vscode/merge-bridge.sanitize.test.ts',
     'tests/extensions/vscode/merge-bridge.sanitize.test.tsx',
+    'tests/extensions/vscode/merge-bridge.sanitize.test.mjs',
     'tests/components/*.test.ts',
     'tests/components/*.test.tsx',
+    'tests/components/*.test.mjs',
   ],
   golden: ['tests/export/golden*.test.ts'],
   collector: [
