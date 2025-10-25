@@ -969,16 +969,68 @@ export function initAutoSave(
   let inFlightBackoff: Promise<void> | null = null
   let disposePromise: Promise<void> | null = null
   const updateIndex = async (ts: string, bytes: number, payload: string) => {
-    const path = 'project/autosave/index.json', tmp = `${path}.tmp`, current = (await loadJSON(path)) as { entries?: AutoSaveHistoryEntry[] } | null, key = sanitizeTimestamp(ts)
-    const entries = Array.isArray(current?.entries) ? current!.entries.filter((entry) => typeof entry?.ts === 'string' && typeof entry?.bytes === 'number') : []
-    entries.unshift({ ts, bytes, location: 'history', retained: true })
-    let total = 0; for (const item of entries) total += item.bytes
-    while ((entries.length > AUTOSAVE_POLICY.maxGenerations || total > AUTOSAVE_POLICY.maxBytes) && entries.length > 0) {
-      const drop = entries.pop()!; total -= drop.bytes; await removeFile(`project/autosave/history/${sanitizeTimestamp(drop.ts)}.json`)
+    const path = INDEX_PATH
+    const tmp = `${path}.tmp`
+    const historyKey = sanitizeTimestamp(ts)
+    const normalizeHistoryEntry = (value: unknown): AutoSaveHistoryEntry | null => {
+      if (!value || typeof value !== 'object') return null
+      const record = value as { ts?: unknown; bytes?: unknown; retained?: unknown }
+      if (typeof record.ts !== 'string' || typeof record.bytes !== 'number' || !Number.isFinite(record.bytes)) {
+        return null
+      }
+      return { ts: record.ts, bytes: record.bytes, location: 'history', retained: record.retained !== false }
     }
-    if (total > AUTOSAVE_POLICY.maxBytes) throw makeError('history-overflow', 'Unable to satisfy AutoSave history retention policy', false, undefined, { totalBytes: total })
-    await saveText(`project/autosave/history/${key}.json.tmp`, payload); await renameFile(`project/autosave/history/${key}.json.tmp`, `project/autosave/history/${key}.json`)
-    await saveJSON(tmp, { lastSuccessAt: ts, entries }); await renameFile(tmp, path)
+    const rawIndex = await loadJSON(path)
+    const parsed = parseIndexFile(rawIndex)
+    const seen = new Set<string>()
+    const history: AutoSaveHistoryEntry[] = []
+    const pushHistory = (entry: AutoSaveHistoryEntry | null | undefined) => {
+      if (!entry || entry.ts === ts || seen.has(entry.ts)) return
+      seen.add(entry.ts)
+      history.push({ ts: entry.ts, bytes: entry.bytes, location: 'history', retained: entry.retained !== false })
+    }
+    parsed.history.forEach((entry) => pushHistory(entry))
+    if (parsed.current) {
+      pushHistory({
+        ts: parsed.current.ts,
+        bytes: parsed.current.bytes,
+        location: 'history',
+        retained: parsed.current.retained
+      })
+    }
+    if (rawIndex && typeof rawIndex === 'object' && Array.isArray((rawIndex as { entries?: unknown }).entries)) {
+      for (const legacy of (rawIndex as { entries: unknown[] }).entries) {
+        pushHistory(normalizeHistoryEntry(legacy))
+      }
+    }
+    const nextHistory: AutoSaveHistoryEntry[] = [
+      { ts, bytes, location: 'history', retained: true },
+      ...history
+    ]
+    let total = nextHistory.reduce((sum, entry) => sum + entry.bytes, 0)
+    while (
+      (nextHistory.length > AUTOSAVE_POLICY.maxGenerations || total > AUTOSAVE_POLICY.maxBytes) &&
+      nextHistory.length > 0
+    ) {
+      const drop = nextHistory.pop()!
+      total -= drop.bytes
+      await removeFile(`${HISTORY_DIRECTORY}/${sanitizeTimestamp(drop.ts)}.json`)
+    }
+    if (total > AUTOSAVE_POLICY.maxBytes) {
+      throw makeError('history-overflow', 'Unable to satisfy AutoSave history retention policy', false, undefined, {
+        totalBytes: total
+      })
+    }
+    const historyTmp = `${HISTORY_DIRECTORY}/${historyKey}.json.tmp`
+    await saveText(historyTmp, payload)
+    await renameFile(historyTmp, `${HISTORY_DIRECTORY}/${historyKey}.json`)
+    const normalizedHistory = nextHistory.map((entry) => ({ ...entry, retained: entry.retained !== false }))
+    await saveJSON(tmp, {
+      current: { ts, bytes, location: 'current' as const, retained: true },
+      history: normalizedHistory,
+      entries: normalizedHistory
+    })
+    await renameFile(tmp, path)
   }
   const clearDebounceTimer = () => {
     if (debounceTimer) {
