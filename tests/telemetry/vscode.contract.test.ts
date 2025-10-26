@@ -1,4 +1,5 @@
 import { deepStrictEqual, ok as assertOk } from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 
 import {
@@ -77,6 +78,25 @@ describe('vscode extension telemetry contract (RED)', () => {
       'localStorage',
       'default'
     ])
+  })
+
+  test('telemetry schema の flags.source enum が FlagSource と一致する', () => {
+    const schema = JSON.parse(
+      readFileSync(new URL('../../schemas/telemetry.schema.json', import.meta.url), 'utf-8')
+    ) as {
+      readonly properties: {
+        readonly flags: {
+          readonly properties: {
+            readonly source: {
+              readonly enum: readonly string[]
+            }
+          }
+        }
+      }
+    }
+
+    const schemaEnum = schema.properties.flags.properties.source.enum
+    deepStrictEqual(schemaEnum, Array.from(FLAG_RESOLUTION_SOURCE_VARIANTS))
   })
 
   test('merge.trace telemetry は Phase 情報と ±5% 監視用メトリクスを保持する', () => {

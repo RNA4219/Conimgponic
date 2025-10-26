@@ -611,7 +611,7 @@ pnpm run flags:reset
 ### 6.1 イベントスキーマ（AutoSave / 精緻マージ）
 | イベント名 | 発火タイミング | 必須フィールド | 任意フィールド | 例外ポリシー連動 |
 | --- | --- | --- | --- | --- |
-| `autosave.schedule.requested` | デバウンス完了後、ロック取得前 | `ts`, `build_sha`, `phase`, `pending_bytes`, `retry_count` | `flag_source` (`env`/`localStorage`/`default`) | `disabled` 例外時は送信しない（`AutoSaveError.code='disabled'` は静的ガード）【F:docs/AUTOSAVE-DESIGN-IMPL.md†L89-L147】 |
+| `autosave.schedule.requested` | デバウンス完了後、ロック取得前 | `ts`, `build_sha`, `phase`, `pending_bytes`, `retry_count` | `flag_source` (`env`/`workspace`/`localStorage`/`default`) | `disabled` 例外時は送信しない（`AutoSaveError.code='disabled'` は静的ガード）【F:docs/AUTOSAVE-DESIGN-IMPL.md†L89-L147】 |
 | `autosave.write.completed` | `current.json` と `index.json` の更新成功時 | `ts`, `duration_ms`, `bytes_written`, `history_size`, `lease_uuid` | `gc_evicted`（削除数） | `write-failed` 例外発生時は代わりに `autosave.write.failed` を送信し `retryable` 値を boolean で付与 |
 | `autosave.write.failed` | 書き込み失敗検知時 | `ts`, `duration_ms`, `error_code`, `retryable`, `cause`（シリアライズされたクラス名） | `context`（容量超過・権限情報） | `retryable=false` なら Analyzer で重大度 High にマッピング |
 | `merge.precision.suggested` | 精緻マージ結果が提示された時 | `ts`, `build_sha`, `phase`, `scenario_id`, `auto_applied` | `confidence_score`, `conflict_count` | `auto_applied=false` かつ `retryable=false` の例外時は `merge.precision.blocked` を併送 |
@@ -623,7 +623,7 @@ pnpm run flags:reset
 #### 6.1.1 VS Code 拡張ブリッジ統合イベント
 - 拡張ブリッジから Webview/Day8 へ流れる Telemetry は `docs/TELEMETRY-SECURITY-PERFORMANCE-DESIGN.md` の契約に従い、`flag_resolution` / `status.autosave` / `snapshot.result` / `merge.result` / `export.result` / `error` の 6 系列で Collector へ送出する。【F:docs/TELEMETRY-SECURITY-PERFORMANCE-DESIGN.md†L13-L65】
 - 各イベントは `request_id` (UUID) を共有し、Collector が 15 分窓で突合する。`status.autosave` と `snapshot.result` は UI フェーズ遷移と I/O 成否を結合し、Analyzer が Phase ガードを評価できるよう `detail.retry_count` と `performance.flush_latency_ms` を必須とする。
-- `flag_resolution` はフラグソース (`env`/`remote`/`default`) と `detail.retryable` を保持し、`default_used=true` が 5% を超えた場合にロールバック候補を生成する。`merge.result`/`export.result` は処理時間と成功率で Phase B / Export ガードを判断する。
+- `flag_resolution` はフラグソース (`env`/`workspace`/`localStorage`/`default`) と `detail.retryable` を保持し、`default_used=true` が 5% を超えた場合にロールバック候補を生成する。`merge.result`/`export.result` は処理時間と成功率で Phase B / Export ガードを判断する。
 
 ### 6.2 Collector / Analyzer 連携
 - Collector は `project/autosave/telemetry/*.jsonl` を 15 分周期で集約し、Day8 `workflow-cookbook/logs/autosave/*.jsonl` へ転送する。既存パイプライン（Collector → Analyzer → Reporter）に組み込み、Day8 設計書の責務分離を遵守する。【F:Day8/docs/day8/design/03_architecture.md†L1-L31】
