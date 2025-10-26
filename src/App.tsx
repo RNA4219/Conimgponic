@@ -139,9 +139,8 @@ export default function App(){
   }, [])
 
   useEffect(()=>{
-    resolveAutoSaveBootstrapPlanForApp((plan)=>{
-      setAutoSavePlan(plan)
-    })
+    const plan = resolveAutoSaveBootstrapPlan()
+    setAutoSavePlan(plan)
   }, [])
 
   useEffect(()=>{
