@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import type { Day8Collector, Day8CollectorEvent } from '../../src/telemetry/day8Collector'
 import {
   resolveAutoSaveBootstrapPlan,
   resolvePluginBridgeBootstrapPlan,
+  type AutoSaveBootstrapPlan,
   type FlagSnapshot,
   type FlagValidationError,
   type ResolveOptions
@@ -100,6 +102,41 @@ test('resolvePluginBridgeBootstrapPlan publishes flag resolution telemetry with 
     assert.equal(firstError?.flag, 'plugins.enable')
     assert.equal(firstError?.source, 'env')
     assert.equal(firstError?.phase, 'phase-a1')
+  } finally {
+    if (original) {
+      scope.Day8Collector = original
+    } else {
+      delete scope.Day8Collector
+    }
+  }
+})
+
+test('App bootstrap publishes flag_resolution once via Day8Collector', async () => {
+  const emitted: Day8CollectorEvent[] = []
+  const scope = globalThis as {
+    Day8Collector?: Day8Collector
+  }
+  const original = scope.Day8Collector
+  scope.Day8Collector = {
+    publish(event) {
+      emitted.push(event)
+    }
+  }
+
+  try {
+    const module = (await import('../../src/App.tsx')) as unknown as {
+      initializeAppAutoSavePlan: () => AutoSaveBootstrapPlan
+    }
+
+    assert.equal(typeof module.initializeAppAutoSavePlan, 'function')
+
+    const plan = module.initializeAppAutoSavePlan()
+    assert.ok(plan)
+
+    assert.equal(emitted.length, 1)
+    const event = emitted[0]
+    assert.equal(event.event, 'flag_resolution')
+    assert.equal(event.source, 'app.autosave')
   } finally {
     if (original) {
       scope.Day8Collector = original

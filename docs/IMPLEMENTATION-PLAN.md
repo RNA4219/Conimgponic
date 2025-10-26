@@ -66,7 +66,7 @@ sequenceDiagram
 
 #### 0.2.3 `src/config/index.ts` 統合ポイントと段階的導入
 1. **エクスポート整備**: `src/config/index.ts` が `resolveFlags`・`FlagSnapshot` などを透過公開している現状を維持しつつ、Phase-a0 では既存呼び出しファイルへ新関数を案内する。
-2. **App.tsx 適用**: AutoSave 初期化前に `resolveFlags()` を呼び出し、`autosave.enabled` を `FlagSnapshot.autosave.enabled` から参照する。従来の `localStorage` 直読はフェールセーフとして残す（`FLAG_MIGRATION_PLAN.phase-a0`）。【F:src/config/index.ts†L1-L23】
+2. **App.tsx 適用**: AutoSave 初期化前に `resolveFlags()` を呼び出し、`autosave.enabled` を `FlagSnapshot.autosave.enabled` から参照する。従来の `localStorage` 直読はフェールセーフとして残す（`FLAG_MIGRATION_PLAN.phase-a0`）。初期化時は `initializeAppAutoSavePlan()` でフラグ解決と Collector publish を一箇所にまとめ、`Day8Collector` 未接続の場合のみフォールバック publish を許可する。【F:src/App.tsx†L108-L144】【F:src/config/index.ts†L1-L67】
 3. **MergeDock 適用**: `merge.precision` を `FlagSnapshot.merge.precision` へ差し替え、`precision` フラグで Diff Merge タブの露出を制御する（Phase-b0）。後方互換のため `legacyStorageKeys` を監視し、削除タイミングをテレメトリで検証する。
 4. **Collector 連携**: `FlagValidationError` と `FlagSnapshot.source` をテレメトリに送出し、Day8/Collector の JSONL に `flag_resolution` イベントを追加する。`docs/AUTOSAVE-DESIGN-IMPL.md` の保存ポリシーと整合すること。
 5. **段階的差分**: Phase-a1 で AutoSave ランナーへ `FlagSnapshot` を渡し、Phase-b0 でレガシー参照を除去する。各段階は小粒な PR とし、既存読者が差分で追えるよう `FLAG_MIGRATION_PLAN` の exit criteria をレビュー checklist に転記する。
@@ -77,7 +77,7 @@ sequenceDiagram
 
 | Phase ガード | Primary (env / workspace) | Secondary (ローカルストレージ) | Fallback (`DEFAULT_FLAGS` / 設定既定値) | Telemetry & Rollback | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| AutoSave 起動判定 | `VITE_AUTOSAVE_ENABLED` → `conimg.autosave.enabled` | `localStorage.autosave.enabled` | `autosave.enabled=false` | `flag_resolution` に `source` と `autosave.phase` を付与。`lock:readonly-entered` が 24h で 5 回超過したら Phase を差し戻す。 | Phase A-1 で env true が優先される。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L85】 |
+| AutoSave 起動判定 | `VITE_AUTOSAVE_ENABLED` → `conimg.autosave.enabled` | `localStorage.autosave.enabled` | `autosave.enabled=false` | `flag_resolution` に `source` と `autosave.phase` を付与。Collector→Analyzer→Reporter の経路は `initializeAppAutoSavePlan()` を入口に 1 回だけ publish される。`lock:readonly-entered` が 24h で 5 回超過したら Phase を差し戻す。 | Phase A-1 で env true が優先される。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L85】【F:src/App.tsx†L108-L144】 |
 | AutoSave 履歴容量 | `conimg.autosave.sizeLimitMB` | - | 50MB 固定 | `history-overflow` を Collector WARN として送出し、Analyzer が閾値逸脱を検知したら GC を停止。 | Phase B で可変化予定だが Phase ガード配下では固定。 |
 | AutoSave 履歴世代 | `conimg.autosave.historyLimit` | - | 20 固定 | `history-rotation` イベントに `limit` を添付し、Reporter が `reports/today.md` で逸脱可視化。 | Phase B で緩和検討。 |
 | Merge 精度制御 | `VITE_MERGE_PRECISION` → `conimg.merge.threshold` | `localStorage.merge.precision` | `merge.precision='legacy'` | `flag_resolution` に `precision` と `threshold` を同梱し、`DiffMergeView` 露出率を追跡。 | Phase C で `beta/stable` を解放。【F:docs/MERGE-DESIGN-IMPL.md†L140-L206】 |

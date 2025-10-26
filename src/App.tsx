@@ -14,7 +14,7 @@ import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { buildPackage } from './lib/package'
 import { initAutoSave, type AutoSaveInitResult, type AutoSavePhaseGuardSnapshot } from './lib/autosave'
-import { getDay8Collector } from './telemetry/day8Collector'
+import { getDay8Collector, type Day8Collector } from './telemetry/day8Collector'
 
 function HelpModal({onClose}:{onClose:()=>void}){
   return (
@@ -73,6 +73,45 @@ export function publishAutoSaveGuard(decision: AutoSaveActivationDecision): void
   })
 }
 
+const telemetryFallbackPlans = new WeakSet<AutoSaveBootstrapPlan>()
+
+export function ensureAppAutoSaveTelemetry(
+  plan: AutoSaveBootstrapPlan,
+  collectorBefore: Day8Collector | undefined
+): void {
+  if (telemetryFallbackPlans.has(plan)) {
+    return
+  }
+
+  telemetryFallbackPlans.add(plan)
+
+  if (collectorBefore) {
+    return
+  }
+
+  const collector = getDay8Collector()
+  if (!collector) {
+    return
+  }
+
+  collector.publish({
+    feature: 'config.flags',
+    event: 'flag_resolution',
+    source: 'app.autosave',
+    phase: 'bootstrap',
+    snapshot: plan.snapshot,
+    errors: plan.errors,
+    ts: new Date().toISOString()
+  })
+}
+
+export function initializeAppAutoSavePlan(): AutoSaveBootstrapPlan {
+  const collectorBefore = getDay8Collector()
+  const plan = resolveAutoSaveBootstrapPlan()
+  ensureAppAutoSaveTelemetry(plan, collectorBefore)
+  return plan
+}
+
 export default function App(){
   const { sb, setSBTitle, addScene } = useSB()
   const [dockOpen, setDockOpen] = useState(()=> (localStorage.getItem('dockOpen')==='0'? false: true))
@@ -111,20 +150,8 @@ export default function App(){
   }, [])
 
   useEffect(()=>{
-    const plan = resolveAutoSaveBootstrapPlan()
+    const plan = initializeAppAutoSavePlan()
     setAutoSavePlan(plan)
-    const collector = getDay8Collector()
-    if (collector){
-      collector.publish({
-        feature: 'config.flags',
-        event: 'flag_resolution',
-        source: 'app.autosave',
-        phase: 'bootstrap',
-        snapshot: plan.snapshot,
-        errors: plan.errors,
-        ts: new Date().toISOString()
-      })
-    }
   }, [])
 
   useEffect(()=>{

@@ -6,7 +6,7 @@
 - **依拠文書**: AutoSave の保存ポリシー・API は [docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md) を、全体責務とデータフローは [Day8/docs/day8/design/03_architecture.md](../../Day8/docs/day8/design/03_architecture.md) を参照する。
 
 ## 2. フラグ依存の画面遷移図
-`FlagSnapshot` の `autosave.enabled` と `merge.precision` により、App 初期化と MergeDock タブ構成を段階制御する。既存フローの Collector→Analyzer→Reporter 連携は [Day8/docs/day8/design/03_architecture.md](../../Day8/docs/day8/design/03_architecture.md) の責務区分を尊重し、UI でのみ分岐する。
+`FlagSnapshot` の `autosave.enabled` と `merge.precision` により、App 初期化と MergeDock タブ構成を段階制御する。既存フローの Collector→Analyzer→Reporter 連携は [Day8/docs/day8/design/03_architecture.md](../../Day8/docs/day8/design/03_architecture.md) の責務区分を尊重し、UI でのみ分岐する。`initializeAppAutoSavePlan()` を入口として `flag_resolution` を 1 回だけ Collector へ渡し、Analyzer 以降が重複集計しないよう統制する。【F:src/App.tsx†L108-L144】
 
 ```mermaid
 digraph FlagGatedFlow {
@@ -43,7 +43,7 @@ FlagSnapshot を単一ソースとして利用し、AutoSave ブートストラ�
 | --- | --- | --- | --- | --- |
 | 1 | `App` マウント | `useFlagSnapshot()` で `FlagSnapshot` を取得。`source` メタはログ用に保持。 | - | `docs/design/config-flags.md` の優先順位 (env→localStorage→default) を踏襲。 |
 | 2 | `autosave.enabled === true` | `initAutoSave(getStoryboard, options)` を非同期呼出し。`FlagSnapshot.autosave.phase` が `disabled` なら no-op。 | `useAutoSaveSnapshot()` が有効化され、Diff タブのバックアップ CTA 判定に利用。 | AutoSave のデバウンス・容量制約は [docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md) §1.1。 |
-| 3 | `autosave.enabled === false` | AutoSave ランナーを起動せず `phase='disabled'` を通知。 | MergeDock 側のバックアップ CTA は常に非表示。 | Collector/Analyzer への副作用を発生させない。 |
+| 3 | `autosave.enabled === false` | AutoSave ランナーを起動せず `phase='disabled'` を通知。 | MergeDock 側のバックアップ CTA は常に非表示。 | Collector/Analyzer への副作用を発生させない（`initializeAppAutoSavePlan()` の fallback も publish なし）。 |
 | 4 | `merge.precision` 判定 | `FlagSnapshot.merge.precision` を `MergeDock` プロップ/コンテキストへ渡す。 | `precision=legacy`: Diff 非表示。`beta`: 末尾追加+Beta バッジ。`stable`: Diff デフォルト選択。 | タブ配列は [docs/MERGEDOCK-FLAG-DESIGN.md](../MERGEDOCK-FLAG-DESIGN.md) §3, §6 の擬似コード通り再構成。 |
 | 5 | Flag 更新イベント | `useFlagSnapshot()` の再発行を検知し AutoSave ランナーを再起動/停止。 | precision 変更に応じてタブ構成を再評価し、`merge.lastTab` のフォールバックを適用。 | ロールアウト/ロールバック時の整合性を保証。 |
 
