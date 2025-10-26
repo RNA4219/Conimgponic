@@ -28,6 +28,11 @@ export interface AutoSaveOptions {
   readonly maxBytes?: never
 }
 
+type AssertTrue<T extends true> = T
+type _AutoSaveOptionsPolicyInvariant = AssertTrue<
+  AutoSaveOptions extends { readonly policy?: unknown } ? false : true
+>
+
 export const AUTOSAVE_MAX_BYTES = 50 * 1024 * 1024
 
 export interface AutoSavePolicy {
