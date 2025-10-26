@@ -26,6 +26,17 @@ const createDisabledError = (): AutoSaveError => ({
   retryable: false
 })
 
+const isAutoSaveError = (value: unknown): value is AutoSaveError => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as { name?: unknown; code?: unknown; retryable?: unknown }
+  if (typeof candidate.code !== 'string' || typeof candidate.retryable !== 'boolean') {
+    return false
+  }
+  return candidate.name === 'AutoSaveError' || candidate.name === 'Error'
+}
+
 type AutoSaveTelemetryLockStrategy = Extract<
   AutoSaveAtomicWriteResult,
   { readonly ok: true }
@@ -496,19 +507,24 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         historyEntries: state.history.length
       })
     } catch (rawError) {
-      const domExceptionCtor = typeof DOMException === 'undefined' ? undefined : DOMException
-      const isDomException =
-        domExceptionCtor !== undefined && rawError instanceof domExceptionCtor
-      const isNotAllowedDomException =
-        isDomException && (rawError as DOMException).name === 'NotAllowedError'
-      const error: AutoSaveError = {
-        name: 'AutoSaveError',
-        message: rawError instanceof Error ? rawError.message : String(rawError),
-        code: 'write-failed',
-        retryable: !isNotAllowedDomException,
-        cause: rawError instanceof Error ? rawError : undefined
+      if (isAutoSaveError(rawError)) {
+        writeResult = { ok: false, error: rawError }
+      } else {
+        const domExceptionCtor = typeof DOMException === 'undefined' ? undefined : DOMException
+        const isDomException = domExceptionCtor !== undefined && rawError instanceof domExceptionCtor
+        const isNotAllowedDomException =
+          isDomException && (rawError as DOMException).name === 'NotAllowedError'
+        const cause = rawError instanceof Error ? rawError : undefined
+        const message = cause?.message ?? String(rawError)
+        const error: AutoSaveError = {
+          name: 'AutoSaveError',
+          message,
+          code: 'write-failed',
+          retryable: !isNotAllowedDomException,
+          ...(cause ? { cause } : {})
+        }
+        writeResult = { ok: false, error }
       }
-      writeResult = { ok: false, error }
     }
 
     if (!writeResult.ok) {
