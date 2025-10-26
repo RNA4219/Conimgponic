@@ -58,8 +58,6 @@ export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze(AUTOSAVE_POLICY_VAL
 
 export const AUTOSAVE_DEFAULTS = AUTOSAVE_POLICY
 
-const BYTES_PER_MEGABYTE = 1024 * 1024
-
 const readWorkspaceValue = (
   workspace: WorkspaceConfiguration | null | undefined,
   key: string
@@ -83,45 +81,6 @@ const readWorkspaceValue = (
   }, workspace)
 }
 
-const asFiniteNumber = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) {
-      return parsed
-    }
-  }
-  return null
-}
-
-const asPositiveInteger = (value: unknown): number | null => {
-  const numeric = asFiniteNumber(value)
-  if (numeric == null) {
-    return null
-  }
-  const truncated = Math.floor(numeric)
-  return truncated > 0 ? truncated : null
-}
-
-const asPositiveMegabytes = (value: unknown): number | null => {
-  const numeric = asFiniteNumber(value)
-  if (numeric == null || numeric <= 0) {
-    return null
-  }
-  const rounded = Math.round(numeric * BYTES_PER_MEGABYTE)
-  return rounded > 0 ? rounded : null
-}
-
-const readEnvValue = (key: string): unknown => {
-  const scope = globalThis as typeof globalThis & {
-    process?: { env?: Record<string, unknown> }
-    import?: { meta?: { env?: Record<string, unknown> } }
-  }
-  return scope.process?.env?.[key] ?? scope.import?.meta?.env?.[key]
-}
-
 export interface AutoSavePolicyResolutionOptions {
   readonly workspace?: WorkspaceConfiguration | null
 }
@@ -133,27 +92,12 @@ type AutoSavePolicyResolutionInput =
   | AutoSavePolicyResolutionOptions
 
 export const resolveAutoSavePolicy = (
-  input?: AutoSavePolicyResolutionInput
+  _input?: AutoSavePolicyResolutionInput
 ): AutoSavePolicy => {
-  const workspace =
-    input && typeof input === 'object' && 'workspace' in input
-      ? (input as AutoSavePolicyResolutionOptions).workspace ?? null
-      : ((input as WorkspaceConfiguration | null | undefined) ?? null)
-  const workspaceHistory = asPositiveInteger(
-    readWorkspaceValue(workspace, 'conimg.autosave.historyLimit')
-  )
-  const workspaceSize = asPositiveMegabytes(
-    readWorkspaceValue(workspace, 'conimg.autosave.sizeLimitMB')
-  )
-
-  const envHistory = asPositiveInteger(readEnvValue('VITE_AUTOSAVE_HISTORY_LIMIT'))
-  const envSize = asPositiveMegabytes(readEnvValue('VITE_AUTOSAVE_SIZE_LIMIT_MB'))
-
-  return {
-    ...AUTOSAVE_POLICY,
-    maxGenerations: workspaceHistory ?? envHistory ?? AUTOSAVE_POLICY.maxGenerations,
-    maxBytes: workspaceSize ?? envSize ?? AUTOSAVE_POLICY.maxBytes
-  }
+  // Phase A: 保存ポリシーは固定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 および
+  // `docs/IMPLEMENTATION-PLAN.md` §0.4 の要件に合わせ、入力に関わらず
+  // `AUTOSAVE_POLICY` をそのまま返却する。
+  return AUTOSAVE_POLICY
 }
 
 export type AutoSaveErrorCode =

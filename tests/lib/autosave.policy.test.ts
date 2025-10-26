@@ -88,10 +88,11 @@ const importTs = async (path: string) => {
   return mod.namespace as any
 }
 
-test('workspace autosave policy overrides history GC constraints', async () => {
+test('createVscodeAutoSaveBridge shares AUTOSAVE-DESIGN-IMPL Phase A defaults', async () => {
   cache.clear()
   const { resolveAutoSaveBootstrapPlan } = await importTs(join(root, 'src/config/index.ts'))
   const { createVscodeAutoSaveBridge } = await importTs(join(root, 'src/platform/vscode/autosave.ts'))
+  const { AUTOSAVE_POLICY } = await importTs(join(root, 'src/lib/autosave.ts'))
 
   const workspace = {
     get(key: string): unknown {
@@ -109,8 +110,9 @@ test('workspace autosave policy overrides history GC constraints', async () => {
   }
 
   const plan = resolveAutoSaveBootstrapPlan({ workspace, clock: () => new Date('2024-01-01T00:00:00.000Z') })
-  assert.equal(plan.policy.maxGenerations, 2)
-  assert.equal(plan.policy.maxBytes, 5 * 1024 * 1024)
+  assert.equal(plan.policy, AUTOSAVE_POLICY)
+  assert.equal(plan.policy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
+  assert.equal(plan.policy.maxBytes, AUTOSAVE_POLICY.maxBytes)
 
   const sent: any[] = []
   let tick = 0
@@ -162,8 +164,9 @@ test('workspace autosave policy overrides history GC constraints', async () => {
   }
 
   const history = bridge.inspectHistory()
-  assert.equal(history.generations, 2)
-  assert.ok(history.retainedBytes <= plan.policy.maxBytes)
+  assert.equal(history.generations, 3)
+  assert.ok(history.generations <= AUTOSAVE_POLICY.maxGenerations)
+  assert.ok(history.retainedBytes <= AUTOSAVE_POLICY.maxBytes)
 
   const results = sent.filter((msg) => msg?.type === 'snapshot.result')
   assert.equal(results.length, 3)
@@ -171,33 +174,35 @@ test('workspace autosave policy overrides history GC constraints', async () => {
   assert.equal(last.payload.retainedBytes, history.retainedBytes)
 })
 
-test('initAutoSave respects resolved autosave policy from env and workspace', async () => {
+test('resolveAutoSavePolicy keeps AUTOSAVE-DESIGN-IMPL Phase A thresholds despite overrides', async () => {
   cache.clear()
   const { resolveAutoSaveBootstrapPlan } = await importTs(join(root, 'src/config/index.ts'))
-  const { initAutoSave, resolveAutoSavePolicy } = await importTs(join(root, 'src/lib/autosave.ts'))
+  const { initAutoSave, resolveAutoSavePolicy, AUTOSAVE_POLICY } = await importTs(
+    join(root, 'src/lib/autosave.ts')
+  )
 
   const originalHistory = process.env.VITE_AUTOSAVE_HISTORY_LIMIT
   const originalSize = process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB
 
   try {
-    process.env.VITE_AUTOSAVE_HISTORY_LIMIT = '2'
-    process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = '1'
+    process.env.VITE_AUTOSAVE_HISTORY_LIMIT = '30'
+    process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = '100'
 
     const plan = resolveAutoSaveBootstrapPlan({ workspace: null })
-    assert.equal(plan.policy.maxGenerations, 2)
-    assert.equal(plan.policy.maxBytes, 1 * 1024 * 1024)
+    assert.equal(plan.policy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
+    assert.equal(plan.policy.maxBytes, AUTOSAVE_POLICY.maxBytes)
 
     const envPolicy = resolveAutoSavePolicy()
-    assert.equal(envPolicy.maxGenerations, 2)
-    assert.equal(envPolicy.maxBytes, 1 * 1024 * 1024)
+    assert.equal(envPolicy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
+    assert.equal(envPolicy.maxBytes, AUTOSAVE_POLICY.maxBytes)
 
     const workspace = {
       get(key: string): unknown {
         switch (key) {
           case 'conimg.autosave.historyLimit':
-            return 3
+            return 35
           case 'conimg.autosave.sizeLimitMB':
-            return 2
+            return 120
           default:
             return undefined
         }
@@ -205,8 +210,12 @@ test('initAutoSave respects resolved autosave policy from env and workspace', as
     }
 
     const workspacePolicyPlan = resolveAutoSaveBootstrapPlan({ workspace })
-    assert.equal(workspacePolicyPlan.policy.maxGenerations, 3)
-    assert.equal(workspacePolicyPlan.policy.maxBytes, 2 * 1024 * 1024)
+    assert.equal(workspacePolicyPlan.policy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
+    assert.equal(workspacePolicyPlan.policy.maxBytes, AUTOSAVE_POLICY.maxBytes)
+
+    const workspacePolicy = resolveAutoSavePolicy(workspace)
+    assert.equal(workspacePolicy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
+    assert.equal(workspacePolicy.maxBytes, AUTOSAVE_POLICY.maxBytes)
 
     const opfs = createOpfsMock()
     Object.defineProperty(globalThis, 'navigator', {
@@ -245,12 +254,12 @@ test('initAutoSave respects resolved autosave policy from env and workspace', as
     const historyKeys = Array.from(opfs.files.keys()).filter((key) =>
       key.startsWith('project/autosave/history/')
     )
-    assert.ok(historyKeys.length <= envPolicy.maxGenerations)
+    assert.ok(historyKeys.length <= AUTOSAVE_POLICY.maxGenerations)
     const totalBytes = historyKeys.reduce((sum, key) => {
       const content = opfs.files.get(key) ?? ''
       return sum + Buffer.byteLength(content, 'utf8')
     }, 0)
-    assert.ok(totalBytes <= envPolicy.maxBytes)
+    assert.ok(totalBytes <= AUTOSAVE_POLICY.maxBytes)
 
     await runner.dispose()
   } finally {
