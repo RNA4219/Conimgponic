@@ -181,40 +181,9 @@
       },
       "additionalProperties": false
     },
-    "flags": {
+    "payload": {
       "type": "object",
-      "properties": {
-        "flag_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "source": {
-          "type": "string",
-          "enum": [
-            "env",
-            "workspace",
-            "localStorage",
-            "default"
-          ]
-        },
-        "resolved_value": {
-          "type": [
-            "string",
-            "number",
-            "boolean",
-            "null"
-          ]
-        },
-        "default_used": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "flag_id",
-        "source",
-        "default_used"
-      ],
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "export": {
       "type": "object",
@@ -276,8 +245,76 @@
       },
       "then": {
         "required": [
-          "autosave"
-        ]
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "minLength": 1
+              },
+              "debounce_ms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "latency_ms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "attempt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "phase_step": {
+                "type": "string",
+                "minLength": 1
+              },
+              "guard": {
+                "type": "object",
+                "properties": {
+                  "current": {
+                    "type": "string",
+                    "enum": [
+                      "A-0",
+                      "A-1",
+                      "A-2",
+                      "B-0",
+                      "B-1",
+                      "GA"
+                    ]
+                  },
+                  "rollbackTo": {
+                    "type": "string",
+                    "enum": [
+                      "A-0",
+                      "A-1",
+                      "A-2",
+                      "B-0",
+                      "B-1",
+                      "GA"
+                    ]
+                  }
+                },
+                "required": [
+                  "current",
+                  "rollbackTo"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "state",
+              "debounce_ms",
+              "latency_ms",
+              "attempt",
+              "phase_step",
+              "guard"
+            ],
+            "additionalProperties": false
+          }
+        }
       }
     },
     {
@@ -290,8 +327,77 @@
       },
       "then": {
         "required": [
-          "merge"
-        ]
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "applying",
+                  "completed"
+                ]
+              },
+              "collisions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "processing_ms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "guardrail": {
+                "type": "object",
+                "properties": {
+                  "metric": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "observed": {
+                    "type": "number"
+                  },
+                  "tolerance_pct": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "rollbackTo": {
+                    "type": "string",
+                    "enum": [
+                      "A-0",
+                      "A-1",
+                      "A-2",
+                      "B-0",
+                      "B-1",
+                      "GA"
+                    ]
+                  }
+                },
+                "required": [
+                  "metric",
+                  "observed",
+                  "tolerance_pct",
+                  "rollbackTo"
+                ],
+                "additionalProperties": false
+              },
+              "digest": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "phase",
+              "collisions",
+              "processing_ms",
+              "guardrail",
+              "digest"
+            ],
+            "additionalProperties": false
+          }
+        }
       }
     },
     {
@@ -304,7 +410,7 @@
       },
       "then": {
         "required": [
-          "flags"
+          "payload"
         ]
       }
     },
@@ -354,9 +460,54 @@
       },
       "then": {
         "required": [
-          "flags"
+          "payload"
         ],
         "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "flag": {
+                "type": "string",
+                "minLength": 1
+              },
+              "variant": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "env",
+                  "workspace",
+                  "localStorage",
+                  "default"
+                ]
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "A-0",
+                  "A-1",
+                  "A-2",
+                  "B-0",
+                  "B-1",
+                  "GA"
+                ]
+              },
+              "evaluation_ms": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "flag",
+              "variant",
+              "source",
+              "phase",
+              "evaluation_ms"
+            ],
+            "additionalProperties": false
+          },
           "detail": {
             "required": [
               "retryable"

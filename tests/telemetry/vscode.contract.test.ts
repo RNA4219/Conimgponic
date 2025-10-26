@@ -7,6 +7,61 @@ import {
   FLAG_RESOLUTION_SOURCE_VARIANTS
 } from '../../scripts/monitor/collect-metrics.js'
 
+type JsonSchemaObject = {
+  readonly type?: string
+  readonly enum?: readonly string[]
+  readonly properties?: {
+    readonly [key: string]: JsonSchemaObject
+  }
+  readonly required?: readonly string[]
+}
+
+type TelemetrySchema = {
+  readonly allOf: readonly TelemetrySchemaConditional[]
+}
+
+type TelemetrySchemaConditional = {
+  readonly if?: {
+    readonly properties?: {
+      readonly component?: {
+        readonly const?: string
+      }
+      readonly kind?: {
+        readonly const?: string
+      }
+    }
+  }
+  readonly then?: {
+    readonly required?: readonly string[]
+    readonly properties?: {
+      readonly payload?: JsonSchemaObject
+    }
+  }
+}
+
+const telemetrySchema = JSON.parse(
+  readFileSync(new URL('../../schemas/telemetry.schema.json', import.meta.url), 'utf-8')
+) as TelemetrySchema
+
+const findConditional = (predicate: (entry: TelemetrySchemaConditional) => boolean) => {
+  const entry = telemetrySchema.allOf.find(predicate)
+  assertOk(entry, 'telemetry schema conditional not found')
+  assertOk(entry.then, 'telemetry schema conditional lacks then clause')
+  return entry.then
+}
+
+const assertPayloadSchema = (
+  thenClause: NonNullable<TelemetrySchemaConditional['then']>,
+  expectedRequired: readonly string[]
+) => {
+  assertOk(thenClause.properties, 'telemetry schema conditional lacks properties')
+  const payloadSchema = thenClause.properties.payload
+  assertOk(payloadSchema, 'telemetry schema conditional must define payload')
+  assertOk(payloadSchema.required, 'payload schema must define required fields')
+  deepStrictEqual(payloadSchema.required, Array.from(expectedRequired))
+  return payloadSchema
+}
+
 const findTelemetrySpec = (event: string) =>
   COLLECT_METRICS_CONTRACT.telemetry.events.find((spec) => spec.event === event)
 
@@ -80,23 +135,65 @@ describe('vscode extension telemetry contract (RED)', () => {
     ])
   })
 
-  test('telemetry schema の flags.source enum が FlagSource と一致する', () => {
-    const schema = JSON.parse(
-      readFileSync(new URL('../../schemas/telemetry.schema.json', import.meta.url), 'utf-8')
-    ) as {
-      readonly properties: {
-        readonly flags: {
-          readonly properties: {
-            readonly source: {
-              readonly enum: readonly string[]
-            }
-          }
-        }
-      }
-    }
+  test('telemetry schema の flag_resolution payload が FlagSource と必須フィールドを同期する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.kind?.const === 'flag_resolution'
+    )
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'flag',
+      'variant',
+      'source',
+      'phase',
+      'evaluation_ms'
+    ])
 
-    const schemaEnum = schema.properties.flags.properties.source.enum
-    deepStrictEqual(schemaEnum, Array.from(FLAG_RESOLUTION_SOURCE_VARIANTS))
+    assertOk(payloadSchema.properties, 'flag_resolution payload schema must define properties')
+    const sourceSchema = payloadSchema.properties.source
+    assertOk(sourceSchema, 'flag_resolution payload schema must define source')
+    assertOk(sourceSchema.enum, 'flag_resolution source must define enum')
+    deepStrictEqual(sourceSchema.enum, Array.from(FLAG_RESOLUTION_SOURCE_VARIANTS))
+  })
+
+  test('telemetry schema の status.autosave payload が Collector 要件を固定する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.component?.const === 'autosave'
+    )
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'state',
+      'debounce_ms',
+      'latency_ms',
+      'attempt',
+      'phase_step',
+      'guard'
+    ])
+
+    assertOk(payloadSchema.properties, 'status.autosave payload schema must define properties')
+    const guardSchema = payloadSchema.properties.guard
+    assertOk(guardSchema, 'status.autosave payload schema must define guard')
+    assertOk(guardSchema.required, 'status.autosave guard must define required fields')
+    deepStrictEqual(guardSchema.required, ['current', 'rollbackTo'])
+  })
+
+  test('telemetry schema の merge.trace payload が Collector 要件を固定する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.component?.const === 'merge'
+    )
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'phase',
+      'collisions',
+      'processing_ms',
+      'guardrail',
+      'digest'
+    ])
+
+    assertOk(payloadSchema.properties, 'merge.trace payload schema must define properties')
+    const guardrailSchema = payloadSchema.properties.guardrail
+    assertOk(guardrailSchema, 'merge.trace payload schema must define guardrail')
+    assertOk(guardrailSchema.required, 'merge.trace guardrail must define required fields')
+    deepStrictEqual(
+      guardrailSchema.required,
+      ['metric', 'observed', 'tolerance_pct', 'rollbackTo']
+    )
   })
 
   test('merge.trace telemetry は Phase 情報と ±5% 監視用メトリクスを保持する', () => {
