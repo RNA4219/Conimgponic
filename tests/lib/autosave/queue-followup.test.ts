@@ -109,3 +109,51 @@ scenario(
     assert.equal(finalSnapshot.queuedGeneration ?? 0, 0)
   }
 )
+
+scenario('queuedGeneration increments per flush and persists across gc rotation', async (t, ctx) => {
+  const { initAutoSave, AUTOSAVE_POLICY, opfs } = ctx
+  let sceneCount = 1
+  const runner = initAutoSave(
+    () => makeStoryboard(Array.from({ length: sceneCount }, (_, index) => `scene-${index + 1}`)),
+    { disabled: false },
+    ENABLED_GUARD
+  )
+
+  assert.equal(runner.snapshot().queuedGeneration ?? 0, 0)
+
+  const committed: number[] = []
+  const totalFlushes = AUTOSAVE_POLICY.maxGenerations + 3
+  for (let expectedGeneration = 0; expectedGeneration < totalFlushes; expectedGeneration += 1) {
+    sceneCount += 1
+    runner.markDirty({ pendingBytes: 1024 + expectedGeneration })
+    const dirtySnapshot = runner.snapshot()
+    assert.equal(
+      dirtySnapshot.queuedGeneration ?? 0,
+      expectedGeneration,
+      'queuedGeneration should expose the next commit generation before flush'
+    )
+
+    await runner.flushNow()
+
+    const indexPayload = opfs.files.get('project/autosave/index.json')
+    assert.ok(indexPayload, 'index.json must be written after flush')
+    const parsed = JSON.parse(indexPayload)
+    const storedGeneration = parsed?.generation
+    assert.equal(storedGeneration, expectedGeneration, 'index.json should persist last committed generation')
+    committed.push(storedGeneration)
+
+    const postFlushSnapshot = runner.snapshot()
+    assert.equal(postFlushSnapshot.queuedGeneration ?? 0, 0)
+  }
+
+  for (let i = 1; i < committed.length; i += 1) {
+    assert.ok(
+      committed[i]! > committed[i - 1]!,
+      'committed generations should increase monotonically'
+    )
+  }
+
+  const finalIndex = JSON.parse(opfs.files.get('project/autosave/index.json')!)
+  assert.ok(finalIndex.history.length <= AUTOSAVE_POLICY.maxGenerations)
+  assert.equal(finalIndex.generation, committed.at(-1))
+})
