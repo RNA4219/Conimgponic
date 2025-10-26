@@ -17,6 +17,7 @@ type WorkflowYaml = {
 };
 
 type AuditJobConfig = {
+  needs?: JobNeedsConfig;
   steps?: StepConfig[];
 };
 
@@ -219,6 +220,12 @@ describe('ci workflow build job', () => {
       if (!audit) {
         assert.fail('workflow.jobs.audit must exist');
       }
+
+      assertJobNeedsIncludeAll(
+        audit.needs,
+        ['sbom'],
+        'audit job must depend on sbom job',
+      );
 
       const auditSteps = audit.steps;
       assertStepArray(auditSteps, 'workflow.jobs.audit.steps must be an array');
