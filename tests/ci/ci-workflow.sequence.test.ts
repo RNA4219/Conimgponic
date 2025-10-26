@@ -199,8 +199,8 @@ describe('ci workflow build job', () => {
 
       assertLineIncludes(
         auditRunLines,
-        'github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64',
-        'audit job must install osv-scanner via official binary download',
+        'raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh',
+        'audit job must install osv-scanner via official install script',
       );
 
       assertLineIncludes(
@@ -264,6 +264,12 @@ describe('ci workflow build job', () => {
       uploadLogsStep,
       'always()',
       '"Upload suite logs" step must run on all outcomes',
+    );
+
+    assertUploadArtifactName(
+      uploadLogsStep,
+      'quality-${{ matrix.suite }}',
+      '"Upload suite logs" artifact must be named "quality-${{ matrix.suite }}"',
     );
 
     assertUploadArtifactPaths(
@@ -506,12 +512,14 @@ function assertStepIfEquals(step: StepConfig, expected: string, message: string)
   assert.strictEqual(step.if.trim(), expected, message);
 }
 
-function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
-  if (typeof step.uses !== 'string') {
-    assert.fail(`${message}; step.uses must be configured as a string`);
+function assertStepContinueOnError(step: StepConfig, message: string): void {
+  const value = step['continue-on-error'];
+
+  if (typeof value !== 'boolean') {
+    assert.fail(`${message}; step.continue-on-error must be configured as a boolean`);
   }
 
-  assert.strictEqual(step.uses.trim(), expected, message);
+  assert.strictEqual(value, true, message);
 }
 
 function assertStepRunIncludesLine(step: StepConfig, expectedLine: string, message: string): void {
@@ -620,6 +628,24 @@ function assertUploadArtifactPaths(
     const hasMatch = configuredPaths.includes(expectedPath);
     assert.ok(hasMatch, `${message}; path must include "${expectedPath}"`);
   }
+}
+
+function assertUploadArtifactName(
+  step: UploadArtifactStep,
+  expectedName: string,
+  message: string,
+): void {
+  const config = step.with;
+  if (!config || typeof config !== 'object') {
+    assert.fail(`${message}; step.with must be configured`);
+  }
+
+  const { name } = config as { name?: unknown };
+  if (typeof name !== 'string') {
+    assert.fail(`${message}; name must be configured as a string`);
+  }
+
+  assert.strictEqual(name.trim(), expectedName, message);
 }
 
 function assertMatrixEntries(value: unknown, message: string): asserts value is QualityMatrixEntry[] {
