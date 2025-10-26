@@ -1,9 +1,14 @@
 import { resolveAutoSavePolicy } from '../lib/autosave.js'
 import type { AutoSavePhaseGuardSnapshot, AutoSavePolicy } from '../lib/autosave.js'
 
-import { publishFlagResolution } from '../telemetry/day8Collector.js'
+import {
+  publishFlagResolution,
+  type FlagResolutionEventPayload
+} from '../telemetry/day8Collector.js'
 import type {
+  FeatureFlagName,
   FlagSnapshot,
+  FlagSource,
   FlagValidationError,
   ResolveOptions,
   WorkspaceConfiguration
@@ -11,6 +16,7 @@ import type {
 
 import {
   FLAG_MIGRATION_PLAN,
+  FEATURE_FLAG_DEFINITIONS,
   resolveFlags
 } from './flags.js'
 
@@ -41,6 +47,81 @@ export type {
   MergePrecision,
   ResolveOptions
 } from './flags.js'
+
+export type { FlagResolutionEventPayload } from '../telemetry/day8Collector.js'
+
+const errorKey = (error: FlagValidationError): string =>
+  `${error.code}:${error.source}:${error.raw}:${error.phase}`
+
+const mergeErrors = (
+  flag: FeatureFlagName,
+  snapshotErrors: readonly FlagValidationError[],
+  planErrors: readonly FlagValidationError[]
+): readonly FlagValidationError[] => {
+  if (snapshotErrors.length === 0 && planErrors.length === 0) {
+    return []
+  }
+  const unique = new Map<string, FlagValidationError>()
+  for (const error of snapshotErrors) {
+    unique.set(errorKey(error), error)
+  }
+  for (const error of planErrors) {
+    if (error.flag === flag && !unique.has(errorKey(error))) {
+      unique.set(errorKey(error), error)
+    }
+  }
+  return [...unique.values()]
+}
+
+const toFlagPayload = (
+  flag: FeatureFlagName,
+  variant: unknown,
+  source: FlagSource,
+  snapshotErrors: readonly FlagValidationError[],
+  planErrors: readonly FlagValidationError[],
+  evaluationMs: number
+): FlagResolutionEventPayload => ({
+  flag,
+  variant: String(variant),
+  source,
+  phase: FEATURE_FLAG_DEFINITIONS[flag].phase,
+  evaluation_ms: evaluationMs,
+  errors: mergeErrors(flag, snapshotErrors, planErrors)
+})
+
+export const collectFlagResolutionPayloads = (
+  snapshot: FlagSnapshot,
+  errors: readonly FlagValidationError[],
+  evaluationMs: number
+): readonly FlagResolutionEventPayload[] => {
+  const evaluation = Math.max(0, evaluationMs)
+  return [
+    toFlagPayload(
+      'autosave.enabled',
+      snapshot.autosave.value,
+      snapshot.autosave.source,
+      snapshot.autosave.errors,
+      errors,
+      evaluation
+    ),
+    toFlagPayload(
+      'plugins.enable',
+      snapshot.plugins.value,
+      snapshot.plugins.source,
+      snapshot.plugins.errors,
+      errors,
+      evaluation
+    ),
+    toFlagPayload(
+      'merge.precision',
+      snapshot.merge.value,
+      snapshot.merge.source,
+      snapshot.merge.errors,
+      errors,
+      evaluation
+    )
+  ]
+}
 
 type FlagRolloutPhase = (typeof FLAG_MIGRATION_PLAN)[number]['phase']
 
@@ -76,7 +157,8 @@ export function resolveAutoSaveBootstrapPlan(
   const evaluationMs = Math.max(0, Math.round(readClock() - startedAt))
   const planErrors = errors satisfies readonly FlagValidationError[]
 
-  publishFlagResolution('app.autosave', 'bootstrap', snapshot, planErrors, evaluationMs)
+  const payloads = collectFlagResolutionPayloads(snapshot, planErrors, evaluationMs)
+  publishFlagResolution('app.autosave', 'bootstrap', payloads, evaluationMs)
   const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
 
   const workspaceInput: WorkspaceConfiguration | null | undefined = options?.workspace
@@ -105,7 +187,8 @@ export function resolvePluginBridgeBootstrapPlan(
   const { snapshot, errors } = resolveFlags(options, { withErrors: true })
   const evaluationMs = Math.max(0, Math.round(readClock() - startedAt))
 
-  publishFlagResolution('vscode.plugins', 'bootstrap', snapshot, errors, evaluationMs)
+  const payloads = collectFlagResolutionPayloads(snapshot, errors, evaluationMs)
+  publishFlagResolution('vscode.plugins', 'bootstrap', payloads, evaluationMs)
   return {
     snapshot,
     enableFlag: snapshot.plugins.enabled,

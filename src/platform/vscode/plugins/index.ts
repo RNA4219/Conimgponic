@@ -1,7 +1,7 @@
 import {
+  collectFlagResolutionPayloads,
   resolvePluginBridgeBootstrapPlan,
-  type FlagSnapshot,
-  type FlagValidationError,
+  type FlagResolutionEventPayload,
   type ResolveOptions,
 } from '../../../config/index.js';
 
@@ -105,9 +105,8 @@ export interface PluginCollectorFlagResolutionEvent {
   readonly event: 'flag_resolution';
   readonly source: 'vscode.plugins';
   readonly phase: 'bootstrap';
-  readonly snapshot: FlagSnapshot;
-  readonly errors: readonly FlagValidationError[];
   readonly evaluation_ms: number;
+  readonly payload: FlagResolutionEventPayload;
   readonly ts: string;
 }
 
@@ -159,18 +158,24 @@ export function bootstrapPluginBridge(
   options: PluginBridgeBootstrapOptions
 ): PluginBridge | undefined {
   const plan = resolvePluginBridgeBootstrapPlan(options.resolveOptions);
-  const telemetryEvent: PluginCollectorFlagResolutionEvent = {
-    kind: 'telemetry',
-    feature: 'config.flags',
-    event: 'flag_resolution',
-    source: 'vscode.plugins',
-    phase: 'bootstrap',
-    snapshot: plan.snapshot,
-    errors: plan.errors,
-    evaluation_ms: plan.evaluationMs,
-    ts: new Date().toISOString(),
-  };
-  options.collector.publish(telemetryEvent);
+  const payloads = collectFlagResolutionPayloads(
+    plan.snapshot,
+    plan.errors,
+    plan.evaluationMs
+  );
+  for (const payload of payloads) {
+    const telemetryEvent: PluginCollectorFlagResolutionEvent = {
+      kind: 'telemetry',
+      feature: 'config.flags',
+      event: 'flag_resolution',
+      source: 'vscode.plugins',
+      phase: 'bootstrap',
+      evaluation_ms: plan.evaluationMs,
+      payload,
+      ts: new Date().toISOString(),
+    };
+    options.collector.publish(telemetryEvent);
+  }
   return maybeCreatePluginBridge({
     enableFlag: plan.enableFlag,
     platformVersion: options.platformVersion,

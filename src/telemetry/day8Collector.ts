@@ -1,5 +1,10 @@
 import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
-import type { FlagSnapshot, FlagValidationError } from '../config/flags.js'
+import type {
+  FeatureFlagName,
+  FlagRolloutPhase,
+  FlagSource,
+  FlagValidationError
+} from '../config/flags.js'
 
 export type Day8CollectorAutoSaveGuardReason =
   | 'phase-a0-failsafe'
@@ -15,14 +20,22 @@ export type Day8CollectorAutoSaveGuardEvent = {
   readonly ts: string
 }
 
+export interface FlagResolutionEventPayload {
+  readonly flag: FeatureFlagName
+  readonly variant: string
+  readonly source: FlagSource
+  readonly phase: FlagRolloutPhase
+  readonly evaluation_ms: number
+  readonly errors: readonly FlagValidationError[]
+}
+
 export type Day8CollectorFlagResolutionEvent = {
   readonly feature: 'config.flags'
   readonly event: 'flag_resolution'
   readonly source: string
   readonly phase: string
-  readonly snapshot: FlagSnapshot
-  readonly errors: readonly FlagValidationError[]
   readonly evaluation_ms: number
+  readonly payload: FlagResolutionEventPayload
   readonly ts: string
 }
 
@@ -43,22 +56,22 @@ export const getDay8Collector = (): Day8Collector | undefined => {
 export const publishFlagResolution = (
   source: string,
   phase: string,
-  snapshot: FlagSnapshot,
-  errors: readonly FlagValidationError[],
+  payloads: readonly FlagResolutionEventPayload[],
   evaluationMs: number
 ): void => {
   const collector = getDay8Collector()
   if (!collector) {
     return
   }
-  collector.publish({
-    feature: 'config.flags',
-    event: 'flag_resolution',
-    source,
-    phase,
-    snapshot,
-    errors,
-    evaluation_ms: evaluationMs,
-    ts: new Date().toISOString()
-  })
+  for (const payload of payloads) {
+    collector.publish({
+      feature: 'config.flags',
+      event: 'flag_resolution',
+      source,
+      phase,
+      evaluation_ms: evaluationMs,
+      payload,
+      ts: new Date().toISOString()
+    })
+  }
 }
