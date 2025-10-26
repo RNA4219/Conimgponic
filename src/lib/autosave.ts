@@ -1077,6 +1077,7 @@ export function initAutoSave(
   let inFlightFlush: Promise<void> | null = null
   let inFlightBackoff: Promise<void> | null = null
   let disposePromise: Promise<void> | null = null
+  let inflightQueueCount = 0
   const ensureNextGeneration = async (): Promise<number> => {
     if (nextGeneration != null) {
       return nextGeneration
@@ -1176,29 +1177,50 @@ export function initAutoSave(
     clearDebounceTimer()
     clearIdleTimer()
   }
+  const trimPendingQueue = () => {
+    const overflow = pendingQueue.length - AUTOSAVE_QUEUE_POLICY.maxPending
+    if (overflow > 0) {
+      pendingQueue.splice(inflightQueueCount, overflow)
+    }
+  }
   const enqueueRetryEntry = (reason: AutoSaveQueueEntry['reason'], retries: number): void => {
-    pendingQueue.unshift({
+    const entry: AutoSaveQueueEntry = {
       ts: new Date().toISOString(),
       reason,
       estimatedBytes: pendingBytes,
       retries
-    })
-    while (pendingQueue.length > AUTOSAVE_QUEUE_POLICY.maxPending) {
-      pendingQueue.pop()
+    }
+    if (inflightQueueCount > 0 && pendingQueue.length > 0) {
+      pendingQueue[0] = entry
+    } else {
+      pendingQueue.unshift(entry)
+      trimPendingQueue()
     }
     const targetGeneration = inflightGeneration ?? nextGeneration
     if (targetGeneration != null) {
-      queuedGeneration = targetGeneration
+      const backlog = Math.max(0, pendingQueue.length - inflightQueueCount)
+      queuedGeneration = backlog > 0 ? targetGeneration + backlog - 1 : targetGeneration
     }
   }
   const runFlush = async (
     attempt: number,
     source: 'manual' | 'auto',
-    generation: number
+    generation: number,
+    consumedCount: number
   ): Promise<void> => {
-    if (disposed) throw disabledError()
+    if (disposed) {
+      if (consumedCount > 0) {
+        inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)
+      }
+      throw disabledError()
+    }
     const storyboard = getStoryboard()
-    if (!storyboard) throw disabledError()
+    if (!storyboard) {
+      if (consumedCount > 0) {
+        inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)
+      }
+      throw disabledError()
+    }
     const payload = JSON.stringify(storyboard, null, 2)
     pendingBytes = encoder.encode(payload).length; phase = 'awaiting-lock'
     try {
@@ -1208,17 +1230,22 @@ export function initAutoSave(
         phase = 'updating-index'; const ts = new Date().toISOString(); await updateIndex(ts, pendingBytes, payload, generation)
         phase = 'gc';
         lastSuccessAt = ts;
-        const remaining = pendingQueue.length;
-        inflightGeneration = null;
-        nextGeneration = generation + 1;
-        queuedGeneration = remaining > 0 ? nextGeneration! : 0;
-        pendingBytes = remaining > 0 ? pendingQueue[remaining - 1]!.estimatedBytes : 0;
+        if (consumedCount > 0) {
+          pendingQueue.splice(0, consumedCount)
+          inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)
+        }
+        const backlog = Math.max(0, pendingQueue.length - inflightQueueCount)
+        inflightGeneration = null
+        nextGeneration = generation + 1
+        queuedGeneration = backlog > 0 ? nextGeneration + backlog - 1 : 0
+        const lastPending = pendingQueue[pendingQueue.length - 1]
+        pendingBytes = lastPending ? lastPending.estimatedBytes : 0
         retryCount = 0;
         lastError = undefined;
         if (disposed) {
           pendingBytes = 0;
           phase = 'disabled';
-        } else if (!disposing && remaining > 0) {
+        } else if (!disposing && backlog > 0) {
           phase = 'debouncing';
           resetSchedule();
           scheduleDebounce();
@@ -1227,6 +1254,9 @@ export function initAutoSave(
         }
       }, { preferredStrategy: 'web-lock' })
     } catch (error: unknown) {
+      if (consumedCount > 0) {
+        inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)
+      }
       if (disposed) throw disabledError()
       const stage = phase
       const autoError =
@@ -1291,6 +1321,7 @@ export function initAutoSave(
           phase = 'error'
           pendingBytes = 0
           pendingQueue.length = 0
+          inflightQueueCount = 0
           queuedGeneration = 0
           inflightGeneration = null
           disposed = true
@@ -1302,6 +1333,7 @@ export function initAutoSave(
         pendingBytes = 0
         disposed = true
         phase = 'disabled'
+        inflightQueueCount = 0
       }
       throw autoError
     }
@@ -1322,20 +1354,23 @@ export function initAutoSave(
     } else if (retryTimer) {
       return
     }
-    if (source === 'auto' && pendingQueue.length === 0) {
+    const queuedCount = Math.max(0, pendingQueue.length - inflightQueueCount)
+    if (source === 'auto' && queuedCount === 0) {
       return
     }
     phase = 'debouncing'
-    if (pendingQueue.length > 0) {
-      pendingQueue.shift()
+    const consumedCount = queuedCount > 0 ? 1 : 0
+    if (consumedCount > 0) {
+      inflightQueueCount += consumedCount
     }
     const generation =
       inflightGeneration != null ? inflightGeneration : await ensureNextGeneration()
     if (inflightGeneration == null) {
       inflightGeneration = generation
     }
-    queuedGeneration = generation
-    const pending = runFlush(0, source, generation)
+    const backlogAfterConsumption = Math.max(0, queuedCount - consumedCount)
+    queuedGeneration = inflightGeneration + backlogAfterConsumption
+    const pending = runFlush(0, source, generation, consumedCount)
     inFlightFlush = pending
     try {
       await pending
@@ -1415,6 +1450,7 @@ export function initAutoSave(
         pendingQueue.length = 0
         queuedGeneration = 0
         inflightGeneration = null
+        inflightQueueCount = 0
       })()
       await disposePromise
     },
@@ -1427,13 +1463,12 @@ export function initAutoSave(
       }
       const estimated = pendingBytes
       pendingQueue.push({ ts: new Date().toISOString(), reason: 'change', estimatedBytes: estimated, retries: 0 })
-      if (pendingQueue.length > AUTOSAVE_QUEUE_POLICY.maxPending) {
-        pendingQueue.splice(0, pendingQueue.length - AUTOSAVE_QUEUE_POLICY.maxPending)
-      }
+      trimPendingQueue()
+      const backlog = Math.max(0, pendingQueue.length - inflightQueueCount)
       if (inflightGeneration != null) {
-        queuedGeneration = inflightGeneration
+        queuedGeneration = inflightGeneration + backlog
       } else if (nextGeneration != null) {
-        queuedGeneration = nextGeneration
+        queuedGeneration = backlog > 0 ? nextGeneration + backlog - 1 : nextGeneration
       } else {
         queuedGeneration = 0
         void ensureNextGeneration()
@@ -1444,10 +1479,11 @@ export function initAutoSave(
             if (inflightGeneration != null) {
               return
             }
-            if (pendingQueue.length === 0) {
+            const pendingBacklog = Math.max(0, pendingQueue.length - inflightQueueCount)
+            if (pendingBacklog === 0) {
               return
             }
-            queuedGeneration = value
+            queuedGeneration = value + pendingBacklog - 1
           })
           .catch(() => undefined)
       }

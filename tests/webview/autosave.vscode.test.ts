@@ -236,6 +236,42 @@ describe('createVscodeAutoSaveBridge', () => {
     )
   })
 
+  it('returns ok=true for consecutive snapshot requests after mid-flight dirty reports', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    let writeCount = 0
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => {
+        const result = {
+          ok: true as const,
+          bytes: 1024 + writeCount * 512,
+          generation: writeCount,
+          lastSuccessAt: new Date(Date.UTC(2024, 0, 1, 0, 0, writeCount)).toISOString(),
+          lockStrategy: 'web-lock' as const
+        }
+        writeCount += 1
+        return result
+      }
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(createRequest('req-1', 'corr-1', guardEnabled, 1024, 0))
+
+    bridge.reportDirty(1536, guardEnabled)
+    await bridge.handleSnapshotRequest(createRequest('req-2', 'corr-2', guardEnabled, 1536, 1))
+
+    const results = sent.filter((msg): msg is AutoSaveSnapshotResultMessage => msg.type === 'snapshot.result')
+    const okGenerations = results
+      .filter((message) => message.payload.ok)
+      .map((message) => message.payload.generation)
+
+    assert.deepEqual(okGenerations, [0, 1])
+  })
+
   it('replays dirty→saving→saved transitions when requests queue during atomic write', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const completions: Array<() => void> = []
