@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DEFAULT_FLAGS } from '../../src/config'
+import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
 import {
   resolveMergeDockPhasePlan,
   resolveMergeThresholdPlan,
@@ -212,4 +212,66 @@ test('env precision threshold from flags overrides workspace and storage setting
   assert.equal(plan.guard.phaseBRequired, true)
   assert.equal(plan.threshold.request, 0.75)
   assert.equal(plan.autoApplied.target, 0.8)
+})
+
+test('resolveMergeThresholdSnapshot clamps beta workspace threshold below rollout minimum', () => {
+  const workspace = {
+    get: (key: string): unknown => {
+      if (key === 'conimg.merge.threshold') {
+        return 0.7
+      }
+      return undefined
+    },
+  }
+
+  const betaFlags: Pick<FlagSnapshot, 'merge'> = {
+    merge: {
+      value: 'beta',
+      source: 'workspace',
+      errors: [],
+      precision: 'beta',
+      threshold: Number.NaN,
+    },
+  }
+
+  const snapshot = resolveMergeThresholdSnapshot({
+    workspace,
+    storage: null,
+    precision: 'beta',
+    flags: betaFlags,
+  })
+
+  assert.equal(snapshot.precision, 'beta')
+  assert.equal(snapshot.threshold, 0.75)
+})
+
+test('resolveMergeThresholdSnapshot clamps stable workspace threshold below rollout minimum', () => {
+  const workspace = {
+    get: (key: string): unknown => {
+      if (key === 'conimg.merge.threshold') {
+        return 0.8
+      }
+      return undefined
+    },
+  }
+
+  const stableFlags: Pick<FlagSnapshot, 'merge'> = {
+    merge: {
+      value: 'stable',
+      source: 'workspace',
+      errors: [],
+      precision: 'stable',
+      threshold: Number.NaN,
+    },
+  }
+
+  const snapshot = resolveMergeThresholdSnapshot({
+    workspace,
+    storage: null,
+    precision: 'stable',
+    flags: stableFlags,
+  })
+
+  assert.equal(snapshot.precision, 'stable')
+  assert.equal(snapshot.threshold, 0.82)
 })
