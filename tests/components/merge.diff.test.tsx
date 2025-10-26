@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { DEFAULT_FLAGS } from '../../src/config'
 import {
   resolveMergeDockPhasePlan,
   resolveMergeThresholdSnapshot,
@@ -10,7 +11,8 @@ import {
 test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
   const snapshot = resolveMergeThresholdSnapshot({ workspace: null, storage: null })
 
-  assert.equal(snapshot.threshold, 0.75)
+  assert.equal(snapshot.threshold, DEFAULT_FLAGS.merge.profile.threshold)
+  assert.equal(DEFAULT_FLAGS.merge.profile.threshold, 0.75)
   assert.equal(snapshot.precision, 'legacy')
 })
 
