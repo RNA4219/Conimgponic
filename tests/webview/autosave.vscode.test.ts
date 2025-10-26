@@ -149,6 +149,38 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.strictEqual(state.guard, expectedGuard, 'ブートストラップ後の guard 状態は initialGuard と一致する')
   })
 
+  it('flags オプション未指定でも bootstrap で解決済み FlagSnapshot を共有する', () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    const now = () => new Date('2024-01-03T00:00:00.000Z')
+    const expectedFlags = resolveFlags({ clock: now })
+    const expectedGuard: AutoSavePhaseGuardSnapshot = {
+      featureFlag: {
+        value: expectedFlags.autosave.value,
+        source: expectedFlags.autosave.source
+      },
+      optionsDisabled: !expectedFlags.autosave.value
+    }
+
+    createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: expectedGuard,
+      now,
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => {
+        throw new Error('bootstrap で atomicWrite を呼ばない')
+      }
+    })
+
+    assert.equal(sent.length, 1, 'bridge.bootstrap メッセージが 1 件送出される')
+    const bootstrap = sent[0]
+    assert.ok(bootstrap && isBootstrapMessage(bootstrap), '初回メッセージは bridge.bootstrap')
+    assert.deepEqual(
+      bootstrap.payload.flags,
+      expectedFlags,
+      'flags 未指定時も resolveFlags のスナップショットを共有する'
+    )
+  })
+
   it('emits dirty→saving→saved status transitions with atomic write', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const telemetry: AutoSaveTelemetryEvent[] = []
