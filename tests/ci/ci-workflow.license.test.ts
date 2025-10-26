@@ -8,12 +8,13 @@ import { createRequire } from 'node:module';
 import { describe, test } from 'node:test';
 
 type WorkflowYaml = { jobs?: { license?: WorkflowJob } };
-type WorkflowJob = { steps?: StepConfig[] };
+type WorkflowJob = { steps?: StepConfig[]; needs?: JobNeeds };
 type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown; if?: unknown };
 type UploadStep = StepConfig & {
   uses: string;
   with?: { name?: unknown; path?: unknown; ['if-no-files-found']?: unknown };
 };
+type JobNeeds = string | string[] | undefined;
 type JsYamlModule = { load: (input: string) => unknown };
 
 const require = createRequire(import.meta.url);
@@ -54,6 +55,16 @@ describe('ci workflow license job', () => {
       console.error('CI license workflow verification failed:', error);
       throw error;
     }
+  });
+
+  test('depends on sbom job output', async () => {
+    const workflow = await loadWorkflow();
+    const licenseJob = workflow.jobs?.license;
+    if (!licenseJob) {
+      throw new Error('license job must exist');
+    }
+    const needs = normalizeJobNeeds(licenseJob.needs);
+    assert.ok(needs.includes('sbom'), 'license job must depend on sbom job');
   });
 });
 
@@ -103,4 +114,13 @@ function expectUploadStep(steps: StepConfig[], name: string, message: string): U
     throw new Error(message);
   }
   return match;
+}
+
+function normalizeJobNeeds(input: JobNeeds): string[] {
+  if (Array.isArray(input)) return input.map((value) => `${value}`.trim()).filter((value) => value.length > 0);
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
+  }
+  return [];
 }
