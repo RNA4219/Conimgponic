@@ -351,7 +351,96 @@ const buildLease = (
     renewAttempt,
   };
 };
-const acquireViaWebLock=async (ctx:AcquireContext):Promise<ProjectLockLease>=>{const locks=(globalThis as typeof globalThis&{navigator?:Navigator}).navigator?.locks as{request?:(...args:readonly unknown[])=>Promise<unknown>}|undefined;if(!locks?.request)throw makeError('web-lock-unsupported','Web Locks API unavailable','acquire',true);let handle:unknown;const captureHandle=async(lock:unknown)=>{handle=lock;};try{await locks.request(WEB_LOCK_KEY,{mode:'exclusive',signal:ctx.signal},captureHandle);}catch(cause){throw makeError('acquire-denied','Web Lock request rejected','acquire',true,cause);}if(!handle||typeof(handle as{release?:unknown}).release!=='function')throw makeError('acquire-denied','Web Lock handle missing release','acquire',false);webLockHandles.set(ctx.leaseId,handle as{release:()=>Promise<void>});return buildLease('web-lock',WEB_LOCK_KEY,ctx.ttlMs??WEB_LOCK_TTL_MS,ctx.heartbeatMs,ctx);};
+const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease> => {
+  const locks = (globalThis as typeof globalThis & { navigator?: Navigator }).navigator?.locks;
+  if (!locks?.request)
+    throw makeError('web-lock-unsupported', 'Web Locks API unavailable', 'acquire', true);
+
+  const createDeferred = () => {
+    let settled = false;
+    let resolve!: () => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<void>((res, rej) => {
+      resolve = () => {
+        if (settled) return;
+        settled = true;
+        res();
+      };
+      reject = (reason) => {
+        if (settled) return;
+        settled = true;
+        rej(reason);
+      };
+    });
+    return {
+      promise,
+      resolve,
+      reject,
+      isSettled: () => settled,
+    };
+  };
+
+  const ready = createDeferred();
+  const releaseGate = createDeferred();
+  let released = false;
+  let requestOutcome!: Promise<unknown>;
+  let requestDone!: Promise<void>;
+
+  try {
+    requestOutcome = locks
+      .request(
+        WEB_LOCK_KEY,
+        { mode: 'exclusive', signal: ctx.signal },
+        async (lock) => {
+          if (!lock || typeof lock !== 'object' || typeof lock.release !== 'function') {
+            throw makeError('acquire-denied', 'Web Lock handle missing release', 'acquire', false);
+          }
+
+          webLockHandles.set(ctx.leaseId, {
+            release: async () => {
+              if (released) return;
+              released = true;
+              releaseGate.resolve();
+              try {
+                await lock.release();
+              } finally {
+                await requestDone;
+              }
+            },
+          });
+
+          ready.resolve();
+          await releaseGate.promise;
+        }
+      )
+      .catch((error) => {
+        const projectError =
+          error instanceof ProjectLockError
+            ? error
+            : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, error);
+        if (!ready.isSettled()) ready.reject(projectError);
+        throw projectError;
+      });
+    requestDone = requestOutcome.then(
+      () => undefined,
+      () => undefined,
+    );
+  } catch (cause) {
+    throw cause instanceof ProjectLockError
+      ? cause
+      : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, cause);
+  }
+
+  try {
+    await ready.promise;
+  } catch (cause) {
+    throw cause instanceof ProjectLockError
+      ? cause
+      : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, cause);
+  }
+
+  return buildLease('web-lock', WEB_LOCK_KEY, ctx.ttlMs ?? WEB_LOCK_TTL_MS, ctx.heartbeatMs, ctx);
+};
 const acquireViaFallback=async (ctx:AcquireContext):Promise<ProjectLockLease>=>{const now=Date.now();const record=(await loadJSON(FALLBACK_LOCK_PATH)) as FallbackLockLeaseRecord|null;if(record&&record.leaseId!==ctx.leaseId&&record.expiresAt>now){projectLockEvents.emit({type:'lock:warning',lease:buildLease('file-lock',FALLBACK_LOCK_PATH,ctx.ttlMs??FALLBACK_LOCK_TTL_MS,ctx.heartbeatMs,ctx,record.acquiredAt),warning:'fallback-degraded',detail:'Existing fallback lease still active'});throw makeError('fallback-conflict','Fallback lock already held','acquire',true);}const ttl=ctx.ttlMs??FALLBACK_LOCK_TTL_MS;const next:FallbackLockLeaseRecord={leaseId:ctx.leaseId,ownerId:ctx.ownerId,acquiredAt:record?.acquiredAt??now,expiresAt:now+ttl,ttlSeconds:fallbackTtlSeconds,mtime:now};await saveJSON(FALLBACK_LOCK_PATH,next);return buildLease('file-lock',FALLBACK_LOCK_PATH,ttl,ctx.heartbeatMs,ctx,next.acquiredAt);};
 const removeFallbackFile=async():Promise<void>=>{try{const root=await getRoot();const segments=FALLBACK_LOCK_PATH.split('/').filter(Boolean);const file=segments.pop();if(!file)return;let dir:FileSystemDirectoryHandle=root;for(const segment of segments)dir=await dir.getDirectoryHandle(segment,{create:false});await dir.removeEntry(file);}catch(error){if((error as DOMException)?.name!=='NotFoundError')throw error;}};
 const releaseFallbackLease=async(lease:ProjectLockLease,force?:boolean):Promise<void>=>{const record=(await loadJSON(FALLBACK_LOCK_PATH)) as FallbackLockLeaseRecord|null;if(!force&&record&&record.leaseId!==lease.leaseId&&record.expiresAt>Date.now())throw makeError('lease-stale','Fallback lease owned by another client','release',false);await removeFallbackFile();};
