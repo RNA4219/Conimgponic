@@ -1,0 +1,8 @@
+# Day8 workflow-cookbook tooling requirements
+# Aligns with docs/CI-SPEC.md and Day8/docs/FORK_NOTES.md strict CI expectations.
+mypy==1.11.2
+ruff==0.5.7
+pytest==8.3.2
+pip-audit==2.7.2
+PyYAML==6.0.2
+types-PyYAML==6.0.12.20240808
