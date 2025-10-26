@@ -108,7 +108,7 @@ interface MergeThresholdRule {
 
 const DIFF_BACKUP_THRESHOLD_MS = 5 * 60 * 1000
 
-const DEFAULT_THRESHOLD = 0.72
+const DEFAULT_THRESHOLD = 0.75
 
 const THRESHOLD_RULES: Record<MergePrecision, MergeThresholdRule> = Object.freeze({
   legacy: {
