@@ -5,6 +5,7 @@ import {
   AUTOSAVE_POLICY,
   type AutoSaveBridgeMessage,
   type AutoSaveBridgeBootstrapMessage,
+  type AutoSaveError,
   type AutoSavePhaseGuardSnapshot,
   type AutoSaveSnapshotRequestMessage,
   type AutoSaveSnapshotResultMessage,
@@ -597,62 +598,62 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(savedStatus.payload.retryCount, 0)
   })
 
-  it('keeps retryCount when handleSnapshotRequest retried during backoff', async () => {
+  it('treats thrown non-retryable AutoSaveError as terminal failure', async () => {
     const sent: AutoSaveBridgeMessage[] = []
-    let attempt = 0
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const cause = new Error('OPFS index corrupted')
+    const thrown: AutoSaveError = Object.assign(new Error('Failed to persist autosave'), {
+      name: 'AutoSaveError' as const,
+      code: 'data-corrupted' as const,
+      retryable: false,
+      cause,
+      context: { file: 'index.json' }
+    })
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
       flags: createDefaultFlags(),
       now: () => new Date('2024-01-01T00:00:00.000Z'),
       sendMessage: (msg) => sent.push(msg),
-      atomicWrite: async ({ request }) => {
-        attempt += 1
-        if (attempt === 1) {
-          return {
-            ok: false,
-            error: {
-              name: 'AutoSaveError',
-              message: 'retry later',
-              code: 'write-failed',
-              retryable: true
-            }
-          }
-        }
-        return {
-          ok: true,
-          bytes: request.payload.pendingBytes,
-          generation: request.payload.queuedGeneration,
-          lastSuccessAt: new Date('2024-01-01T00:00:02.000Z').toISOString(),
-          lockStrategy: 'web-lock'
-        }
-      }
+      atomicWrite: async () => {
+        throw thrown
+      },
+      telemetry: (event) => telemetry.push(event)
     })
 
-    bridge.reportDirty(2048, guardEnabled)
+    bridge.reportDirty(1024, guardEnabled)
     await bridge.handleSnapshotRequest(
-      createRequest('req-backoff-retry-1', 'corr-backoff-retry-1', guardEnabled, 2048, 1)
+      createRequest('req-thrown', 'corr-thrown', guardEnabled, 1024, 1)
     )
 
-    const backoffState = bridge.inspectState()
-    assert.equal(backoffState.status, 'backoff')
-    assert.equal(backoffState.retryCount, 1)
-
-    await bridge.handleSnapshotRequest(
-      createRequest('req-backoff-retry-2', 'corr-backoff-retry-2', guardEnabled, 2048, 1)
+    const result = sent.find(
+      (msg): msg is AutoSaveSnapshotResultMessage => msg.type === 'snapshot.result'
     )
+    assert.ok(result, 'snapshot.result should be emitted when atomicWrite throws')
+    if (result.payload.ok !== false) {
+      assert.fail('snapshot.result should contain ok=false payload for thrown error')
+    }
+    assert.equal(result.payload.error, thrown)
+    assert.equal(result.payload.error.code, 'data-corrupted')
+    assert.equal(result.payload.error.retryable, false)
+    assert.equal(result.payload.error.cause, cause)
+    assert.deepEqual(result.payload.error.context, { file: 'index.json' })
 
-    const retryStatuses = sent.filter(
-      (msg): msg is AutoSaveStatusMessage =>
-        msg.type === 'status.autosave' && msg.correlationId === 'corr-backoff-retry-2'
+    const statuses = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave')
+    assert.deepEqual(statuses.map((msg) => msg.payload.state).slice(-2), ['error', 'disabled'])
+
+    const snapshotTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.snapshot.result' && event.properties?.correlationId === 'corr-thrown'
     )
-    const savingStatus = retryStatuses.find((msg) => msg.payload.state === 'saving')
-    assert.ok(savingStatus, 'retrial should emit saving status during backoff recovery')
-    assert.equal(savingStatus.payload.retryCount, 1)
+    assert.ok(snapshotTelemetry, 'snapshot.result telemetry should exist for thrown AutoSaveError')
+    assert.equal(snapshotTelemetry.properties?.retryable, false)
+    assert.equal(snapshotTelemetry.properties?.code, 'data-corrupted')
 
-    const savedStatus = retryStatuses.find((msg) => msg.payload.state === 'saved')
-    assert.ok(savedStatus, 'retrial should eventually succeed')
-    assert.equal(savedStatus.payload.retryCount, 0)
+    const statusTelemetry = telemetry.filter(
+      (event) => event.name === 'autosave.status' && event.properties?.correlationId === 'corr-thrown'
+    )
+    assert.ok(statusTelemetry.find((event) => event.properties?.state === 'error'))
+    assert.ok(statusTelemetry.find((event) => event.properties?.state === 'disabled'))
   })
 
   it('downgrades to disabled when non-retryable error occurs', async () => {
