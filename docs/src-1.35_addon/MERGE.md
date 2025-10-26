@@ -7,7 +7,7 @@
 - 入力: Base / Ours / Theirs。
 - 分割: カード→フィールド→トークン（文字 or 単語）。
 - 類似度: LCS比率 or Cosine（文字n-gram）。
-- しきい値: 0.0–1.0、既定 0.75。
+- しきい値: 0.0–1.0、既定 0.75（[docs/MERGE-DESIGN-IMPL.md](../MERGE-DESIGN-IMPL.md) の `DEFAULT_THRESHOLD` と同期）。
 
 ## 3. ルール（抜粋）
 - Ours=Theirs 同一 → 採用。
@@ -30,7 +30,7 @@
 
 ## 6. Phase別 UI ガードとしきい値クランプ
 - MergeDock は `merge.precision`（legacy/beta/stable）と VS Code 設定 `conimg.merge.threshold` を `resolveMergeDockPhasePlan()` で統合し、フェーズごとのタブ露出と自動採用ガードを計算する。
-- 設定値が欠落/NaN の場合は `DEFAULT_THRESHOLD=0.75` を基準にする。
+- 設定値が欠落/NaN の場合は `DEFAULT_THRESHOLD=0.75` を基準にする。[docs/MERGE-DESIGN-IMPL.md](../MERGE-DESIGN-IMPL.md) のガイドラインと、AutoSave 側のフェーズガード要件 ([docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md)) を満たすようタブ露出・自動採用ターゲットを計算する。
 - しきい値は Phase B 要件に応じてクランプし、UI スライダー最小/最大と自動採用率ターゲットを同時に更新する。
 
 | precision | request.threshold | Diff タブ露出 | 自動採用 band | Review band | Conflict band | Phase B guard |

@@ -3,6 +3,7 @@
 ## 1. 目的とスコープ
 - VSCode 拡張の Merge Dock から OPFS/Collector パイプラインまで一貫した差分適用フローを整備する。
 - `merge.precision` フラグに基づき Beta/Stable モードを段階導入し、`docs/IMPLEMENTATION-PLAN.md` §0.3 のタブ/ペイン構成と一致させる。【F:docs/IMPLEMENTATION-PLAN.md†L120-L206】
+- しきい値の既定値は [docs/MERGE-DESIGN-IMPL.md](../../MERGE-DESIGN-IMPL.md) が示す `DEFAULT_THRESHOLD=0.75` を採用し、AutoSave の保存ポリシー・テレメトリ要件 ([docs/AUTOSAVE-DESIGN-IMPL.md](../../AUTOSAVE-DESIGN-IMPL.md)) と矛盾しないよう拡張設定 (`conimg.merge.threshold`) のクランプを実装する。
 - AutoSave の保存ポリシー（50MB/20世代）と Collector/Analyzer/Reporter の責務境界を尊重し、Evidence JSON を破壊的に変更しない。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L33-L104】【F:Day8/docs/day8/design/03_architecture.md†L1-L38】
 
 ## 2. Payload 型案
