@@ -94,7 +94,12 @@ test('defaults are used when no sources apply', () => {
   assert.equal(snapshot.autosave.enabled, false)
   assert.equal(snapshot.autosave.source, 'default')
   assert.equal(snapshot.merge.source, 'default')
+  assert.equal(snapshot.merge.threshold, 0.75)
   assert.ok(Number.isFinite(Date.parse(snapshot.updatedAt)))
+})
+
+test('default merge threshold aligns with spec baseline', () => {
+  assert.equal(DEFAULT_FLAGS.merge.profile.threshold, 0.75)
 })
 
 test('source typing includes workspace', () => {
