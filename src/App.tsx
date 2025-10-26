@@ -16,6 +16,26 @@ import { buildPackage } from './lib/package'
 import { initAutoSave, type AutoSaveInitResult, type AutoSavePhaseGuardSnapshot } from './lib/autosave'
 import { getDay8Collector } from './telemetry/day8Collector'
 
+function getDockOpenPreference(): boolean {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return true
+  }
+
+  try {
+    return window.localStorage.getItem('dockOpen') !== '0'
+  } catch {
+    return true
+  }
+}
+
+function setDockOpenPreference(value: boolean): void {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem('dockOpen', value ? '1' : '0')
+}
+
 function HelpModal({onClose}:{onClose:()=>void}){
   return (
     <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,.35)', display:'grid', placeItems:'center', zIndex:50}} onClick={onClose}>
@@ -83,7 +103,7 @@ export function resolveAutoSaveBootstrapPlanForApp(
 
 export default function App(){
   const { sb, setSBTitle, addScene } = useSB()
-  const [dockOpen, setDockOpen] = useState(()=> (localStorage.getItem('dockOpen')==='0'? false: true))
+  const [dockOpen, setDockOpen] = useState(()=> getDockOpenPreference())
   const [help, setHelp] = useState(false)
   const [base, setBase] = useState(OLLAMA_BASE)
   const [autoSavePlan, setAutoSavePlan] = useState<AutoSaveBootstrapPlan | null>(null)
@@ -193,7 +213,24 @@ export default function App(){
           Load Project
         </button>
         <button className="btn" onClick={()=>addScene()}>+ カード</button>
-        <button className="btn" onClick={()=>setDockOpen(v=>{ const nv=!v; localStorage.setItem('dockOpen', nv? '1':'0'); return nv })}>{dockOpen?'統合 ⌃':'統合 ⌄'}</button>
+        <button
+          className="btn"
+          onClick={() =>
+            setDockOpen((v) => {
+              const next = !v
+
+              try {
+                setDockOpenPreference(next)
+              } catch (error) {
+                console.warn('Failed to persist dock state preference', error)
+              }
+
+              return next
+            })
+          }
+        >
+          {dockOpen ? '統合 ⌃' : '統合 ⌄'}
+        </button>
         <button className="btn" onClick={async()=>{
           const sb = useSB.getState().sb
           const pkg = await buildPackage(sb)
