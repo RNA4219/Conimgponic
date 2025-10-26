@@ -33,6 +33,7 @@ test('beta precision enables diff tab when review band is present', () => {
 
   assert.equal(plan.phase, 'phase-b')
   assert.equal(plan.diff.enabled, true)
+  assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
   assert.equal(plan.threshold.request, 0.7)
@@ -42,18 +43,19 @@ test('beta precision enables diff tab when review band is present', () => {
   assert.equal(plan.guard.phaseBRequired, true)
 })
 
-test('beta precision without phase stats keeps diff hidden', () => {
+test('beta precision without phase stats keeps diff visible but guarded', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'beta',
     threshold: 0.7,
   })
 
   assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.guard.phaseBRequired, false)
   assert.deepEqual(
     plan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'golden'],
+    ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
   )
 })
 
@@ -66,10 +68,11 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   })
 
   assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.visible, true)
   assert.equal(plan.guard.phaseBRequired, false)
   assert.deepEqual(
     plan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'golden'],
+    ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
   )
   assert.equal(plan.threshold.request, 0.85)
   assert.equal(plan.threshold.autoTarget, 0.9)
@@ -77,16 +80,21 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   assert.equal(plan.autoApplied.meetsTarget, false)
 })
 
-test('stable precision without phase stats keeps diff opt-in', () => {
+test('stable precision without phase stats keeps diff visible and gated', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.82,
   })
 
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.exposure, 'default')
   assert.equal(plan.guard.phaseBRequired, false)
-  assert.ok(plan.tabs.tabs.every((entry) => entry.id !== 'diff'))
+  assert.deepEqual(
+    plan.tabs.tabs.map((entry) => entry.id),
+    ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
+  )
+  assert.equal(plan.tabs.initialTab, 'diff')
 })
 
 test('stable precision clamps threshold upper bound and keeps diff initial tab when conflicts exist', () => {
@@ -102,6 +110,7 @@ test('stable precision clamps threshold upper bound and keeps diff initial tab w
   assert.deepEqual(plan.threshold.reviewBand, { min: 0.93, max: 0.97 })
   assert.deepEqual(plan.threshold.conflictBand, { max: 0.93 })
   assert.equal(plan.diff.enabled, true)
+  assert.equal(plan.diff.visible, true)
   assert.equal(plan.tabs.initialTab, 'diff')
   assert.equal(plan.autoApplied.meetsTarget, true)
 })
@@ -115,7 +124,8 @@ test('stable precision sourced from workspace threshold stays opt-in without rev
 
   assert.equal(plan.threshold.request, 0.88)
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.exposure, 'default')
   assert.equal(plan.guard.phaseBRequired, false)
 })
 
@@ -145,17 +155,6 @@ test('workspace threshold from resolveFlags updates diff exposure and clamp', ()
 })
 
 test('env precision threshold from flags overrides workspace and storage settings', () => {
-  const processEnv = (globalThis as {
-    process?: { env?: Record<string, string | undefined> }
-  }).process?.env
-
-  if (!processEnv) {
-    throw new Error('process.env is not available')
-  }
-
-  const originalPrecision = processEnv.VITE_MERGE_PRECISION
-  processEnv.VITE_MERGE_PRECISION = 'beta'
-
   const workspace = {
     get: (key: string): unknown => {
       if (key === 'conimg.merge.threshold') {
@@ -174,26 +173,19 @@ test('env precision threshold from flags overrides workspace and storage setting
     },
   }
 
-  try {
-    const snapshot = resolveMergeThresholdSnapshot({ workspace, storage })
-    assert.equal(snapshot.precision, 'beta')
-    assert.equal(snapshot.threshold, 0.72)
+  const snapshot = resolveMergeThresholdSnapshot({ workspace, storage, precision: 'beta', threshold: 0.72 })
+  assert.equal(snapshot.precision, 'beta')
+  assert.equal(snapshot.threshold, 0.72)
 
-    const plan = resolveMergeDockPhasePlan({
-      precision: snapshot.precision,
-      threshold: snapshot.threshold,
-      phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
-    })
+  const plan = resolveMergeDockPhasePlan({
+    precision: snapshot.precision,
+    threshold: snapshot.threshold,
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+  })
 
-    assert.equal(plan.diff.enabled, true)
-    assert.equal(plan.guard.phaseBRequired, true)
-    assert.equal(plan.threshold.request, 0.72)
-    assert.equal(plan.autoApplied.target, 0.77)
-  } finally {
-    if (originalPrecision === undefined) {
-      delete processEnv.VITE_MERGE_PRECISION
-    } else {
-      processEnv.VITE_MERGE_PRECISION = originalPrecision
-    }
-  }
+  assert.equal(plan.diff.enabled, true)
+  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.guard.phaseBRequired, true)
+  assert.equal(plan.threshold.request, 0.72)
+  assert.equal(plan.autoApplied.target, 0.77)
 })

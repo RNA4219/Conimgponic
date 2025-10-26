@@ -34,7 +34,7 @@ digraph FlagGatedFlow {
 ```
 
 - `autosave.enabled=false` の場合は AutoSave を起動せず、MergeDock でもバックアップ CTA を非表示にする（[docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md) §0)。
-- `merge.precision` の 3 フェーズ（legacy/beta/stable）は [docs/MERGEDOCK-FLAG-DESIGN.md](../MERGEDOCK-FLAG-DESIGN.md) の配置方針を継承し、Diff タブの露出のみを切り替える。
+- `merge.precision` の 3 フェーズ（legacy/beta/stable）は [docs/MERGEDOCK-FLAG-DESIGN.md](../MERGEDOCK-FLAG-DESIGN.md) の配置方針を継承し、`beta` / `stable` では `phaseStats` が無くても Diff タブを描画 (`data-merge-diff-visible=true`) する。レビュー/コンフリクト指標が未到達の間は `data-merge-diff-enabled=false` を維持し、CTA と操作キューをガードする。
 
 ## 3. 初期化シーケンス仕様
 FlagSnapshot を単一ソースとして利用し、AutoSave ブートストラップと MergeDock プロップスを同期させる。AutoSave API の整合性要件は [docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md) §1〜4 を遵守する。
@@ -50,8 +50,8 @@ FlagSnapshot を単一ソースとして利用し、AutoSave ブートストラ�
 ## 4. precision モード別 UI 導線
 ### 4.1 タブ構成と戻り動線
 - **legacy**: Diff タブ非表示。MergeDock の既存タブ配列と初期アクティブタブ（Overview）を維持。戻り動線は既存 `merge.lastTab` のみ。
-- **beta**: Diff タブを末尾に追加。初期タブは従来どおり Overview。Diff へ遷移後の戻りはタブ UI で行い、`merge.lastTab` が Diff でも `precision` を legacy に戻した瞬間に `overview` へフォールバック。
-- **stable**: Diff タブを `settings` 直前へ挿入し、初期アクティブタブを Diff とする。ユーザが他タブへ戻った場合は `merge.lastTab` を更新し、次回マウント時に尊重。
+- **beta**: Diff タブを末尾に追加。初期タブは従来どおり Overview。`phaseStats` が未提供でもタブは可視化されるが、レビュー帯域が 0 の間は `data-merge-diff-enabled=false` として Diff Merge 操作とバックアップ CTA を抑止する。Diff へ遷移後の戻りはタブ UI で行い、`merge.lastTab` が Diff でも `precision` を legacy に戻した瞬間に `overview` へフォールバック。
+- **stable**: Diff タブを `settings` 直前へ挿入し、初期アクティブタブを Diff とする。`phaseStats` が未提供でも初期表示 (`data-merge-diff-visible=true`) を維持しつつ、レビュー/コンフリクト指標が未達の場合は `data-merge-diff-enabled=false` で CTA と `diff-merge` preference を非活性化する。ユーザが他タブへ戻った場合は `merge.lastTab` を更新し、次回マウント時に尊重。
 - バックアップ CTA は `precision in {beta, stable}` かつ `AutoSavePhase !== 'disabled'`、`lastSuccessAt` が 5 分超過時に表示する（[docs/MERGEDOCK-FLAG-DESIGN.md](../MERGEDOCK-FLAG-DESIGN.md) §4.2）。
 
 ### 4.2 ロールバック手順
@@ -68,7 +68,7 @@ Playwright もしくは Cypress でフラグ値をモックし、App 全体の�
 | ID | フラグ構成 | シナリオ | 期待結果 |
 | --- | --- | --- | --- |
 | E2E-1 | `autosave.enabled=false`, `merge.precision='legacy'` | App 起動→MergeDock 表示 | AutoSave 初期化がスキップされ、Diff タブが DOM に存在しない。 |
-| E2E-2 | `autosave.enabled=true`, `merge.precision='beta'` | App 起動後 Diff タブ選択 | AutoSave runner が起動し、Diff タブ末尾に `Beta` バッジ付きで表示。バックアップ CTA は `lastSuccessAt>5min` の場合のみ露出。 |
+| E2E-2 | `autosave.enabled=true`, `merge.precision='beta'` | App 起動後 Diff タブ選択 | AutoSave runner が起動し、Diff タブ末尾に `Beta` バッジ付きで表示。`phaseStats` 未到達時は `data-merge-diff-enabled=false` のまま CTA を抑止。レビュー帯域が発生したら `true` に遷移し、`lastSuccessAt>5min` の場合のみ CTA を露出。 |
 | E2E-3 | `autosave.enabled=true`, `merge.precision='stable'` | 初期ロード | 初期アクティブタブが Diff。`flushNow()` をモックして CTA 押下時に呼ばれることを確認。 |
 | E2E-4 | precision `stable` → `legacy` にロールバック | フラグ変更イベントをシミュレート | タブが再描画され Diff 非表示、AutoSave runner は継続（enabled=true のまま）。`merge.lastTab` が `overview` に戻る。 |
 | E2E-5 | autosave フラグ OFF → ON | `autosave.enabled` トグル | ランナー停止→再起動が発生し、`snapshot().phase` が `disabled`→`idle` に遷移。MergeDock CTA の表示状態が同期する。 |
