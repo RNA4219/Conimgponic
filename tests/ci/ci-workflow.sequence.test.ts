@@ -199,8 +199,8 @@ describe('ci workflow build job', () => {
 
       assertLineIncludes(
         auditRunLines,
-        'github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64',
-        'audit job must install osv-scanner via official binary download',
+        'raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh',
+        'audit job must install osv-scanner via official installer script',
       );
 
       assertLineIncludes(
@@ -273,6 +273,37 @@ describe('ci workflow build job', () => {
         'logs/${{ matrix.suite }}-failures.log',
       ],
       '"Upload suite logs" artifact must include suite and failure logs',
+    );
+  });
+
+  test('extracts failed test output only for suites with failure collection enabled', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const extractFailuresStep = assertStepWithName(
+      steps,
+      'Extract failed test output',
+      'quality job must include "Extract failed test output" step',
+    );
+
+    assertStepIfEquals(
+      extractFailuresStep,
+      "steps.run_suite.outcome == 'failure' && matrix.collect_failures",
+      '"Extract failed test output" step must guard on failed suites with failure collection enabled',
+    );
+
+    const runLines = extractRunLines([extractFailuresStep]);
+
+    assertLineIncludes(
+      runLines,
+      `grep -E ':[0-9]+:[0-9]+: |not ok|FAIL|Error' "logs/\${{ matrix.suite }}.log" > "logs/\${{ matrix.suite }}-failures.log"`,
+      '"Extract failed test output" step must filter suite logs into a failures log using grep',
     );
   });
 });
@@ -506,12 +537,11 @@ function assertStepIfEquals(step: StepConfig, expected: string, message: string)
   assert.strictEqual(step.if.trim(), expected, message);
 }
 
-function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
-  if (typeof step.uses !== 'string') {
-    assert.fail(`${message}; step.uses must be configured as a string`);
+function assertStepContinueOnError(step: StepConfig, message: string): void {
+  const flag = step['continue-on-error'];
+  if (flag !== true) {
+    assert.fail(`${message}; continue-on-error must be set to true`);
   }
-
-  assert.strictEqual(step.uses.trim(), expected, message);
 }
 
 function assertStepRunIncludesLine(step: StepConfig, expectedLine: string, message: string): void {
