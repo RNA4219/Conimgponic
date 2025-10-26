@@ -259,8 +259,55 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Detect autosave changes
+        if: matrix.suite == 'autosave'
+        id: autosave_paths
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            autosave:
+              - 'src/**/autosave/**'
+              - 'tests/**/autosave.*.test.ts'
+              - 'tests/**/autosave/**'
+              - '.github/workflows/autosave*'
+
+      - name: Determine autosave execution
+        if: matrix.suite == 'autosave'
+        id: autosave_conditions
+        env:
+          IS_MAIN: ${{ github.ref == 'refs/heads/main' }}
+          IS_WORKFLOW_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          IS_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
+          HAS_SLOW_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'run-slow-tests') }}
+          AUTOSAVE_CHANGED: ${{ steps.autosave_paths.outputs.autosave }}
+        run: |
+          set -euo pipefail
+          should_run=false
+          if [[ "${IS_MAIN}" == 'true' ]]; then
+            should_run=true
+          elif [[ "${IS_WORKFLOW_DISPATCH}" == 'true' ]]; then
+            should_run=true
+          elif [[ "${AUTOSAVE_CHANGED}" == 'true' ]]; then
+            should_run=true
+          elif [[ "${IS_PULL_REQUEST}" == 'true' && "${HAS_SLOW_LABEL}" == 'true' ]]; then
+            should_run=true
+          fi
+          echo "should_run=${should_run}" >> "${GITHUB_OUTPUT}"
+
       - name: Run ${{ matrix.suite }} suite
-        id: run_suite
+        id: run_suite_autosave
+        if: matrix.suite == 'autosave' && steps.autosave_conditions.outputs.should_run == 'true'
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          ${{ matrix.command }} |& tee "logs/${{ matrix.suite }}.log"
+
+      - name: Run ${{ matrix.suite }} suite
+        id: run_suite_default
+        if: matrix.suite != 'autosave'
         continue-on-error: true
         shell: bash
         run: |
@@ -269,7 +316,11 @@ jobs:
           ${{ matrix.command }} |& tee "logs/${{ matrix.suite }}.log"
 
       - name: Extract failed test output
-        if: steps.run_suite.outcome == 'failure' && matrix.collect_failures
+        if: |
+          matrix.collect_failures && (
+            steps.run_suite_autosave.outcome == 'failure' ||
+            steps.run_suite_default.outcome == 'failure'
+          )
         shell: bash
         run: |
           set -euo pipefail
@@ -287,7 +338,9 @@ jobs:
           if-no-files-found: ignore
 
       - name: Report suite failure
-        if: steps.run_suite.outcome == 'failure'
+        if: |
+          steps.run_suite_autosave.outcome == 'failure' ||
+          steps.run_suite_default.outcome == 'failure'
         shell: bash
         run: |
           set -euo pipefail
