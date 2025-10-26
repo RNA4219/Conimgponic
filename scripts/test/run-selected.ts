@@ -190,13 +190,7 @@ export function buildNodeArgs(
   targets: readonly string[],
   defaultTargets: readonly string[],
 ): string[] {
-  const baseArgs = [
-    '--experimental-vm-modules',
-    '--loader',
-    'ts-node/esm',
-    '--experimental-specifier-resolution=node',
-    '--test',
-  ];
+  const baseArgs = ['--loader', 'tsx', '--test', '--test-timeout=30000'];
   const sanitizedArgs = sanitizeArgs(args);
 
   if (targets.length > 0) {
@@ -359,90 +353,5 @@ function hasDefaultTestSuffix(fileName: string): boolean {
 }
 
 function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...baseEnv };
-  const requiredCompilerOptions: Record<string, unknown> = {
-    moduleResolution: 'bundler',
-    types: ['node'],
-    allowSyntheticDefaultImports: true,
-  };
-
-  const vmModulesFlag = '--experimental-vm-modules';
-  const existingNodeOptions = env.NODE_OPTIONS ?? '';
-  const hasVmModulesFlag = existingNodeOptions.split(/\s+/u).includes(vmModulesFlag);
-  env.NODE_OPTIONS = hasVmModulesFlag
-    ? existingNodeOptions
-    : existingNodeOptions.length > 0
-      ? `${existingNodeOptions} ${vmModulesFlag}`
-      : vmModulesFlag;
-
-  const existing = env.TS_NODE_COMPILER_OPTIONS;
-
-  if (existing) {
-    const merged = mergeCompilerOptions(existing, requiredCompilerOptions);
-    env.TS_NODE_COMPILER_OPTIONS = merged;
-    if (!env.TS_NODE_PROJECT) {
-      env.TS_NODE_PROJECT = 'tests/tsconfig.json';
-    }
-    if (!env.TS_NODE_TRANSPILE_ONLY) {
-      env.TS_NODE_TRANSPILE_ONLY = '1';
-    }
-    return env;
-  }
-
-  env.TS_NODE_COMPILER_OPTIONS = JSON.stringify(requiredCompilerOptions);
-  if (!env.TS_NODE_PROJECT) {
-    env.TS_NODE_PROJECT = 'tests/tsconfig.json';
-  }
-  if (!env.TS_NODE_TRANSPILE_ONLY) {
-    env.TS_NODE_TRANSPILE_ONLY = '1';
-  }
-  return env;
-}
-
-function mergeCompilerOptions(
-  serialized: string,
-  required: Record<string, unknown>,
-): string {
-  try {
-    const parsed = JSON.parse(serialized) as Record<string, unknown>;
-    const types = mergeTypes(parsed.types, required.types);
-
-    return JSON.stringify({
-      ...required,
-      ...parsed,
-      moduleResolution: parsed.moduleResolution ?? required.moduleResolution,
-      types,
-    });
-  } catch {
-    return JSON.stringify(required);
-  }
-}
-
-function mergeTypes(
-  existing: unknown,
-  required: unknown,
-): ReadonlyArray<string> {
-  const next = new Set<string>();
-
-  if (Array.isArray(required)) {
-    for (const value of required) {
-      if (typeof value === 'string') {
-        next.add(value);
-      }
-    }
-  }
-
-  if (Array.isArray(existing)) {
-    for (const value of existing) {
-      if (typeof value === 'string') {
-        next.add(value);
-      }
-    }
-  }
-
-  if (next.size === 0) {
-    return ['node'];
-  }
-
-  return [...next];
+  return { ...baseEnv };
 }
