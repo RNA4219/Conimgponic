@@ -69,7 +69,12 @@ describe('ci workflow golden job', () => {
         throw new TypeError('golden comparison step must configure continue-on-error');
       }
 
-      const goldenUpload = expectUploadStep(goldenSteps, 'golden-artifacts', 'golden job must upload golden artifacts');
+      const goldenUpload = expectUploadStep(
+        goldenSteps,
+        'golden-artifacts',
+        'golden job must upload golden artifacts',
+        { expectedIf: 'always()', expectedStepName: 'Upload golden artifacts' },
+      );
       const uploadPath = goldenUpload.with?.path;
       if (typeof uploadPath !== 'string') throw new TypeError('golden artifact upload must configure path string');
       const entries = uploadPath.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
@@ -162,14 +167,38 @@ function expectJobSteps(job: WorkflowJob | undefined, message: string): StepConf
   return job.steps;
 }
 
+type UploadStepExpectations = {
+  expectedIf?: string;
+  expectedStepName?: string;
+};
+
 function expectUploadStep(
   steps: StepConfig[],
   name: string,
   message: string,
+  expectations?: UploadStepExpectations,
 ): UploadStep {
   const match = findUploadStep(steps, name);
   if (!match) {
     throw new Error(message);
+  }
+  if (expectations?.expectedStepName) {
+    if (typeof match.name !== 'string') {
+      throw new TypeError('upload step must define a string name');
+    }
+    const actualName = match.name.trim();
+    if (actualName !== expectations.expectedStepName) {
+      throw new Error(`upload step must be named ${expectations.expectedStepName}`);
+    }
+  }
+  if (typeof expectations?.expectedIf !== 'undefined') {
+    if (typeof match.if !== 'string') {
+      throw new TypeError('upload step must configure string if condition');
+    }
+    const actualIf = match.if.trim();
+    if (actualIf !== expectations.expectedIf) {
+      throw new Error(`upload step must configure if: ${expectations.expectedIf}`);
+    }
   }
   return match;
 }
