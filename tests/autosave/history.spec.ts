@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { beforeEach } from 'node:test'
+import type { TestContext } from 'node:test'
 
 import { ENABLED_GUARD, scenario } from '../lib/autosave/setup'
+import type { AutoSaveInitResult } from '../../src/lib/autosave'
 import type { Storyboard } from '../../src/types'
-import { collectAutoSaveWrites } from './__mocks__/opfs'
+import { collectAutoSaveWrites, reset } from './__mocks__/opfs'
 
 const snapshotBase = new URL('./__snapshots__/autosave/on/', import.meta.url)
 
@@ -55,6 +58,20 @@ const makeCollector = () => {
   return telemetry
 }
 
+const waitForIdle = async (t: TestContext, runner: AutoSaveInitResult): Promise<void> => {
+  for (let i = 0; i < 200; i += 1) {
+    await Promise.resolve()
+    await Promise.resolve()
+    if (runner.snapshot().phase === 'idle') {
+      return
+    }
+    t.mock.timers.tick(10)
+  }
+  throw new Error('Timed out waiting for runner to reach idle phase')
+}
+
+beforeEach(reset)
+
 scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', async (t, ctx) => {
   const telemetry = makeCollector()
   t.after(() => {
@@ -73,9 +90,7 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
     t.mock.timers.tick(policy.debounceMs)
     await Promise.resolve()
     t.mock.timers.tick(policy.idleMs)
-    for (let i = 0; i < 4; i += 1) {
-      await Promise.resolve()
-    }
+    await waitForIdle(t, runner)
   }
 
   await flushViaIdle()
@@ -86,10 +101,16 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
 
   await runner.dispose()
 
+  const writes = collectAutoSaveWrites(ctx.opfs)
   const expectation = {
-    writes: collectAutoSaveWrites(ctx.opfs),
+    writes: writes.map(({ bytes: _bytes, ...rest }) => rest),
     telemetry
   }
+
+  const historyBytes = writes
+    .filter(({ path }) => path.startsWith('project/autosave/history/'))
+    .reduce((total, entry) => total + entry.bytes, 0)
+  assert.ok(historyBytes <= policy.maxBytes)
 
   await assertSnapshot('history-as-i-02', expectation)
 })
@@ -141,10 +162,16 @@ scenario(
     await pendingFlush
     await disposePromise
 
+    const writes = collectAutoSaveWrites(ctx.opfs)
     const expectation = {
-      writes: collectAutoSaveWrites(ctx.opfs),
+      writes: writes.map(({ bytes: _bytes, ...rest }) => rest),
       telemetry
     }
+
+    const historyBytes = writes
+      .filter(({ path }) => path.startsWith('project/autosave/history/'))
+      .reduce((total, entry) => total + entry.bytes, 0)
+    assert.ok(historyBytes <= ctx.AUTOSAVE_POLICY.maxBytes)
 
     await assertSnapshot('history-as-i-05', expectation)
   }
