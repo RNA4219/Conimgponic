@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { test } from 'node:test'
 
 import { scenario } from '../lib/autosave/setup'
-import { projectLockApi, projectLockEvents, ProjectLockError } from '../../src/lib/locks'
+import {
+  acquireProjectLock,
+  projectLockApi,
+  projectLockEvents,
+  ProjectLockError,
+  releaseProjectLock,
+  WEB_LOCK_KEY
+} from '../../src/lib/locks'
 import type { ProjectLockEvent } from '../../src/lib/locks'
 
 const snapshotBase = new URL('./__snapshots__/autosave/on/', import.meta.url)
@@ -164,7 +172,8 @@ scenario(
   {
     locks: {
       async request(_key, _options, callback) {
-        await callback({})
+        const invoke = callback as (lock: unknown) => Promise<unknown>
+        await invoke({})
       }
     }
   },
@@ -187,14 +196,9 @@ scenario(
       return true
     })
 
-  await releaseProjectLock(lease)
-  assert.equal(releaseMock.mock.calls.length, 1)
-  assert.equal(
-    events.some((event) => event.type === 'lock:released' && event.leaseId === lease.leaseId),
-    true,
-    'lock:released event should fire once the lease is released'
-  )
-})
+    await assertSnapshot('locks-non-retryable', { lockSequence: sequence, telemetry })
+  }
+)
 
 test('AS-LK-03: Web Lock は release() まで request が解決せず、lock.released 完了まで待機する', async (t) => {
   const events: ProjectLockEvent[] = []
@@ -256,7 +260,7 @@ test('AS-LK-03: Web Lock は release() まで request が解決せず、lock.rel
   const releasePromise = releaseProjectLock(lease)
 
   assert.equal(
-    events.some((event) => event.type === 'lock:release-requested' && event.leaseId === lease.leaseId),
+    events.some((event) => event.type === 'lock:release-requested' && event.lease.leaseId === lease.leaseId),
     true,
     'lock:release-requested event must be emitted when release starts'
   )
@@ -267,15 +271,18 @@ test('AS-LK-03: Web Lock は release() まで request が解決せず、lock.rel
   ])
   assert.equal(releaseState, 'pending', 'releaseProjectLock must wait for lock.released to settle')
 
-  assert.equal(requestSettled, true, 'navigator.locks.request should resolve once release is invoked')
-  assert.equal(callbackSettled, true, 'Web Lock callback should resolve once release is invoked')
+  assert.equal(requestSettled, false, 'navigator.locks.request should remain pending until lock.released resolves')
+  assert.equal(callbackSettled, false, 'Web Lock callback should remain pending until lock.released resolves')
   assert.equal(releaseMock.mock.calls.length, 1, 'lock.release must be called exactly once during release')
 
   resolveLockReleased()
   await releasePromise
 
+  assert.equal(requestSettled, true, 'navigator.locks.request should resolve after lock.released settles')
+  assert.equal(callbackSettled, true, 'Web Lock callback should resolve after lock.released settles')
+
   assert.equal(
-    events.filter((event) => event.type === 'lock:release-requested' && event.leaseId === lease.leaseId).length,
+    events.filter((event) => event.type === 'lock:release-requested' && event.lease.leaseId === lease.leaseId).length,
     1,
     'lock:release-requested should be emitted exactly once'
   )
