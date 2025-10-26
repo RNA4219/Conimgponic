@@ -29,12 +29,15 @@ type BuildJobConfig = {
   needs?: JobNeedsConfig;
 };
 
-type QualityJobConfig = {
-  strategy?: {
-    matrix?: {
-      include?: QualityMatrixEntry[];
-    };
+type QualityJobStrategyConfig = {
+  'fail-fast'?: unknown;
+  matrix?: {
+    include?: QualityMatrixEntry[];
   };
+};
+
+type QualityJobConfig = {
+  strategy?: QualityJobStrategyConfig;
   steps?: StepConfig[];
 };
 
@@ -100,6 +103,11 @@ describe('ci workflow build job', () => {
       assertMatrixEntries(matrixEntries, 'quality job must configure matrix.include array');
 
       const qualityCommands = extractMatrixCommands(matrixEntries);
+
+      assertQualityStrategyFailFastDisabled(
+        quality.strategy,
+        'quality job must disable fail-fast to collect all suite failures',
+      );
 
       const qualitySteps = quality.steps;
       assertStepArray(qualitySteps, 'workflow.jobs.quality.steps must be an array');
@@ -389,6 +397,27 @@ function assertArtifactStep(
   }
 }
 
+function assertQualityStrategyFailFastDisabled(
+  strategy: QualityJobConfig['strategy'],
+  message: string,
+): void {
+  if (!strategy || typeof strategy !== 'object') {
+    assert.fail(message);
+  }
+
+  const failFast = strategy['fail-fast'];
+
+  if (typeof failFast !== 'boolean') {
+    assert.fail(`${message}: fail-fast must be a boolean`);
+  }
+
+  assert.strictEqual(
+    failFast,
+    false,
+    `${message}: expected fail-fast to be explicitly set to false`,
+  );
+}
+
 function extractPnpmCommands(steps: StepConfig[]): string[] {
   return steps.flatMap((step) => {
     if (typeof step.run !== 'string') {
@@ -533,6 +562,16 @@ function assertStepUsesEquals(step: StepConfig, expected: string, message: strin
   assert.strictEqual(step.uses.trim(), expected, message);
 }
 
+function assertStepContinueOnError(step: StepConfig, message: string): void {
+  const continueOnError = step['continue-on-error'];
+
+  if (typeof continueOnError !== 'boolean') {
+    assert.fail(`${message}; continue-on-error must be configured as a boolean`);
+  }
+
+  assert.strictEqual(continueOnError, true, message);
+}
+
 function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.if !== 'string') {
     assert.fail(`${message}; step.if must be configured as a string`);
@@ -542,14 +581,15 @@ function assertStepIfEquals(step: StepConfig, expected: string, message: string)
 }
 
 function assertStepContinueOnError(step: StepConfig, message: string): void {
-const value = step['continue-on-error'];
+  const value = step['continue-on-error'];
 
-if (typeof value !== 'boolean') {
-  assert.fail(`${message}; step.continue-on-error must be configured as a boolean`);
-}
+  if (typeof value !== 'boolean') {
+    assert.fail(`${message}; step.continue-on-error must be configured as a boolean`);
+  }
 
-if (value !== true) {
-  assert.fail(`${message}; continue-on-error must be set to true`);
+  if (value !== true) {
+    assert.fail(`${message}; continue-on-error must be set to true`);
+  }
 }
 
 }
