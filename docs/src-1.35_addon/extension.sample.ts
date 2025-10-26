@@ -97,6 +97,7 @@ class ConimgEditorProvider implements vscode.CustomTextEditorProvider {
           }
           case 'merge.request': {
             const { base, ours, theirs, threshold } = msg.payload
+            // DEFAULT_THRESHOLD=0.75 per docs/MERGE-DESIGN-IMPL.md → keep AutoSave/Merge guards aligned
             const result = coreMerge(base, ours, theirs, threshold ?? 0.75)
             panel.webview.postMessage({ type: 'merge.result', apiVersion: 1, reqId: msg.reqId, payload: { ok: true, result } })
             return

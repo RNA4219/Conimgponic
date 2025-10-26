@@ -3,7 +3,7 @@
 - `conimg.autosave.enabled`: boolean（def: true）
 - `conimg.autosave.historyLimit`: number（def: 20）
 - `conimg.autosave.sizeLimitMB`: number（def: 50）
-- `conimg.merge.threshold`: number（0–1、def: 0.75）
+- `conimg.merge.threshold`: number（0–1、def: 0.75、[docs/MERGE-DESIGN-IMPL.md](../MERGE-DESIGN-IMPL.md) の `DEFAULT_THRESHOLD` と一致）
 - `conimg.plugins.enable`: boolean（def: false）
 - `conimg.view.default`: "grid" | "mosaic" | "timeline" | "kanban"（def: "grid"）
 - `conimg.export.lineEnding`: "LF" | "CRLF"（def: "LF"）
@@ -17,4 +17,4 @@ AutoSave / 精緻マージのフェーズガードは以下の順で値を解決
 3. `localStorage`
 4. `DEFAULT_FLAGS`
 
-`conimg.autosave.enabled` と `conimg.merge.threshold` は `resolveFlags()` に集約され、FlagSnapshot.source により Collector テレメトリへ出典が渡る。
+`conimg.autosave.enabled` と `conimg.merge.threshold` は `resolveFlags()` に集約され、FlagSnapshot.source により Collector テレメトリへ出典が渡る。AutoSave のフェーズ要件 ([docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md)) と Merge しきい値管理 ([docs/MERGE-DESIGN-IMPL.md](../MERGE-DESIGN-IMPL.md)) が同一ベースライン 0.75 を共有することを前提に設計する。
