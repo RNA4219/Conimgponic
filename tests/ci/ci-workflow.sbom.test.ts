@@ -35,12 +35,10 @@ describe('ci workflow sbom job', () => {
         syftStep.run.includes('cyclonedx-json=sbom.json'),
         'syft command must output cyclonedx-json=sbom.json',
       );
-      const uploadStep = expectUploadStep(sbomSteps, 'sbom', 'sbom job must upload sbom.json artifact');
-      const uploadIf = uploadStep.if;
-      if (uploadIf !== undefined && typeof uploadIf !== 'string') {
-        throw new TypeError('upload step if condition must be a string when present');
-      }
-      assert.strictEqual(uploadIf?.trim(), 'always()', 'sbom artifact upload must run unconditionally via always()');
+      const uploadStep = expectUploadStep(sbomSteps, 'sbom', 'sbom job must upload sbom.json artifact', {
+        ifCondition: 'always()',
+        stepName: 'Upload SBOM artifact',
+      });
       const uploadPath = uploadStep.with.path;
       assert.strictEqual(uploadPath.trim(), 'sbom.json', 'sbom artifact must point to sbom.json');
       const ifNoFilesFound = uploadStep.with['if-no-files-found'];
@@ -53,6 +51,30 @@ describe('ci workflow sbom job', () => {
       console.error('CI SBOM workflow verification failed:', error);
       throw error;
     }
+  });
+
+  test('uploads sbom log artifact only on failure', async () => {
+    const workflow = await loadWorkflow();
+    const sbomSteps = expectJobSteps(workflow.jobs?.sbom, 'sbom job must exist');
+    const uploadLogStep = expectUploadStep(
+      sbomSteps,
+      'sbom-log',
+      'sbom job must upload sbom log artifact on failure',
+      {
+        stepName: 'Upload SBOM log on failure',
+        ifCondition: 'failure()',
+      },
+    );
+
+    const uploadPath = uploadLogStep.with.path;
+    assert.strictEqual(uploadPath.trim(), 'sbom.log', 'sbom log artifact must point to sbom.log');
+
+    const ifNoFilesFound = uploadLogStep.with['if-no-files-found'];
+    assert.strictEqual(
+      ifNoFilesFound,
+      'ignore',
+      'sbom log artifact upload must ignore missing files to avoid masking primary failures',
+    );
   });
 });
 
@@ -114,14 +136,39 @@ function expectJobSteps(job: WorkflowJob | undefined, message: string): StepConf
   return job.steps;
 }
 
+type UploadStepOptions = {
+  ifCondition?: string;
+  stepName?: string;
+};
+
 function expectUploadStep(
   steps: StepConfig[],
   name: string,
   message: string,
+  options?: UploadStepOptions,
 ): UploadStep {
   const match = findUploadStep(steps, name);
   if (!match) {
     throw new Error(message);
+  }
+  if (options?.stepName !== undefined) {
+    if (typeof match.name !== 'string') {
+      throw new Error('upload step name must be a string when asserting the step name');
+    }
+    if (match.name.trim() !== options.stepName) {
+      throw new Error(`upload step name must be ${options.stepName}`);
+    }
+  }
+  if (options?.ifCondition !== undefined) {
+    if (match.if === undefined) {
+      throw new Error('upload step must define an if condition when asserting the condition');
+    }
+    if (typeof match.if !== 'string') {
+      throw new TypeError('upload step if condition must be a string when present');
+    }
+    if (match.if.trim() !== options.ifCondition) {
+      throw new Error(`upload step if condition must be ${options.ifCondition}`);
+    }
   }
   return match;
 }
