@@ -46,8 +46,8 @@ describe('createVsCodeMergeBridge threshold sanitization', () => {
       precision: 'beta',
       requestThreshold: undefined,
       readThreshold: 0.67,
-      expectedThreshold: 0.68,
-      description: 'clamps beta fallback to slider min 0.68',
+      expectedThreshold: 0.75,
+      description: 'clamps beta fallback to slider min 0.75',
     },
     {
       precision: 'stable',
@@ -60,8 +60,8 @@ describe('createVsCodeMergeBridge threshold sanitization', () => {
       precision: 'stable',
       requestThreshold: undefined,
       readThreshold: 0.65,
-      expectedThreshold: 0.7,
-      description: 'clamps stable fallback to slider min 0.7',
+      expectedThreshold: 0.82,
+      description: 'clamps stable fallback to slider min 0.82',
     },
   ]
 

@@ -17,6 +17,7 @@ type WorkflowYaml = {
 };
 
 type AuditJobConfig = {
+  needs?: JobNeedsConfig;
   steps?: StepConfig[];
 };
 
@@ -103,6 +104,26 @@ const expectedJunitCommand =
 const { load } = await importJsYaml();
 
 describe('ci workflow build job', () => {
+  test('quality job configures expected suites', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const matrixEntries = quality.strategy?.matrix?.include;
+    assertMatrixEntries(matrixEntries, 'quality job must configure matrix.include array');
+
+    const suites = extractMatrixSuites(matrixEntries);
+
+    assertCommandSequence(
+      suites,
+      expectedQualitySuites,
+      'quality job matrix.include suites',
+      { exact: true },
+    );
+  });
+
   test('runs recommended pnpm commands for autosave and reports', async () => {
     try {
       const workflow = await readWorkflowYaml();
@@ -219,6 +240,12 @@ describe('ci workflow build job', () => {
       if (!audit) {
         assert.fail('workflow.jobs.audit must exist');
       }
+
+      assertJobNeedsIncludeAll(
+        audit.needs,
+        ['sbom'],
+        'audit job must depend on sbom job',
+      );
 
       const auditSteps = audit.steps;
       assertStepArray(auditSteps, 'workflow.jobs.audit.steps must be an array');
@@ -546,11 +573,33 @@ function extractRunLines(steps: StepConfig[]): string[] {
   });
 }
 
+type CommandSequenceOptions = {
+  exact?: boolean;
+};
+
 function assertCommandSequence(
   commands: string[],
   expected: string[],
   context: string,
+  options?: CommandSequenceOptions,
 ): void {
+  if (options?.exact === true) {
+    assert.deepStrictEqual(
+      commands,
+      expected,
+      [
+        `${context} must match expected sequence exactly`,
+        '',
+        'expected:',
+        formatSequenceDiff(expected),
+        'actual:',
+        formatSequenceDiff(commands),
+      ].join('\n'),
+    );
+
+    return;
+  }
+
   let cursor = -1;
 
   for (const command of expected) {
@@ -566,6 +615,10 @@ function assertCommandSequence(
 
     cursor = nextIndex;
   }
+}
+
+function formatSequenceDiff(sequence: string[]): string {
+  return sequence.map((entry) => `  - ${entry}`).join('\n');
 }
 
 function assertCommandPresence(commands: string[], expected: string, message: string): void {

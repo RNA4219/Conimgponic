@@ -237,6 +237,11 @@ const parseMergeThreshold = (value: unknown): number | undefined => {
   return undefined
 }
 
+const clampThresholdToPrecisionMinimum = (precision: MergePrecision, value: number): number => {
+  const rule = THRESHOLD_RULES[precision]
+  return value < rule.clamp.min ? rule.clamp.min : value
+}
+
 interface MergeThresholdOptions {
   readonly precision?: MergePrecision | null
   readonly threshold?: number | null
@@ -312,33 +317,38 @@ export const resolveMergeThresholdSnapshot = (
   const envOverrides =
     envPrecision !== undefined && options.precision === undefined && options.threshold === undefined
 
+  const finalize = (value: number): MergeThresholdSnapshot => ({
+    precision,
+    threshold: clampThresholdToPrecisionMinimum(precision, value),
+  })
+
   const overrideThreshold = parseMergeThreshold(options.threshold)
   if (overrideThreshold !== undefined) {
-    return { precision, threshold: overrideThreshold }
+    return finalize(overrideThreshold)
   }
 
   if (envOverrides) {
-    return { precision, threshold: DEFAULT_THRESHOLD }
+    return finalize(DEFAULT_THRESHOLD)
   }
 
   const flagThreshold = parseMergeThreshold(snapshot.merge.threshold)
   if (flagThreshold !== undefined) {
-    return { precision, threshold: flagThreshold }
+    return finalize(flagThreshold)
   }
 
   const workspaceThreshold = parseMergeThreshold(
     readWorkspaceSetting(workspace, MERGE_THRESHOLD_STORAGE_KEY),
   )
   if (workspaceThreshold !== undefined) {
-    return { precision, threshold: workspaceThreshold }
+    return finalize(workspaceThreshold)
   }
 
   const storedThreshold = parseMergeThreshold(storage?.getItem(MERGE_THRESHOLD_STORAGE_KEY))
   if (storedThreshold !== undefined) {
-    return { precision, threshold: storedThreshold }
+    return finalize(storedThreshold)
   }
 
-  return { precision, threshold: DEFAULT_THRESHOLD }
+  return finalize(DEFAULT_THRESHOLD)
 }
 
 type MergeThresholdHookOptions = MergeThresholdSourceOptions

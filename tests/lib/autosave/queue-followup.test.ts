@@ -41,6 +41,7 @@ const makeStoryboard = (nodes: string[]): Storyboard => ({
 })
 
 const deferredLock = createDeferredLockOverrides()
+const chainedLock = createDeferredLockOverrides()
 
 scenario(
   'pending queue retains dirty entries raised during in-flight flush and schedules follow-up write',
@@ -106,6 +107,78 @@ scenario(
     assert.equal(historyKeys.length, 2)
     const finalSnapshot = runner.snapshot()
     assert.equal(finalPhase, 'idle')
+    assert.equal(finalSnapshot.queuedGeneration ?? 0, 0)
+  }
+)
+
+scenario(
+  'auto flush resumes after first write when additional dirty events arrive mid-flight',
+  chainedLock.overrides,
+  async (t, ctx) => {
+    const { initAutoSave, AUTOSAVE_POLICY, opfs } = ctx
+    chainedLock.resumes.length = 0
+    t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
+    let sceneCount = 1
+    const runner = initAutoSave(
+      () => makeStoryboard(Array.from({ length: sceneCount }, (_, index) => `scene-${index + 1}`)),
+      { disabled: false },
+      ENABLED_GUARD
+    )
+
+    const waitForResume = async (): Promise<() => Promise<void>> => {
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const resume = chainedLock.resumes.shift()
+        if (resume) {
+          return resume
+        }
+        await Promise.resolve()
+      }
+      assert.fail('expected project lock request during flush')
+    }
+
+    const awaitPhase = async (expected: string): Promise<void> => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const snapshot = runner.snapshot()
+        if (snapshot.phase === expected) {
+          return
+        }
+        await Promise.resolve()
+      }
+      const snapshot = runner.snapshot()
+      assert.equal(snapshot.phase, expected, `expected phase ${expected}, received ${snapshot.phase}`)
+    }
+
+    runner.markDirty({ pendingBytes: 512 })
+    t.mock.timers.tick(AUTOSAVE_POLICY.debounceMs)
+    await Promise.resolve()
+    t.mock.timers.tick(AUTOSAVE_POLICY.idleMs)
+    await Promise.resolve()
+
+    const firstResume = await waitForResume()
+
+    sceneCount = 2
+    runner.markDirty({ pendingBytes: 1536 })
+
+    await firstResume()
+    await awaitPhase('debouncing')
+    const midSnapshot = runner.snapshot()
+    assert.equal(midSnapshot.queuedGeneration, 1)
+
+    t.mock.timers.tick(AUTOSAVE_POLICY.debounceMs)
+    await Promise.resolve()
+    t.mock.timers.tick(AUTOSAVE_POLICY.idleMs)
+    await Promise.resolve()
+
+    const secondResume = await waitForResume()
+    await secondResume()
+    await awaitPhase('idle')
+
+    const historyKeys = Array.from(opfs.files.keys()).filter((key) =>
+      key.startsWith('project/autosave/history/')
+    )
+    assert.equal(historyKeys.length, 2)
+    const finalSnapshot = runner.snapshot()
+    assert.equal(finalSnapshot.phase, 'idle')
     assert.equal(finalSnapshot.queuedGeneration ?? 0, 0)
   }
 )

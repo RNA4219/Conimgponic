@@ -5,7 +5,7 @@ Day8 環境向けのデプロイ手順を開発・Docker・GitHub Actions の 3 
 ## 開発環境フロー
 
 1. **ブランチ戦略** — `main` から派生したトピックブランチで作業し、ドキュメント/ワークフロー更新は最小差分でコミットします。リリース前に `git rebase origin/main` を実行し、Birdseye の `generated_at` などメタデータの競合を解消します。
-2. **ローカル検証** — デプロイ前に `python workflow-cookbook/scripts/analyze.py --root . --emit report` を実行し、CI での差分検出を先取りします。必要に応じて `--focus docs` オプションで Day8 配下に絞り込み、リンク切れや Birdseye 未更新を確認します。
+2. **ローカル検証** — デプロイ前に `python workflow-cookbook/scripts/analyze.py --root . --emit report` を実行し、CI での差分検出を先取りします。`reports/day8/ci/summary.md` には `| license | passed | ... |` 行が出力され、ライセンス収集フローの成否を即確認できます。ライセンス監査のみ再実行する場合は `--focus license`、Day8 ドキュメント検証に絞る場合は `--focus docs` を指定して出力を最小化してください。
 3. **構成テスト** — リリースフローに追加するワークフロー/スクリプトは `python -m compileall` や `node --test` など既存ポリシーのコマンドで事前検証し、CI の失敗を予防します。
 4. **リリースタグ** — Day8 では GitHub Release に連動するタグ名を `day8-vYYYYMMDD` 形式で管理します。タグ作成前に `git status --short` と `git diff --stat origin/main` で差分を再確認してください。
 
@@ -42,9 +42,9 @@ COPY scripts ./scripts
 ENTRYPOINT ["python", "workflow-cookbook/scripts/analyze.py", "--root", ".", "--emit", "report"]
 ```
 
-- Day8 リポジトリ直下ではなく `Day8/` ディレクトリをビルドコンテキストに指定することを前提としているため、
-  `workflow-cookbook/requirements.txt` への `COPY` がそのまま通ります。ルートからビルドする場合は
-  `COPY Day8/workflow-cookbook/requirements.txt workflow-cookbook/requirements.txt` のようにパスを調整してください。
+- Day8 ではリポジトリルートをビルドコンテキストに指定する想定であり、`workflow-cookbook/requirements.txt`
+  への `COPY` がそのまま通ります。Day8 ディレクトリ単体をコンテキストにする場合は、事前に
+  `../workflow-cookbook/requirements.txt` を含めるよう `.dockerignore` やコピー手順を調整してください。
 - `workflow-cookbook/requirements.txt` には `mypy --strict`・`ruff`・`pytest`・`pip-audit` など Day8 のローカル検証で必須となる
   ツールを固定バージョンで収録しています。Docker 上でも `pip install -r workflow-cookbook/requirements.txt` が完了することを
   確認し、CI ログと同じ順序で検証コマンドを実行してください。

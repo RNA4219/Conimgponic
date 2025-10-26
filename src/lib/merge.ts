@@ -480,7 +480,7 @@ const PRECISION_CONFIG: Record<MergePrecision, {
     reviewDelta: (threshold) => threshold - 0.02,
     weights: { jaccard: 0.4, cosine: 0.6 },
     lockPolicy: 'strict',
-    thresholdClamp: (value) => clamp(value, 0.68, 0.9),
+    thresholdClamp: (value) => clamp(value, 0.75, 0.9),
   },
   stable: {
     min: 0.82,
@@ -488,7 +488,7 @@ const PRECISION_CONFIG: Record<MergePrecision, {
     reviewDelta: (threshold) => threshold - 0.01,
     weights: { jaccard: 0.3, cosine: 0.7 },
     lockPolicy: 'strict',
-    thresholdClamp: (value) => clamp(value, 0.7, 0.94),
+    thresholdClamp: (value) => clamp(value, 0.82, 0.94),
   },
 };
 

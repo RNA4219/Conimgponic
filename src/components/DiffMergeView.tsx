@@ -399,7 +399,22 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
   }, [dispatch, hunks, knownHunkIds])
 
   const getCurrentHunkIds = useCallback(() => knownHunkIds, [knownHunkIds])
-  const controller = useMemo(() => createDiffMergeController({ precision, dispatch, queueMergeCommand, getCurrentHunkIds }), [precision, dispatch, queueMergeCommand, getCurrentHunkIds])
+  const controller = useMemo(() => {
+    const instance = createDiffMergeController({
+      precision,
+      dispatch,
+      queueMergeCommand,
+      getCurrentHunkIds,
+      resolveCurrentTab: () => activeTab,
+    })
+    if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
+      const hook = (globalThis as {
+        __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+      }).__diffMergeViewOnControllerReady
+      hook?.(instance)
+    }
+    return instance
+  }, [activeTab, precision, dispatch, queueMergeCommand, getCurrentHunkIds])
   const activeLayout = useMemo(() => plan.tabs.find((tab) => tab.key === activeTab) ?? plan.tabs[0]!, [plan, activeTab])
   const selectedHunkIds = useMemo(() => Object.entries(state.hunkStates).filter(([, status]) => status === 'Selected' || status === 'Editing').map(([id]) => id), [state.hunkStates])
   const selectedHunkCount = selectedHunkIds.length

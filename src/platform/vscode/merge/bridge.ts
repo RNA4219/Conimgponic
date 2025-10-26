@@ -40,8 +40,8 @@ export interface MergeBridge {
 
 const THRESHOLD_CLAMP: Record<MergePrecision, { readonly min: number; readonly max?: number }> = {
   legacy: { min: 0.65 },
-  beta: { min: 0.68, max: 0.9 },
-  stable: { min: 0.7, max: 0.94 },
+  beta: { min: 0.75, max: 0.9 },
+  stable: { min: 0.82, max: 0.94 },
 }
 
 const sanitizeThreshold = (
