@@ -5,6 +5,7 @@ import {
   createInitialDiffMergeState,
   diffMergeReducer,
   retainKnownHunkIds,
+  type DiffMergeAutoAppliedState,
   type DiffMergeState,
 } from './diffMergeState.js'
 
@@ -363,8 +364,9 @@ export interface DiffMergeViewProps {
   readonly precision: MergePrecision
   readonly hunks: readonly MergeHunk[]
   readonly queueMergeCommand: QueueMergeCommand
+  readonly autoApplied?: DiffMergeAutoAppliedState
 }
-export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, queueMergeCommand }) => {
+export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, queueMergeCommand, autoApplied }) => {
   const plan = useMemo(() => planDiffMergeView(precision), [precision])
   const storage = (globalThis as { localStorage?: DiffMergeTabStorage }).localStorage
   const storageKey = useMemo(() => `${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`, [precision])
@@ -406,6 +408,7 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
       queueMergeCommand,
       getCurrentHunkIds,
       resolveCurrentTab: () => activeTab,
+      autoApplied,
     })
     if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
       const hook = (globalThis as {
@@ -414,7 +417,7 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
       hook?.(instance)
     }
     return instance
-  }, [activeTab, precision, dispatch, queueMergeCommand, getCurrentHunkIds])
+  }, [activeTab, precision, dispatch, queueMergeCommand, getCurrentHunkIds, autoApplied])
   const activeLayout = useMemo(() => plan.tabs.find((tab) => tab.key === activeTab) ?? plan.tabs[0]!, [plan, activeTab])
   const selectedHunkIds = useMemo(() => Object.entries(state.hunkStates).filter(([, status]) => status === 'Selected' || status === 'Editing').map(([id]) => id), [state.hunkStates])
   const selectedHunkCount = selectedHunkIds.length
