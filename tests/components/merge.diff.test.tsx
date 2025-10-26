@@ -7,6 +7,13 @@ import {
   type MergeDockPhasePlan,
 } from '../../src/components/MergeDock.tsx'
 
+test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
+  const snapshot = resolveMergeThresholdSnapshot({ workspace: null, storage: null })
+
+  assert.equal(snapshot.threshold, 0.75)
+  assert.equal(snapshot.precision, 'legacy')
+})
+
 test('legacy precision clamps threshold and hides diff tab', () => {
   const plan = resolveMergeDockPhasePlan({ precision: 'legacy', threshold: 0.6 })
 
@@ -63,7 +70,7 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'beta',
     threshold: 0.85,
-    autoAppliedRate: 0.72,
+    autoAppliedRate: 0.75,
     phaseStats: { reviewBandCount: 0, conflictBandCount: 0 },
   })
 
@@ -76,7 +83,7 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   )
   assert.equal(plan.threshold.request, 0.85)
   assert.equal(plan.threshold.autoTarget, 0.9)
-  assert.equal(plan.autoApplied.rate, 0.72)
+  assert.equal(plan.autoApplied.rate, 0.75)
   assert.equal(plan.autoApplied.meetsTarget, false)
 })
 
@@ -173,9 +180,9 @@ test('env precision threshold from flags overrides workspace and storage setting
     },
   }
 
-  const snapshot = resolveMergeThresholdSnapshot({ workspace, storage, precision: 'beta', threshold: 0.72 })
+  const snapshot = resolveMergeThresholdSnapshot({ workspace, storage, precision: 'beta', threshold: 0.75 })
   assert.equal(snapshot.precision, 'beta')
-  assert.equal(snapshot.threshold, 0.72)
+  assert.equal(snapshot.threshold, 0.75)
 
   const plan = resolveMergeDockPhasePlan({
     precision: snapshot.precision,
@@ -186,6 +193,6 @@ test('env precision threshold from flags overrides workspace and storage setting
   assert.equal(plan.diff.enabled, true)
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.guard.phaseBRequired, true)
-  assert.equal(plan.threshold.request, 0.72)
-  assert.equal(plan.autoApplied.target, 0.77)
+  assert.equal(plan.threshold.request, 0.75)
+  assert.equal(plan.autoApplied.target, 0.8)
 })

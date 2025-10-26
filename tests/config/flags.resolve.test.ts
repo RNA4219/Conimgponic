@@ -32,7 +32,7 @@ test('env overrides workspace and localStorage for autosave and merge precision'
   }
   const workspace: WorkspaceRecord = {
     'conimg.autosave.enabled': false,
-    'conimg.merge.threshold': 0.72
+    'conimg.merge.threshold': 0.75
   }
   const storage = createStorage({
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: '0',
@@ -94,7 +94,12 @@ test('defaults are used when no sources apply', () => {
   assert.equal(snapshot.autosave.enabled, false)
   assert.equal(snapshot.autosave.source, 'default')
   assert.equal(snapshot.merge.source, 'default')
+  assert.equal(snapshot.merge.threshold, 0.75)
   assert.ok(Number.isFinite(Date.parse(snapshot.updatedAt)))
+})
+
+test('default merge threshold aligns with spec baseline', () => {
+  assert.equal(DEFAULT_FLAGS.merge.profile.threshold, 0.75)
 })
 
 test('source typing includes workspace', () => {

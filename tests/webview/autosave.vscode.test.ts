@@ -236,6 +236,69 @@ describe('createVscodeAutoSaveBridge', () => {
     )
   })
 
+  it('replays dirty→saving→saved transitions when requests queue during atomic write', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    const completions: Array<() => void> = []
+    let tick = 0
+    let generation = 0
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => {
+        const ts = new Date('2024-01-01T00:00:00.000Z')
+        ts.setMilliseconds(tick * 200)
+        tick += 1
+        return ts
+      },
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () =>
+        await new Promise<AutoSaveAtomicWriteResult>((resolve) => {
+          generation += 1
+          completions.push(() =>
+            resolve({
+              ok: true,
+              bytes: 1024 * generation,
+              generation,
+              lastSuccessAt: new Date('2024-01-01T00:00:05.000Z').toISOString(),
+              lockStrategy: 'web-lock'
+            })
+          )
+        })
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    const firstRequest = createRequest('req-1', 'corr-1', guardEnabled, 1024, 1)
+    const pendingFirst = bridge.handleSnapshotRequest(firstRequest)
+    await Promise.resolve()
+    assert.equal(completions.length, 1)
+
+    bridge.reportDirty(2048, guardEnabled)
+    const secondRequest = createRequest('req-2', 'corr-2', guardEnabled, 2048, 2)
+    const pendingSecond = bridge.handleSnapshotRequest(secondRequest)
+    await Promise.resolve()
+    assert.equal(completions.length, 2)
+
+    completions.shift()?.()
+    await pendingFirst
+    completions.shift()?.()
+    await pendingSecond
+
+    const statuses = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave')
+    assert.deepEqual(
+      statuses.map((msg) => msg.payload.state),
+      ['dirty', 'saving', 'dirty', 'saving', 'saved', 'saved'],
+      'status states should emit two cycles resulting in two saved events'
+    )
+    const results = sent.filter((msg): msg is AutoSaveSnapshotResultMessage => msg.type === 'snapshot.result')
+    assert.equal(results.length, 2)
+    assert.deepEqual(
+      results.map((msg) => msg.correlationId),
+      ['corr-1', 'corr-2'],
+      'snapshot.result should be emitted for both requests'
+    )
+  })
+
   it('Collector telemetry に Phase/Lock/Flag メタデータを付与する', async () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     let tick = 0

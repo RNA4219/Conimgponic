@@ -359,7 +359,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       destination: 'Autosave & Precision Merge',
       severity: 'critical',
       metric: 'merge_auto_success_rate',
-      value: 0.72,
+      value: 0.75,
       threshold: 0.8,
       template: 'templates/alerts/rollout-monitor.md',
     },

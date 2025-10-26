@@ -86,7 +86,11 @@ describe('ci workflow golden job', () => {
         goldenSteps,
         'golden-artifacts',
         'golden job must upload golden artifacts',
-        { expectedIf: 'always()', expectedStepName: 'Upload golden artifacts' },
+        {
+          expectedIf: 'always()',
+          expectedStepName: 'Upload golden artifacts',
+          expectedIfNoFilesFound: 'error',
+        },
       );
       const uploadPath = goldenUpload.with?.path;
       if (typeof uploadPath !== 'string') throw new TypeError('golden artifact upload must configure path string');
@@ -94,16 +98,6 @@ describe('ci workflow golden job', () => {
       for (const expected of ['golden.log', 'golden-diff.txt', 'runs']) {
         assert.ok(entries.includes(expected), `golden artifact upload must include ${expected}`);
       }
-
-      const ifNoFilesFound = goldenUpload.with?.['if-no-files-found'];
-      if (typeof ifNoFilesFound !== 'string') {
-        throw new TypeError('golden artifact upload must configure if-no-files-found string');
-      }
-      assert.strictEqual(
-        ifNoFilesFound.trim(),
-        'error',
-        "golden artifact upload must set if-no-files-found to string 'error'",
-      );
 
       const assertStep = goldenSteps.find(
         (step) => typeof step.name === 'string' && step.name.trim() === 'Assert golden comparison passed',
@@ -193,6 +187,7 @@ function expectJobSteps(job: WorkflowJob | undefined, message: string): StepConf
 type UploadStepExpectations = {
   expectedIf?: string;
   expectedStepName?: string;
+  expectedIfNoFilesFound?: string;
 };
 
 function expectUploadStep(
@@ -221,6 +216,22 @@ function expectUploadStep(
     const actualIf = match.if.trim();
     if (actualIf !== expectations.expectedIf) {
       throw new Error(`upload step must configure if: ${expectations.expectedIf}`);
+    }
+  }
+  if (typeof expectations?.expectedIfNoFilesFound !== 'undefined') {
+    const config = match.with;
+    if (!config || typeof config !== 'object') {
+      throw new TypeError('upload step must configure with block');
+    }
+    const actualIfNoFilesFound = (config as { 'if-no-files-found'?: unknown })['if-no-files-found'];
+    if (typeof actualIfNoFilesFound !== 'string') {
+      throw new TypeError('upload step must configure string if-no-files-found');
+    }
+    const normalized = actualIfNoFilesFound.trim();
+    if (normalized !== expectations.expectedIfNoFilesFound) {
+      throw new Error(
+        `upload step must configure if-no-files-found: ${expectations.expectedIfNoFilesFound}`,
+      );
     }
   }
   return match;

@@ -40,6 +40,11 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
     assert.equal(event?.phase, 'bootstrap')
     assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
 
+    const evaluationMs = event?.evaluation_ms
+    assert.equal(typeof evaluationMs, 'number')
+    assert.ok(Number.isFinite(evaluationMs))
+    assert.ok(evaluationMs >= 0)
+
     const snapshot = event?.snapshot as FlagSnapshot
     assert.deepEqual(snapshot.autosave, plan.snapshot.autosave)
 
@@ -83,6 +88,11 @@ test('resolveAutoSaveBootstrapPlan publishes a single flag resolution telemetry 
     assert.equal(event?.phase, 'bootstrap')
     assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
 
+    const evaluationMs = event?.evaluation_ms
+    assert.equal(typeof evaluationMs, 'number')
+    assert.ok(Number.isFinite(evaluationMs))
+    assert.ok(evaluationMs >= 0)
+
     const snapshot = event?.snapshot as FlagSnapshot
     assert.deepEqual(snapshot, plan.snapshot)
 
@@ -122,6 +132,11 @@ test('App bootstrap publishes flag resolution telemetry only once', () => {
     assert.equal(event?.source, 'app.autosave')
     assert.equal(event?.phase, 'bootstrap')
     assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
+
+    const evaluationMs = event?.evaluation_ms
+    assert.equal(typeof evaluationMs, 'number')
+    assert.ok(Number.isFinite(evaluationMs))
+    assert.ok(evaluationMs >= 0)
 
     const snapshot = event?.snapshot as FlagSnapshot
     assert.deepEqual(snapshot, plan.snapshot)
@@ -169,6 +184,11 @@ test('resolvePluginBridgeBootstrapPlan publishes flag resolution telemetry with 
     assert.equal(event?.source, 'vscode.plugins')
     assert.equal(event?.phase, 'bootstrap')
     assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
+
+    const evaluationMs = event?.evaluation_ms
+    assert.equal(typeof evaluationMs, 'number')
+    assert.ok(Number.isFinite(evaluationMs))
+    assert.ok(evaluationMs >= 0)
 
     const snapshot = event?.snapshot as FlagSnapshot
     assert.deepEqual(snapshot.plugins, plan.snapshot.plugins)
