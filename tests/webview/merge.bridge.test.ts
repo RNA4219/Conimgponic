@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { DEFAULT_MERGE_ENGINE, type MergePrecision } from '../../src/lib/merge'
+import {
+  DEFAULT_MERGE_ENGINE,
+  PRECISION_THRESHOLD_CLAMP,
+  type MergePrecision,
+} from '../../src/lib/merge'
 import { createVsCodeMergeBridge } from '../../src/platform/vscode/merge/bridge'
 
 type ThresholdScenario = {
@@ -20,48 +24,54 @@ describe('createVsCodeMergeBridge threshold sanitization', () => {
     sceneId: 'scene-webview',
   }
 
+  const LEGACY_MIN = PRECISION_THRESHOLD_CLAMP.legacy.min
+  const BETA_MIN = PRECISION_THRESHOLD_CLAMP.beta.min
+  const BETA_MAX = PRECISION_THRESHOLD_CLAMP.beta.max ?? Number.POSITIVE_INFINITY
+  const STABLE_MIN = PRECISION_THRESHOLD_CLAMP.stable.min
+  const STABLE_MAX = PRECISION_THRESHOLD_CLAMP.stable.max ?? Number.POSITIVE_INFINITY
+
   const scenarios: readonly ThresholdScenario[] = [
     {
       precision: 'legacy',
       requestThreshold: 0.5,
       readThreshold: 0.62,
-      expectedThreshold: 0.65,
-      description: 'clamps legacy request to minimum 0.65',
+      expectedThreshold: LEGACY_MIN,
+      description: `clamps legacy request to minimum ${LEGACY_MIN.toFixed(2)}`,
     },
     {
       precision: 'legacy',
       requestThreshold: undefined,
       readThreshold: 0.6,
-      expectedThreshold: 0.65,
-      description: 'clamps legacy read fallback to minimum 0.65',
+      expectedThreshold: LEGACY_MIN,
+      description: `clamps legacy read fallback to minimum ${LEGACY_MIN.toFixed(2)}`,
     },
     {
       precision: 'beta',
       requestThreshold: 0.95,
       readThreshold: 0.7,
-      expectedThreshold: 0.9,
-      description: 'clamps beta request to slider max 0.9',
+      expectedThreshold: BETA_MAX,
+      description: `clamps beta request to slider max ${BETA_MAX.toFixed(2)}`,
     },
     {
       precision: 'beta',
       requestThreshold: undefined,
       readThreshold: 0.67,
-      expectedThreshold: 0.75,
-      description: 'clamps beta fallback to slider min 0.75',
+      expectedThreshold: BETA_MIN,
+      description: `clamps beta fallback to slider min ${BETA_MIN.toFixed(2)}`,
     },
     {
       precision: 'stable',
       requestThreshold: 0.96,
       readThreshold: 0.92,
-      expectedThreshold: 0.94,
-      description: 'clamps stable request to slider max 0.94',
+      expectedThreshold: STABLE_MAX,
+      description: `clamps stable request to slider max ${STABLE_MAX.toFixed(2)}`,
     },
     {
       precision: 'stable',
       requestThreshold: undefined,
       readThreshold: 0.65,
-      expectedThreshold: 0.82,
-      description: 'clamps stable fallback to slider min 0.82',
+      expectedThreshold: STABLE_MIN,
+      description: `clamps stable fallback to slider min ${STABLE_MIN.toFixed(2)}`,
     },
   ]
 

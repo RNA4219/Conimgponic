@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DEFAULT_MERGE_ENGINE, MergeTrace } from '../../src/lib/merge'
+import {
+  DEFAULT_MERGE_ENGINE,
+  PRECISION_THRESHOLD_CLAMP,
+  MergeTrace,
+} from '../../src/lib/merge'
 import { planDiffMergeSubTabs, PRECISION_PHASE_GUARD } from '../../src/components/DiffMergeView'
 import { createVsCodeMergeBridge } from '../../src/platform/vscode/merge/bridge'
 
@@ -27,6 +31,7 @@ test('precision phase guard keeps tab plan aligned with phase expectations', () 
 })
 
 test('merge bridge returns trace with threshold decisions and maintains auto adoption rate', async () => {
+  const betaClamp = PRECISION_THRESHOLD_CLAMP.beta
   const bridge = createVsCodeMergeBridge({
     engine: DEFAULT_MERGE_ENGINE,
     resolvePrecision: () => 'beta',
@@ -50,7 +55,7 @@ test('merge bridge returns trace with threshold decisions and maintains auto ado
   assert.equal(response.ok, true)
   assert.ok(response.trace)
   assertDecisionTrace(response.trace)
-  assert.equal(response.trace.summary.threshold, 0.75)
+  assert.equal(response.trace.summary.threshold, betaClamp.min)
   assert.ok(readAutoRate(response.trace) >= 0.8)
-  assert.equal(response.result?.trace.summary.threshold, 0.75)
+  assert.equal(response.result?.trace.summary.threshold, betaClamp.min)
 })
