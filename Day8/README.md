@@ -40,6 +40,14 @@ Day8 は「観測 → 反省 → 提案」のループを CI に組み込み、�
 ## セットアップ
 Day8 を新しいリポジトリへ導入する際は、[`INSTALL.md`](INSTALL.md) の手順に従ってワークフローや初期ファイルをルートに配置してください。GitHub Actions では `test` → `reflection` → `pr_gate` の順で実行され、安全デチューンされた反省レポートを生成します。
 
+ローカルで Day8 標準の lint / 型 / テスト / 依存スキャンを再現する場合は、Python 3.11+ の仮想環境を用意し、Day8 ディレクトリ直下で次を実行してツールを揃えます。
+
+```sh
+pip install -r workflow-cookbook/requirements.txt
+```
+
+その上で `ruff check Day8/workflow-cookbook`、`mypy --strict Day8/workflow-cookbook`、`pytest Day8/workflow-cookbook/tests`、`pip-audit -r workflow-cookbook/requirements.txt` を順番に実行することで、CI と同じ検証結果をローカルで確保できます。
+
 ## 使い方のヒント
 - 初期状態では `workflow-cookbook/reflection.yaml` の `analysis.max_tokens` が 0 のため LLM 呼び出しは抑制されています。必要に応じて `engine` 設定と合わせて有効化してください。
 - 生成されたレポート（`workflow-cookbook/reports/` 配下）と提案を確認し、人間が修正 PR を作成する運用を前提としています。
