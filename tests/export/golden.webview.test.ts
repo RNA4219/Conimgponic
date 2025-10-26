@@ -362,11 +362,60 @@ describe('export bridge golden comparison', () => {
       assert.ok(Array.isArray(artifacts), 'artifacts が配列であること')
       const markdownArtifact = artifacts.find((artifact) => artifact.format === 'markdown')
       assert.ok(markdownArtifact)
-      assert.equal(markdownArtifact.uri ?? null, null)
-      assert.equal(markdownArtifact.normalizedPath, 'runs/unit/export/markdown/storyboard.md')
-      assert.equal(markdownArtifact.durationMs ?? null, null)
+      assert.equal(markdownArtifact.runId, 'unit')
+      assert.equal(markdownArtifact.uri, 'runs/unit/export/markdown/storyboard.md')
+      assert.equal(markdownArtifact.duration_ms, null)
+      assert.equal(markdownArtifact.normalized_path, 'runs/unit/export/markdown/storyboard.md')
     } finally {
       ctx.cleanup()
+    }
+  })
+
+  test('テレメトリ契約: export.success/failed のキーが Collector 契約と一致する', async () => {
+    const successCtx = await setupGolden()
+    const failedCtx = await setupGolden((outputs) => {
+      outputs.csv = `${outputs.csv}\n"corrupted"`
+    })
+    const telemetry = makeTelemetryCollector()
+    const failedTelemetry = makeTelemetryCollector()
+    try {
+      const { compareStoryboardToGolden: compareSuccess } = successCtx.compare
+      const successResult = await compareSuccess({
+        storyboardPath,
+        goldenDir: successCtx.goldenDir,
+        outputDir: successCtx.outputDir,
+        runId: 'unit-success',
+        telemetry,
+      })
+      assert.equal(successResult.ok, true)
+      const successEvent = telemetry.events.find((event) => event.event === 'export.success')
+      assert.ok(successEvent, 'export.success telemetry が送出されること')
+      const successArtifact = Array.isArray(successEvent.payload.artifacts)
+        ? (successEvent.payload.artifacts as Array<Record<string, unknown>>)[0]
+        : undefined
+      assert.ok(successArtifact, '成果物テレメトリが存在すること')
+      for (const key of ['format', 'runId', 'uri', 'duration_ms']) {
+        assert.ok(Object.hasOwn(successArtifact, key), `success artifact must include ${key}`)
+      }
+
+      const { compareStoryboardToGolden: compareFailed } = failedCtx.compare
+      const failedResult = await compareFailed({
+        storyboardPath,
+        goldenDir: failedCtx.goldenDir,
+        outputDir: failedCtx.outputDir,
+        runId: 'unit-failed',
+        telemetry: failedTelemetry,
+      })
+      assert.equal(failedResult.ok, false)
+      const failedEvent = failedTelemetry.events.find((event) => event.event === 'export.failed')
+      assert.ok(failedEvent, 'export.failed telemetry が送出されること')
+      const error = failedEvent.payload.error as Record<string, unknown>
+      for (const key of ['code', 'message', 'retryable', 'next_backoff_ms']) {
+        assert.ok(Object.hasOwn(error, key), `failed error payload must include ${key}`)
+      }
+    } finally {
+      successCtx.cleanup()
+      failedCtx.cleanup()
     }
   })
 

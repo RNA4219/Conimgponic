@@ -146,14 +146,18 @@ export function createTelemetryEvent(
     formats,
   }
   if (comparison.ok) {
-    basePayload.artifacts = comparison.entries.map((entry) => ({
-      format: entry.format,
-      name: entry.name ?? null,
-      status: entry.status,
-      uri: null,
-      normalizedPath: buildNormalizedPath(entry, runId),
-      durationMs: null,
-    }))
+    basePayload.artifacts = comparison.entries.map((entry) => {
+      const normalizedPath = buildNormalizedPath(entry, runId)
+      return {
+        format: entry.format,
+        runId,
+        name: entry.name ?? null,
+        status: entry.status,
+        uri: normalizedPath ?? null,
+        normalized_path: normalizedPath,
+        duration_ms: null,
+      }
+    })
     return { event: 'export.success', payload: basePayload }
   }
   const retryable = comparison.error?.retryable ?? false
@@ -161,6 +165,7 @@ export function createTelemetryEvent(
     code: 'golden.comparison_failed',
     retryable,
     message: comparison.error?.message ?? 'Golden comparison failed',
+    next_backoff_ms: retryable ? 100 : 0,
   }
   basePayload.entries = comparison.entries.map((entry) => ({
     format: entry.format,

@@ -101,7 +101,31 @@ describe('vscode extension telemetry contract (RED)', () => {
       )
     }
   })
-  test.todo('export.* telemetry が format ごとに started/succeeded/failed を記録し、エラー時は retryable + next_backoff_ms を出力する')
+  test('export.* telemetry が Collector 契約のキーを保持する', () => {
+    const started = findTelemetrySpec('export.started')
+    assertOk(started, 'export.started telemetry spec is missing')
+    deepStrictEqual(started.jsonlFields, ['payload.format', 'payload.runId', 'payload.stage'])
+
+    const succeeded = findTelemetrySpec('export.success')
+    assertOk(succeeded, 'export.success telemetry spec is missing')
+    deepStrictEqual(succeeded.jsonlFields, [
+      'payload.format',
+      'payload.runId',
+      'payload.uri',
+      'payload.duration_ms',
+    ])
+
+    const failed = findTelemetrySpec('export.failed')
+    assertOk(failed, 'export.failed telemetry spec is missing')
+    deepStrictEqual(failed.jsonlFields, [
+      'payload.format',
+      'payload.runId',
+      'payload.error.code',
+      'payload.error.message',
+      'payload.error.retryable',
+      'payload.error.next_backoff_ms',
+    ])
+  })
   test('plugins telemetry は pluginId/action/result を Collector JSONL に固定する', () => {
     const completed = findTelemetrySpec('plugins.completed')
     assertOk(completed, 'plugins.completed telemetry spec is missing')
