@@ -134,7 +134,10 @@ scenario(
     const { initAutoSave, AUTOSAVE_RETRY_POLICY } = ctx
     t.mock.timers.enable({ apis: ['setTimeout'], now: Date.now() })
     const runner = initAutoSave(() => makeStoryboard(['gamma']), { disabled: false }, ENABLED_GUARD)
-    await assert.rejects(runner.flushNow(), isAutoSaveError({ code: 'lock-unavailable', retryable: true }))
+    const expectedError = { code: 'lock-unavailable', retryable: true } as const
+    const rejection = await assert.rejects(runner.flushNow(), isAutoSaveError(expectedError))
+    assert.ok(isAutoSaveError(expectedError)(rejection))
+    const rejectedError = rejection as AutoSaveError
     assert.equal(runner.snapshot().phase, 'backoff')
     t.mock.timers.tick(AUTOSAVE_RETRY_POLICY.initialDelayMs - 1)
     await Promise.resolve()
@@ -145,5 +148,11 @@ scenario(
     t.mock.timers.runAll()
     await Promise.resolve()
     assert.equal(runner.snapshot().phase, 'disabled')
+    await runner.dispose()
+    const finalSnapshot = runner.snapshot()
+    assert.equal(finalSnapshot.phase, 'disabled')
+    assert.equal(finalSnapshot.retryCount, 1)
+    assert.equal(finalSnapshot.lastError?.code, rejectedError.code)
+    assert.equal(finalSnapshot.lastError?.retryable, rejectedError.retryable)
   }
 )

@@ -80,7 +80,9 @@ scenario('disabled guard returns no-op handle', async (t: TestContext, { initAut
     const runner = initAutoSave(() => makeStoryboard([]), options)
     assert.equal(runner.snapshot().phase, 'disabled')
     await assert.doesNotReject(() => runner.flushNow())
-    assert.doesNotThrow(() => runner.dispose())
+    await runner.dispose()
+    const disposedSnapshot = runner.snapshot()
+    assert.equal(disposedSnapshot.phase, 'disabled')
     assert.deepEqual(
       events.map((event) => ({
         level: event.level as string,
