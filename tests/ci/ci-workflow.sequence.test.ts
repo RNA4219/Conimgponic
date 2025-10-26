@@ -43,6 +43,7 @@ type QualityJobConfig = {
 
 type QualityMatrixEntry = {
   command?: unknown;
+  suite?: unknown;
 };
 
 type JobNeedsConfig = string | string[] | undefined;
@@ -83,6 +84,16 @@ const expectedQualitySequence = [
   'pnpm -s test:telemetry',
 ];
 
+const expectedQualitySuites = [
+  'lint',
+  'typecheck',
+  'autosave',
+  'merge',
+  'cli',
+  'collector',
+  'telemetry',
+];
+
 const expectedCoverageCommand = 'pnpm -s test:coverage';
 const expectedCoverageCleanup = 'rm -rf coverage';
 const expectedJunitCommand =
@@ -103,6 +114,19 @@ describe('ci workflow build job', () => {
       assertMatrixEntries(matrixEntries, 'quality job must configure matrix.include array');
 
       const qualityCommands = extractMatrixCommands(matrixEntries);
+      const qualitySuites = extractMatrixSuites(matrixEntries);
+
+      assert.strictEqual(
+        qualitySuites.length,
+        expectedQualitySuites.length,
+        'quality job matrix.include must configure expected suites',
+      );
+
+      assertCommandSequence(
+        qualitySuites,
+        expectedQualitySuites,
+        'quality job matrix.include suites',
+      );
 
       assertQualityStrategyFailFastDisabled(
         quality.strategy,
@@ -507,7 +531,7 @@ function assertCommandSequence(
     assert.notStrictEqual(
       nextIndex,
       -1,
-      `${context} must include pnpm command "${command}" after index ${cursor}`,
+      `${context} must include "${command}" after index ${cursor}`,
     );
 
     cursor = nextIndex;
@@ -776,6 +800,16 @@ function extractMatrixCommands(entries: QualityMatrixEntry[]): string[] {
     }
 
     return [entry.command.trim()];
+  });
+}
+
+function extractMatrixSuites(entries: QualityMatrixEntry[]): string[] {
+  return entries.flatMap((entry) => {
+    if (typeof entry.suite !== 'string') {
+      return [];
+    }
+
+    return [entry.suite.trim()];
   });
 }
 
