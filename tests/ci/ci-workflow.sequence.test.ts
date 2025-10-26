@@ -29,12 +29,15 @@ type BuildJobConfig = {
   needs?: JobNeedsConfig;
 };
 
-type QualityJobConfig = {
-  strategy?: {
-    matrix?: {
-      include?: QualityMatrixEntry[];
-    };
+type QualityJobStrategyConfig = {
+  'fail-fast'?: unknown;
+  matrix?: {
+    include?: QualityMatrixEntry[];
   };
+};
+
+type QualityJobConfig = {
+  strategy?: QualityJobStrategyConfig;
   steps?: StepConfig[];
 };
 
@@ -100,6 +103,11 @@ describe('ci workflow build job', () => {
       assertMatrixEntries(matrixEntries, 'quality job must configure matrix.include array');
 
       const qualityCommands = extractMatrixCommands(matrixEntries);
+
+      assertQualityStrategyFailFastDisabled(
+        quality.strategy,
+        'quality job must disable fail-fast to collect all suite failures',
+      );
 
       const qualitySteps = quality.steps;
       assertStepArray(qualitySteps, 'workflow.jobs.quality.steps must be an array');
@@ -199,8 +207,8 @@ describe('ci workflow build job', () => {
 
       assertLineIncludes(
         auditRunLines,
-        'github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64',
-        'audit job must install osv-scanner via official binary download',
+        'raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh',
+        'audit job must install osv-scanner via official install script',
       );
 
       assertLineIncludes(
@@ -281,6 +289,35 @@ describe('ci workflow build job', () => {
       '"Upload suite logs" artifact must include suite and failure logs',
     );
   });
+
+  test('extracts failed suite output when collection is enabled', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const extractFailuresStep = assertStepWithName(
+      steps,
+      'Extract failed test output',
+      'quality job must include "Extract failed test output" step',
+    );
+
+    assertStepIfEquals(
+      extractFailuresStep,
+      "steps.run_suite.outcome == 'failure' && matrix.collect_failures",
+      '"Extract failed test output" step must run only when suite fails and collection is enabled',
+    );
+
+    assertStepRunIncludesLine(
+      extractFailuresStep,
+      "grep -E ':[0-9]+:[0-9]+: |not ok|FAIL|Error' \"logs/${{ matrix.suite }}.log\" > \"logs/${{ matrix.suite }}-failures.log\" || true",
+      '"Extract failed test output" step must capture failed test output with grep while tolerating missing matches',
+    );
+  });
 });
 
 function isUploadArtifactStep(step: StepConfig): step is UploadArtifactStep {
@@ -358,6 +395,27 @@ function assertArtifactStep(
       `artifact "${expectedName}" must set if to "${expectedIf}"`,
     );
   }
+}
+
+function assertQualityStrategyFailFastDisabled(
+  strategy: QualityJobConfig['strategy'],
+  message: string,
+): void {
+  if (!strategy || typeof strategy !== 'object') {
+    assert.fail(message);
+  }
+
+  const failFast = strategy['fail-fast'];
+
+  if (typeof failFast !== 'boolean') {
+    assert.fail(`${message}: fail-fast must be a boolean`);
+  }
+
+  assert.strictEqual(
+    failFast,
+    false,
+    `${message}: expected fail-fast to be explicitly set to false`,
+  );
 }
 
 function extractPnpmCommands(steps: StepConfig[]): string[] {
@@ -496,6 +554,14 @@ function assertStepWithName(
   return match;
 }
 
+function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
+  if (typeof step.uses !== 'string') {
+    assert.fail(`${message}; step.uses must be configured as a string`);
+  }
+
+  assert.strictEqual(step.uses.trim(), expected, message);
+}
+
 function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.if !== 'string') {
     assert.fail(`${message}; step.if must be configured as a string`);
@@ -507,25 +573,29 @@ function assertStepIfEquals(step: StepConfig, expected: string, message: string)
 function assertStepContinueOnError(step: StepConfig, message: string): void {
   const value = step['continue-on-error'];
 
+  // boolean の場合
   if (typeof value === 'boolean') {
     assert.strictEqual(value, true, message);
     return;
   }
 
+  // string の場合（柔軟に許容）
   if (typeof value === 'string') {
     assert.strictEqual(value.trim(), 'true', message);
     return;
   }
 
-  assert.fail(`${message}; continue-on-error must be configured as boolean true`);
+  // それ以外はエラー
+  assert.fail(`${message}; continue-on-error must be configured as boolean true or string 'true'`);
 }
 
-function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
-  if (typeof step.uses !== 'string') {
-    assert.fail(`${message}; step.uses must be configured as a string`);
   }
 
-  assert.strictEqual(step.uses.trim(), expected, message);
+  if (value !== true) {
+    assert.fail(`${message}; continue-on-error must be set to true`);
+  }
+}
+
 }
 
 function assertStepRunIncludesLine(step: StepConfig, expectedLine: string, message: string): void {
