@@ -1,7 +1,10 @@
 import { deepStrictEqual, ok as assertOk } from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { COLLECT_METRICS_CONTRACT } from '../../scripts/monitor/collect-metrics.js'
+import {
+  COLLECT_METRICS_CONTRACT,
+  FLAG_RESOLUTION_SOURCE_VARIANTS
+} from '../../scripts/monitor/collect-metrics.js'
 
 const findTelemetrySpec = (event: string) =>
   COLLECT_METRICS_CONTRACT.telemetry.events.find((spec) => spec.event === event)
@@ -65,6 +68,15 @@ describe('vscode extension telemetry contract (RED)', () => {
         `flag_resolution must require ${field} in Collector JSONL`
       )
     }
+  })
+
+  test('flag_resolution telemetry の source 受け入れ値が FlagSource と一致する', () => {
+    deepStrictEqual(FLAG_RESOLUTION_SOURCE_VARIANTS, [
+      'env',
+      'workspace',
+      'localStorage',
+      'default'
+    ])
   })
 
   test('merge.trace telemetry は Phase 情報と ±5% 監視用メトリクスを保持する', () => {
