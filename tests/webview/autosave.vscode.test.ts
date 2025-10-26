@@ -538,6 +538,65 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(state.retryCount, 1)
   })
 
+  it('maintains retryCount when retrying after backoff', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    let attempt = 0
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (msg) => sent.push(msg),
+      atomicWrite: async ({ request }) => {
+        attempt += 1
+        if (attempt === 1) {
+          return {
+            ok: false,
+            error: {
+              name: 'AutoSaveError',
+              message: 'temporary lock',
+              code: 'write-failed',
+              retryable: true
+            }
+          }
+        }
+        return {
+          ok: true,
+          bytes: request.payload.pendingBytes,
+          generation: request.payload.queuedGeneration,
+          lastSuccessAt: new Date('2024-01-01T00:00:02.000Z').toISOString(),
+          lockStrategy: 'web-lock'
+        }
+      }
+    })
+
+    bridge.reportDirty(2048, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-backoff-1', 'corr-backoff-1', guardEnabled, 2048, 1)
+    )
+
+    const backoffState = bridge.inspectState()
+    assert.equal(backoffState.status, 'backoff')
+    assert.equal(backoffState.retryCount, 1)
+
+    bridge.reportDirty(2048, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-backoff-2', 'corr-backoff-2', guardEnabled, 2048, 2)
+    )
+
+    const retryStatuses = sent.filter(
+      (msg): msg is AutoSaveStatusMessage =>
+        msg.type === 'status.autosave' && msg.correlationId === 'corr-backoff-2'
+    )
+    const savingStatus = retryStatuses.find((msg) => msg.payload.state === 'saving')
+    assert.ok(savingStatus, 'retry should emit saving status')
+    assert.equal(savingStatus.payload.retryCount, 1)
+
+    const savedStatus = retryStatuses.find((msg) => msg.payload.state === 'saved')
+    assert.ok(savedStatus, 'retry should eventually save successfully')
+    assert.equal(savedStatus.payload.retryCount, 0)
+  })
+
   it('downgrades to disabled when non-retryable error occurs', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const telemetry: AutoSaveTelemetryEvent[] = []
