@@ -342,6 +342,34 @@ describe('export bridge golden comparison', () => {
     }
   })
 
+  test('テレメトリに export.success の成果物情報が含まれる', async () => {
+    const ctx = await setupGolden()
+    const telemetry = makeTelemetryCollector()
+    try {
+      const { compareStoryboardToGolden } = ctx.compare
+      const result = await compareStoryboardToGolden({
+        storyboardPath,
+        goldenDir: ctx.goldenDir,
+        outputDir: ctx.outputDir,
+        runId: 'unit',
+        telemetry,
+      })
+      assert.equal(result.ok, true)
+      const succeeded = telemetry.events.find((event) => event.event === 'export.success')
+      assert.ok(succeeded)
+      assert.equal(succeeded.payload.runId, 'unit')
+      const artifacts = succeeded.payload.artifacts as Array<Record<string, unknown>> | undefined
+      assert.ok(Array.isArray(artifacts), 'artifacts が配列であること')
+      const markdownArtifact = artifacts.find((artifact) => artifact.format === 'markdown')
+      assert.ok(markdownArtifact)
+      assert.equal(markdownArtifact.uri ?? null, null)
+      assert.equal(markdownArtifact.normalizedPath, 'runs/unit/export/markdown/storyboard.md')
+      assert.equal(markdownArtifact.durationMs ?? null, null)
+    } finally {
+      ctx.cleanup()
+    }
+  })
+
   test('AutoSave ロック競合やフォーマット未対応時のエラーが Collector へ telemetry export.failed として送信される', async () => {
     const ctx = await setupGolden((outputs) => {
       outputs.csv = `${outputs.csv},oops`
@@ -359,7 +387,10 @@ describe('export bridge golden comparison', () => {
       assert.equal(result.ok, false)
       const failed = telemetry.events.find((event) => event.event === 'export.failed')
       assert.ok(failed)
-      assert.equal(failed.payload.retryable, false)
+      const error = failed.payload.error as Record<string, unknown>
+      assert.ok(error)
+      assert.equal(error.code, 'golden.comparison_failed')
+      assert.equal(error.retryable, false)
     } finally {
       ctx.cleanup()
     }
