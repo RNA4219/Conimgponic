@@ -5,7 +5,6 @@ import {
   resolveAutoSaveBootstrapPlan,
   resolvePluginBridgeBootstrapPlan,
   type FlagSnapshot,
-  type FlagValidationError,
   type ResolveOptions
 } from '../../src/config'
 import { resolveAutoSaveBootstrapPlanForApp } from '../../src/App'
@@ -34,6 +33,53 @@ const stubPerformance = (values: readonly number[]): (() => void) => {
   }
 }
 
+const expectFlagTelemetry = (
+  emitted: readonly unknown[],
+  config: {
+    readonly origin: string
+    readonly phase: string
+    readonly evaluationMs: number
+    readonly flags: ReadonlyArray<readonly [string, unknown]>
+  }
+): void => {
+  const events = emitted.filter(
+    (candidate): candidate is Record<string, unknown> =>
+      !!candidate &&
+      typeof candidate === 'object' &&
+      (candidate as Record<string, unknown>).event === 'flag_resolution'
+  )
+  assert.equal(events.length, config.flags.length)
+  assert.equal(events.length, emitted.length)
+
+  const actual = events
+    .map((event) => {
+      assert.equal(event.feature, 'config.flags')
+      assert.equal(event.event, 'flag_resolution')
+      assert.equal(event.source, config.origin)
+      assert.equal(event.phase, config.phase)
+
+      const evaluationMs = event.evaluation_ms
+      assert.equal(typeof evaluationMs, 'number')
+      assert.ok(Number.isFinite(evaluationMs))
+      assert.equal(evaluationMs, config.evaluationMs)
+
+      return [String(event.flag), event.variant] as const
+    })
+    .sort((a, b) => a[0].localeCompare(b[0]))
+
+  const expected = config.flags
+    .map(([flag, variant]) => [flag, variant] as const)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+
+  assert.deepEqual(actual, expected)
+}
+
+const snapshotFlags = (snapshot: FlagSnapshot): ReadonlyArray<readonly [string, unknown]> => [
+  ['autosave.enabled', snapshot.autosave.value] as const,
+  ['plugins.enable', snapshot.plugins.value] as const,
+  ['merge.precision', snapshot.merge.value] as const
+]
+
 test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with errors', () => {
   const emitted: unknown[] = []
   const scope = globalThis as { Day8Collector?: { publish: (event: unknown) => void } }
@@ -58,29 +104,16 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
     const planErrors = plan.errors
     assert.ok(Array.isArray(planErrors), 'AutoSave bootstrap plan should expose validation errors as an array')
 
-    assert.equal(emitted.length, 1)
-    const event = emitted[0] as Record<string, unknown>
-    assert.equal(event?.event, 'flag_resolution')
-    assert.equal(event?.feature, 'config.flags')
-    assert.equal(event?.source, 'app.autosave')
-    assert.equal(event?.phase, 'bootstrap')
-    assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
+    expectFlagTelemetry(emitted, {
+      origin: 'app.autosave',
+      phase: 'bootstrap',
+      evaluationMs: 48,
+      flags: snapshotFlags(plan.snapshot)
+    })
 
-    const evaluationMs = event?.evaluation_ms
-    assert.equal(typeof evaluationMs, 'number')
-    assert.ok(Number.isFinite(evaluationMs))
-    assert.equal(evaluationMs, 48)
-    assert.ok(evaluationMs >= 0)
-
-    const snapshot = event?.snapshot as FlagSnapshot
-    assert.deepEqual(snapshot.autosave, plan.snapshot.autosave)
-
-    const errors = event?.errors as readonly FlagValidationError[]
-    assert.ok(Array.isArray(errors))
-    assert.ok(errors.length > 0)
-    assert.equal(errors, planErrors)
-    const [firstError] = errors
-    assert.equal(firstError?.flag, 'autosave.enabled')
+    const autosaveErrors = planErrors.filter((error) => error.flag === 'autosave.enabled')
+    assert.ok(autosaveErrors.length > 0)
+    const [firstError] = autosaveErrors
     assert.equal(firstError?.source, 'env')
     assert.equal(firstError?.phase, 'phase-a0')
   } finally {
@@ -109,28 +142,12 @@ test('resolveAutoSaveBootstrapPlan publishes a single flag resolution telemetry 
     const plan = resolveAutoSaveBootstrapPlan()
 
     assert.ok(plan)
-    assert.equal(emitted.length, 1)
-
-    const event = emitted[0] as Record<string, unknown>
-    assert.equal(event?.event, 'flag_resolution')
-    assert.equal(event?.feature, 'config.flags')
-    assert.equal(event?.source, 'app.autosave')
-    assert.equal(event?.phase, 'bootstrap')
-    assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
-
-    const evaluationMs = event?.evaluation_ms
-    assert.equal(typeof evaluationMs, 'number')
-    assert.ok(Number.isFinite(evaluationMs))
-    assert.equal(evaluationMs, 68)
-    assert.ok(evaluationMs >= 0)
-
-    const snapshot = event?.snapshot as FlagSnapshot
-    assert.deepEqual(snapshot, plan.snapshot)
-
-    const errors = event?.errors as readonly FlagValidationError[]
-    assert.equal(errors, plan.errors)
-    assert.ok(Array.isArray(errors))
-    assert.equal(errors.length, 0)
+    expectFlagTelemetry(emitted, {
+      origin: 'app.autosave',
+      phase: 'bootstrap',
+      evaluationMs: 68,
+      flags: snapshotFlags(plan.snapshot)
+    })
   } finally {
     restorePerformance()
     if (originalCollector) {
@@ -159,25 +176,12 @@ test('App bootstrap publishes flag resolution telemetry only once', () => {
       recorded.push(nextPlan)
     })
 
-    assert.equal(emitted.length, 1)
-    const event = emitted[0] as Record<string, unknown>
-    assert.equal(event?.event, 'flag_resolution')
-    assert.equal(event?.feature, 'config.flags')
-    assert.equal(event?.source, 'app.autosave')
-    assert.equal(event?.phase, 'bootstrap')
-    assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
-
-    const evaluationMs = event?.evaluation_ms
-    assert.equal(typeof evaluationMs, 'number')
-    assert.ok(Number.isFinite(evaluationMs))
-    assert.equal(evaluationMs, 48)
-    assert.ok(evaluationMs >= 0)
-
-    const snapshot = event?.snapshot as FlagSnapshot
-    assert.deepEqual(snapshot, plan.snapshot)
-
-    const errors = event?.errors as readonly FlagValidationError[]
-    assert.equal(errors, plan.errors)
+    expectFlagTelemetry(emitted, {
+      origin: 'app.autosave',
+      phase: 'bootstrap',
+      evaluationMs: 48,
+      flags: snapshotFlags(plan.snapshot)
+    })
 
     assert.equal(recorded.length, 1)
     assert.strictEqual(recorded[0], plan)
