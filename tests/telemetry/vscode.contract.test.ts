@@ -75,7 +75,47 @@ describe('vscode extension telemetry contract (RED)', () => {
       )
     }
   })
-  test.todo('export.* telemetry が format ごとに started/succeeded/failed を記録し、エラー時は retryable + next_backoff_ms を出力する')
+  test('export telemetry は runId/format を必須化し completed → success へ改名する', () => {
+    const startedSpec = findTelemetrySpec('export.started')
+    assertOk(startedSpec, 'export.started telemetry spec is missing')
+
+    for (const field of ['payload.format', 'payload.runId', 'payload.stage']) {
+      assertOk(
+        startedSpec.jsonlFields.includes(field),
+        `export.started must require ${field} in Collector JSONL`
+      )
+    }
+
+    const successSpec = findTelemetrySpec('export.success')
+    assertOk(successSpec, 'export.success telemetry spec is missing')
+
+    for (const field of ['payload.format', 'payload.runId', 'payload.uri', 'payload.duration_ms']) {
+      assertOk(
+        successSpec.jsonlFields.includes(field),
+        `export.success must require ${field} in Collector JSONL`
+      )
+    }
+
+    const completedSpec = findTelemetrySpec('export.completed')
+    assertOk(!completedSpec, 'export.completed telemetry spec must be removed')
+
+    const failedSpec = findTelemetrySpec('export.failed')
+    assertOk(failedSpec, 'export.failed telemetry spec is missing')
+
+    for (const field of [
+      'payload.format',
+      'payload.runId',
+      'payload.error.code',
+      'payload.error.message',
+      'payload.error.retryable',
+      'payload.error.next_backoff_ms',
+    ]) {
+      assertOk(
+        failedSpec.jsonlFields.includes(field),
+        `export.failed must require ${field} in Collector JSONL`
+      )
+    }
+  })
   test.todo('plugins.* telemetry が pluginId/action/result と correlationId を固定し、プラグイン sandbox 違反時に rollback 条件を通知する')
   test.todo('JSONL 再試行は最大 3 回、指数バックオフ 0.1/0.3/0.9s で Collector -> Analyzer -> Reporter が整合することを検証する')
 })
