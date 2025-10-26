@@ -43,8 +43,11 @@ jobs:
         with:
           version: 9
       - run: pnpm i --frozen-lockfile
-      - run: pnpm -s test:autosave
-      - if: failure()
+      - name: Run autosave tests
+        run: pnpm -s test:autosave
+        timeout-minutes: 15 # failsafe for CI variance
+      - name: Upload autosave logs
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: autosave-logs
