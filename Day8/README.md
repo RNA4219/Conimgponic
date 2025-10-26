@@ -40,7 +40,7 @@ Day8 は「観測 → 反省 → 提案」のループを CI に組み込み、�
 ## セットアップ
 Day8 を新しいリポジトリへ導入する際は、[`INSTALL.md`](INSTALL.md) の手順に従ってワークフローや初期ファイルをルートに配置してください。GitHub Actions では `test` → `reflection` → `pr_gate` の順で実行され、安全デチューンされた反省レポートを生成します。
 
-ローカルで Day8 標準の lint / 型 / テスト / 依存スキャンを再現する場合は、Python 3.11+ の仮想環境を用意し、Day8 ディレクトリ直下で次を実行してツールを揃えます。
+ローカルで Day8 標準の lint / 型 / テスト / 依存スキャンを再現する場合は、Python 3.11+ の仮想環境を用意し、リポジトリルートで次を実行してツールを揃えます。
 
 ```sh
 pip install -r workflow-cookbook/requirements.txt

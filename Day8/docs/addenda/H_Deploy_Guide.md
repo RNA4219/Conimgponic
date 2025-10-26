@@ -42,9 +42,9 @@ COPY scripts ./scripts
 ENTRYPOINT ["python", "workflow-cookbook/scripts/analyze.py", "--root", ".", "--emit", "report"]
 ```
 
-- Day8 リポジトリ直下ではなく `Day8/` ディレクトリをビルドコンテキストに指定することを前提としているため、
-  `workflow-cookbook/requirements.txt` への `COPY` がそのまま通ります。ルートからビルドする場合は
-  `COPY Day8/workflow-cookbook/requirements.txt workflow-cookbook/requirements.txt` のようにパスを調整してください。
+- Day8 ではリポジトリルートをビルドコンテキストに指定する想定であり、`workflow-cookbook/requirements.txt`
+  への `COPY` がそのまま通ります。Day8 ディレクトリ単体をコンテキストにする場合は、事前に
+  `../workflow-cookbook/requirements.txt` を含めるよう `.dockerignore` やコピー手順を調整してください。
 - `workflow-cookbook/requirements.txt` には `mypy --strict`・`ruff`・`pytest`・`pip-audit` など Day8 のローカル検証で必須となる
   ツールを固定バージョンで収録しています。Docker 上でも `pip install -r workflow-cookbook/requirements.txt` が完了することを
   確認し、CI ログと同じ順序で検証コマンドを実行してください。
