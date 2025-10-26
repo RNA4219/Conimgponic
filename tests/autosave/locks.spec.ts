@@ -1,117 +1,133 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { readFile } from 'node:fs/promises'
 
-import {
-  WEB_LOCK_KEY,
-  acquireProjectLock,
-  projectLockEvents,
-  releaseProjectLock,
-  type ProjectLockEvent
-} from '../../src/lib/locks'
+import { scenario } from '../lib/autosave/setup'
+import { projectLockApi, ProjectLockError } from '../../src/lib/locks'
 
-test('AS-LK-01: navigator.locks.request は常にコールバック経由で Web Lock を取得する', async (t) => {
-  const events: ProjectLockEvent[] = []
-  const unsubscribe = projectLockEvents.subscribe((event) => {
-    events.push(event)
-  })
-  t.after(unsubscribe)
+const snapshotBase = new URL('./__snapshots__/autosave/on/', import.meta.url)
 
-  const releaseMock = t.mock.fn(async () => undefined)
-  const request = t.mock.fn(async (...args: unknown[]) => {
-    assert.equal(args.length, 3, 'navigator.locks.request must receive key, options, and callback')
-    const [key, options, callback] = args as [
-      string,
-      { mode: 'exclusive'; signal?: AbortSignal },
-      (lock: { release: () => Promise<void> }) => Promise<void> | void
-    ]
-    assert.equal(key, WEB_LOCK_KEY)
-    assert.equal(options.mode, 'exclusive')
-    const lock = { release: releaseMock }
-    await callback(lock)
-    return undefined
-  })
+const readSnapshot = async (name: string): Promise<unknown> => {
+  const file = new URL(`${name}.json`, snapshotBase)
+  const data = await readFile(file, 'utf8')
+  return JSON.parse(data)
+}
 
-  const originalNavigator = (globalThis as typeof globalThis & { navigator?: unknown }).navigator
-  Object.defineProperty(globalThis, 'navigator', {
-    value: { locks: { request } },
-    configurable: true
-  })
-  t.after(() => {
-    if (originalNavigator === undefined) {
-      delete (globalThis as { navigator?: unknown }).navigator
-    } else {
-      Object.defineProperty(globalThis, 'navigator', { value: originalNavigator, configurable: true })
+const assertSnapshot = async (name: string, actual: unknown) => {
+  try {
+    const expected = await readSnapshot(name)
+    assert.deepEqual(actual, expected)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      console.error(`Missing snapshot ${name}:\n${JSON.stringify(actual, null, 2)}`)
+    }
+    throw error
+  }
+}
+
+type LockSnapshotEvent =
+  | 'attempt:web-lock'
+  | 'attempt:file-lock'
+  | 'fallback-engaged'
+  | 'warning:fallback-engaged'
+  | 'acquired:web-lock'
+  | 'acquired:file-lock'
+  | 'released'
+  | 'error:acquire-denied:retryable=false'
+  | 'error:acquire-denied:retryable=true'
+
+type TelemetrySnapshot = Array<Record<string, unknown>>
+
+const collectLockSequence = (telemetry: TelemetrySnapshot) => {
+  const sequence: LockSnapshotEvent[] = []
+  const unsubscribe = projectLockApi.events.subscribe((event) => {
+    switch (event.type) {
+      case 'lock:attempt':
+        sequence.push(event.strategy === 'web-lock' ? 'attempt:web-lock' : 'attempt:file-lock')
+        break
+      case 'lock:warning':
+        if (event.warning === 'fallback-engaged') {
+          sequence.push('warning:fallback-engaged')
+        }
+        break
+      case 'lock:fallback-engaged':
+        sequence.push('fallback-engaged')
+        break
+      case 'lock:acquired':
+        sequence.push(event.lease.strategy === 'web-lock' ? 'acquired:web-lock' : 'acquired:file-lock')
+        break
+      case 'lock:released':
+        sequence.push('released')
+        break
+      case 'lock:error':
+        sequence.push(event.retryable ? 'error:acquire-denied:retryable=true' : 'error:acquire-denied:retryable=false')
+        telemetry.push({ type: event.type, code: event.error.code, retryable: event.retryable, operation: event.operation })
+        break
+      case 'lock:readonly-entered':
+        telemetry.push({ type: event.type, reason: event.reason, retryable: event.retryable })
+        break
+      default:
+        break
     }
   })
+  return { sequence, unsubscribe }
+}
 
-  const lease = await acquireProjectLock()
-  assert.equal(request.mock.calls.length, 1)
-  assert.equal((request.mock.calls[0]?.arguments ?? []).length, 3)
-  assert.equal(
-    events.some((event) => event.type === 'lock:acquired' && event.lease.leaseId === lease.leaseId),
-    true
-  )
-  assert.equal(events.some((event) => event.type === 'lock:fallback-engaged'), false)
-  assert.equal(lease.strategy, 'web-lock')
-  assert.equal(lease.viaFallback, false)
-
-  await releaseProjectLock(lease)
-  assert.equal(releaseMock.mock.calls.length, 1)
-})
-
-test('AS-LK-02: Web Lock 成功時に lock:acquired が発火し fallback は抑止される', async (t) => {
-  const events: ProjectLockEvent[] = []
-  const unsubscribe = projectLockEvents.subscribe((event) => {
-    events.push(event)
-  })
-  t.after(unsubscribe)
-
-  const releaseMock = t.mock.fn(async () => undefined)
-  const request = t.mock.fn((...args: unknown[]) => {
-    assert.equal(args.length, 3, 'navigator.locks.request must receive key, options, and callback')
-    const [key, options, callback] = args as [
-      string,
-      { mode: 'exclusive'; signal?: AbortSignal },
-      (lock: { release: () => Promise<void> }) => Promise<unknown>
-    ]
-    assert.equal(key, WEB_LOCK_KEY)
-    assert.equal(options.mode, 'exclusive')
-    const result = callback({ release: releaseMock })
-    assert.ok(result instanceof Promise, 'callback must return a Promise to hold the Web Lock')
-    return result
-  })
-
-  const originalNavigator = (globalThis as typeof globalThis & { navigator?: unknown }).navigator
-  Object.defineProperty(globalThis, 'navigator', {
-    value: { locks: { request } },
-    configurable: true
-  })
-  t.after(() => {
-    if (originalNavigator === undefined) {
-      delete (globalThis as { navigator?: unknown }).navigator
-    } else {
-      Object.defineProperty(globalThis, 'navigator', { value: originalNavigator, configurable: true })
+scenario(
+  'AS-I-03: Web Lock collision falls back to file lock and records telemetry',
+  {
+    locks: {
+      async request() {
+        throw new DOMException('Lock already held', 'AbortError')
+      }
     }
-  })
+  },
+  async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+    const uuids = ['lease-a', 'owner-a', 'lease-b', 'owner-b']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
 
-  const lease = await Promise.race([
-    acquireProjectLock(),
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('acquire timeout')), 50))
-  ])
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
 
-  assert.equal(request.mock.calls.length, 1)
-  assert.equal(lease.strategy, 'web-lock')
-  assert.equal(lease.viaFallback, false)
-  assert.equal(
-    events.some((event) => event.type === 'lock:acquired' && event.lease.leaseId === lease.leaseId),
-    true,
-    'lock:acquired event should fire with the acquired lease'
-  )
-  assert.equal(
-    events.some((event) => event.type === 'lock:fallback-engaged'),
-    false,
-    'lock:fallback-engaged must not fire when Web Lock succeeds'
-  )
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock' })
+    await projectLockApi.release(lease)
+
+    await assertSnapshot('locks-as-i-03', { lockSequence: sequence, telemetry })
+  }
+)
+
+scenario(
+  'AS-I-03: Non-retryable Web Lock failure stops acquisition with telemetry',
+  {
+    locks: {
+      async request(_key, _options, callback) {
+        await callback({})
+      }
+    }
+  },
+  async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+    const uuids = ['lease-c', 'owner-c']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    await assert.rejects(async () => projectLockApi.acquire({ preferredStrategy: 'web-lock', retry: false }), (error) => {
+      assert.ok(error instanceof ProjectLockError)
+      assert.equal(error.retryable, false)
+      return true
+    })
 
   await releaseProjectLock(lease)
   assert.equal(releaseMock.mock.calls.length, 1)

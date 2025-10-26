@@ -1,0 +1,97 @@
+{
+  "writes": [
+    {
+      "path": "project/autosave/current.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-07-520Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/index.json",
+      "payload": {
+        "current": {
+          "ts": "2024-01-01T00:00:07.520Z",
+          "bytes": 507,
+          "location": "current",
+          "retained": true
+        },
+        "history": [
+          {
+            "ts": "2024-01-01T00:00:07.520Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          }
+        ],
+        "entries": [
+          {
+            "ts": "2024-01-01T00:00:07.520Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          }
+        ],
+        "generation": 0
+      }
+    }
+  ],
+  "telemetry": []
+}
