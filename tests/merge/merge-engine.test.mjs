@@ -191,3 +191,32 @@ test('merge plan classifies sections by precision thresholds', () => {
 
   process.env.MERGE_PRECISION = originalPrecision
 })
+
+test('non-legacy precision halts queue when similarity underflows review band', () => {
+  const originalPrecision = process.env.MERGE_PRECISION
+  process.env.MERGE_PRECISION = 'stable'
+
+  const lowScores = [
+    { jaccard: 0.5, cosine: 0.5, blended: 0.5 },
+  ]
+  const queued = []
+
+  const result = runMerge(
+    { base: 'Intro', ours: 'Manual update', theirs: 'AI alternative', sceneId: 'scene-score-underflow' },
+    {
+      scoring: () => lowScores.shift() ?? { jaccard: 0.5, cosine: 0.5, blended: 0.5 },
+      queueMergeCommand: (command) => queued.push(command),
+    },
+  )
+
+  assert.equal(result.hunks.length, 1)
+  assert.equal(result.hunks[0]?.decision, 'conflict')
+  assert.equal(queued.length, 0)
+  assert.equal(result.plan, undefined)
+
+  const queueStage = result.trace.entries.find((entry) => entry.stage === 'queue')
+  assert.ok(queueStage)
+  assert.deepEqual(queueStage?.metadata, { error: 'score-underflow', retryable: true })
+
+  process.env.MERGE_PRECISION = originalPrecision
+})
