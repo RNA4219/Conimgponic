@@ -10,6 +10,7 @@ import {
   type ResolveOptions
 } from '../../src/config'
 import { resolveAutoSaveBootstrapPlanForApp } from '../../src/App'
+import { FLAG_RESOLUTION_SOURCE_VARIANTS } from '../../scripts/monitor/collect-metrics'
 
 const stubPerformance = (values: readonly number[]): (() => void) => {
   const scope = globalThis as typeof globalThis & {
@@ -40,13 +41,7 @@ type FlagExpectation = {
   readonly variant: string
   readonly source: string
   readonly phase: string
-  readonly errors: readonly FlagValidationError[]
 }
-
-const mapErrors = (
-  errors: readonly FlagValidationError[]
-): readonly FlagValidationError[] =>
-  [...errors].sort((a, b) => a.code.localeCompare(b.code))
 
 const expectFlagTelemetry = (
   emitted: readonly unknown[],
@@ -61,7 +56,8 @@ const expectFlagTelemetry = (
     (candidate): candidate is Record<string, unknown> =>
       !!candidate &&
       typeof candidate === 'object' &&
-      (candidate as Record<string, unknown>).event === 'flag_resolution'
+      (candidate as Record<string, unknown>).event === 'flag_resolution' &&
+      (candidate as Record<string, unknown>).schema === 'vscode.telemetry.v1'
   )
   assert.equal(events.length, config.flags.length)
   assert.equal(events.length, emitted.length)
@@ -72,6 +68,7 @@ const expectFlagTelemetry = (
       assert.equal(event.event, 'flag_resolution')
       assert.equal(event.source, config.origin)
       assert.equal(event.phase, config.phase)
+      assert.equal(event.schema, 'vscode.telemetry.v1')
 
       const evaluationMs = event.evaluation_ms
       assert.equal(typeof evaluationMs, 'number')
@@ -91,16 +88,17 @@ const expectFlagTelemetry = (
       const payloadEvaluation = payload.evaluation_ms
       assert.equal(payloadEvaluation, config.evaluationMs)
 
-      const payloadErrors = Array.isArray(payload.errors)
-        ? (payload.errors as FlagValidationError[])
-        : []
+      assert.ok(
+        FLAG_RESOLUTION_SOURCE_VARIANTS.includes(source as (typeof FLAG_RESOLUTION_SOURCE_VARIANTS)[number]),
+        `flag_resolution payload source must be one of ${FLAG_RESOLUTION_SOURCE_VARIANTS.join(', ')}`
+      )
+      assert.ok(!('errors' in payload))
 
       return {
         flag,
         variant,
         source,
-        phase,
-        errors: mapErrors(payloadErrors)
+        phase
       }
     })
     .sort((a, b) => a.flag.localeCompare(b.flag))
@@ -110,8 +108,7 @@ const expectFlagTelemetry = (
       flag: entry.flag,
       variant: entry.variant,
       source: entry.source,
-      phase: entry.phase,
-      errors: mapErrors(entry.errors)
+      phase: entry.phase
     }))
     .sort((a, b) => a.flag.localeCompare(b.flag))
 
@@ -123,22 +120,19 @@ const snapshotFlags = (snapshot: FlagSnapshot): readonly FlagExpectation[] => [
     flag: 'autosave.enabled',
     variant: String(snapshot.autosave.value),
     source: snapshot.autosave.source,
-    phase: FEATURE_FLAG_DEFINITIONS['autosave.enabled'].phase,
-    errors: snapshot.autosave.errors
+    phase: FEATURE_FLAG_DEFINITIONS['autosave.enabled'].phase
   },
   {
     flag: 'plugins.enable',
     variant: String(snapshot.plugins.value),
     source: snapshot.plugins.source,
-    phase: FEATURE_FLAG_DEFINITIONS['plugins.enable'].phase,
-    errors: snapshot.plugins.errors
+    phase: FEATURE_FLAG_DEFINITIONS['plugins.enable'].phase
   },
   {
     flag: 'merge.precision',
     variant: String(snapshot.merge.value),
     source: snapshot.merge.source,
-    phase: FEATURE_FLAG_DEFINITIONS['merge.precision'].phase,
-    errors: snapshot.merge.errors
+    phase: FEATURE_FLAG_DEFINITIONS['merge.precision'].phase
   }
 ]
 
