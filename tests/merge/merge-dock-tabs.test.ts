@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { MergeDock, planMergeDockTabs } from '../../src/components/MergeDock.tsx'
 import type { FlagSnapshot } from '../../src/config/flags.ts'
-import { mergeJSONL } from '../../src/lib/importers.ts'
+import { mergeCSV, mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'
 
 type MergePrecision = Parameters<typeof planMergeDockTabs>[0]
@@ -350,6 +350,51 @@ test('merge-import: jsonl importer replaces storyboard scenes array reference', 
   const { sb } = useSB.getState()
   assert.notStrictEqual(sb.scenes, previousScenes, 'scenes array should be replaced')
   assert.equal(sb.scenes[0]?.manual, 'New text')
+  useSB.setState({ sb: base })
+})
+
+test('merge-import: jsonl importer overwrites duplicate new scene ids', () => {
+  const base = structuredClone(useSB.getState().sb)
+  useSB.setState({
+    sb: {
+      ...base,
+      scenes: [],
+    },
+  })
+
+  const { sb: beforeImport } = useSB.getState()
+  const fileText = [
+    JSON.stringify({ id: 'cut-42', text: 'First text' }),
+    JSON.stringify({ id: 'cut-42', text: 'Second text' }),
+  ].join('\n')
+
+  const merged = mergeJSONL(beforeImport, `${fileText}\n`, 'manual')
+
+  assert.equal(merged.scenes.length, 1)
+  assert.equal(merged.scenes[0]?.manual, 'Second text')
+  useSB.setState({ sb: base })
+})
+
+test('merge-import: csv importer overwrites duplicate new scene ids', () => {
+  const base = structuredClone(useSB.getState().sb)
+  useSB.setState({
+    sb: {
+      ...base,
+      scenes: [],
+    },
+  })
+
+  const { sb: beforeImport } = useSB.getState()
+  const fileText = [
+    'id,text',
+    'cut-99,First text',
+    'cut-99,Second text',
+  ].join('\n')
+
+  const merged = mergeCSV(beforeImport, `${fileText}\n`, 'manual')
+
+  assert.equal(merged.scenes.length, 1)
+  assert.equal(merged.scenes[0]?.manual, 'Second text')
   useSB.setState({ sb: base })
 })
 
