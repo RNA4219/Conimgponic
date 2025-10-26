@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 import { scenario } from '../lib/autosave/setup'
-import { projectLockApi, ProjectLockError } from '../../src/lib/locks'
+import { projectLockApi, projectLockEvents, ProjectLockError } from '../../src/lib/locks'
+import type { ProjectLockEvent } from '../../src/lib/locks'
 
 const snapshotBase = new URL('./__snapshots__/autosave/on/', import.meta.url)
 
@@ -39,7 +40,7 @@ type TelemetrySnapshot = Array<Record<string, unknown>>
 
 const collectLockSequence = (telemetry: TelemetrySnapshot) => {
   const sequence: LockSnapshotEvent[] = []
-  const unsubscribe = projectLockApi.events.subscribe((event) => {
+  const unsubscribe = projectLockEvents.subscribe((event) => {
     switch (event.type) {
       case 'lock:attempt':
         sequence.push(event.strategy === 'web-lock' ? 'attempt:web-lock' : 'attempt:file-lock')
@@ -98,6 +99,63 @@ scenario(
     await projectLockApi.release(lease)
 
     await assertSnapshot('locks-as-i-03', { lockSequence: sequence, telemetry })
+  }
+)
+
+scenario(
+  'AS-I-03: Web Lock collision falls back to file lock but fallback acquisition fails with telemetry',
+  {
+    locks: {
+      async request() {
+        throw new DOMException('Lock already held', 'AbortError')
+      }
+    }
+  },
+  async (t, { opfs }) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+    const uuids = ['lease-fallback', 'owner-fallback']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const fallbackFailure = new ProjectLockError('acquire-denied', 'Mock fallback failure', {
+      operation: 'acquire',
+      retryable: false
+    })
+    const originalGetDirectory = opfs.storage.getDirectory
+    const wrapDirectory = (
+      directory: Awaited<ReturnType<typeof originalGetDirectory>>
+    ): Awaited<ReturnType<typeof originalGetDirectory>> => {
+      const getDirectoryHandle = directory.getDirectoryHandle.bind(directory)
+      return {
+        ...directory,
+        async getDirectoryHandle(name: string, options?: { create?: boolean }) {
+          const next = await getDirectoryHandle(name, options as { create?: boolean })
+          return wrapDirectory(next)
+        },
+        async getFileHandle(name: string) {
+          throw fallbackFailure
+        }
+      }
+    }
+    opfs.storage.getDirectory = async () => wrapDirectory(await originalGetDirectory())
+    t.after(() => {
+      opfs.storage.getDirectory = originalGetDirectory
+    })
+
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    await assert.rejects(async () => projectLockApi.acquire({ preferredStrategy: 'web-lock' }), (error) => {
+      assert.ok(error instanceof ProjectLockError)
+      assert.equal(error.retryable, false)
+      return true
+    })
+
+    await assertSnapshot('locks-as-i-03-fallback-error', { lockSequence: sequence, telemetry })
   }
 )
 
