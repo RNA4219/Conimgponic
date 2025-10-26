@@ -321,13 +321,27 @@ function coerceMergePrecision(flag: string): FlagCoercer<MergePrecision> {
   }
 }
 
-function coerceMergeThresholdValue(rawValue: unknown): number | null {
+function coerceMergeThresholdValue(
+  rawValue: unknown
+): FlagCoerceResult<number> | null {
   if (rawValue == null) {
     return null
   }
 
-  if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
-    return rawValue
+  if (typeof rawValue === 'number') {
+    if (!Number.isFinite(rawValue) || rawValue < 0 || rawValue > 1) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-precision',
+          flag: 'merge.precision',
+          raw: String(rawValue),
+          message: 'merge.precision threshold must be within [0, 1]',
+          retryable: false
+        }
+      }
+    }
+    return { ok: true, value: rawValue }
   }
 
   const normalized = String(rawValue).trim()
@@ -335,33 +349,73 @@ function coerceMergeThresholdValue(rawValue: unknown): number | null {
     return null
   }
 
-  const numeric = Number.parseFloat(normalized)
-  if (Number.isFinite(numeric)) {
-    return numeric
-  }
-
   const lowered = normalized.toLowerCase()
   if (lowered === 'legacy' || lowered === 'beta' || lowered === 'stable') {
-    return DEFAULT_FLAGS.merge.profile.threshold
+    return {
+      ok: true,
+      value: DEFAULT_FLAGS.merge.profile.threshold
+    }
   }
 
-  return null
+  const numeric = Number.parseFloat(normalized)
+  if (!Number.isFinite(numeric)) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-precision',
+        flag: 'merge.precision',
+        raw: normalized,
+        message: 'merge.precision threshold must be within [0, 1]',
+        retryable: false
+      }
+    }
+  }
+
+  if (numeric < 0 || numeric > 1) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-precision',
+        flag: 'merge.precision',
+        raw: normalized,
+        message: 'merge.precision threshold must be within [0, 1]',
+        retryable: false
+      }
+    }
+  }
+
+  return { ok: true, value: numeric }
 }
 
-function resolveMergeThreshold(options: ResolveOptions | undefined): number {
+function resolveMergeThreshold(
+  options: ResolveOptions | undefined,
+  errors: FlagValidationError[]
+): number {
   const env = options?.env ?? defaultEnv
   const storage = options?.storage ?? defaultStorage
   const workspace = options?.workspace ?? null
   const definition = FEATURE_FLAG_DEFINITIONS['merge.precision']
 
-  const envThreshold = coerceMergeThresholdValue(env[definition.envKey])
+  const attempt = (rawValue: unknown, source: FlagSource): number | null => {
+    const result = coerceMergeThresholdValue(rawValue)
+    if (result === null) {
+      return null
+    }
+    if (result.ok) {
+      return result.value
+    }
+    errors.push({ ...result.error, source, phase: definition.phase })
+    return null
+  }
+
+  const envThreshold = attempt(env[definition.envKey], 'env')
   if (envThreshold !== null) {
     return envThreshold
   }
 
   if (definition.workspaceKey) {
     const workspaceValue = readWorkspaceValue(workspace, definition.workspaceKey)
-    const workspaceThreshold = coerceMergeThresholdValue(workspaceValue)
+    const workspaceThreshold = attempt(workspaceValue, 'workspace')
     if (workspaceThreshold !== null) {
       return workspaceThreshold
     }
@@ -373,7 +427,7 @@ function resolveMergeThreshold(options: ResolveOptions | undefined): number {
       ...(definition.legacyStorageKeys ?? [])
     ]
     for (const key of storageKeys) {
-      const storageThreshold = coerceMergeThresholdValue(storage.getItem(key))
+      const storageThreshold = attempt(storage.getItem(key), 'localStorage')
       if (storageThreshold !== null) {
         return storageThreshold
       }
@@ -475,7 +529,8 @@ export function resolveFlags(
   const plugins = resolveFeatureFlag('plugins.enable', options)
   const merge = resolveFeatureFlag('merge.precision', options)
   const clock = options?.clock ?? (() => new Date())
-  const mergeThreshold = resolveMergeThreshold(options)
+  const mergeErrors = [...merge.errors]
+  const mergeThreshold = resolveMergeThreshold(options, mergeErrors)
 
   // Phase A 移行中は既存 UI の `localStorage` 直読フェールセーフが残るため、
   // resolveFlags() だけでは値が届かないケースも想定する。App/Merge 側で
@@ -496,7 +551,7 @@ export function resolveFlags(
     merge: {
       value: merge.value,
       source: merge.source,
-      errors: merge.errors,
+      errors: mergeErrors,
       precision: merge.value,
       threshold: mergeThreshold
     },
@@ -507,7 +562,7 @@ export function resolveFlags(
     const errors: FlagResolutionError[] = [
       ...autosave.errors,
       ...plugins.errors,
-      ...merge.errors
+      ...mergeErrors
     ]
     return {
       snapshot,
