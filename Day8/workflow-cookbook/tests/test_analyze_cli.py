@@ -29,6 +29,7 @@ def test_cli_emits_reports_json_and_birdseye(tmp_path: Path) -> None:
                 '{"flow":"build","status":"passed","message":"ok"}',
                 '{"flow":"audit","status":"warning","message":"moderate"}',
                 '{"flow":"sbom","status":"passed","message":"syft"}',
+                '{"flow":"license","status":"passed","message":"allowlist"}',
                 '{"flow":"golden","status":"passed","message":"fixtures"}',
             ]
         ),
@@ -38,11 +39,12 @@ def test_cli_emits_reports_json_and_birdseye(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert sorted(payload["flows"]) == ["audit", "build", "golden", "sbom"]
+    assert sorted(payload["flows"]) == ["audit", "build", "golden", "license", "sbom"]
     report_dir = tmp_path / "reports" / "day8" / "ci"
     summary = (report_dir / "summary.md").read_text(encoding="utf-8")
     assert summary.startswith("# Day8 CI reflection")
     assert "| build | passed |" in summary
+    assert "| license | passed | allowlist |" in summary
     issues = (report_dir / "issues.md").read_text(encoding="utf-8")
     assert "audit" in issues
     capsule = json.loads((report_dir / "birdseye.json").read_text(encoding="utf-8"))
@@ -51,6 +53,70 @@ def test_cli_emits_reports_json_and_birdseye(tmp_path: Path) -> None:
 
 
 def test_fail_on_warnings_exits_non_zero(tmp_path: Path) -> None:
-    _write_log(tmp_path, '{"flow":"build","status":"warning","message":"lint"}')
+    _write_log(
+        tmp_path,
+        "\n".join(
+            [
+                '{"flow":"build","status":"passed","message":"vite"}',
+                '{"flow":"audit","status":"passed","message":"allowlist"}',
+                '{"flow":"sbom","status":"passed","message":"syft"}',
+                '{"flow":"license","status":"warning","message":"review"}',
+                '{"flow":"golden","status":"passed","message":"fixtures"}',
+            ]
+        ),
+    )
     result = _run(tmp_path, "--emit", "report", "--fail-on", "warnings")
     assert result.returncode == 1
+
+
+def test_focus_license_filters_report(tmp_path: Path) -> None:
+    _write_log(
+        tmp_path,
+        "\n".join(
+            [
+                '{"flow":"build","status":"passed","message":"ok"}',
+                '{"flow":"license","status":"passed","message":"allowlist"}',
+                '{"flow":"golden","status":"passed","message":"fixtures"}',
+            ]
+        ),
+    )
+
+    result = _run(tmp_path, "--emit", "report", "--focus", "license")
+
+    assert result.returncode == 0, result.stderr
+    summary = (tmp_path / "reports" / "day8" / "ci" / "summary.md").read_text(encoding="utf-8")
+    assert "| Flow |" in summary
+    assert summary.count("| license | passed | allowlist |") == 1
+    assert "| build |" not in summary
+
+
+def test_fail_on_errors_requires_errors(tmp_path: Path) -> None:
+    _write_log(
+        tmp_path,
+        "\n".join(
+            [
+                '{"flow":"build","status":"passed","message":"vite"}',
+                '{"flow":"audit","status":"passed","message":"allowlist"}',
+                '{"flow":"sbom","status":"passed","message":"syft"}',
+                '{"flow":"license","status":"warning","message":"review"}',
+                '{"flow":"golden","status":"passed","message":"fixtures"}',
+            ]
+        ),
+    )
+    ok_result = _run(tmp_path, "--emit", "report", "--fail-on", "errors")
+    assert ok_result.returncode == 0
+
+    _write_log(
+        tmp_path,
+        "\n".join(
+            [
+                '{"flow":"build","status":"passed","message":"vite"}',
+                '{"flow":"audit","status":"passed","message":"allowlist"}',
+                '{"flow":"sbom","status":"passed","message":"syft"}',
+                '{"flow":"license","status":"error","message":"deny"}',
+                '{"flow":"golden","status":"passed","message":"fixtures"}',
+            ]
+        ),
+    )
+    fail_result = _run(tmp_path, "--emit", "report", "--fail-on", "errors")
+    assert fail_result.returncode == 1
