@@ -34,12 +34,9 @@ export interface MessageEnvelope {
   readonly phase: RolloutPhase;
 }
 
-export interface TelemetryJsonlRecordBase {
+export interface TelemetryJsonlRecordBase extends MessageEnvelope {
   readonly schema: 'vscode.telemetry.v1';
   readonly event: TelemetryEventName;
-  readonly ts: string;
-  readonly correlationId: string;
-  readonly phase: RolloutPhase;
   readonly attempt: number;
   readonly maxAttempts: number;
   readonly backoffMs: ReadonlyArray<number>;
@@ -519,7 +516,19 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
   },
   telemetry: {
     schema: 'vscode.telemetry.v1',
-    envelope: ['schema', 'event', 'ts', 'correlationId', 'phase', 'attempt', 'maxAttempts', 'backoffMs'],
+    envelope: [
+      'type',
+      'apiVersion',
+      'reqId',
+      'ts',
+      'correlationId',
+      'phase',
+      'schema',
+      'event',
+      'attempt',
+      'maxAttempts',
+      'backoffMs',
+    ],
     events: [
       {
         event: 'status.autosave',

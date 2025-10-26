@@ -1,4 +1,4 @@
-import { ok as assertOk } from 'node:assert/strict'
+import { deepStrictEqual, ok as assertOk } from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import { COLLECT_METRICS_CONTRACT } from '../../scripts/monitor/collect-metrics.js'
@@ -8,7 +8,21 @@ const findTelemetrySpec = (event: string) =>
 
 // RED: VS Code 拡張メッセージ/テレメトリ JSONL 契約と再試行条件を固定する。
 describe('vscode extension telemetry contract (RED)', () => {
-  test.todo('message envelope: {type,apiVersion,reqId,ts} を全方向で必須化し、phase.guard への観測フックを持つ')
+  test('message envelope は type/apiVersion/reqId/ts を含む Day8 Collector 順序を固定する', () => {
+    deepStrictEqual(COLLECT_METRICS_CONTRACT.telemetry.envelope, [
+      'type',
+      'apiVersion',
+      'reqId',
+      'ts',
+      'correlationId',
+      'phase',
+      'schema',
+      'event',
+      'attempt',
+      'maxAttempts',
+      'backoffMs',
+    ])
+  })
   test('status.autosave telemetry は phase 情報と guard スナップショットを記録する', () => {
     const spec = findTelemetrySpec('status.autosave')
     assertOk(spec, 'status.autosave telemetry spec is missing')
