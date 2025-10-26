@@ -821,6 +821,7 @@ const sanitizeTimestamp = (ts: string) => ts.replace(/[:.]/g, '-')
 interface AutoSaveIndexPayload {
   readonly current: AutoSaveHistoryEntry | null
   readonly history: readonly AutoSaveHistoryEntry[]
+  readonly generation: number | null
 }
 
 const createAutoSaveError = (
@@ -867,13 +868,19 @@ const parseIndexFile = (value: unknown): AutoSaveIndexPayload => {
   const input = value as Record<string, unknown>
   const current = input.current as AutoSaveHistoryEntry | null | undefined
   const history = Array.isArray(input.history) ? (input.history as AutoSaveHistoryEntry[]) : []
+  const generation = input.generation
+  const normalizedGeneration =
+    typeof generation === 'number' && Number.isFinite(generation)
+      ? Math.max(0, Math.trunc(generation))
+      : null
   return {
     current: current && current.location === 'current'
       ? { ...current, retained: current.retained !== false, location: 'current' as const }
       : null,
     history: history
       .filter((entry) => entry?.location === 'history')
-      .map((entry) => ({ ...entry, retained: entry.retained !== false, location: 'history' as const }))
+      .map((entry) => ({ ...entry, retained: entry.retained !== false, location: 'history' as const })),
+    generation: normalizedGeneration
   }
 }
 
@@ -1058,6 +1065,9 @@ export function initAutoSave(
   let pendingBytes = 0
   let lastError: AutoSaveError | undefined
   let queuedGeneration = 0
+  let inflightGeneration: number | null = null
+  let nextGeneration: number | null = null
+  let loadGenerationPromise: Promise<number> | null = null
   let disposed = false
   let disposing = false
   let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -1067,7 +1077,25 @@ export function initAutoSave(
   let inFlightFlush: Promise<void> | null = null
   let inFlightBackoff: Promise<void> | null = null
   let disposePromise: Promise<void> | null = null
-  const updateIndex = async (ts: string, bytes: number, payload: string) => {
+  const ensureNextGeneration = async (): Promise<number> => {
+    if (nextGeneration != null) {
+      return nextGeneration
+    }
+    if (!loadGenerationPromise) {
+      loadGenerationPromise = loadIndex()
+        .then((index) => {
+          const base = typeof index.generation === 'number' ? index.generation + 1 : 0
+          nextGeneration = base
+          return base
+        })
+        .finally(() => {
+          loadGenerationPromise = null
+        })
+    }
+    return loadGenerationPromise
+  }
+
+  const updateIndex = async (ts: string, bytes: number, payload: string, generation: number) => {
     const path = INDEX_PATH
     const tmp = `${path}.tmp`
     const historyKey = sanitizeTimestamp(ts)
@@ -1127,7 +1155,8 @@ export function initAutoSave(
     await saveJSON(tmp, {
       current: { ts, bytes, location: 'current' as const, retained: true },
       history: normalizedHistory,
-      entries: normalizedHistory
+      entries: normalizedHistory,
+      generation: Math.max(0, Math.trunc(generation))
     })
     await renameFile(tmp, path)
   }
@@ -1157,9 +1186,16 @@ export function initAutoSave(
     while (pendingQueue.length > AUTOSAVE_QUEUE_POLICY.maxPending) {
       pendingQueue.pop()
     }
-    queuedGeneration = pendingQueue.length
+    const targetGeneration = inflightGeneration ?? nextGeneration
+    if (targetGeneration != null) {
+      queuedGeneration = targetGeneration
+    }
   }
-  const runFlush = async (attempt: number, source: 'manual' | 'auto'): Promise<void> => {
+  const runFlush = async (
+    attempt: number,
+    source: 'manual' | 'auto',
+    generation: number
+  ): Promise<void> => {
     if (disposed) throw disabledError()
     const storyboard = getStoryboard()
     if (!storyboard) throw disabledError()
@@ -1169,11 +1205,13 @@ export function initAutoSave(
       await projectLockApi.withProjectLock(async () => {
         if (disposed) throw disabledError()
         phase = 'writing-current'; await saveText('project/autosave/current.json.tmp', payload); await renameFile('project/autosave/current.json.tmp', 'project/autosave/current.json')
-        phase = 'updating-index'; const ts = new Date().toISOString(); await updateIndex(ts, pendingBytes, payload)
+        phase = 'updating-index'; const ts = new Date().toISOString(); await updateIndex(ts, pendingBytes, payload, generation)
         phase = 'gc';
         lastSuccessAt = ts;
         const remaining = pendingQueue.length;
-        queuedGeneration = remaining;
+        inflightGeneration = null;
+        nextGeneration = generation + 1;
+        queuedGeneration = remaining > 0 ? nextGeneration! : 0;
         pendingBytes = remaining > 0 ? pendingQueue[remaining - 1]!.estimatedBytes : 0;
         retryCount = 0;
         lastError = undefined;
@@ -1254,6 +1292,7 @@ export function initAutoSave(
           pendingBytes = 0
           pendingQueue.length = 0
           queuedGeneration = 0
+          inflightGeneration = null
           disposed = true
           phase = 'disabled'
         }
@@ -1289,11 +1328,14 @@ export function initAutoSave(
     phase = 'debouncing'
     if (pendingQueue.length > 0) {
       pendingQueue.shift()
-      queuedGeneration = pendingQueue.length
-    } else {
-      queuedGeneration = 0
     }
-    const pending = runFlush(0, source)
+    const generation =
+      inflightGeneration != null ? inflightGeneration : await ensureNextGeneration()
+    if (inflightGeneration == null) {
+      inflightGeneration = generation
+    }
+    queuedGeneration = generation
+    const pending = runFlush(0, source, generation)
     inFlightFlush = pending
     try {
       await pending
@@ -1325,7 +1367,7 @@ export function initAutoSave(
     if (disposed || disposing) {
       return 'disabled'
     }
-    if (phase === 'debouncing' && guardAllowsDirtyExposure && (queuedGeneration > 0 || pendingQueue.length > 0)) {
+    if (phase === 'debouncing' && guardAllowsDirtyExposure && queuedGeneration > 0) {
       return 'dirty'
     }
     return phase
@@ -1372,6 +1414,7 @@ export function initAutoSave(
         pendingBytes = 0
         pendingQueue.length = 0
         queuedGeneration = 0
+        inflightGeneration = null
       })()
       await disposePromise
     },
@@ -1387,7 +1430,27 @@ export function initAutoSave(
       if (pendingQueue.length > AUTOSAVE_QUEUE_POLICY.maxPending) {
         pendingQueue.splice(0, pendingQueue.length - AUTOSAVE_QUEUE_POLICY.maxPending)
       }
-      queuedGeneration = pendingQueue.length
+      if (inflightGeneration != null) {
+        queuedGeneration = inflightGeneration
+      } else if (nextGeneration != null) {
+        queuedGeneration = nextGeneration
+      } else {
+        queuedGeneration = 0
+        void ensureNextGeneration()
+          .then((value) => {
+            if (disposed || disposing) {
+              return
+            }
+            if (inflightGeneration != null) {
+              return
+            }
+            if (pendingQueue.length === 0) {
+              return
+            }
+            queuedGeneration = value
+          })
+          .catch(() => undefined)
+      }
       if (phase === 'idle' || phase === 'debouncing') {
         phase = 'debouncing'
       }
