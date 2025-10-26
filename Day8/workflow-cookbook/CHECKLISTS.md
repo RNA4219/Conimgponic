@@ -17,7 +17,7 @@ next_review_due: 2025-11-14
 ## Release
 
 - 変更点の要約
-- Python 3.11+ の仮想環境で `pip install -r workflow-cookbook/requirements.txt` を実行し、QA 用ツールチェーンを揃える
+- Python 3.11+ の仮想環境で（リポジトリルートの）`pip install -r workflow-cookbook/requirements.txt` を実行し、QA 用ツールチェーンを揃える
 - lint（`ruff check Day8/workflow-cookbook`）、type（`mypy --strict Day8/workflow-cookbook`）、
   test（`pytest Day8/workflow-cookbook/tests` / `node --test`）、security（`pip-audit -r workflow-cookbook/requirements.txt`）の成功ログを添付
 - CHANGELOG に Added / Changed / Fixed / Docs など必要最小の項目を追記
