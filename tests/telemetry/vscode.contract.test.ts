@@ -14,19 +14,21 @@ type JsonSchemaObject = {
     readonly [key: string]: JsonSchemaObject
   }
   readonly required?: readonly string[]
+  readonly additionalProperties?: boolean | JsonSchemaObject
 }
 
 type TelemetrySchema = {
+  readonly required?: readonly string[]
   readonly allOf: readonly TelemetrySchemaConditional[]
+  readonly properties?: {
+    readonly [key: string]: JsonSchemaObject
+  }
 }
 
 type TelemetrySchemaConditional = {
   readonly if?: {
     readonly properties?: {
-      readonly component?: {
-        readonly const?: string
-      }
-      readonly kind?: {
+      readonly event?: {
         readonly const?: string
       }
     }
@@ -80,6 +82,25 @@ describe('vscode extension telemetry contract (RED)', () => {
       'attempt',
       'maxAttempts',
       'backoffMs',
+    ])
+
+    assertOk(
+      telemetrySchema.required,
+      'telemetry schema must define required envelope fields'
+    )
+    deepStrictEqual(telemetrySchema.required, [
+      'type',
+      'apiVersion',
+      'reqId',
+      'ts',
+      'correlationId',
+      'phase',
+      'schema',
+      'event',
+      'attempt',
+      'maxAttempts',
+      'backoffMs',
+      'payload',
     ])
   })
   test('status.autosave telemetry は phase 情報と guard スナップショットを記録する', () => {
@@ -137,7 +158,7 @@ describe('vscode extension telemetry contract (RED)', () => {
 
   test('telemetry schema の flag_resolution payload が FlagSource と必須フィールドを同期する', () => {
     const thenClause = findConditional(
-      (entry) => entry.if?.properties?.kind?.const === 'flag_resolution'
+      (entry) => entry.if?.properties?.event?.const === 'flag_resolution'
     )
     const payloadSchema = assertPayloadSchema(thenClause, [
       'flag',
@@ -156,7 +177,7 @@ describe('vscode extension telemetry contract (RED)', () => {
 
   test('telemetry schema の status.autosave payload が Collector 要件を固定する', () => {
     const thenClause = findConditional(
-      (entry) => entry.if?.properties?.component?.const === 'autosave'
+      (entry) => entry.if?.properties?.event?.const === 'status.autosave'
     )
     const payloadSchema = assertPayloadSchema(thenClause, [
       'state',
@@ -176,7 +197,7 @@ describe('vscode extension telemetry contract (RED)', () => {
 
   test('telemetry schema の merge.trace payload が Collector 要件を固定する', () => {
     const thenClause = findConditional(
-      (entry) => entry.if?.properties?.component?.const === 'merge'
+      (entry) => entry.if?.properties?.event?.const === 'merge.trace'
     )
     const payloadSchema = assertPayloadSchema(thenClause, [
       'phase',
