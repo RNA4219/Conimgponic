@@ -61,6 +61,9 @@ test('bootstrapPluginBridge skips initialization when plugin flag disabled', () 
   assert.equal(event.snapshot.plugins.source, 'workspace');
   assert.ok(Array.isArray(event.errors));
   assert.equal(event.errors.length, 0);
+  assert.equal(typeof event.evaluation_ms, 'number');
+  assert.ok(Number.isFinite(event.evaluation_ms));
+  assert.ok(event.evaluation_ms >= 0);
 });
 
 test('bootstrapPluginBridge publishes flag resolution telemetry for plan snapshot', () => {
@@ -105,4 +108,7 @@ test('bootstrapPluginBridge publishes flag resolution telemetry for plan snapsho
   assert.equal(event.snapshot.plugins.source, 'default');
   assert.ok(Array.isArray(event.errors));
   assert.ok(event.errors.length > 0);
+  assert.equal(typeof event.evaluation_ms, 'number');
+  assert.ok(Number.isFinite(event.evaluation_ms));
+  assert.ok(event.evaluation_ms >= 0);
 });

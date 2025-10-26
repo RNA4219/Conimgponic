@@ -101,7 +101,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          curl -sSfL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 \
+          curl -sSfL \
+            https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 \
+
             -o "$HOME/.local/bin/osv-scanner"
           chmod +x "$HOME/.local/bin/osv-scanner"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -425,7 +427,7 @@ jobs:
             golden.log
             golden-diff.txt
             runs
-          if-no-files-found: error
+          if-no-files-found: 'error'
 
       - name: Assert golden comparison passed
         if: steps.golden.outcome == 'failure'
