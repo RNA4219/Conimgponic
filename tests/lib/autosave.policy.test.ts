@@ -1,7 +1,8 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'; import { dirname, join, resolve } from 'node:path'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'; import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'; import { createRequire } from 'node:module'
 import vm from 'node:vm'; import ts from 'typescript'
+import { tmpdir } from 'node:os'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const req = createRequire(import.meta.url)
@@ -172,6 +173,46 @@ test('createVscodeAutoSaveBridge shares AUTOSAVE-DESIGN-IMPL Phase A defaults', 
   assert.equal(results.length, 3)
   const last = results[results.length - 1]
   assert.equal(last.payload.retainedBytes, history.retainedBytes)
+})
+
+test('AutoSaveOptions rejects policy overrides via type checking', async () => {
+  const tmp = await mkdtemp(join(tmpdir(), 'autosave-policy-'))
+  const entry = join(tmp, 'policy-check.ts')
+
+  const source = [
+    `import type { AutoSaveOptions } from '${join(root, 'src/lib/autosave.ts').replace(/\\/g, '/')}'`,
+    'const candidate: AutoSaveOptions = { disabled: false, policy: {} as any }',
+    ''
+  ].join('\n')
+
+  try {
+    await writeFile(entry, source, 'utf8')
+
+    const options: ts.CompilerOptions = {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2020,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      noEmit: true,
+      allowImportingTsExtensions: true,
+      allowArbitraryExtensions: true,
+      jsx: ts.JsxEmit.ReactJSX,
+      strict: true
+    }
+    const host = ts.createCompilerHost(options)
+    const program = ts.createProgram([entry], options, host)
+    const diagnostics = ts
+      .getPreEmitDiagnostics(program)
+      .map((diag) => ts.flattenDiagnosticMessageText(diag.messageText, '\n'))
+
+    assert.ok(
+      diagnostics.some((message) =>
+        message.includes("'policy' does not exist in type 'AutoSaveOptions'")
+      ),
+      new Error(`expected diagnostics to include policy rejection, got:\n${diagnostics.join('\n')}`)
+    )
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
 })
 
 test('resolveAutoSavePolicy enforces AUTOSAVE-DESIGN-IMPL Phase A defaults shared with MERGE-DESIGN-IMPL §5', async () => {
