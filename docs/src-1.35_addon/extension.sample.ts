@@ -97,7 +97,7 @@ class ConimgEditorProvider implements vscode.CustomTextEditorProvider {
           }
           case 'merge.request': {
             const { base, ours, theirs, threshold } = msg.payload
-            const result = coreMerge(base, ours, theirs, threshold ?? 0.72)
+            const result = coreMerge(base, ours, theirs, threshold ?? 0.75)
             panel.webview.postMessage({ type: 'merge.result', apiVersion: 1, reqId: msg.reqId, payload: { ok: true, result } })
             return
           }

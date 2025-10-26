@@ -196,7 +196,7 @@ stateDiagram-v2
 
 | precision モード | タブ / ペイン | 主要入力 | 主要出力 | Collector / Trace | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| `legacy` | `compiled` タブ | `Storyboard` の現在値、`pref=manual-first/ai-first` | `CompiledExport` 書き出し | 既存 `export.compiled` イベント | しきい値は 0.72 固定で自動採用率観測のみ。【F:docs/src-1.35_addon/MERGE.md†L8-L23】 |
+| `legacy` | `compiled` タブ | `Storyboard` の現在値、`pref=manual-first/ai-first` | `CompiledExport` 書き出し | 既存 `export.compiled` イベント | しきい値は 0.75 固定で自動採用率観測のみ。【F:docs/src-1.35_addon/MERGE.md†L8-L23】 |
 | `legacy` | `shot` / `assets` / `import` / `golden` タブ | 各専用ローダーの差分 | 各フォーマットのダウンロード or インポート結果 | 従来の `export.*` イベント | Diff Merge 関与なし。タブ遷移は §0.3.1 に準拠。【F:docs/IMPLEMENTATION-PLAN.md†L87-L118】 |
 | `beta` | `diff` タブ → `HunkListPane` | `merge.request` (Base/Ours/Theirs)・`profile.threshold` | `merge.result.hunks[*].decision`・自動採用ハンク適用 | `merge.trace` に evidence JSON を添付 | `precision` 上書き可。UI はハンク選択で `OperationPane` へ遷移。【F:docs/src-1.35_addon/MERGE.md†L3-L23】【F:docs/IMPLEMENTATION-PLAN.md†L119-L149】 |
 | `beta` | `OperationPane` | 選択ハンクの `ours` / `theirs` 差分、操作キュー | `queueMergeCommand` へのコマンド、ロールバック指示 | `merge.command` (pending) | 決定不可時は conflict として戻り、UI で通知する。 |
@@ -205,6 +205,7 @@ stateDiagram-v2
 | 共通 | `Compiled` タブ復帰 | Merge 適用後の Storyboard スナップショット | 再レンダリングされた差分プレビュー | `export.compiled` + `merge.trace` 再送 | Collector/Analyzer の責務境界に従い Trace を JSONL へ蓄積。【F:Day8/docs/day8/design/03_architecture.md†L1-L38】 |
 - precision 切替は `merge.precision` フラグの再評価で発火し、`MergeDock` のタブ DOM を再構成する。【F:docs/design/merge/diff-merge-view.md†L26-L78】
 - `stable` でのみ Diff タブが初期表示となり、`Legacy`/`Beta` は `Compiled` を初期タブとして `diff-merge` を遅延マウントする。既存 UI との整合は `docs/MERGE-DESIGN-IMPL.md` §5 のタブ制御要件と同期する。【F:docs/MERGE-DESIGN-IMPL.md†L168-L206】
+- レビュー観点: Diff Merge / AutoSave の協調要件が `docs/tasks/task-autosave-project-locks.md` のガードと矛盾しないかを `docs/AUTOSAVE-DESIGN-IMPL.md`・`docs/MERGE-DESIGN-IMPL.md` を基準に突き合わせる。
 
 
 ### 0.4 AutoSave Webview Bridge 設計
