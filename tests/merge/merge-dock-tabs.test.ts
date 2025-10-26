@@ -171,8 +171,72 @@ test('merge-ui: stable precision diff tab renders DiffMergeView with backup CTA 
     )
 
     assert.match(html, /data-component="diff-merge-view"/)
+    assert.match(html, /data-merge-diff-visible="true"/)
     assert.match(html, /data-testid="merge-dock-backup-cta"/)
     assert.equal(flushLog.length, 0)
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+    Date.now = originalDateNow
+  }
+})
+
+test('merge-ui: stable precision diff tab renders but keeps guard when stats missing', () => {
+  const originalWindow = globalThis.window
+  const originalDateNow = Date.now
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const mockWindow = {
+    localStorage: storage,
+    __mergeDockAutoSaveSnapshot: { lastSuccessAt: '2024-05-01T00:00:00.000Z' },
+    __mergeDockFlushNow: () => undefined,
+  } as typeof window & {
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+    __mergeDockFlushNow?: () => void
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+  Date.now = () => new Date('2024-05-01T00:02:00.000Z').getTime()
+
+  try {
+    const html = renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags: {
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'stable', precision: 'stable' },
+        },
+      }),
+    )
+
+    assert.match(html, /data-merge-diff-visible="true"/)
+    assert.match(html, /data-merge-diff-enabled="false"/)
+    assert.match(html, /data-merge-diff-exposure="default"/)
+    assert.match(html, /data-merge-diff-initial-tab="diff"/)
+    assert.match(html, /data-component="diff-merge-view"/)
+    assert.doesNotMatch(html, /data-testid="merge-dock-backup-cta"/)
   } finally {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -240,6 +304,60 @@ test('merge-ui: beta precision diff tab reflects phase plan and keeps backup CTA
       value: originalWindow,
     })
     Date.now = originalDateNow
+  }
+})
+
+test('merge-ui: beta precision diff tab renders but guard blocks activation without stats', () => {
+  const originalWindow = globalThis.window
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const mockWindow = {
+    localStorage: storage,
+  } as typeof window
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+
+  try {
+    const html = renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags: {
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'beta', precision: 'beta' },
+        },
+      }),
+    )
+
+    assert.match(html, /Diff \(Beta\)/)
+    assert.match(html, /data-merge-diff-visible="true"/)
+    assert.match(html, /data-merge-diff-enabled="false"/)
+    assert.match(html, /data-merge-diff-exposure="opt-in"/)
+    assert.doesNotMatch(html, /data-testid="merge-dock-backup-cta"/)
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
   }
 })
 
