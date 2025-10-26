@@ -1,0 +1,6 @@
+[
+  "web:acquire",
+  "web:fail",
+  "file:acquire",
+  "release"
+]

@@ -1,0 +1,100 @@
+[
+  {
+    "path": "project/autosave/current.json",
+    "payload": {
+      "id": "autosave-storyboard",
+      "title": "Telemetry Fixture",
+      "scenes": [
+        {
+          "id": "intro",
+          "manual": "Hello",
+          "ai": "",
+          "status": "idle",
+          "assets": [],
+          "updatedAt": "2024-05-01T00:00:00.000Z"
+        },
+        {
+          "id": "conflict",
+          "manual": "Conflict",
+          "ai": "AI conflict",
+          "status": "idle",
+          "assets": [],
+          "updatedAt": "2024-05-01T00:01:00.000Z"
+        },
+        {
+          "id": "resolve",
+          "manual": "Resolve",
+          "ai": "",
+          "status": "idle",
+          "assets": [],
+          "updatedAt": "2024-05-01T00:02:00.000Z"
+        }
+      ],
+      "selection": [],
+      "version": 1
+    }
+  },
+  {
+    "path": "project/autosave/history/2024-05-01T00-00-02-510Z.json",
+    "payload": {
+      "id": "autosave-storyboard",
+      "title": "Telemetry Fixture",
+      "scenes": [
+        {
+          "id": "intro",
+          "manual": "Hello",
+          "ai": "",
+          "status": "idle",
+          "assets": [],
+          "updatedAt": "2024-05-01T00:00:00.000Z"
+        },
+        {
+          "id": "conflict",
+          "manual": "Conflict",
+          "ai": "AI conflict",
+          "status": "idle",
+          "assets": [],
+          "updatedAt": "2024-05-01T00:01:00.000Z"
+        },
+        {
+          "id": "resolve",
+          "manual": "Resolve",
+          "ai": "",
+          "status": "idle",
+          "assets": [],
+          "updatedAt": "2024-05-01T00:02:00.000Z"
+        }
+      ],
+      "selection": [],
+      "version": 1
+    }
+  },
+  {
+    "path": "project/autosave/index.json",
+    "payload": {
+      "current": {
+        "ts": "2024-05-01T00:00:02.510Z",
+        "bytes": 634,
+        "location": "current",
+        "retained": true
+      },
+      "history": [
+        {
+          "ts": "2024-05-01T00:00:02.510Z",
+          "bytes": 634,
+          "location": "history",
+          "retained": true
+        }
+      ],
+      "entries": [
+        {
+          "ts": "2024-05-01T00:00:02.510Z",
+          "bytes": 634,
+          "location": "history",
+          "retained": true
+        }
+      ],
+      "generation": 0
+    }
+  }
+]
