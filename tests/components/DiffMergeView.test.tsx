@@ -3,7 +3,13 @@ import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { DiffMergeView, type MergeHunk } from '../../src/components/DiffMergeView.tsx'
+import {
+  DiffMergeView,
+  planDiffMergeView,
+  resolveDiffMergeStoredTab,
+  type DiffMergeTabStorage,
+  type MergeHunk,
+} from '../../src/components/DiffMergeView.tsx'
 
 const sampleHunks: readonly MergeHunk[] = [
   {
@@ -54,4 +60,43 @@ test('beta precision renders uniform layout sections', () => {
   assert.match(html, /data-block="hunk-list"/)
   assert.match(html, /data-block="operation-pane"/)
   assert.doesNotMatch(html, /data-block="edit-modal"/)
+})
+
+const storageKeyFor = (precision: 'legacy' | 'beta' | 'stable') => `diff-merge.lastTab.${precision}`
+
+const createStorage = (initial: Record<string, string>): { storage: DiffMergeTabStorage; events: string[] } => {
+  const data = new Map<string, string>(Object.entries(initial))
+  const events: string[] = []
+  const storage: DiffMergeTabStorage = {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => {
+      events.push(`set:${key}:${value}`)
+      data.set(key, value)
+    },
+    removeItem: (key) => {
+      events.push(`remove:${key}`)
+      data.delete(key)
+    },
+  }
+  return { storage, events }
+}
+
+test('resolveDiffMergeStoredTab persists fallback when stored tab is not allowed for precision', () => {
+  const precision = 'stable'
+  const plan = planDiffMergeView(precision)
+  const key = storageKeyFor(precision)
+  const { storage, events } = createStorage({ [key]: 'summary' })
+  const resolved = resolveDiffMergeStoredTab({ plan, precision, storage, fallback: plan.initialTab })
+  assert.equal(resolved, plan.initialTab)
+  assert.deepEqual(events, [`remove:${key}`, `set:${key}:${plan.initialTab}`])
+})
+
+test('resolveDiffMergeStoredTab persists plan initial tab when fallback is not permitted for precision', () => {
+  const precision = 'legacy'
+  const plan = planDiffMergeView(precision)
+  const key = storageKeyFor(precision)
+  const { storage, events } = createStorage({ [key]: 'merged' })
+  const resolved = resolveDiffMergeStoredTab({ plan, precision, storage, fallback: 'diff' })
+  assert.equal(resolved, plan.initialTab)
+  assert.deepEqual(events, [`remove:${key}`, `set:${key}:${plan.initialTab}`])
 })
