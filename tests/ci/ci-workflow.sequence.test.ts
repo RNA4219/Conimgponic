@@ -562,16 +562,6 @@ function assertStepUsesEquals(step: StepConfig, expected: string, message: strin
   assert.strictEqual(step.uses.trim(), expected, message);
 }
 
-function assertStepContinueOnError(step: StepConfig, message: string): void {
-  const continueOnError = step['continue-on-error'];
-
-  if (typeof continueOnError !== 'boolean') {
-    assert.fail(`${message}; continue-on-error must be configured as a boolean`);
-  }
-
-  assert.strictEqual(continueOnError, true, message);
-}
-
 function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.if !== 'string') {
     assert.fail(`${message}; step.if must be configured as a string`);
@@ -583,8 +573,22 @@ function assertStepIfEquals(step: StepConfig, expected: string, message: string)
 function assertStepContinueOnError(step: StepConfig, message: string): void {
   const value = step['continue-on-error'];
 
-  if (typeof value !== 'boolean') {
-    assert.fail(`${message}; step.continue-on-error must be configured as a boolean`);
+  // boolean の場合
+  if (typeof value === 'boolean') {
+    assert.strictEqual(value, true, message);
+    return;
+  }
+
+  // string の場合（柔軟に許容）
+  if (typeof value === 'string') {
+    assert.strictEqual(value.trim(), 'true', message);
+    return;
+  }
+
+  // それ以外はエラー
+  assert.fail(`${message}; continue-on-error must be configured as boolean true or string 'true'`);
+}
+
   }
 
   if (value !== true) {
