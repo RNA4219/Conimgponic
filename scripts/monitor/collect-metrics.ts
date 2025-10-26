@@ -100,29 +100,46 @@ export interface MergeTracePayload {
 
 export type ExportFormat = 'md' | 'csv' | 'jsonl' | 'package';
 
-export interface ExportEventPayloadBase {
+export interface ExportStartedPayload {
+  readonly stage: 'started';
   readonly format: ExportFormat;
   readonly runId: string;
   readonly duration_ms?: number;
 }
 
-export interface ExportStartedPayload extends ExportEventPayloadBase {
-  readonly stage: 'started';
+export interface ExportArtifactTelemetry {
+  readonly format: ExportFormat | `package:${string}`;
+  readonly name: string | null;
+  readonly status: 'matched' | 'diff';
+  readonly uri: string | null;
+  readonly normalizedPath: string | null;
+  readonly durationMs: number | null;
 }
 
-export interface ExportSuccessPayload extends ExportEventPayloadBase {
-  readonly stage: 'success';
-  readonly uri: string;
+export interface ExportSuccessPayload {
+  readonly runId: string;
+  readonly matchRate: number;
+  readonly formats: ReadonlyArray<string>;
+  readonly artifacts: ReadonlyArray<ExportArtifactTelemetry>;
 }
 
-export interface ExportFailedPayload extends ExportEventPayloadBase {
-  readonly stage: 'failed';
+export interface ExportFailureEntryTelemetry {
+  readonly format: ExportFormat | `package:${string}`;
+  readonly name: string | null;
+  readonly status: 'matched' | 'diff';
+  readonly diff: string | null;
+}
+
+export interface ExportFailedPayload {
+  readonly runId: string;
+  readonly matchRate: number;
+  readonly formats: ReadonlyArray<string>;
   readonly error: {
     readonly code: string;
     readonly message: string;
     readonly retryable: boolean;
-    readonly next_backoff_ms: number;
   };
+  readonly entries: ReadonlyArray<ExportFailureEntryTelemetry>;
 }
 
 export interface PluginEventPayload {
@@ -604,26 +621,35 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       },
       {
         event: 'export.success',
-        description: 'Export 正常終了時の URI と duration を Reporter が通知テンプレートへ反映する。',
+        description: 'Export 正常終了時の runId/matchRate/formats/成果物一覧を Reporter が通知テンプレートへ反映する。',
         jsonlFields: [
-          'payload.format',
           'payload.runId',
-          'payload.uri',
-          'payload.duration_ms',
+          'payload.matchRate',
+          'payload.formats',
+          'payload.artifacts[].format',
+          'payload.artifacts[].name',
+          'payload.artifacts[].status',
+          'payload.artifacts[].normalizedPath',
+          'payload.artifacts[].uri',
+          'payload.artifacts[].durationMs',
         ],
         retryable: false,
         pipelineStage: 'reporter',
       },
       {
         event: 'export.failed',
-        description: 'Export 失敗時に retryable と next_backoff_ms を記録しローリングバックログに登録する。',
+        description: 'Export 失敗時に retryable と失敗エントリ一覧を記録しローリングバックログに登録する。',
         jsonlFields: [
-          'payload.format',
           'payload.runId',
+          'payload.matchRate',
+          'payload.formats',
           'payload.error.code',
           'payload.error.message',
           'payload.error.retryable',
-          'payload.error.next_backoff_ms',
+          'payload.entries[].format',
+          'payload.entries[].name',
+          'payload.entries[].status',
+          'payload.entries[].diff',
         ],
         retryable: true,
         pipelineStage: 'reporter',
