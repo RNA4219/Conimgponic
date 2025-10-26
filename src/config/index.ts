@@ -2,7 +2,12 @@ import { resolveAutoSavePolicy } from '../lib/autosave.js'
 import type { AutoSavePhaseGuardSnapshot, AutoSavePolicy } from '../lib/autosave.js'
 
 import { publishFlagResolution } from '../telemetry/day8Collector.js'
-import type { FlagSnapshot, FlagValidationError, ResolveOptions } from './flags.js'
+import type {
+  FlagSnapshot,
+  FlagValidationError,
+  ResolveOptions,
+  WorkspaceConfiguration
+} from './flags.js'
 
 import {
   FLAG_MIGRATION_PLAN,
@@ -60,7 +65,8 @@ export function resolveAutoSaveBootstrapPlan(
   publishFlagResolution('app.autosave', 'bootstrap', snapshot, planErrors)
   const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
 
-  const workspacePolicy = resolveAutoSavePolicy(options?.workspace)
+  const workspaceInput: WorkspaceConfiguration | null | undefined = options?.workspace
+  const workspacePolicy = resolveAutoSavePolicy(workspaceInput)
 
   return {
     snapshot,
