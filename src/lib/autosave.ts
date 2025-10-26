@@ -1226,7 +1226,23 @@ export function initAutoSave(
         if (disposed) throw disabledError()
         phase = 'writing-current'; await saveText('project/autosave/current.json.tmp', payload); await renameFile('project/autosave/current.json.tmp', 'project/autosave/current.json')
         phase = 'updating-index'; const ts = new Date().toISOString(); await updateIndex(ts, pendingBytes, payload)
-        phase = 'gc'; lastSuccessAt = ts; pendingQueue.length = 0; queuedGeneration = 0; pendingBytes = 0; retryCount = 0; lastError = undefined; phase = disposed ? 'disabled' : 'idle'
+        phase = 'gc';
+        lastSuccessAt = ts;
+        const remaining = pendingQueue.length;
+        queuedGeneration = remaining;
+        pendingBytes = remaining > 0 ? pendingQueue[remaining - 1]!.estimatedBytes : 0;
+        retryCount = 0;
+        lastError = undefined;
+        if (disposed) {
+          pendingBytes = 0;
+          phase = 'disabled';
+        } else if (!disposing && remaining > 0) {
+          phase = 'debouncing';
+          resetSchedule();
+          scheduleDebounce();
+        } else {
+          phase = 'idle';
+        }
       }, { preferredStrategy: 'web-lock' })
     } catch (error: unknown) {
       if (disposed) throw disabledError()
