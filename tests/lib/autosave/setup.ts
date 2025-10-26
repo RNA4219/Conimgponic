@@ -8,7 +8,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 import type * as AutoSaveModule from '../../../src/lib/autosave'
-import type { AutoSavePhaseGuardSnapshot } from '../../../src/lib/autosave'
+import type { AutoSavePhaseGuardSnapshot, AutoSaveInitResult } from '../../../src/lib/autosave'
 
 interface LockHandleLike {
   release(): Promise<void>
@@ -175,10 +175,25 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
     ...overrides.navigator
   }
   Object.defineProperty(globalThis, 'navigator', { value: navigatorValue, configurable: true })
+  const runners: AutoSaveInitResult[] = []
+  t.after(async () => {
+    const registered = runners.splice(0)
+    for (const runner of registered) {
+      await runner.dispose()
+    }
+  })
   t.after(() => {
     delete (globalThis as { navigator?: unknown }).navigator
   })
-  return { ...(await importTs<AutoSaveModule>(join(root, 'src/lib/autosave.ts'))), opfs }
+  const module = await importTs<AutoSaveModule>(join(root, 'src/lib/autosave.ts'))
+  const initAutoSave: AutoSaveModule['initAutoSave'] = (
+    ...args: Parameters<AutoSaveModule['initAutoSave']>
+  ) => {
+    const runner = module.initAutoSave(...args)
+    runners.push(runner)
+    return runner
+  }
+  return { ...module, initAutoSave, opfs }
 }
 
 type ScenarioContext = Awaited<ReturnType<typeof setup>>
