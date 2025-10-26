@@ -69,10 +69,19 @@ export interface StatusAutosavePayload {
   readonly guard: StatusAutosaveGuardSnapshot;
 }
 
+export const FLAG_RESOLUTION_SOURCE_VARIANTS = [
+  'env',
+  'workspace',
+  'localStorage',
+  'default'
+] as const;
+
+export type FlagResolutionSource = (typeof FLAG_RESOLUTION_SOURCE_VARIANTS)[number];
+
 export interface FlagResolutionPayload {
   readonly flag: string;
   readonly variant: string;
-  readonly source: 'env' | 'remote' | 'local';
+  readonly source: FlagResolutionSource;
   readonly phase: RolloutPhase;
   readonly evaluation_ms: number;
 }
