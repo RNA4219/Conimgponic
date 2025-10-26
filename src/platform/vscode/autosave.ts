@@ -467,15 +467,19 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         historyEntries: state.history.length
       })
     } catch (rawError) {
+      const domExceptionCtor = typeof DOMException === 'undefined' ? undefined : DOMException
+      const isDomException =
+        domExceptionCtor !== undefined && rawError instanceof domExceptionCtor
+      const notAllowedDomException =
+        isDomException && (rawError as DOMException).name === 'NotAllowedError'
       const error: AutoSaveError = {
         name: 'AutoSaveError',
         message: rawError instanceof Error ? rawError.message : String(rawError),
         code: 'write-failed',
-        retryable: false,
+        retryable: !notAllowedDomException,
         cause: rawError instanceof Error ? rawError : undefined
       }
-      handleNonRetryableError(options, state, request, error, state.status)
-      return
+      writeResult = { ok: false, error }
     }
 
     if (!writeResult.ok) {

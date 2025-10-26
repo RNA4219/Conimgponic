@@ -380,6 +380,54 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(lastResult.payload.retainedBytes, history.retainedBytes)
   })
 
+  it('keeps retryable=true and backoff when atomicWrite throws', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (msg) => sent.push(msg),
+      atomicWrite: async () => {
+        throw new Error('opfs-busy')
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-throw', 'corr-throw', guardEnabled, 1024, 1)
+    )
+
+    const result = sent.find((msg): msg is AutoSaveSnapshotResultMessage => msg.type === 'snapshot.result')
+    assert.ok(result, 'snapshot.result should be emitted for thrown errors')
+    if (result.payload.ok !== false) {
+      assert.fail('snapshot.result should be ok=false when atomicWrite throws')
+    }
+    assert.equal(result.payload.error.code, 'write-failed')
+    assert.equal(result.payload.error.retryable, true)
+
+    const statuses = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave')
+    assert.deepEqual(
+      statuses.map((msg) => msg.payload.state),
+      ['dirty', 'saving', 'backoff'],
+      'status transitions should reach backoff after retryable failure'
+    )
+
+    const snapshotTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.snapshot.result' && event.properties?.correlationId === 'corr-throw'
+    )
+    assert.ok(snapshotTelemetry, 'snapshot.result telemetry should be recorded for thrown errors')
+    assert.equal(snapshotTelemetry.properties?.retryable, true)
+    assert.equal(snapshotTelemetry.properties?.code, 'write-failed')
+    assert.equal(snapshotTelemetry.properties?.phaseAfter, 'backoff')
+
+    const state = bridge.inspectState()
+    assert.equal(state.status, 'backoff')
+    assert.equal(state.retryCount, 1)
+  })
+
   it('downgrades to disabled when non-retryable error occurs', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const bridge = createVscodeAutoSaveBridge({
