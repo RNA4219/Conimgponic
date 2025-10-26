@@ -10,6 +10,7 @@ import { describe, test } from 'node:test';
 type WorkflowYaml = { jobs?: { sbom?: WorkflowJob; golden?: WorkflowJob } };
 type WorkflowJob = { steps?: StepConfig[]; needs?: JobNeeds };
 type StepConfig = {
+  id?: unknown;
   name?: unknown;
   run?: unknown;
   uses?: unknown;
@@ -52,6 +53,15 @@ describe('ci workflow golden job', () => {
       if (!goldenExecution) {
         throw new Error('golden job must name golden comparison step');
       }
+      const goldenId = goldenExecution.id;
+      if (typeof goldenId !== 'string') {
+        throw new TypeError('golden comparison step must configure string id');
+      }
+      assert.strictEqual(
+        goldenId.trim(),
+        'golden',
+        "golden comparison step id must equal 'golden'",
+      );
       const continueOnError = goldenExecution['continue-on-error'];
       if (typeof continueOnError === 'string') {
         assert.strictEqual(
