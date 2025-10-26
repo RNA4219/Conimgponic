@@ -175,10 +175,25 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
     ...overrides.navigator
   }
   Object.defineProperty(globalThis, 'navigator', { value: navigatorValue, configurable: true })
+  const runners: AutoSaveInitResult[] = []
+  t.after(async () => {
+    const registered = runners.splice(0)
+    for (const runner of registered) {
+      await runner.dispose()
+    }
+  })
   t.after(() => {
     delete (globalThis as { navigator?: unknown }).navigator
   })
-  return { ...(await importTs<AutoSaveModule>(join(root, 'src/lib/autosave.ts'))), opfs }
+  const module = await importTs<AutoSaveModule>(join(root, 'src/lib/autosave.ts'))
+  const initAutoSave: AutoSaveModule['initAutoSave'] = (
+    ...args: Parameters<AutoSaveModule['initAutoSave']>
+  ) => {
+    const runner = module.initAutoSave(...args)
+    runners.push(runner)
+    return runner
+  }
+  return { ...module, initAutoSave, opfs }
 }
 
 type ScenarioContext = Awaited<ReturnType<typeof setup>>
