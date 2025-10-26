@@ -30,9 +30,16 @@ type BuildJobConfig = {
 };
 
 type QualityJobStrategyConfig = {
-  'fail-fast'?: unknown;
+  'fail-fast'?: boolean | string | undefined;
   matrix?: {
     include?: QualityMatrixEntry[];
+  };
+};
+
+type QualityJobConfig = {
+  strategy?: QualityJobStrategyConfig;
+};
+
   };
 };
 
@@ -240,6 +247,25 @@ describe('ci workflow build job', () => {
       console.error('CI workflow verification failed:', error);
       throw error;
     }
+  });
+
+  test('quality job disables matrix fail-fast', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const strategy = quality.strategy;
+    if (!strategy || typeof strategy !== 'object') {
+      assert.fail('workflow.jobs.quality.strategy must be defined as an object');
+    }
+
+    assert.strictEqual(
+      strategy['fail-fast'],
+      false,
+      'quality job strategy.fail-fast must be explicitly set to false',
+    );
   });
 
   test('uploads suite logs artifact on quality job matrix runs', async () => {
@@ -554,6 +580,15 @@ function assertStepWithName(
   return match;
 }
 
+function assertStepContinueOnError(step: StepConfig, message: string): void {
+  const value = step['continue-on-error'];
+  if (typeof value !== 'boolean') {
+    assert.fail(`${message}; step must configure continue-on-error as a boolean`);
+  }
+
+  assert.strictEqual(value, true, message);
+}
+
 function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.uses !== 'string') {
     assert.fail(`${message}; step.uses must be configured as a string`);
@@ -587,15 +622,6 @@ function assertStepContinueOnError(step: StepConfig, message: string): void {
 
   // それ以外はエラー
   assert.fail(`${message}; continue-on-error must be configured as boolean true or string 'true'`);
-}
-
-  }
-
-  if (value !== true) {
-    assert.fail(`${message}; continue-on-error must be set to true`);
-  }
-}
-
 }
 
 function assertStepRunIncludesLine(step: StepConfig, expectedLine: string, message: string): void {
