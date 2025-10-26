@@ -289,6 +289,35 @@ describe('ci workflow build job', () => {
       '"Upload suite logs" artifact must include suite and failure logs',
     );
   });
+
+  test('extracts failed suite output when collection is enabled', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const extractFailuresStep = assertStepWithName(
+      steps,
+      'Extract failed test output',
+      'quality job must include "Extract failed test output" step',
+    );
+
+    assertStepIfEquals(
+      extractFailuresStep,
+      "steps.run_suite.outcome == 'failure' && matrix.collect_failures",
+      '"Extract failed test output" step must run only when suite fails and collection is enabled',
+    );
+
+    assertStepRunIncludesLine(
+      extractFailuresStep,
+      "grep -E ':[0-9]+:[0-9]+: |not ok|FAIL|Error' \"logs/${{ matrix.suite }}.log\" > \"logs/${{ matrix.suite }}-failures.log\" || true",
+      '"Extract failed test output" step must capture failed test output with grep while tolerating missing matches',
+    );
+  });
 });
 
 function isUploadArtifactStep(step: StepConfig): step is UploadArtifactStep {
@@ -549,6 +578,20 @@ function assertStepIfEquals(step: StepConfig, expected: string, message: string)
   }
 
   assert.strictEqual(step.if.trim(), expected, message);
+}
+
+function assertStepContinueOnError(step: StepConfig, message: string): void {
+  const value = step['continue-on-error'];
+
+  if (typeof value !== 'boolean') {
+    assert.fail(`${message}; step.continue-on-error must be configured as a boolean`);
+  }
+
+  if (value !== true) {
+    assert.fail(`${message}; continue-on-error must be set to true`);
+  }
+}
+
 }
 
 function assertStepRunIncludesLine(step: StepConfig, expectedLine: string, message: string): void {
