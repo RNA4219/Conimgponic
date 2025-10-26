@@ -1159,12 +1159,27 @@ export function initAutoSave(
     }
     queuedGeneration = pendingQueue.length
   }
-  const runFlush = async (attempt: number, source: 'manual' | 'auto'): Promise<void> => {
+  const runFlush = async (
+    attempt: number,
+    source: 'manual' | 'auto',
+    entry: AutoSaveQueueEntry | null
+  ): Promise<void> => {
     if (disposed) throw disabledError()
     const storyboard = getStoryboard()
     if (!storyboard) throw disabledError()
     const payload = JSON.stringify(storyboard, null, 2)
     pendingBytes = encoder.encode(payload).length; phase = 'awaiting-lock'
+    let removedEntry = false
+    const removeProcessedEntry = () => {
+      if (removedEntry || !entry) {
+        return
+      }
+      const index = pendingQueue.indexOf(entry)
+      if (index >= 0) {
+        pendingQueue.splice(index, 1)
+        removedEntry = true
+      }
+    }
     try {
       await projectLockApi.withProjectLock(async () => {
         if (disposed) throw disabledError()
@@ -1172,6 +1187,7 @@ export function initAutoSave(
         phase = 'updating-index'; const ts = new Date().toISOString(); await updateIndex(ts, pendingBytes, payload)
         phase = 'gc';
         lastSuccessAt = ts;
+        removeProcessedEntry()
         const remaining = pendingQueue.length;
         queuedGeneration = remaining;
         pendingBytes = remaining > 0 ? pendingQueue[remaining - 1]!.estimatedBytes : 0;
@@ -1205,6 +1221,7 @@ export function initAutoSave(
           : error instanceof Error
           ? makeError('write-failed', error.message, true, error)
           : makeError('write-failed', 'Unexpected AutoSave failure', true, undefined, { value: error })
+      removeProcessedEntry()
       lastError = autoError
       if (autoError.retryable) {
         const nextAttempt = attempt + 1
@@ -1286,14 +1303,17 @@ export function initAutoSave(
     if (source === 'auto' && pendingQueue.length === 0) {
       return
     }
-    phase = 'debouncing'
-    if (pendingQueue.length > 0) {
-      pendingQueue.shift()
-      queuedGeneration = pendingQueue.length
-    } else {
-      queuedGeneration = 0
+    let activeEntry: AutoSaveQueueEntry | null = null
+    if (source === 'auto') {
+      activeEntry = pendingQueue[0]!
     }
-    const pending = runFlush(0, source)
+    phase = 'debouncing'
+    if (source === 'auto') {
+      queuedGeneration = Math.max(0, pendingQueue.length - 1)
+    } else {
+      queuedGeneration = pendingQueue.length
+    }
+    const pending = runFlush(0, source, activeEntry)
     inFlightFlush = pending
     try {
       await pending

@@ -299,6 +299,45 @@ describe('createVscodeAutoSaveBridge', () => {
     )
   })
 
+  it('returns ok snapshot.result for consecutive dirty snapshots', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    let generation = 0
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => {
+        generation += 1
+        return {
+          ok: true,
+          bytes: 1024 * generation,
+          generation,
+          lastSuccessAt: new Date('2024-01-01T00:00:05.000Z').toISOString(),
+          lockStrategy: 'web-lock'
+        }
+      }
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(createRequest('req-a', 'corr-a', guardEnabled, 1024, 1))
+    bridge.reportDirty(2048, guardEnabled)
+    await bridge.handleSnapshotRequest(createRequest('req-b', 'corr-b', guardEnabled, 2048, 2))
+
+    const results = sent.filter((msg): msg is AutoSaveSnapshotResultMessage => msg.type === 'snapshot.result')
+    assert.deepEqual(
+      results.map((msg) => msg.payload.ok),
+      [true, true],
+      'snapshot.result should indicate ok=true for both consecutive requests'
+    )
+    assert.deepEqual(
+      results.map((msg) => msg.correlationId),
+      ['corr-a', 'corr-b'],
+      'snapshot.result should preserve correlation ordering'
+    )
+  })
+
   it('Collector telemetry に Phase/Lock/Flag メタデータを付与する', async () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     let tick = 0

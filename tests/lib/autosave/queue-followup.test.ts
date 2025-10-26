@@ -109,3 +109,68 @@ scenario(
     assert.equal(finalSnapshot.queuedGeneration ?? 0, 0)
   }
 )
+
+scenario('markDirty during active flush triggers a follow-up autosave run', async (t, ctx) => {
+  const { initAutoSave, AUTOSAVE_POLICY, opfs } = ctx
+  t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
+  let sceneCount = 1
+  const runner = initAutoSave(
+    () => makeStoryboard(Array.from({ length: sceneCount }, (_, index) => `scene-${index + 1}`)),
+    { disabled: false },
+    ENABLED_GUARD
+  )
+
+  const waitForPhase = async (expected: string): Promise<void> => {
+    for (let attempt = 0; attempt < 1000; attempt += 1) {
+      const snapshot = runner.snapshot()
+      if (snapshot.phase === expected) {
+        return
+      }
+      await Promise.resolve()
+    }
+    assert.fail(`phase did not reach ${expected}`)
+  }
+
+  const waitUntilNot = async (states: readonly string[]): Promise<void> => {
+    for (let attempt = 0; attempt < 1000; attempt += 1) {
+      const snapshot = runner.snapshot()
+      if (!states.includes(snapshot.phase)) {
+        return
+      }
+      await Promise.resolve()
+    }
+    assert.fail(`phase stayed within ${states.join(', ')}`)
+  }
+
+  runner.markDirty({ pendingBytes: 1024 })
+  t.mock.timers.tick(AUTOSAVE_POLICY.debounceMs)
+  await Promise.resolve()
+  t.mock.timers.tick(AUTOSAVE_POLICY.idleMs)
+  await Promise.resolve()
+
+  await waitUntilNot(['idle', 'debouncing'])
+  sceneCount = 2
+  runner.markDirty({ pendingBytes: 2048 })
+
+  await waitUntilNot(['awaiting-lock', 'writing-current', 'updating-index', 'gc'])
+  await waitForPhase('debouncing')
+  const midSnapshot = runner.snapshot()
+  assert.equal(midSnapshot.phase, 'debouncing')
+  assert.equal(midSnapshot.queuedGeneration, 1)
+
+  t.mock.timers.tick(AUTOSAVE_POLICY.debounceMs)
+  await Promise.resolve()
+  t.mock.timers.tick(AUTOSAVE_POLICY.idleMs)
+  await Promise.resolve()
+
+  await waitUntilNot(['awaiting-lock', 'writing-current', 'updating-index', 'gc'])
+  await waitForPhase('idle')
+  const finalSnapshot = runner.snapshot()
+  assert.equal(finalSnapshot.phase, 'idle')
+  assert.equal(finalSnapshot.queuedGeneration ?? 0, 0)
+
+  const historyKeys = Array.from(opfs.files.keys()).filter((key) =>
+    key.startsWith('project/autosave/history/')
+  )
+  assert.equal(historyKeys.length, 2)
+})
