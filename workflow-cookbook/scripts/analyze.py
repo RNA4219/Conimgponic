@@ -56,9 +56,14 @@ def _summarize(entries: Sequence[dict[str, str]]) -> dict[str, FlowEntry]:
 
 
 def _ordered(summary: dict[str, FlowEntry], focus: Sequence[str] | None) -> list[tuple[str, FlowEntry]]:
-    keys = [flow for flow in (focus or []) if flow in summary]
+    keys: list[str]
+    if focus:
+        requested = {flow for flow in focus if flow in summary}
+        keys = [flow for flow in FLOWS if flow in requested]
+    else:
+        keys = list(FLOWS)
     if not keys:
-        keys = list(summary)
+        keys = list(FLOWS)
     return [(flow, summary[flow]) for flow in keys]
 
 

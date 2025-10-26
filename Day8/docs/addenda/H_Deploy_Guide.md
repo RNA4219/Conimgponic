@@ -12,6 +12,8 @@ Day8 環境向けのデプロイ手順を開発・Docker・GitHub Actions の 3 
 ### チェックリスト（ローカル）
 - [ ] Python 3.11+ の仮想環境で `pip install -r workflow-cookbook/requirements.txt`
       を実行し、mypy / ruff / pytest / pip-audit を利用可能にする
+      - `pytest Day8/workflow-cookbook/tests/test_requirements_install.py::test_pip_install_requirements`
+        で Day8 要件がそのままインストール可能か検証する
 - [ ] `python workflow-cookbook/scripts/analyze.py --root . --emit report`
 - [ ] 必要な Docker build を手元で `docker build` し、ランタイム依存の抜けを確認
 - [ ] `docs/birdseye/index.json` / `docs/birdseye/hot.json` / 新規 Capsule の `generated_at` を同一タイムスタンプへ揃える

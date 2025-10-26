@@ -29,13 +29,19 @@ export interface FlagResolutionEventPayload {
   readonly errors: readonly FlagValidationError[]
 }
 
+export type FlagResolutionContractPayload = Pick<
+  FlagResolutionEventPayload,
+  'flag' | 'variant' | 'source' | 'phase' | 'evaluation_ms'
+>
+
 export type Day8CollectorFlagResolutionEvent = {
+  readonly schema: 'vscode.telemetry.v1'
   readonly feature: 'config.flags'
   readonly event: 'flag_resolution'
   readonly source: string
   readonly phase: string
   readonly evaluation_ms: number
-  readonly payload: FlagResolutionEventPayload
+  readonly payload: FlagResolutionContractPayload
   readonly ts: string
 }
 
@@ -64,13 +70,21 @@ export const publishFlagResolution = (
     return
   }
   for (const payload of payloads) {
+    const contractPayload: FlagResolutionContractPayload = {
+      flag: payload.flag,
+      variant: payload.variant,
+      source: payload.source,
+      phase: payload.phase,
+      evaluation_ms: payload.evaluation_ms
+    }
     collector.publish({
+      schema: 'vscode.telemetry.v1',
       feature: 'config.flags',
       event: 'flag_resolution',
       source,
       phase,
       evaluation_ms: evaluationMs,
-      payload,
+      payload: contractPayload,
       ts: new Date().toISOString()
     })
   }

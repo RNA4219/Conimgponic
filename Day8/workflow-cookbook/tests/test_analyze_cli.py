@@ -40,6 +40,7 @@ def test_cli_emits_reports_json_and_birdseye(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert sorted(payload["flows"]) == ["audit", "build", "golden", "license", "sbom"]
+    assert payload["flows"]["license"]["status"] == "passed"
     report_dir = tmp_path / "reports" / "day8" / "ci"
     summary = (report_dir / "summary.md").read_text(encoding="utf-8")
     assert summary.startswith("# Day8 CI reflection")
@@ -50,6 +51,7 @@ def test_cli_emits_reports_json_and_birdseye(tmp_path: Path) -> None:
     capsule = json.loads((report_dir / "birdseye.json").read_text(encoding="utf-8"))
     assert capsule["capsule"] == "day8-ci"
     assert capsule["flows"]["audit"]["outcome"] == "warning"
+    assert capsule["flows"]["license"]["status"] == "passed"
 
 
 def test_fail_on_warnings_exits_non_zero(tmp_path: Path) -> None:
@@ -65,7 +67,7 @@ def test_fail_on_warnings_exits_non_zero(tmp_path: Path) -> None:
             ]
         ),
     )
-    result = _run(tmp_path, "--emit", "report", "--fail-on", "warnings")
+    result = _run(tmp_path, "--emit", "report", "--focus", "license", "--fail-on", "warnings")
     assert result.returncode == 1
 
 
@@ -88,6 +90,29 @@ def test_focus_license_filters_report(tmp_path: Path) -> None:
     assert "| Flow |" in summary
     assert summary.count("| license | passed | allowlist |") == 1
     assert "| build |" not in summary
+
+
+def test_focus_subset_uses_canonical_order(tmp_path: Path) -> None:
+    _write_log(
+        tmp_path,
+        "\n".join(
+            [
+                '{"flow":"build","status":"passed","message":"ok"}',
+                '{"flow":"audit","status":"passed","message":"moderate"}',
+                '{"flow":"sbom","status":"passed","message":"syft"}',
+                '{"flow":"license","status":"passed","message":"allowlist"}',
+                '{"flow":"golden","status":"passed","message":"fixtures"}',
+            ]
+        ),
+    )
+
+    result = _run(tmp_path, "--emit", "report", "--focus", "license", "sbom")
+
+    assert result.returncode == 0, result.stderr
+    summary = (tmp_path / "reports" / "day8" / "ci" / "summary.md").read_text(encoding="utf-8")
+    assert summary.count("| sbom | passed | syft |") == 1
+    assert summary.count("| license | passed | allowlist |") == 1
+    assert summary.index("| sbom | passed | syft |") < summary.index("| license | passed | allowlist |")
 
 
 def test_fail_on_errors_requires_errors(tmp_path: Path) -> None:

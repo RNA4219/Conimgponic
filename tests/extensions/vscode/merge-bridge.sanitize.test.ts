@@ -8,6 +8,7 @@ import type {
   MergeResult,
   MergeTrace,
 } from '../../../src/lib/merge.js'
+import { PRECISION_THRESHOLD_CLAMP } from '../../../src/lib/merge.js'
 import { createVsCodeMergeBridge } from '../../../src/platform/vscode/merge/bridge.js'
 
 type MergeInvocation = {
@@ -24,6 +25,7 @@ const createTrace = (threshold: number): MergeTrace => ({
 })
 
 test('createVsCodeMergeBridge sanitizes request threshold before invoking merge engine', async () => {
+  const stableClamp = PRECISION_THRESHOLD_CLAMP.stable
   const invocations: MergeInvocation[] = []
   const mergeResult: MergeResult = {
     hunks: [],
@@ -36,7 +38,7 @@ test('createVsCodeMergeBridge sanitizes request threshold before invoking merge 
       lockedDecisions: 0,
       aiDecisions: 0,
     },
-    trace: createTrace(0.7),
+    trace: createTrace(stableClamp.max ?? stableClamp.min),
   }
 
   const bridge = createVsCodeMergeBridge({
@@ -75,7 +77,7 @@ test('createVsCodeMergeBridge sanitizes request threshold before invoking merge 
   assert.equal(invocations.length, 1)
   const [{ profilePrecision, profileThreshold }] = invocations
   assert.equal(profilePrecision, 'stable')
-  assert.equal(profileThreshold, 0.94)
+  assert.equal(profileThreshold, stableClamp.max)
 
   assert.deepEqual(response, {
     type: 'merge.result',

@@ -5,8 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import {
   DiffMergeView,
+  createDiffMergeController,
   planDiffMergeView,
   resolveDiffMergeStoredTab,
+  type DiffMergeQueueCommandPayload,
   type DiffMergeTabStorage,
   type MergeHunk,
 } from '../../src/components/DiffMergeView.tsx'
@@ -99,4 +101,69 @@ test('resolveDiffMergeStoredTab persists plan initial tab when fallback is not p
   const resolved = resolveDiffMergeStoredTab({ plan, precision, storage, fallback: 'diff' })
   assert.equal(resolved, plan.initialTab)
   assert.deepEqual(events, [`remove:${key}`, `set:${key}:${plan.initialTab}`])
+})
+
+test('DiffMergeView queue telemetry captures the active tab selection', async () => {
+  type DiffMergeController = ReturnType<typeof createDiffMergeController>
+  const storageKey = storageKeyFor('stable')
+  const { storage } = createStorage({ [storageKey]: 'merged' })
+  const previousStorage = (globalThis as { localStorage?: DiffMergeTabStorage }).localStorage
+  ;(globalThis as { localStorage?: DiffMergeTabStorage }).localStorage = storage
+
+  const payloads: DiffMergeQueueCommandPayload[] = []
+  let controller: DiffMergeController | undefined
+  const previousHook = (globalThis as {
+    __diffMergeViewOnControllerReady?: (instance: DiffMergeController) => void
+  }).__diffMergeViewOnControllerReady
+  ;(globalThis as {
+    __diffMergeViewOnControllerReady?: (instance: DiffMergeController) => void
+  }).__diffMergeViewOnControllerReady = (instance) => {
+    controller = instance
+  }
+
+  const successEvent = {
+    status: 'success',
+    hunkIds: [],
+    telemetry: {
+      collectorSurface: 'diff-merge.hunk-list' as const,
+      analyzerSurface: 'diff-merge.queue' as const,
+      retryable: false,
+    },
+  }
+
+  try {
+    renderToStaticMarkup(
+      <DiffMergeView
+        precision="stable"
+        hunks={sampleHunks}
+        queueMergeCommand={async (payload) => {
+          payloads.push(payload)
+          return successEvent
+        }}
+      />,
+    )
+
+    assert.ok(controller)
+
+    await controller?.queueMerge(['h1'])
+
+    assert.equal(payloads.length, 1)
+    assert.equal(payloads[0]?.telemetryContext.lastTab, 'merged')
+  } finally {
+    if (previousHook) {
+      ;(globalThis as {
+        __diffMergeViewOnControllerReady?: (instance: DiffMergeController) => void
+      }).__diffMergeViewOnControllerReady = previousHook
+    } else {
+      delete (globalThis as {
+        __diffMergeViewOnControllerReady?: (instance: DiffMergeController) => void
+      }).__diffMergeViewOnControllerReady
+    }
+
+    if (previousStorage === undefined) {
+      delete (globalThis as { localStorage?: DiffMergeTabStorage }).localStorage
+    } else {
+      ;(globalThis as { localStorage?: DiffMergeTabStorage }).localStorage = previousStorage
+    }
+  }
 })

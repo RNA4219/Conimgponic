@@ -116,7 +116,7 @@ test('stable precision clamps threshold upper bound and keeps diff initial tab w
   })
 
   assert.equal(plan.threshold.request, 0.94)
-  assert.equal(plan.threshold.autoTarget, 0.97)
+  assert.equal(plan.threshold.autoTarget, 0.95)
   assert.deepEqual(plan.threshold.reviewBand, { min: 0.93, max: 0.97 })
   assert.deepEqual(plan.threshold.conflictBand, { max: 0.93 })
   assert.equal(plan.diff.enabled, true)
@@ -146,11 +146,25 @@ test('beta precision threshold never drops below 0.75', () => {
   assert.equal(plan.slider.min, 0.75)
 })
 
+test('beta precision auto target clamps to rollout maximum', () => {
+  const plan = resolveMergeThresholdPlan('beta', 0.95)
+
+  assert.equal(plan.request, 0.9)
+  assert.equal(plan.autoTarget, 0.92)
+})
+
 test('stable precision threshold never drops below 0.82', () => {
   const plan = resolveMergeThresholdPlan('stable', 0.8)
 
   assert.equal(plan.request, 0.82)
   assert.equal(plan.slider.min, 0.82)
+})
+
+test('stable precision auto target clamps to rollout maximum', () => {
+  const plan = resolveMergeThresholdPlan('stable', 0.98)
+
+  assert.equal(plan.request, 0.94)
+  assert.equal(plan.autoTarget, 0.95)
 })
 
 test('workspace threshold from resolveFlags updates diff exposure and clamp', () => {
@@ -172,10 +186,10 @@ test('workspace threshold from resolveFlags updates diff exposure and clamp', ()
 
   assert.equal(precision, 'stable')
   assert.equal(plan.threshold.request, 0.94)
-  assert.equal(plan.threshold.autoTarget, 0.97)
+  assert.equal(plan.threshold.autoTarget, 0.95)
   assert.equal(plan.diff.enabled, true)
   assert.equal(plan.diff.exposure, 'default')
-  assert.equal(plan.autoApplied.target, 0.97)
+  assert.equal(plan.autoApplied.target, 0.95)
 })
 
 test('env precision threshold from flags overrides workspace and storage settings', () => {

@@ -2,7 +2,7 @@
 
 ## 1. 背景と位置づけ
 - `MergeDock`/`DiffMergeView` の分割設計と Phase 制御は [docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md) の UI ステート管理方針、および Day8 Collector パイプライン ([Day8/docs/day8/design/03_architecture.md](../../Day8/docs/day8/design/03_architecture.md)) のメトリクス集約フローに準拠する。
-- `merge.precision` フラグを `conimg.merge.threshold` (VS Code 設定、既定 0.75) と同期させ、legacy/beta/stable の 3 モードを Phase A/B ガードでブリッジする。
+- `merge.precision` フラグを `conimg.merge.threshold` (VS Code 設定、既定 0.75) と同期させ、legacy/beta/stable の 3 モードを Phase A/B ガードでブリッジする。[docs/MERGE-DESIGN-IMPL.md](../MERGE-DESIGN-IMPL.md) で規定された `DEFAULT_THRESHOLD=0.75` を基点に、AutoSave 連携要件 ([docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md)) で求められる保存・露出制御の整合を担保する。
 - 目的は Phase B までは Diff タブを露出させず、Phase 遷移と自動採用率 (>=80%) を担保しつつ、Diff Merge 3-way API への移行基盤を用意すること。
 
 ## 2. Precision モード別 UI/ステート遷移仕様
