@@ -492,6 +492,11 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(snapshotTelemetry.properties?.phaseAfter, 'backoff')
     assert.equal(snapshotTelemetry.properties?.attempt, 1)
 
+    const statusTelemetry = telemetry.filter(
+      (event) => event.name === 'autosave.status' && event.properties?.correlationId === 'corr-throw'
+    )
+    assert.ok(statusTelemetry.find((event) => event.properties?.state === 'backoff'))
+
     const state = bridge.inspectState()
     assert.equal(state.status, 'backoff')
     assert.equal(state.retryCount, 1)
@@ -499,6 +504,7 @@ describe('createVscodeAutoSaveBridge', () => {
 
   it('downgrades to disabled when non-retryable error occurs', async () => {
     const sent: AutoSaveBridgeMessage[] = []
+    const telemetry: AutoSaveTelemetryEvent[] = []
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
@@ -508,7 +514,8 @@ describe('createVscodeAutoSaveBridge', () => {
       atomicWrite: async () => ({
         ok: false,
         error: { name: 'AutoSaveError', message: 'corrupted', code: 'data-corrupted', retryable: false }
-      })
+      }),
+      telemetry: (event) => telemetry.push(event)
     })
 
     bridge.reportDirty(1024, guardEnabled)
@@ -522,6 +529,12 @@ describe('createVscodeAutoSaveBridge', () => {
     const statuses = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave')
     assert.deepEqual(statuses.map((msg) => msg.payload.state).slice(-2), ['error', 'disabled'])
     assert.equal(statuses.at(-1)?.payload.guard.optionsDisabled, true)
+
+    const statusEvents = telemetry.filter(
+      (event) => event.name === 'autosave.status' && event.properties?.correlationId === 'corr-error'
+    )
+    assert.ok(statusEvents.find((event) => event.properties?.state === 'error'))
+    assert.ok(statusEvents.find((event) => event.properties?.state === 'disabled'))
   })
 
   it('emits warn telemetry when file-lock fallback is used', async () => {
@@ -552,6 +565,7 @@ describe('createVscodeAutoSaveBridge', () => {
 
   it('short-circuits snapshot when guard disables autosave', async () => {
     const sent: AutoSaveBridgeMessage[] = []
+    const telemetry: AutoSaveTelemetryEvent[] = []
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardReadonly,
@@ -559,7 +573,8 @@ describe('createVscodeAutoSaveBridge', () => {
       sendMessage: (msg) => sent.push(msg),
       atomicWrite: async (): Promise<AutoSaveAtomicWriteResult> => {
         throw new Error('should not write when disabled')
-      }
+      },
+      telemetry: (event) => telemetry.push(event)
     })
 
     bridge.reportDirty(512, guardReadonly)
@@ -573,5 +588,10 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(result.payload.error.code, 'disabled')
     const status = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave').at(-1)
     assert.equal(status?.payload.state, 'disabled')
+
+    const statusTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.correlationId === 'corr-disabled'
+    )
+    assert.equal(statusTelemetry?.properties?.state, 'disabled')
   })
 })
