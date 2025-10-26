@@ -300,6 +300,15 @@ const handleNonRetryableError = (
       state.lastSuccessAt
     )
   )
+  emitTelemetry(
+    options,
+    {
+      name: 'autosave.status',
+      properties: { state: 'error', correlationId: request.correlationId }
+    },
+    { before: previousStatus, after: state.status, guard: guardForTelemetry }
+  )
+  const statusBeforeDisable = state.status
   state.status = 'disabled'
   state.guard = {
     featureFlag: state.guard.featureFlag,
@@ -316,6 +325,14 @@ const handleNonRetryableError = (
       state.retryCount,
       state.lastSuccessAt
     )
+  )
+  emitTelemetry(
+    options,
+    {
+      name: 'autosave.status',
+      properties: { state: 'disabled', correlationId: request.correlationId }
+    },
+    { before: statusBeforeDisable, after: state.status, guard: state.guard }
   )
 }
 
@@ -431,6 +448,14 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           state.lastSuccessAt
         )
       )
+      emitTelemetry(
+        options,
+        {
+          name: 'autosave.status',
+          properties: { state: 'disabled', correlationId: request.correlationId }
+        },
+        { before: statusBeforeRequest, after: state.status, guard: state.guard }
+      )
       return
     }
 
@@ -500,6 +525,18 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             state.retryCount,
             state.lastSuccessAt
           )
+        )
+        emitTelemetry(
+          options,
+          {
+            name: 'autosave.status',
+            properties: {
+              state: 'backoff',
+              correlationId: request.correlationId,
+              attempt: state.retryCount
+            }
+          },
+          { before: statusBeforeBackoff, after: state.status, guard: state.guard }
         )
         emitTelemetry(
           options,
