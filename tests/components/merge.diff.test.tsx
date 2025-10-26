@@ -7,6 +7,13 @@ import {
   type MergeDockPhasePlan,
 } from '../../src/components/MergeDock.tsx'
 
+test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
+  const snapshot = resolveMergeThresholdSnapshot({ workspace: null, storage: null })
+
+  assert.equal(snapshot.threshold, 0.75)
+  assert.equal(snapshot.precision, 'legacy')
+})
+
 test('legacy precision clamps threshold and hides diff tab', () => {
   const plan = resolveMergeDockPhasePlan({ precision: 'legacy', threshold: 0.6 })
 

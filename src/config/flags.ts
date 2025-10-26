@@ -18,7 +18,7 @@ export const DEFAULT_FLAGS = {
     profile: {
       tokenizer: 'char' as const,
       granularity: 'section' as const,
-      threshold: 0.72,
+      threshold: 0.75,
       prefer: 'none' as const
     }
   }
