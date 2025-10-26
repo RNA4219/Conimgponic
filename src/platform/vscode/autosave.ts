@@ -470,13 +470,13 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       const domExceptionCtor = typeof DOMException === 'undefined' ? undefined : DOMException
       const isDomException =
         domExceptionCtor !== undefined && rawError instanceof domExceptionCtor
-      const notAllowedDomException =
+      const isNotAllowedDomException =
         isDomException && (rawError as DOMException).name === 'NotAllowedError'
       const error: AutoSaveError = {
         name: 'AutoSaveError',
         message: rawError instanceof Error ? rawError.message : String(rawError),
         code: 'write-failed',
-        retryable: !notAllowedDomException,
+        retryable: !isNotAllowedDomException,
         cause: rawError instanceof Error ? rawError : undefined
       }
       writeResult = { ok: false, error }

@@ -443,9 +443,13 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(lastResult.payload.retainedBytes, history.retainedBytes)
   })
 
-  it('keeps retryable=true and backoff when atomicWrite throws', async () => {
+  it('keeps retryable=true and backoff when atomicWrite throws DOMException', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const telemetry: AutoSaveTelemetryEvent[] = []
+    const domError =
+      typeof DOMException === 'function'
+        ? new DOMException('opfs-busy', 'InvalidStateError')
+        : Object.assign(new Error('opfs-busy'), { name: 'InvalidStateError' })
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
       initialGuard: guardEnabled,
@@ -453,7 +457,7 @@ describe('createVscodeAutoSaveBridge', () => {
       now: () => new Date('2024-01-01T00:00:00.000Z'),
       sendMessage: (msg) => sent.push(msg),
       atomicWrite: async () => {
-        throw new Error('opfs-busy')
+        throw domError
       },
       telemetry: (event) => telemetry.push(event)
     })
@@ -470,6 +474,7 @@ describe('createVscodeAutoSaveBridge', () => {
     }
     assert.equal(result.payload.error.code, 'write-failed')
     assert.equal(result.payload.error.retryable, true)
+    assert.equal(result.payload.error.cause?.name, domError.name)
 
     const statuses = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave')
     assert.deepEqual(
@@ -485,6 +490,7 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(snapshotTelemetry.properties?.retryable, true)
     assert.equal(snapshotTelemetry.properties?.code, 'write-failed')
     assert.equal(snapshotTelemetry.properties?.phaseAfter, 'backoff')
+    assert.equal(snapshotTelemetry.properties?.attempt, 1)
 
     const state = bridge.inspectState()
     assert.equal(state.status, 'backoff')
