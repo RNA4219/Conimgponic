@@ -7,7 +7,6 @@ import {
   type PluginBridgeBackingState,
   type PluginCollector,
   type PluginCollectorEvent,
-  type PluginCollectorFlagResolutionEvent,
   type PluginPhaseGuard,
 } from '../../../src/platform/vscode/plugins/index.js';
 
@@ -44,6 +43,52 @@ const stubPerformance = (values: readonly number[]): (() => void) => {
   };
 };
 
+const expectFlagTelemetry = (
+  events: readonly PluginCollectorEvent[],
+  config: {
+    readonly origin: string;
+    readonly phase: string;
+    readonly evaluationMs: number;
+    readonly flags: ReadonlyArray<readonly [string, unknown]>;
+  }
+): void => {
+  const telemetry = events.filter(
+    (message): message is Record<string, unknown> =>
+      !!message &&
+      typeof message === 'object' &&
+      (message as Record<string, unknown>).kind === 'telemetry'
+  );
+  assert.equal(telemetry.length, config.flags.length);
+
+  const actual = telemetry
+    .map((entry) => {
+      assert.equal(entry.feature, 'config.flags');
+      assert.equal(entry.event, 'flag_resolution');
+      assert.equal(entry.source, config.origin);
+      assert.equal(entry.phase, config.phase);
+
+      const evaluationMs = entry.evaluation_ms;
+      assert.equal(typeof evaluationMs, 'number');
+      assert.ok(Number.isFinite(evaluationMs));
+      assert.equal(evaluationMs, config.evaluationMs);
+
+      return [String(entry.flag), entry.variant] as const;
+    })
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
+  const expected = config.flags
+    .map(([flag, variant]) => [flag, variant] as const)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
+  assert.deepEqual(actual, expected);
+};
+
+const DEFAULT_FLAG_VARIANTS: ReadonlyArray<readonly [string, unknown]> = [
+  ['autosave.enabled', false] as const,
+  ['plugins.enable', false] as const,
+  ['merge.precision', 'legacy'] as const,
+];
+
 test('bootstrapPluginBridge skips initialization when plugin flag disabled', () => {
   const published: PluginCollectorEvent[] = [];
   const collector: PluginCollector = {
@@ -77,20 +122,12 @@ test('bootstrapPluginBridge skips initialization when plugin flag disabled', () 
   });
 
   assert.equal(bridge, undefined);
-  const telemetry = published.filter(
-    (message): message is PluginCollectorFlagResolutionEvent => message.kind === 'telemetry'
-  );
-  assert.equal(telemetry.length, 1);
-  const event = telemetry[0];
-  assert.equal(event.event, 'flag_resolution');
-  assert.equal(event.snapshot.plugins.enabled, false);
-  assert.equal(event.snapshot.plugins.source, 'workspace');
-  assert.ok(Array.isArray(event.errors));
-  assert.equal(event.errors.length, 0);
-  assert.equal(typeof event.evaluation_ms, 'number');
-  assert.ok(Number.isFinite(event.evaluation_ms));
-  assert.equal(event.evaluation_ms, 44);
-  assert.ok(event.evaluation_ms >= 0);
+  expectFlagTelemetry(published, {
+    origin: 'vscode.plugins',
+    phase: 'bootstrap',
+    evaluationMs: 44,
+    flags: DEFAULT_FLAG_VARIANTS,
+  });
 
   restorePerformance();
 });
@@ -124,25 +161,12 @@ test('bootstrapPluginBridge publishes flag resolution telemetry for plan snapsho
   });
 
   assert.equal(bridge, undefined);
-  const telemetry = published.filter(
-    (message): message is PluginCollectorFlagResolutionEvent => message.kind === 'telemetry'
-  );
-  assert.equal(telemetry.length, 1);
-  const event = telemetry[0];
-  assert.equal(event.event, 'flag_resolution');
-  assert.equal(event.feature, 'config.flags');
-  assert.equal(event.source, 'vscode.plugins');
-  assert.equal(event.phase, 'bootstrap');
-  assert.match(event.ts, /^\d{4}-\d{2}-\d{2}T/);
-  assert.ok(event.snapshot.plugins);
-  assert.equal(event.snapshot.plugins.enabled, false);
-  assert.equal(event.snapshot.plugins.source, 'default');
-  assert.ok(Array.isArray(event.errors));
-  assert.ok(event.errors.length > 0);
-  assert.equal(typeof event.evaluation_ms, 'number');
-  assert.ok(Number.isFinite(event.evaluation_ms));
-  assert.equal(event.evaluation_ms, 92);
-  assert.ok(event.evaluation_ms >= 0);
+  expectFlagTelemetry(published, {
+    origin: 'vscode.plugins',
+    phase: 'bootstrap',
+    evaluationMs: 92,
+    flags: DEFAULT_FLAG_VARIANTS,
+  });
 
   restorePerformance();
 });
