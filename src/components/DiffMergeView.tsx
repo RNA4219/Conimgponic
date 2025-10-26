@@ -153,7 +153,39 @@ const DIFF_MERGE_TAB_STORAGE_PREFIX='diff-merge.lastTab.' as const
 
 export interface DiffMergeTabStorage{readonly getItem:(key:string)=>string|null;readonly setItem:(key:string,value:string)=>void;readonly removeItem?:(key:string)=>void}
 
-export const resolveDiffMergeStoredTab=({plan,precision,storage,fallback}:{readonly plan:DiffMergeViewPlan;readonly precision:MergePrecision;readonly storage?:DiffMergeTabStorage;readonly fallback?:DiffMergeSubTabKey|null;}):DiffMergeSubTabKey=>{const storageKey=`${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`;const stored=storage?.getItem(storageKey)??null;const isAllowed=(key:DiffMergeSubTabKey|null|undefined):key is DiffMergeSubTabKey=>!!key&&plan.tabs.some((tab)=>tab.key===key);if(stored&&!isAllowed(stored as DiffMergeSubTabKey))storage?.removeItem?.(storageKey);if(isAllowed(stored as DiffMergeSubTabKey|null))return stored as DiffMergeSubTabKey;if(isAllowed(fallback??null))return fallback as DiffMergeSubTabKey;return plan.initialTab}
+export const resolveDiffMergeStoredTab = ({
+  plan,
+  precision,
+  storage,
+  fallback,
+}: {
+  readonly plan: DiffMergeViewPlan
+  readonly precision: MergePrecision
+  readonly storage?: DiffMergeTabStorage
+  readonly fallback?: DiffMergeSubTabKey | null
+}): DiffMergeSubTabKey => {
+  const storageKey = `${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`
+  const stored = storage?.getItem(storageKey) ?? null
+  const isAllowed = (key: DiffMergeSubTabKey | null | undefined): key is DiffMergeSubTabKey =>
+    !!key && plan.tabs.some((tab) => tab.key === key)
+
+  if (stored && !isAllowed(stored as DiffMergeSubTabKey)) {
+    storage?.removeItem?.(storageKey)
+  }
+
+  if (isAllowed(stored as DiffMergeSubTabKey | null)) {
+    return stored as DiffMergeSubTabKey
+  }
+
+  const resolvedFallback = isAllowed(fallback ?? null) ? (fallback as DiffMergeSubTabKey) : null
+  const resolved = resolvedFallback ?? plan.initialTab
+
+  if (storage && resolved !== stored) {
+    storage.setItem(storageKey, resolved)
+  }
+
+  return resolved
+}
 
 const flowDiagrams = Object.freeze<Record<MergePrecision, string>>({
   legacy: 'mermaid\nstateDiagram-v2\n  [*] --> Review\n  Review --> Review: toggle-select | mark-skipped\n  Review --> Review: override | reopen\n  Review --> [*]: queue-merge\n',
@@ -335,6 +367,8 @@ export interface DiffMergeViewProps {
 export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, queueMergeCommand }) => {
   const plan = useMemo(() => planDiffMergeView(precision), [precision])
   const storage = (globalThis as { localStorage?: DiffMergeTabStorage }).localStorage
+  const storageKey = useMemo(() => `${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`, [precision])
+  const allowedTabKeys = useMemo(() => new Set(plan.tabs.map((tab) => tab.key)), [plan])
   const resolvedInitialTab = useMemo(
     () => resolveDiffMergeStoredTab({ plan, precision, storage, fallback: plan.initialTab }),
     [plan, precision, storage],
@@ -376,18 +410,23 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
 
   const persistTabSelection = useCallback(
     (key: DiffMergeSubTabKey) => {
-      if (!storage) return
-      storage.setItem(`${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`, key)
+      if (!storage || !allowedTabKeys.has(key)) {
+        return
+      }
+      storage.setItem(storageKey, key)
     },
-    [precision, storage],
+    [allowedTabKeys, storage, storageKey],
   )
 
   const handleSelectTab = useCallback(
     (key: DiffMergeSubTabKey) => {
+      if (!allowedTabKeys.has(key)) {
+        return
+      }
       setActiveTab(key)
       persistTabSelection(key)
     },
-    [persistTabSelection, setActiveTab],
+    [allowedTabKeys, persistTabSelection, setActiveTab],
   )
 
   const planTabs = plan.tabs
