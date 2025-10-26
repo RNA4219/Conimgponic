@@ -10,15 +10,41 @@ import {
 } from '../../src/config'
 import { resolveAutoSaveBootstrapPlanForApp } from '../../src/App'
 
+const stubPerformance = (values: readonly number[]): (() => void) => {
+  const scope = globalThis as typeof globalThis & {
+    performance?: { now(): number }
+  }
+  const original = scope.performance
+  const remaining = [...values]
+  scope.performance = {
+    now() {
+      const next = remaining.shift()
+      if (typeof next === 'number') {
+        return next
+      }
+      return remaining[0] ?? 0
+    }
+  } as Performance
+  return () => {
+    if (original) {
+      scope.performance = original
+    } else {
+      delete scope.performance
+    }
+  }
+}
+
 test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with errors', () => {
   const emitted: unknown[] = []
   const scope = globalThis as { Day8Collector?: { publish: (event: unknown) => void } }
-  const original = scope.Day8Collector
+  const originalCollector = scope.Day8Collector
   scope.Day8Collector = {
     publish(event) {
       emitted.push(event)
     }
   }
+
+  const restorePerformance = stubPerformance([101, 149])
 
   try {
     const resolveOptions: ResolveOptions = {
@@ -43,6 +69,7 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
     const evaluationMs = event?.evaluation_ms
     assert.equal(typeof evaluationMs, 'number')
     assert.ok(Number.isFinite(evaluationMs))
+    assert.equal(evaluationMs, 48)
     assert.ok(evaluationMs >= 0)
 
     const snapshot = event?.snapshot as FlagSnapshot
@@ -57,8 +84,9 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
     assert.equal(firstError?.source, 'env')
     assert.equal(firstError?.phase, 'phase-a0')
   } finally {
-    if (original) {
-      scope.Day8Collector = original
+    restorePerformance()
+    if (originalCollector) {
+      scope.Day8Collector = originalCollector
     } else {
       delete scope.Day8Collector
     }
@@ -68,12 +96,14 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
 test('resolveAutoSaveBootstrapPlan publishes a single flag resolution telemetry event without duplicates', () => {
   const emitted: unknown[] = []
   const scope = globalThis as { Day8Collector?: { publish: (event: unknown) => void } }
-  const original = scope.Day8Collector
+  const originalCollector = scope.Day8Collector
   scope.Day8Collector = {
     publish(event) {
       emitted.push(event)
     }
   }
+
+  const restorePerformance = stubPerformance([201, 269])
 
   try {
     const plan = resolveAutoSaveBootstrapPlan()
@@ -91,6 +121,7 @@ test('resolveAutoSaveBootstrapPlan publishes a single flag resolution telemetry 
     const evaluationMs = event?.evaluation_ms
     assert.equal(typeof evaluationMs, 'number')
     assert.ok(Number.isFinite(evaluationMs))
+    assert.equal(evaluationMs, 68)
     assert.ok(evaluationMs >= 0)
 
     const snapshot = event?.snapshot as FlagSnapshot
@@ -101,8 +132,9 @@ test('resolveAutoSaveBootstrapPlan publishes a single flag resolution telemetry 
     assert.ok(Array.isArray(errors))
     assert.equal(errors.length, 0)
   } finally {
-    if (original) {
-      scope.Day8Collector = original
+    restorePerformance()
+    if (originalCollector) {
+      scope.Day8Collector = originalCollector
     } else {
       delete scope.Day8Collector
     }
@@ -111,13 +143,15 @@ test('resolveAutoSaveBootstrapPlan publishes a single flag resolution telemetry 
 
 test('App bootstrap publishes flag resolution telemetry only once', () => {
   const scope = globalThis as { Day8Collector?: { publish: (event: unknown) => void } }
-  const original = scope.Day8Collector
+  const originalCollector = scope.Day8Collector
   const emitted: unknown[] = []
   scope.Day8Collector = {
     publish(event) {
       emitted.push(event)
     }
   }
+
+  const restorePerformance = stubPerformance([311, 359])
 
   try {
     const recorded: unknown[] = []
@@ -136,6 +170,7 @@ test('App bootstrap publishes flag resolution telemetry only once', () => {
     const evaluationMs = event?.evaluation_ms
     assert.equal(typeof evaluationMs, 'number')
     assert.ok(Number.isFinite(evaluationMs))
+    assert.equal(evaluationMs, 48)
     assert.ok(evaluationMs >= 0)
 
     const snapshot = event?.snapshot as FlagSnapshot
@@ -147,8 +182,9 @@ test('App bootstrap publishes flag resolution telemetry only once', () => {
     assert.equal(recorded.length, 1)
     assert.strictEqual(recorded[0], plan)
   } finally {
-    if (original) {
-      scope.Day8Collector = original
+    restorePerformance()
+    if (originalCollector) {
+      scope.Day8Collector = originalCollector
     } else {
       delete scope.Day8Collector
     }
