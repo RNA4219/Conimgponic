@@ -77,6 +77,7 @@ export function resolveAutoSaveBootstrapPlan(
   const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
 
   const workspaceInput: WorkspaceConfiguration | null | undefined = options?.workspace
+  // Phase A: `resolveAutoSavePolicy` は入力に関わらず固定値を返す（docs/AUTOSAVE-DESIGN-IMPL.md §1.1）。
   const workspacePolicy = resolveAutoSavePolicy(workspaceInput)
 
   return {
