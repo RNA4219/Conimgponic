@@ -174,7 +174,7 @@ test('createVscodeAutoSaveBridge shares AUTOSAVE-DESIGN-IMPL Phase A defaults', 
   assert.equal(last.payload.retainedBytes, history.retainedBytes)
 })
 
-test('resolveAutoSavePolicy keeps AUTOSAVE-DESIGN-IMPL Phase A thresholds despite overrides', async () => {
+test('resolveAutoSavePolicy keeps Phase A fixed limits (docs/AUTOSAVE-DESIGN-IMPL.md §1.1, docs/MERGE-DESIGN-IMPL.md §0.4)', async () => {
   cache.clear()
   const { resolveAutoSaveBootstrapPlan } = await importTs(join(root, 'src/config/index.ts'))
   const { initAutoSave, resolveAutoSavePolicy, AUTOSAVE_POLICY } = await importTs(
@@ -189,12 +189,14 @@ test('resolveAutoSavePolicy keeps AUTOSAVE-DESIGN-IMPL Phase A thresholds despit
     process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = '100'
 
     const plan = resolveAutoSaveBootstrapPlan({ workspace: null })
-    assert.equal(plan.policy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
-    assert.equal(plan.policy.maxBytes, AUTOSAVE_POLICY.maxBytes)
+    assert.equal(plan.policy, AUTOSAVE_POLICY)
+    assert.equal(plan.policy.maxGenerations, 20)
+    assert.equal(plan.policy.maxBytes, 50 * 1024 * 1024)
 
     const envPolicy = resolveAutoSavePolicy()
-    assert.equal(envPolicy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
-    assert.equal(envPolicy.maxBytes, AUTOSAVE_POLICY.maxBytes)
+    assert.equal(envPolicy, AUTOSAVE_POLICY)
+    assert.equal(envPolicy.maxGenerations, 20)
+    assert.equal(envPolicy.maxBytes, 50 * 1024 * 1024)
 
     const workspace = {
       get(key: string): unknown {
@@ -210,12 +212,14 @@ test('resolveAutoSavePolicy keeps AUTOSAVE-DESIGN-IMPL Phase A thresholds despit
     }
 
     const workspacePolicyPlan = resolveAutoSaveBootstrapPlan({ workspace })
-    assert.equal(workspacePolicyPlan.policy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
-    assert.equal(workspacePolicyPlan.policy.maxBytes, AUTOSAVE_POLICY.maxBytes)
+    assert.equal(workspacePolicyPlan.policy, AUTOSAVE_POLICY)
+    assert.equal(workspacePolicyPlan.policy.maxGenerations, 20)
+    assert.equal(workspacePolicyPlan.policy.maxBytes, 50 * 1024 * 1024)
 
     const workspacePolicy = resolveAutoSavePolicy(workspace)
-    assert.equal(workspacePolicy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
-    assert.equal(workspacePolicy.maxBytes, AUTOSAVE_POLICY.maxBytes)
+    assert.equal(workspacePolicy, AUTOSAVE_POLICY)
+    assert.equal(workspacePolicy.maxGenerations, 20)
+    assert.equal(workspacePolicy.maxBytes, 50 * 1024 * 1024)
 
     const opfs = createOpfsMock()
     Object.defineProperty(globalThis, 'navigator', {
