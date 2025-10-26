@@ -11,6 +11,6 @@
 - コマンド: `pnpm test --filter monitor -- --scenario threshold-breach`
 
 ## ロールバックトリガー
-- 入力: Phase B-0、`merge_auto_success_rate=0.72`（閾値 0.8 未満）、Phase B 移行フラグ。
+- 入力: Phase B-0、`merge_auto_success_rate=0.75`（閾値 0.8 未満）、Phase B 移行フラグ。
 - 期待: PagerDuty 通知 payload 生成、`pnpm run flags:rollback --phase A-2` がロールバックコマンドとして記録。
 - コマンド: `pnpm test --filter monitor -- --scenario rollback`
