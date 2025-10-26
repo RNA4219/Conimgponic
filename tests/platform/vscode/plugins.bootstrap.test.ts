@@ -20,6 +20,30 @@ const createState = (): PluginBridgeBackingState => ({
   hooks: new Set(),
 });
 
+const stubPerformance = (values: readonly number[]): (() => void) => {
+  const scope = globalThis as typeof globalThis & {
+    performance?: { now(): number }
+  };
+  const original = scope.performance;
+  const remaining = [...values];
+  scope.performance = {
+    now() {
+      const next = remaining.shift();
+      if (typeof next === 'number') {
+        return next;
+      }
+      return remaining[0] ?? 0;
+    },
+  } as Performance;
+  return () => {
+    if (original) {
+      scope.performance = original;
+    } else {
+      delete scope.performance;
+    }
+  };
+};
+
 test('bootstrapPluginBridge skips initialization when plugin flag disabled', () => {
   const published: PluginCollectorEvent[] = [];
   const collector: PluginCollector = {
@@ -40,6 +64,8 @@ test('bootstrapPluginBridge skips initialization when plugin flag disabled', () 
       return undefined;
     },
   };
+
+  const restorePerformance = stubPerformance([401, 445]);
 
   const bridge = bootstrapPluginBridge({
     platformVersion: '1.35.2',
@@ -63,7 +89,10 @@ test('bootstrapPluginBridge skips initialization when plugin flag disabled', () 
   assert.equal(event.errors.length, 0);
   assert.equal(typeof event.evaluation_ms, 'number');
   assert.ok(Number.isFinite(event.evaluation_ms));
+  assert.equal(event.evaluation_ms, 44);
   assert.ok(event.evaluation_ms >= 0);
+
+  restorePerformance();
 });
 
 test('bootstrapPluginBridge publishes flag resolution telemetry for plan snapshot', () => {
@@ -78,6 +107,8 @@ test('bootstrapPluginBridge publishes flag resolution telemetry for plan snapsho
       return phase === 'plugins:reload';
     },
   };
+
+  const restorePerformance = stubPerformance([511, 603]);
 
   const bridge = bootstrapPluginBridge({
     platformVersion: '1.35.2',
@@ -110,5 +141,8 @@ test('bootstrapPluginBridge publishes flag resolution telemetry for plan snapsho
   assert.ok(event.errors.length > 0);
   assert.equal(typeof event.evaluation_ms, 'number');
   assert.ok(Number.isFinite(event.evaluation_ms));
+  assert.equal(event.evaluation_ms, 92);
   assert.ok(event.evaluation_ms >= 0);
+
+  restorePerformance();
 });
