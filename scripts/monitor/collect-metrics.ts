@@ -617,14 +617,25 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'plugins.completed',
         description: 'プラグイン成功結果を Reporter がサマリに集計する。',
-        jsonlFields: ['payload.pluginId', 'payload.result', 'payload.duration_ms'],
+        jsonlFields: [
+          'payload.pluginId',
+          'payload.action',
+          'payload.result',
+          'payload.duration_ms'
+        ],
         retryable: false,
         pipelineStage: 'reporter',
       },
       {
         event: 'plugins.failed',
         description: 'Sandbox 違反や失敗を rollbackTo 指標と連動させる。',
-        jsonlFields: ['payload.pluginId', 'payload.result', 'payload.sandboxViolation'],
+        jsonlFields: [
+          'payload.pluginId',
+          'payload.action',
+          'payload.result',
+          'payload.duration_ms',
+          'payload.sandboxViolation'
+        ],
         retryable: true,
         pipelineStage: 'reporter',
         guardrail: {
