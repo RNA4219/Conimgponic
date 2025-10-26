@@ -9,6 +9,8 @@ Day8 のリリースは Katamari propose-only 方針に従い、全変更を PR 
 
 ## 2. 実装ブランチ準備
 - [ ] Python 3.11+ の仮想環境で（リポジトリルートの）`pip install -r workflow-cookbook/requirements.txt` を実行し、ローカル CI コマンドを揃える。
+- [ ] `pytest Day8/workflow-cookbook/tests/test_requirements_install.py -k pip_install_requirements`
+      の結果を保存し、要件ファイルが CI スイート向けにそのまま導入できることを示す。
 - [ ] 取得した環境で lint（`ruff check Day8/workflow-cookbook`）、型検査（`mypy --strict Day8/workflow-cookbook`）、
       テスト（`pytest Day8/workflow-cookbook/tests` / `node --test`）の実行結果を記録し、失敗時は fixup ではなく再実装で対応する。
 - [ ] 依存スキャン（`pip-audit`。Python 側は `pip-audit -r workflow-cookbook/requirements.txt` を推奨）の結果を取得し、既知脆弱性がないことを確認する。
