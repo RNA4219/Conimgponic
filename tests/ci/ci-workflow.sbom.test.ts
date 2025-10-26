@@ -10,6 +10,8 @@ import { describe, test } from 'node:test';
 type WorkflowYaml = { jobs?: { sbom?: WorkflowJob } };
 type WorkflowJob = { steps?: StepConfig[] };
 type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown; if?: unknown };
+type ActionStep<TConfig extends Record<string, unknown>> = StepConfig & { uses: string; with: TConfig };
+type AnchoreSbomConfig = { format: string; 'output-file': string };
 type UploadArtifactConfig = {
   name: string;
   path: string;
@@ -22,18 +24,24 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
 
 describe('ci workflow sbom job', () => {
-  test('generates sbom.json via Syft and always uploads artifact', async () => {
+  test('generates sbom.json via Anchore SBOM action and always uploads artifact', async () => {
     try {
       const workflow = await loadWorkflow();
       const sbomSteps = expectJobSteps(workflow.jobs?.sbom, 'sbom job must exist');
-      const syftStep = expectRunStep(
+      const sbomAction = expectActionStep<AnchoreSbomConfig>(
         sbomSteps,
-        (step) => typeof step.run === 'string' && step.run.includes('syft') && step.run.includes('sbom.json'),
-        'sbom job must run syft to produce sbom.json',
+        'anchore/sbom-action@v0.17.6',
+        'sbom job must use Anchore SBOM action to produce sbom.json',
       );
-      assert.ok(
-        syftStep.run.includes('cyclonedx-json=sbom.json'),
-        'syft command must output cyclonedx-json=sbom.json',
+      assert.strictEqual(
+        sbomAction.with.format,
+        'spdx-json',
+        'Anchore SBOM action must emit spdx-json format',
+      );
+      assert.strictEqual(
+        sbomAction.with['output-file'],
+        'sbom.json',
+        'Anchore SBOM action must output sbom.json',
       );
       const uploadStep = expectUploadStep(sbomSteps, 'sbom', 'sbom job must upload sbom.json artifact', {
         ifCondition: 'always()',
@@ -78,20 +86,22 @@ describe('ci workflow sbom job', () => {
   });
 });
 
-function expectRunStep(
+function expectActionStep<TConfig extends Record<string, unknown>>(
   steps: StepConfig[],
-  predicate: (step: StepConfig & { run: string }) => boolean,
+  uses: string,
   message: string,
-): StepConfig & { run: string } {
-  const match = steps.find((step): step is StepConfig & { run: string } => {
-    if (typeof step.run !== 'string') return false;
-    const withRun = step as StepConfig & { run: string };
-    return predicate(withRun);
+): ActionStep<TConfig> {
+  const match = steps.find((step): step is ActionStep<Record<string, unknown>> => {
+    if (typeof step.uses !== 'string') return false;
+    return step.uses.trim() === uses;
   });
   if (!match) {
     throw new Error(message);
   }
-  return match;
+  if (!match.with || typeof match.with !== 'object') {
+    throw new Error('action step must configure the with block');
+  }
+  return match as ActionStep<TConfig>;
 }
 
 function findUploadStep(steps: StepConfig[], name: string): UploadStep | undefined {
