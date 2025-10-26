@@ -19,7 +19,7 @@ export type TelemetryEventName =
   | 'flag_resolution'
   | 'merge.trace'
   | 'export.started'
-  | 'export.completed'
+  | 'export.success'
   | 'export.failed'
   | 'plugins.invoked'
   | 'plugins.completed'
@@ -104,8 +104,8 @@ export interface ExportStartedPayload extends ExportEventPayloadBase {
   readonly stage: 'started';
 }
 
-export interface ExportCompletedPayload extends ExportEventPayloadBase {
-  readonly stage: 'completed';
+export interface ExportSuccessPayload extends ExportEventPayloadBase {
+  readonly stage: 'success';
   readonly uri: string;
 }
 
@@ -132,7 +132,7 @@ export interface TelemetryPayloads {
   readonly 'flag_resolution': FlagResolutionPayload;
   readonly 'merge.trace': MergeTracePayload;
   readonly 'export.started': ExportStartedPayload;
-  readonly 'export.completed': ExportCompletedPayload;
+  readonly 'export.success': ExportSuccessPayload;
   readonly 'export.failed': ExportFailedPayload;
   readonly 'plugins.invoked': PluginEventPayload;
   readonly 'plugins.completed': PluginEventPayload;
@@ -578,16 +578,28 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         pipelineStage: 'collector',
       },
       {
-        event: 'export.completed',
+        event: 'export.success',
         description: 'Export 正常終了時の URI と duration を Reporter が通知テンプレートへ反映する。',
-        jsonlFields: ['payload.format', 'payload.uri', 'payload.duration_ms'],
+        jsonlFields: [
+          'payload.format',
+          'payload.runId',
+          'payload.uri',
+          'payload.duration_ms',
+        ],
         retryable: false,
         pipelineStage: 'reporter',
       },
       {
         event: 'export.failed',
         description: 'Export 失敗時に retryable と next_backoff_ms を記録しローリングバックログに登録する。',
-        jsonlFields: ['payload.error.code', 'payload.error.retryable', 'payload.error.next_backoff_ms'],
+        jsonlFields: [
+          'payload.format',
+          'payload.runId',
+          'payload.error.code',
+          'payload.error.message',
+          'payload.error.retryable',
+          'payload.error.next_backoff_ms',
+        ],
         retryable: true,
         pipelineStage: 'reporter',
         guardrail: {
