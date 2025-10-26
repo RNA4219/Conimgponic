@@ -98,5 +98,7 @@ scenario(
   async (_t, { initAutoSave }) => {
     const runner = initAutoSave(() => makeStoryboard([]), { disabled: false }, ENABLED_GUARD)
     await assert.rejects(runner.flushNow(), isAutoSaveError({ code: 'lock-unavailable', retryable: true }))
+    assert.equal(runner.snapshot().phase, 'backoff')
+    assert.equal(runner.snapshot().retryCount, 1)
   }
 )

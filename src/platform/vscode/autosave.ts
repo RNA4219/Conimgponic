@@ -12,7 +12,8 @@ import type {
   AutoSavePolicy,
   AutoSaveError
 } from '../../lib/autosave'
-import type { FlagSnapshot } from '../../config/index.js'
+import { resolveFlags } from '../../config/index.js'
+import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
 
 const toIso = (input: Date): string => input.toISOString()
 
@@ -78,7 +79,8 @@ export type AutoSaveAtomicWriteResult =
 export interface AutoSaveHostBridgeOptions {
   readonly policy: AutoSavePolicy
   readonly initialGuard: AutoSavePhaseGuardSnapshot
-  readonly flags: FlagSnapshot
+  readonly flags?: FlagSnapshot
+  readonly workspace?: WorkspaceConfiguration | null
   readonly now: () => Date
   readonly sendMessage: (message: AutoSaveBridgeMessage) => void
   readonly atomicWrite: (input: AutoSaveAtomicWriteInput) => Promise<AutoSaveAtomicWriteResult>
@@ -329,6 +331,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     retainedBytes: 0
   }
 
+  const bootstrapFlags =
+    options.flags ??
+    resolveFlags({ workspace: options.workspace ?? null, clock: options.now })
   const bootstrapReqId = nextReqId(state)
   const bootstrapCorrelationId = nextCorrelationId(state)
   options.sendMessage(
