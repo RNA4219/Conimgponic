@@ -425,6 +425,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const ts = toIso(options.now())
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
+      state.retryCount = 0
       options.sendMessage(
         createSnapshotResultMessage(request, ts, { ok: false, error: createDisabledError() })
       )
@@ -460,8 +461,11 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     }
 
     const statusBeforeSaving = state.status
+    const retryCountBeforeSaving = state.retryCount
     state.status = 'saving'
-    state.retryCount = 0
+    if (retryCountBeforeSaving === 0 && statusBeforeSaving !== 'backoff') {
+      state.retryCount = 0
+    }
     options.sendMessage(
       createStatusMessage(
         request.reqId,
