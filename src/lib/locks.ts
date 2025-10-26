@@ -381,10 +381,11 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   };
 
   const ready = createDeferred();
-  const releaseGate = createDeferred();
+  const releaseDeferred = createDeferred();
+  const completionDeferred = createDeferred();
   let released = false;
   let requestOutcome!: Promise<unknown>;
-  let requestDone!: Promise<void>;
+  let requestSettled!: Promise<void>;
 
   try {
     requestOutcome = locks
@@ -396,21 +397,42 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
             throw makeError('acquire-denied', 'Web Lock handle missing release', 'acquire', false);
           }
 
+          const releasedPromise = (lock as { released?: unknown }).released;
+
           webLockHandles.set(ctx.leaseId, {
             release: async () => {
               if (released) return;
               released = true;
-              releaseGate.resolve();
+              releaseDeferred.resolve();
+
+              let failure: unknown;
               try {
                 await lock.release();
+              } catch (error) {
+                failure = error;
+              }
+
+              try {
+                if (releasedPromise && typeof (releasedPromise as Promise<unknown>).then === 'function') {
+                  await releasedPromise;
+                }
+              } catch (error) {
+                if (failure === undefined) failure = error;
               } finally {
-                await requestDone;
+                completionDeferred.resolve();
+              }
+
+              await requestSettled;
+
+              if (failure !== undefined) {
+                throw failure;
               }
             },
           });
 
           ready.resolve();
-          await releaseGate.promise;
+          await releaseDeferred.promise;
+          await completionDeferred.promise;
         }
       )
       .catch((error) => {
@@ -421,7 +443,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
         if (!ready.isSettled()) ready.reject(projectError);
         throw projectError;
       });
-    requestDone = requestOutcome.then(
+    requestSettled = requestOutcome.then(
       () => undefined,
       () => undefined,
     );
