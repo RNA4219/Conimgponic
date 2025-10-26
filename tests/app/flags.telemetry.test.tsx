@@ -60,6 +60,45 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
   }
 })
 
+test('resolveAutoSaveBootstrapPlan publishes a single flag resolution telemetry event without duplicates', () => {
+  const emitted: unknown[] = []
+  const scope = globalThis as { Day8Collector?: { publish: (event: unknown) => void } }
+  const original = scope.Day8Collector
+  scope.Day8Collector = {
+    publish(event) {
+      emitted.push(event)
+    }
+  }
+
+  try {
+    const plan = resolveAutoSaveBootstrapPlan()
+
+    assert.ok(plan)
+    assert.equal(emitted.length, 1)
+
+    const event = emitted[0] as Record<string, unknown>
+    assert.equal(event?.event, 'flag_resolution')
+    assert.equal(event?.feature, 'config.flags')
+    assert.equal(event?.source, 'app.autosave')
+    assert.equal(event?.phase, 'bootstrap')
+    assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
+
+    const snapshot = event?.snapshot as FlagSnapshot
+    assert.deepEqual(snapshot, plan.snapshot)
+
+    const errors = event?.errors as readonly FlagValidationError[]
+    assert.equal(errors, plan.errors)
+    assert.ok(Array.isArray(errors))
+    assert.equal(errors.length, 0)
+  } finally {
+    if (original) {
+      scope.Day8Collector = original
+    } else {
+      delete scope.Day8Collector
+    }
+  }
+})
+
 test('App bootstrap publishes flag resolution telemetry only once', () => {
   const scope = globalThis as { Day8Collector?: { publish: (event: unknown) => void } }
   const original = scope.Day8Collector
