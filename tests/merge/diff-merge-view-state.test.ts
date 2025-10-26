@@ -297,3 +297,23 @@ test('queueMerge telemetry payload reflects current tab selection', async () => 
   await controller.queueMerge(['h1'])
   assert.equal(telemetryLastTab, 'merged')
 })
+
+test('queueMerge metadata disables auto save when autoApplied target is not met', async () => {
+  let capturedAutoSave: boolean | undefined
+  let state: DiffMergeState = createInitialDiffMergeState([createMergeHunk('h1')])
+  const dispatch: Dispatch = (action) => {
+    state = diffMergeReducer(state, action)
+  }
+  const controller = createDiffMergeController({
+    precision: 'stable',
+    dispatch,
+    queueMergeCommand: async (payload) => {
+      capturedAutoSave = payload.metadata.autoSaveRequested
+      return successEvent
+    },
+    getCurrentHunkIds: () => ['h1'],
+    autoApplied: { rate: 0.6, target: 0.8, meetsTarget: false },
+  })
+  await controller.queueMerge(['h1'])
+  assert.equal(capturedAutoSave, false)
+})
