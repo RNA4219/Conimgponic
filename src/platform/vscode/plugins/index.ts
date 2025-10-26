@@ -107,6 +107,7 @@ export interface PluginCollectorFlagResolutionEvent {
   readonly phase: 'bootstrap';
   readonly snapshot: FlagSnapshot;
   readonly errors: readonly FlagValidationError[];
+  readonly evaluation_ms: number;
   readonly ts: string;
 }
 
@@ -166,6 +167,7 @@ export function bootstrapPluginBridge(
     phase: 'bootstrap',
     snapshot: plan.snapshot,
     errors: plan.errors,
+    evaluation_ms: plan.evaluationMs,
     ts: new Date().toISOString(),
   };
   options.collector.publish(telemetryEvent);

@@ -274,6 +274,12 @@ describe('ci workflow build job', () => {
       '"Upload suite logs" step must run on all outcomes',
     );
 
+    assertUploadArtifactName(
+      uploadLogsStep,
+      'quality-${{ matrix.suite }}',
+      '"Upload suite logs" artifact must be named "quality-${{ matrix.suite }}"',
+    );
+
     assertUploadArtifactPaths(
       uploadLogsStep,
       [
@@ -651,6 +657,24 @@ function assertUploadArtifactPaths(
     const hasMatch = configuredPaths.includes(expectedPath);
     assert.ok(hasMatch, `${message}; path must include "${expectedPath}"`);
   }
+}
+
+function assertUploadArtifactName(
+  step: UploadArtifactStep,
+  expectedName: string,
+  message: string,
+): void {
+  const config = step.with;
+  if (!config || typeof config !== 'object') {
+    assert.fail(`${message}; step.with must be configured`);
+  }
+
+  const { name } = config as { name?: unknown };
+  if (typeof name !== 'string') {
+    assert.fail(`${message}; name must be configured as a string`);
+  }
+
+  assert.strictEqual(name.trim(), expectedName, message);
 }
 
 function assertMatrixEntries(value: unknown, message: string): asserts value is QualityMatrixEntry[] {

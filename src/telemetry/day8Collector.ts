@@ -22,6 +22,7 @@ export type Day8CollectorFlagResolutionEvent = {
   readonly phase: string
   readonly snapshot: FlagSnapshot
   readonly errors: readonly FlagValidationError[]
+  readonly evaluation_ms: number
   readonly ts: string
 }
 
@@ -43,7 +44,8 @@ export const publishFlagResolution = (
   source: string,
   phase: string,
   snapshot: FlagSnapshot,
-  errors: readonly FlagValidationError[]
+  errors: readonly FlagValidationError[],
+  evaluationMs: number
 ): void => {
   const collector = getDay8Collector()
   if (!collector) {
@@ -56,6 +58,7 @@ export const publishFlagResolution = (
     phase,
     snapshot,
     errors,
+    evaluation_ms: evaluationMs,
     ts: new Date().toISOString()
   })
 }
