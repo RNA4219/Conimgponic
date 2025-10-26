@@ -11,11 +11,6 @@ export interface AutoSaveOptions {
    */
   readonly disabled?: boolean
   /**
-   * 保存ポリシーをフラグ/VSCode 設定から受け取り、履歴 FIFO や容量制限を同期する。
-   * `docs/AUTOSAVE-DESIGN-IMPL.md` §1 を参照。
-   */
-  readonly policy?: AutoSavePolicy
-  /**
    * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
    */
   readonly debounceMs?: never
@@ -899,7 +894,7 @@ export function initAutoSave(
   options?: AutoSaveOptions,
   flagSnapshot?: AutoSaveInitGuardInput
 ): AutoSaveInitResult {
-  const policy = options?.policy ?? resolveAutoSavePolicy()
+  const policy = resolveAutoSavePolicy()
   const truthy = /^(1|true)$/i, falsy = /^(0|false)$/i
   const asBool = (value: unknown): boolean | null => {
     if (typeof value === 'boolean') {
