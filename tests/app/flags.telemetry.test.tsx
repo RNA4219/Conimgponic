@@ -33,13 +33,26 @@ const stubPerformance = (values: readonly number[]): (() => void) => {
   }
 }
 
+type ExpectedFlagTelemetry = {
+  readonly flag: string
+  readonly variant: string
+  readonly source: string
+  readonly phase: string
+}
+
+const FLAG_PHASE_EXPECTATIONS: Record<string, string> = {
+  'autosave.enabled': 'A-0',
+  'plugins.enable': 'A-1',
+  'merge.precision': 'B-0'
+}
+
 const expectFlagTelemetry = (
   emitted: readonly unknown[],
   config: {
     readonly origin: string
     readonly phase: string
     readonly evaluationMs: number
-    readonly flags: ReadonlyArray<readonly [string, unknown]>
+    readonly flags: ReadonlyArray<ExpectedFlagTelemetry>
   }
 ): void => {
   const events = emitted.filter(
@@ -51,33 +64,93 @@ const expectFlagTelemetry = (
   assert.equal(events.length, config.flags.length)
   assert.equal(events.length, emitted.length)
 
+  const correlationIds = new Set<string>()
+  const reqIds = new Set<string>()
+
   const actual = events
     .map((event) => {
-      assert.equal(event.feature, 'config.flags')
+      const schema = event.schema
+      assert.equal(schema, 'vscode.telemetry.v1')
       assert.equal(event.event, 'flag_resolution')
-      assert.equal(event.source, config.origin)
-      assert.equal(event.phase, config.phase)
+      assert.equal(event.type, 'telemetry.config.flags')
+      assert.equal(event.apiVersion, 1)
 
-      const evaluationMs = event.evaluation_ms
+      const phase = event.phase
+      assert.equal(typeof phase, 'string')
+
+      const attempt = event.attempt
+      assert.equal(attempt, 1)
+
+      const maxAttempts = event.maxAttempts
+      assert.equal(maxAttempts, 3)
+
+      const backoffMs = event.backoffMs as unknown
+      assert.ok(Array.isArray(backoffMs))
+      assert.deepEqual(backoffMs, [100, 300, 900])
+
+      const correlationId = String(event.correlationId ?? '')
+      const originPattern = config.origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const phasePattern = config.phase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      assert.match(correlationId, new RegExp(`^${originPattern}:${phasePattern}:`))
+      correlationIds.add(correlationId)
+
+      const reqId = String(event.reqId ?? '')
+      assert.ok(reqId.length > 0)
+      reqIds.add(reqId)
+
+      const ts = String(event.ts ?? '')
+      assert.match(ts, /^\d{4}-\d{2}-\d{2}T/)
+
+      const payload = event.payload as Record<string, unknown>
+      assert.ok(payload)
+
+      const evaluationMs = payload.evaluation_ms
       assert.equal(typeof evaluationMs, 'number')
-      assert.ok(Number.isFinite(evaluationMs))
       assert.equal(evaluationMs, config.evaluationMs)
 
-      return [String(event.flag), event.variant] as const
+      const flag = String(payload.flag)
+      const variant = String(payload.variant)
+      const source = String(payload.source)
+      const payloadPhase = String(payload.phase)
+
+      assert.equal(phase, payloadPhase)
+      assert.equal(FLAG_PHASE_EXPECTATIONS[flag], payloadPhase)
+      assert.ok(variant.length > 0)
+      assert.ok(source.length > 0)
+
+      return { flag, variant, source, phase: payloadPhase }
     })
-    .sort((a, b) => a[0].localeCompare(b[0]))
+    .sort((a, b) => a.flag.localeCompare(b.flag))
+
+  assert.equal(correlationIds.size, 1)
+  assert.equal(reqIds.size, events.length)
 
   const expected = config.flags
-    .map(([flag, variant]) => [flag, variant] as const)
-    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map((entry) => ({ ...entry }))
+    .sort((a, b) => a.flag.localeCompare(b.flag))
 
   assert.deepEqual(actual, expected)
 }
 
-const snapshotFlags = (snapshot: FlagSnapshot): ReadonlyArray<readonly [string, unknown]> => [
-  ['autosave.enabled', snapshot.autosave.value] as const,
-  ['plugins.enable', snapshot.plugins.value] as const,
-  ['merge.precision', snapshot.merge.value] as const
+const snapshotFlags = (snapshot: FlagSnapshot): ReadonlyArray<ExpectedFlagTelemetry> => [
+  {
+    flag: 'autosave.enabled',
+    variant: String(snapshot.autosave.value),
+    source: snapshot.autosave.source,
+    phase: FLAG_PHASE_EXPECTATIONS['autosave.enabled']
+  },
+  {
+    flag: 'plugins.enable',
+    variant: String(snapshot.plugins.value),
+    source: snapshot.plugins.source,
+    phase: FLAG_PHASE_EXPECTATIONS['plugins.enable']
+  },
+  {
+    flag: 'merge.precision',
+    variant: String(snapshot.merge.value),
+    source: snapshot.merge.source,
+    phase: FLAG_PHASE_EXPECTATIONS['merge.precision']
+  }
 ]
 
 test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with errors', () => {
@@ -206,6 +279,8 @@ test('resolvePluginBridgeBootstrapPlan publishes flag resolution telemetry with 
     }
   }
 
+  const restorePerformance = stubPerformance([401, 409])
+
   try {
     const resolveOptions: ResolveOptions = {
       env: {
@@ -216,32 +291,21 @@ test('resolvePluginBridgeBootstrapPlan publishes flag resolution telemetry with 
     const plan = resolvePluginBridgeBootstrapPlan(resolveOptions)
     assert.ok(plan)
     assert.ok(Array.isArray(plan.errors))
+    assert.ok(plan.errors.length > 0)
 
-    assert.equal(emitted.length, 1)
-    const event = emitted[0] as Record<string, unknown>
-    assert.equal(event?.event, 'flag_resolution')
-    assert.equal(event?.feature, 'config.flags')
-    assert.equal(event?.source, 'vscode.plugins')
-    assert.equal(event?.phase, 'bootstrap')
-    assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
+    expectFlagTelemetry(emitted, {
+      origin: 'vscode.plugins',
+      phase: 'bootstrap',
+      evaluationMs: plan.evaluationMs,
+      flags: snapshotFlags(plan.snapshot)
+    })
 
-    const evaluationMs = event?.evaluation_ms
-    assert.equal(typeof evaluationMs, 'number')
-    assert.ok(Number.isFinite(evaluationMs))
-    assert.ok(evaluationMs >= 0)
-
-    const snapshot = event?.snapshot as FlagSnapshot
-    assert.deepEqual(snapshot.plugins, plan.snapshot.plugins)
-
-    const errors = event?.errors as readonly FlagValidationError[]
-    assert.ok(Array.isArray(errors))
-    assert.ok(errors.length > 0)
-    assert.equal(errors, plan.errors)
-    const [firstError] = errors
+    const [firstError] = plan.errors
     assert.equal(firstError?.flag, 'plugins.enable')
     assert.equal(firstError?.source, 'env')
     assert.equal(firstError?.phase, 'phase-a1')
   } finally {
+    restorePerformance()
     if (original) {
       scope.Day8Collector = original
     } else {

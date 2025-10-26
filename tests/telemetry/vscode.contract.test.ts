@@ -103,6 +103,21 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload',
     ])
   })
+  test('telemetry envelope schema と Collector 契約の schema/apiVersion/type が一致する', () => {
+    assertOk(telemetrySchema.properties, 'telemetry schema must define envelope properties')
+    const schemaProperty = telemetrySchema.properties.schema
+    assertOk(schemaProperty, 'telemetry schema must declare schema property')
+    deepStrictEqual(schemaProperty.const, COLLECT_METRICS_CONTRACT.telemetry.schema)
+    deepStrictEqual(COLLECT_METRICS_CONTRACT.telemetry.schema, 'vscode.telemetry.v1')
+
+    const apiVersionProperty = telemetrySchema.properties.apiVersion
+    assertOk(apiVersionProperty, 'telemetry schema must declare apiVersion property')
+    deepStrictEqual(apiVersionProperty.const, 1)
+
+    const typeProperty = telemetrySchema.properties.type
+    assertOk(typeProperty, 'telemetry schema must declare type property')
+    deepStrictEqual(typeProperty.type, 'string')
+  })
   test('status.autosave telemetry は phase 情報と guard スナップショットを記録する', () => {
     const spec = findTelemetrySpec('status.autosave')
     assertOk(spec, 'status.autosave telemetry spec is missing')
