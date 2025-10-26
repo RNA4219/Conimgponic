@@ -16,8 +16,17 @@ interface LockHandleLike {
 
 type LockRequestCallback = (lock: LockHandleLike) => Promise<unknown> | unknown
 
+interface LockRequestOptions {
+  readonly mode?: 'exclusive' | 'shared'
+  readonly signal?: AbortSignal
+}
+
 interface LockManagerLike {
-  request(name: string, callback: LockRequestCallback): Promise<unknown>
+  request(
+    name: string,
+    optionsOrCallback: LockRequestOptions | LockRequestCallback,
+    callback?: LockRequestCallback
+  ): Promise<unknown>
 }
 
 interface NavigatorOverrides {
@@ -152,8 +161,14 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
   const navigatorValue = {
     storage: opfs.storage,
     locks: {
-      async request(_: string, cb: LockRequestCallback){
-        return cb({ async release(){} })
+      async request(
+        _: string,
+        optionsOrCallback: LockRequestOptions | LockRequestCallback,
+        callback?: LockRequestCallback
+      ){
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+        return handler({ async release(){} })
       },
       ...overrides.locks
     },
