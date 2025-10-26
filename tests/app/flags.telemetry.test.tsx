@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  FEATURE_FLAG_DEFINITIONS,
   resolveAutoSaveBootstrapPlan,
   resolvePluginBridgeBootstrapPlan,
   type FlagSnapshot,
+  type FlagValidationError,
   type ResolveOptions
 } from '../../src/config'
 import { resolveAutoSaveBootstrapPlanForApp } from '../../src/App'
@@ -33,13 +35,26 @@ const stubPerformance = (values: readonly number[]): (() => void) => {
   }
 }
 
+type FlagExpectation = {
+  readonly flag: string
+  readonly variant: string
+  readonly source: string
+  readonly phase: string
+  readonly errors: readonly FlagValidationError[]
+}
+
+const mapErrors = (
+  errors: readonly FlagValidationError[]
+): readonly FlagValidationError[] =>
+  [...errors].sort((a, b) => a.code.localeCompare(b.code))
+
 const expectFlagTelemetry = (
   emitted: readonly unknown[],
   config: {
     readonly origin: string
     readonly phase: string
     readonly evaluationMs: number
-    readonly flags: ReadonlyArray<readonly [string, unknown]>
+    readonly flags: readonly FlagExpectation[]
   }
 ): void => {
   const events = emitted.filter(
@@ -63,21 +78,68 @@ const expectFlagTelemetry = (
       assert.ok(Number.isFinite(evaluationMs))
       assert.equal(evaluationMs, config.evaluationMs)
 
-      return [String(event.flag), event.variant] as const
+      assert.ok(!('snapshot' in event))
+      assert.ok(!('errors' in event))
+
+      const payload = (event as { payload?: Record<string, unknown> }).payload
+      assert.ok(payload && typeof payload === 'object', 'flag_resolution payload must be provided')
+
+      const flag = String(payload.flag)
+      const variant = String(payload.variant)
+      const source = String(payload.source)
+      const phase = String(payload.phase)
+      const payloadEvaluation = payload.evaluation_ms
+      assert.equal(payloadEvaluation, config.evaluationMs)
+
+      const payloadErrors = Array.isArray(payload.errors)
+        ? (payload.errors as FlagValidationError[])
+        : []
+
+      return {
+        flag,
+        variant,
+        source,
+        phase,
+        errors: mapErrors(payloadErrors)
+      }
     })
-    .sort((a, b) => a[0].localeCompare(b[0]))
+    .sort((a, b) => a.flag.localeCompare(b.flag))
 
   const expected = config.flags
-    .map(([flag, variant]) => [flag, variant] as const)
-    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map((entry) => ({
+      flag: entry.flag,
+      variant: entry.variant,
+      source: entry.source,
+      phase: entry.phase,
+      errors: mapErrors(entry.errors)
+    }))
+    .sort((a, b) => a.flag.localeCompare(b.flag))
 
   assert.deepEqual(actual, expected)
 }
 
-const snapshotFlags = (snapshot: FlagSnapshot): ReadonlyArray<readonly [string, unknown]> => [
-  ['autosave.enabled', snapshot.autosave.value] as const,
-  ['plugins.enable', snapshot.plugins.value] as const,
-  ['merge.precision', snapshot.merge.value] as const
+const snapshotFlags = (snapshot: FlagSnapshot): readonly FlagExpectation[] => [
+  {
+    flag: 'autosave.enabled',
+    variant: String(snapshot.autosave.value),
+    source: snapshot.autosave.source,
+    phase: FEATURE_FLAG_DEFINITIONS['autosave.enabled'].phase,
+    errors: snapshot.autosave.errors
+  },
+  {
+    flag: 'plugins.enable',
+    variant: String(snapshot.plugins.value),
+    source: snapshot.plugins.source,
+    phase: FEATURE_FLAG_DEFINITIONS['plugins.enable'].phase,
+    errors: snapshot.plugins.errors
+  },
+  {
+    flag: 'merge.precision',
+    variant: String(snapshot.merge.value),
+    source: snapshot.merge.source,
+    phase: FEATURE_FLAG_DEFINITIONS['merge.precision'].phase,
+    errors: snapshot.merge.errors
+  }
 ]
 
 test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with errors', () => {
@@ -216,28 +278,24 @@ test('resolvePluginBridgeBootstrapPlan publishes flag resolution telemetry with 
     const plan = resolvePluginBridgeBootstrapPlan(resolveOptions)
     assert.ok(plan)
     assert.ok(Array.isArray(plan.errors))
+    expectFlagTelemetry(emitted, {
+      origin: 'vscode.plugins',
+      phase: 'bootstrap',
+      evaluationMs: plan.evaluationMs,
+      flags: snapshotFlags(plan.snapshot)
+    })
 
-    assert.equal(emitted.length, 1)
-    const event = emitted[0] as Record<string, unknown>
-    assert.equal(event?.event, 'flag_resolution')
-    assert.equal(event?.feature, 'config.flags')
-    assert.equal(event?.source, 'vscode.plugins')
-    assert.equal(event?.phase, 'bootstrap')
-    assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
+    const pluginEvent = emitted.find((candidate) => {
+      const payload = (candidate as { payload?: { flag?: unknown } }).payload
+      return payload?.flag === 'plugins.enable'
+    }) as { payload?: { errors?: readonly FlagValidationError[] } } | undefined
+    assert.ok(pluginEvent, 'flag_resolution telemetry should include plugins.enable payload')
 
-    const evaluationMs = event?.evaluation_ms
-    assert.equal(typeof evaluationMs, 'number')
-    assert.ok(Number.isFinite(evaluationMs))
-    assert.ok(evaluationMs >= 0)
-
-    const snapshot = event?.snapshot as FlagSnapshot
-    assert.deepEqual(snapshot.plugins, plan.snapshot.plugins)
-
-    const errors = event?.errors as readonly FlagValidationError[]
-    assert.ok(Array.isArray(errors))
-    assert.ok(errors.length > 0)
-    assert.equal(errors, plan.errors)
-    const [firstError] = errors
+    const payloadErrors = pluginEvent?.payload?.errors
+    assert.ok(Array.isArray(payloadErrors))
+    assert.deepEqual(payloadErrors, plan.snapshot.plugins.errors)
+    assert.ok(payloadErrors.length > 0)
+    const [firstError] = payloadErrors
     assert.equal(firstError?.flag, 'plugins.enable')
     assert.equal(firstError?.source, 'env')
     assert.equal(firstError?.phase, 'phase-a1')
