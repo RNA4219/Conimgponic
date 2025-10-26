@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from 'zustand'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
-import { resolveFlags, type FlagSnapshot } from '../config'
+import { DEFAULT_FLAGS, resolveFlags, type FlagSnapshot } from '../config'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
@@ -108,7 +108,7 @@ interface MergeThresholdRule {
 
 const DIFF_BACKUP_THRESHOLD_MS = 5 * 60 * 1000
 
-const DEFAULT_THRESHOLD = 0.75
+const DEFAULT_THRESHOLD = DEFAULT_FLAGS.merge.profile.threshold
 
 const THRESHOLD_RULES: Record<MergePrecision, MergeThresholdRule> = Object.freeze({
   legacy: {

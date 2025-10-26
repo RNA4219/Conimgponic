@@ -94,7 +94,7 @@ test('defaults are used when no sources apply', () => {
   assert.equal(snapshot.autosave.enabled, false)
   assert.equal(snapshot.autosave.source, 'default')
   assert.equal(snapshot.merge.source, 'default')
-  assert.equal(snapshot.merge.threshold, 0.75)
+  assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
   assert.ok(Number.isFinite(Date.parse(snapshot.updatedAt)))
 })
 

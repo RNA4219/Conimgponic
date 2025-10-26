@@ -74,7 +74,7 @@ test('resolveFlags falls back to default autosave and merge threshold when all s
 
   assert.equal(snapshot.autosave.enabled, false)
   assert.equal(snapshot.autosave.source, 'default')
-  assert.equal(snapshot.merge.threshold, 0.75)
+  assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
   assert.equal(snapshot.merge.source, 'default')
   assert.equal(snapshot.updatedAt, '2025-01-08T00:00:00.000Z')
 })
