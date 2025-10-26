@@ -34,8 +34,7 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
         next.scenes[i] = { ...sc, ...patch }
       }else{
         next.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed:o.seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take:o.take })
-        const nextIdx = next.scenes.length - 1
-        idx.set(o.id, nextIdx)
+        idx.set(o.id, next.scenes.length - 1)
       }
     }catch{ /* ignore bad line */ }
   }
@@ -81,8 +80,7 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
       next.scenes[j] = { ...sc, ...patch }
     }else{
       next.scenes.push({ id, manual: mode==='manual'? text:'', ai: mode==='ai'? text:'', status:'idle', seed: (Number.isFinite(seed)? seed: undefined), tone, assets: [], slate, shot, take })
-      const nextIdx = next.scenes.length - 1
-      idx.set(id, nextIdx)
+      idx.set(id, next.scenes.length - 1)
     }
   }
   return next
