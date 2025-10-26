@@ -268,6 +268,35 @@ describe('ci workflow build job', () => {
     );
   });
 
+  test('quality job run step captures suite output into logs directory', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const runSuiteStep = assertStepWithName(
+      steps,
+      'Run ${{ matrix.suite }} suite',
+      'quality job must include "Run ${{ matrix.suite }} suite" step',
+    );
+
+    assertStepRunIncludesLine(
+      runSuiteStep,
+      'mkdir -p logs',
+      '"Run ${{ matrix.suite }} suite" step must create logs directory',
+    );
+
+    assertStepRunIncludesLine(
+      runSuiteStep,
+      'tee "logs/${{ matrix.suite }}.log"',
+      '"Run ${{ matrix.suite }} suite" step must tee suite output into logs/${{ matrix.suite }}.log',
+    );
+  });
+
   test('uploads suite logs artifact on quality job matrix runs', async () => {
     const workflow = await readWorkflowYaml();
     const quality = workflow.jobs?.quality;
@@ -580,15 +609,6 @@ function assertStepWithName(
   return match;
 }
 
-function assertStepContinueOnError(step: StepConfig, message: string): void {
-  const value = step['continue-on-error'];
-  if (typeof value !== 'boolean') {
-    assert.fail(`${message}; step must configure continue-on-error as a boolean`);
-  }
-
-  assert.strictEqual(value, true, message);
-}
-
 function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.uses !== 'string') {
     assert.fail(`${message}; step.uses must be configured as a string`);
@@ -634,7 +654,7 @@ function assertStepRunIncludesLine(step: StepConfig, expectedLine: string, messa
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  const index = lines.findIndex((line) => line === expectedLine);
+  const index = lines.findIndex((line) => line.includes(expectedLine));
 
   assert.notStrictEqual(index, -1, message);
 }
