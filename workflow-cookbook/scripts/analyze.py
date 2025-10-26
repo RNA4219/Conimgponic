@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal, Sequence, TypedDict
 
 
-FLOWS: tuple[str, ...] = ("build", "audit", "sbom", "golden")
+FLOWS: tuple[str, ...] = ("build", "audit", "sbom", "license", "golden")
 DEFAULT_LOG = Path("workflow-cookbook/logs/test.jsonl")
 REPORT_PATH = Path("reports/day8/ci/summary.md")
 ISSUE_PATH = Path("reports/day8/ci/issues.md")
