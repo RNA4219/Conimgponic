@@ -1,4 +1,5 @@
 import type {
+  AutoSaveBridgeBootstrapMessage,
   AutoSaveBridgeMessage,
   AutoSavePhase,
   AutoSaveEnvelopePhase,
@@ -156,6 +157,29 @@ const PHASE_BOOTSTRAP: AutoSaveEnvelopePhase = 'A-0'
 const PHASE_STATUS: AutoSaveEnvelopePhase = 'A-1'
 const PHASE_SNAPSHOT: AutoSaveEnvelopePhase = 'A-2'
 
+const createBootstrapMessage = (
+  reqId: string,
+  correlationId: string,
+  ts: string,
+  policy: AutoSavePolicy,
+  guard: AutoSavePhaseGuardSnapshot,
+  flags: FlagSnapshot
+): AutoSaveBridgeBootstrapMessage => ({
+  type: 'bridge.bootstrap',
+  apiVersion: API_VERSION,
+  phase: PHASE_BOOTSTRAP,
+  bridgePhase: 'bootstrap',
+  reqId,
+  correlationId,
+  ts,
+  payload: {
+    version: 1,
+    policy,
+    guard,
+    flags
+  }
+})
+
 const createStatusMessage = (
   reqId: string,
   correlationId: string,
@@ -307,21 +331,16 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
 
   const bootstrapReqId = nextReqId(state)
   const bootstrapCorrelationId = nextCorrelationId(state)
-  options.sendMessage({
-    type: 'bridge.bootstrap',
-    apiVersion: API_VERSION,
-    phase: PHASE_BOOTSTRAP,
-    bridgePhase: 'bootstrap',
-    reqId: bootstrapReqId,
-    correlationId: bootstrapCorrelationId,
-    ts: toIso(options.now()),
-    payload: {
-      version: 1,
-      policy: options.policy,
-      guard: options.initialGuard,
-      flags: options.flags
-    }
-  })
+  options.sendMessage(
+    createBootstrapMessage(
+      bootstrapReqId,
+      bootstrapCorrelationId,
+      toIso(options.now()),
+      options.policy,
+      options.initialGuard,
+      options.flags
+    )
+  )
 
   const reportDirty = (pendingBytes: number, guard: AutoSavePhaseGuardSnapshot): void => {
     const previousStatus = state.status
