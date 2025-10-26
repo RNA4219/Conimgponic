@@ -27,6 +27,16 @@ type ScalarFormat = Exclude<ExportFormat, 'package'>
 
 const scalarFormats: readonly ScalarFormat[] = ['markdown', 'csv', 'jsonl']
 
+function buildNormalizedPath(entry: GoldenComparisonEntry, runId: string): string | null {
+  const base = `runs/${runId}/export`
+  if (entry.format === 'package') {
+    if (!entry.name) return null
+    return `${base}/package/${entry.name}`
+  }
+  const extension = entry.format === 'markdown' ? 'md' : entry.format
+  return `${base}/${entry.format}/storyboard.${extension}`
+}
+
 export function normalizeGoldenArtifact(
   format: ExportFormat,
   golden: GoldenArtifacts,
@@ -136,9 +146,22 @@ export function createTelemetryEvent(
     formats,
   }
   if (comparison.ok) {
+    basePayload.artifacts = comparison.entries.map((entry) => ({
+      format: entry.format,
+      name: entry.name ?? null,
+      status: entry.status,
+      uri: null,
+      normalizedPath: buildNormalizedPath(entry, runId),
+      durationMs: null,
+    }))
     return { event: 'export.success', payload: basePayload }
   }
-  basePayload.retryable = comparison.error?.retryable ?? false
+  const retryable = comparison.error?.retryable ?? false
+  basePayload.error = {
+    code: 'golden.comparison_failed',
+    retryable,
+    message: comparison.error?.message ?? 'Golden comparison failed',
+  }
   basePayload.entries = comparison.entries.map((entry) => ({
     format: entry.format,
     name: entry.name ?? null,
