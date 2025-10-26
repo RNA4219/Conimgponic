@@ -193,5 +193,103 @@ export interface DiffMergeViewProps {
   readonly hunks: readonly MergeHunk[]
   readonly queueMergeCommand: QueueMergeCommand
 }
+export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, queueMergeCommand }) => {
+  const plan = useMemo(() => planDiffMergeView(precision), [precision])
+  const [activeTab, setActiveTab] = useState(plan.initialTab)
 
-export const DiffMergeView:React.FC<DiffMergeViewProps>=({precision,hunks,queueMergeCommand})=>{const plan=useMemo(()=>planDiffMergeView(precision),[precision]);const [activeTab,setActiveTab]=useState(plan.initialTab);useEffect(()=>{setActiveTab(plan.initialTab)},[plan.initialTab]);const [state,dispatch]=useReducer(diffMergeReducer,hunks,createInitialDiffMergeState);const knownHunkIds=useMemo(()=>hunks.map((hunk)=>hunk.id),[hunks]);const previousHunkIdsRef=useRef<readonly string[]>([]);useEffect(()=>{const previous=previousHunkIdsRef.current;const next=knownHunkIds;if(previous.length===next.length&&previous.every((id,index)=>id===next[index]))return;const nextSet=new Set(next);const removed=previous.filter((id)=>!nextSet.has(id));if(removed.length>0)dispatch({type:'resetMany',hunkIds:removed});previousHunkIdsRef.current=next;dispatch({type:'syncHunks',hunks})},[dispatch,hunks,knownHunkIds]);const getCurrentHunkIds=useCallback(()=>knownHunkIds,[knownHunkIds]);const controller=useMemo(()=>createDiffMergeController({precision,dispatch,queueMergeCommand,getCurrentHunkIds}),[precision,dispatch,queueMergeCommand,getCurrentHunkIds]);const activeLayout=useMemo(()=>plan.tabs.find((tab)=>tab.key===activeTab)??plan.tabs[0]!,[plan,activeTab]);const selectedHunkIds=useMemo(()=>Object.entries(state.hunkStates).filter(([,status])=>status==='Selected'||status==='Editing').map(([id])=>id),[state.hunkStates]);const queueCandidateIds=selectedHunkIds.length>0?selectedHunkIds:knownHunkIds;const queueHunkIds=useMemo(()=>retainKnownHunkIds(queueCandidateIds,knownHunkIds),[queueCandidateIds,knownHunkIds]);const queueHunksJson=JSON.stringify(queueHunkIds);const editingHunkId=state.editingHunkId;const editingHunk=editingHunkId?hunks.find((hunk)=>hunk.id===editingHunkId):undefined;const navChildren=plan.tabs.map((tab)=>React.createElement('button',{key:tab.key,type:'button',role:'tab','data-testid':`diff-merge-tab-${tab.key}`,'data-tab':tab.key,'aria-selected':tab.key===activeTab,onClick:()=>setActiveTab(tab.key)},tab.label,tab.badge?React.createElement('span',{'data-badge':tab.badge},tab.badge.toUpperCase()):null));const hunkChildren=hunks.map((hunk)=>{const status=state.hunkStates[hunk.id]??'Unreviewed';const isSelected=status==='Selected'||status==='Editing';return React.createElement('article',{key:hunk.id,'data-testid':`diff-merge-hunk-${hunk.id}`,'data-hunk':hunk.id,'data-status':status},React.createElement('header',null,hunk.section??hunk.id),React.createElement('div',null,React.createElement('button',{type:'button','data-testid':`diff-merge-hunk-${hunk.id}-toggle`,'data-hunk':hunk.id,'aria-pressed':isSelected,onClick:()=>controller.toggleSelect(hunk.id)},'Toggle'),React.createElement('button',{type:'button','data-testid':`diff-merge-hunk-${hunk.id}-edit`,onClick:()=>controller.openEditor(hunk.id)},'Edit')))});const hunkList=activeLayout.panes.includes('hunk-list')?React.createElement('section',{'data-testid':'diff-merge-hunk-list'},...hunkChildren):null;const operationPane=activeLayout.panes.includes('operation-pane')?React.createElement('section',{'data-testid':'diff-merge-operation-pane','data-visible':selectedHunkIds.length>0?'true':'false'},React.createElement('button',{type:'button','data-testid':'diff-merge-queue-selected','data-command':'queue-merge','data-hunks':queueHunksJson,onClick:()=>{void controller.queueMerge(queueHunkIds)}},'Queue Selected')):null;const editModal=editingHunkId&&editingHunk?React.createElement('section',{role:'dialog','data-testid':'diff-merge-edit-modal','data-hunk':editingHunkId},React.createElement('header',null,editingHunk.section??editingHunk.id),React.createElement('button',{type:'button','data-action':'commit-edit',onClick:()=>controller.commitEdit(editingHunkId)},'Commit'),React.createElement('button',{type:'button','data-action':'cancel-edit',onClick:()=>controller.cancelEdit()},'Cancel')):null;return React.createElement('section',{'data-component':'diff-merge-view','data-precision':precision,'data-phase':plan.phase},React.createElement('nav',{role:'tablist','data-precision':precision,'data-navigation-badge':plan.navigationBadge??undefined},...navChildren),hunkList,operationPane,editModal)}
+  useEffect(() => {
+    setActiveTab(plan.initialTab)
+  }, [plan.initialTab])
+
+  const [state, dispatch] = useReducer(diffMergeReducer, hunks, createInitialDiffMergeState)
+  const knownHunkIds = useMemo(() => hunks.map((hunk) => hunk.id), [hunks])
+  const previousHunkIdsRef = useRef<readonly string[]>([])
+
+  useEffect(() => {
+    const previous = previousHunkIdsRef.current
+    const next = knownHunkIds
+    if (previous.length === next.length && previous.every((id, index) => id === next[index])) {
+      return
+    }
+    const nextSet = new Set(next)
+    const removed = previous.filter((id) => !nextSet.has(id))
+    if (removed.length > 0) {
+      dispatch({ type: 'resetMany', hunkIds: removed })
+    }
+    previousHunkIdsRef.current = next
+    dispatch({ type: 'syncHunks', hunks })
+  }, [dispatch, hunks, knownHunkIds])
+
+  const getCurrentHunkIds = useCallback(() => knownHunkIds, [knownHunkIds])
+  const controller = useMemo(() => createDiffMergeController({ precision, dispatch, queueMergeCommand, getCurrentHunkIds }), [precision, dispatch, queueMergeCommand, getCurrentHunkIds])
+  const activeLayout = useMemo(() => plan.tabs.find((tab) => tab.key === activeTab) ?? plan.tabs[0]!, [plan, activeTab])
+  const selectedHunkIds = useMemo(() => Object.entries(state.hunkStates).filter(([, status]) => status === 'Selected' || status === 'Editing').map(([id]) => id), [state.hunkStates])
+  const queueCandidateIds = selectedHunkIds.length > 0 ? selectedHunkIds : knownHunkIds
+  const queueHunkIds = useMemo(() => retainKnownHunkIds(queueCandidateIds, knownHunkIds), [queueCandidateIds, knownHunkIds])
+  const queueHunksJson = JSON.stringify(queueHunkIds)
+  const editingHunkId = state.editingHunkId
+  const editingHunk = editingHunkId ? hunks.find((hunk) => hunk.id === editingHunkId) : undefined
+
+  const navigation = plan.tabs.map((tab) => {
+    const badge = tab.badge ? <span data-badge={tab.badge}>{tab.badge.toUpperCase()}</span> : null
+    return (
+      <button key={tab.key} type="button" role="tab" data-testid={`diff-merge-tab-${tab.key}`} data-tab={tab.key} aria-selected={tab.key === activeTab} onClick={() => setActiveTab(tab.key)}>
+        {tab.label}
+        {badge}
+      </button>
+    )
+  })
+
+  const hunkList = activeLayout.panes.includes('hunk-list') ? (
+    <section data-testid="diff-merge-hunk-list">
+      {hunks.map((hunk) => {
+        const status = state.hunkStates[hunk.id] ?? 'Unreviewed'
+        const isSelected = status === 'Selected' || status === 'Editing'
+        return (
+          <article key={hunk.id} data-testid={`diff-merge-hunk-${hunk.id}`} data-hunk={hunk.id} data-status={status}>
+            <header>{hunk.section ?? hunk.id}</header>
+            <div>
+              <button type="button" data-testid={`diff-merge-hunk-${hunk.id}-toggle`} data-hunk={hunk.id} aria-pressed={isSelected} onClick={() => controller.toggleSelect(hunk.id)}>
+                Toggle
+              </button>
+              <button type="button" data-testid={`diff-merge-hunk-${hunk.id}-edit`} onClick={() => controller.openEditor(hunk.id)}>
+                Edit
+              </button>
+            </div>
+          </article>
+        )
+      })}
+    </section>
+  ) : null
+
+  const operationPane = activeLayout.panes.includes('operation-pane') ? (
+    <section data-testid="diff-merge-operation-pane" data-visible={selectedHunkIds.length > 0 ? 'true' : 'false'}>
+      <button type="button" data-testid="diff-merge-queue-selected" data-command="queue-merge" data-hunks={queueHunksJson} onClick={() => { void controller.queueMerge(queueHunkIds) }}>
+        Queue Selected
+      </button>
+    </section>
+  ) : null
+
+  const editModal = editingHunkId && editingHunk ? (
+    <section role="dialog" data-testid="diff-merge-edit-modal" data-hunk={editingHunkId}>
+      <header>{editingHunk.section ?? editingHunk.id}</header>
+      <button type="button" data-action="commit-edit" onClick={() => controller.commitEdit(editingHunkId)}>
+        Commit
+      </button>
+      <button type="button" data-action="cancel-edit" onClick={() => controller.cancelEdit()}>
+        Cancel
+      </button>
+    </section>
+  ) : null
+
+  return (
+    <section data-component="diff-merge-view" data-precision={precision} data-phase={plan.phase}>
+      <nav role="tablist" data-precision={precision} data-navigation-badge={plan.navigationBadge ?? undefined}>
+        {navigation}
+      </nav>
+      {hunkList}
+      {operationPane}
+      {editModal}
+    </section>
+  )
+}
