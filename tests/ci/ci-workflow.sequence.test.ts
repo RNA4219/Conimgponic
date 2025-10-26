@@ -38,13 +38,6 @@ type QualityJobStrategyConfig = {
 
 type QualityJobConfig = {
   strategy?: QualityJobStrategyConfig;
-};
-
-  };
-};
-
-type QualityJobConfig = {
-  strategy?: QualityJobStrategyConfig;
   steps?: StepConfig[];
 };
 
@@ -214,7 +207,7 @@ describe('ci workflow build job', () => {
 
       assertLineIncludes(
         auditRunLines,
-        'raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh',
+        'https://raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh',
         'audit job must install osv-scanner via official install script',
       );
 
