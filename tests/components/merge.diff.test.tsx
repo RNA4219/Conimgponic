@@ -4,6 +4,7 @@ import test from 'node:test'
 import { DEFAULT_FLAGS } from '../../src/config'
 import {
   resolveMergeDockPhasePlan,
+  resolveMergeThresholdPlan,
   resolveMergeThresholdSnapshot,
   type MergeDockPhasePlan,
 } from '../../src/components/MergeDock.tsx'
@@ -45,10 +46,10 @@ test('beta precision enables diff tab when review band is present', () => {
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
-  assert.equal(plan.threshold.request, 0.7)
-  assert.equal(plan.threshold.autoTarget, 0.75)
-  assert.deepEqual(plan.threshold.reviewBand, { min: 0.68, max: 0.75 })
-  assert.deepEqual(plan.threshold.conflictBand, { max: 0.68 })
+  assert.equal(plan.threshold.request, 0.75)
+  assert.equal(plan.threshold.autoTarget, 0.8)
+  assert.deepEqual(plan.threshold.reviewBand, { min: 0.73, max: 0.8 })
+  assert.deepEqual(plan.threshold.conflictBand, { max: 0.73 })
   assert.equal(plan.guard.phaseBRequired, true)
 })
 
@@ -136,6 +137,20 @@ test('stable precision sourced from workspace threshold stays opt-in without rev
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'default')
   assert.equal(plan.guard.phaseBRequired, false)
+})
+
+test('beta precision threshold never drops below 0.75', () => {
+  const plan = resolveMergeThresholdPlan('beta', 0.7)
+
+  assert.equal(plan.request, 0.75)
+  assert.equal(plan.slider.min, 0.75)
+})
+
+test('stable precision threshold never drops below 0.82', () => {
+  const plan = resolveMergeThresholdPlan('stable', 0.8)
+
+  assert.equal(plan.request, 0.82)
+  assert.equal(plan.slider.min, 0.82)
 })
 
 test('workspace threshold from resolveFlags updates diff exposure and clamp', () => {

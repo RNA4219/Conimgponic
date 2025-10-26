@@ -2,7 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from 'zustand'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
-import { DEFAULT_FLAGS, resolveFlags, type FlagSnapshot } from '../config'
+import {
+  BETA_THRESHOLD_DEFAULT,
+  DEFAULT_FLAGS,
+  STABLE_THRESHOLD_DEFAULT,
+  resolveFlags,
+  type FlagSnapshot,
+} from '../config'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
@@ -121,20 +127,20 @@ const THRESHOLD_RULES: Record<MergePrecision, MergeThresholdRule> = Object.freez
   beta: {
     phase: 'phase-b',
     diffExposure: 'opt-in',
-    clamp: { min: 0.68, max: 0.9 },
+    clamp: { min: BETA_THRESHOLD_DEFAULT, max: 0.9 },
     autoOffset: 0.05,
     reviewBand: { below: 0.02, above: 0.05 },
     conflictBand: { below: 0.02 },
-    slider: { min: 0.68, max: 0.9 },
+    slider: { min: BETA_THRESHOLD_DEFAULT, max: 0.9 },
   },
   stable: {
     phase: 'phase-b',
     diffExposure: 'default',
-    clamp: { min: 0.7, max: 0.94 },
+    clamp: { min: STABLE_THRESHOLD_DEFAULT, max: 0.94 },
     autoOffset: 0.03,
     reviewBand: { below: 0.01, above: 0.03 },
     conflictBand: { below: 0.01 },
-    slider: { min: 0.7, max: 0.94 },
+    slider: { min: STABLE_THRESHOLD_DEFAULT, max: 0.94 },
   },
 })
 

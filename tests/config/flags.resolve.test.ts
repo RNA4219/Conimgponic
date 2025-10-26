@@ -8,6 +8,7 @@ import {
   FlagResolutionError,
   FlagSnapshot,
   FlagSource,
+  coerceMergeThresholdValue,
   resolveFlags
 } from '../../src/config/flags'
 
@@ -100,6 +101,18 @@ test('defaults are used when no sources apply', () => {
 
 test('default merge threshold aligns with spec baseline', () => {
   assert.equal(DEFAULT_FLAGS.merge.profile.threshold, 0.75)
+})
+
+test('coerceMergeThresholdValue enforces beta and stable minimum thresholds', () => {
+  const betaResult = coerceMergeThresholdValue('beta')
+  const stableResult = coerceMergeThresholdValue('stable')
+
+  assert.ok(betaResult)
+  assert.equal(betaResult?.ok, true)
+  assert.equal(betaResult?.value, 0.75)
+  assert.ok(stableResult)
+  assert.equal(stableResult?.ok, true)
+  assert.equal(stableResult?.value, 0.82)
 })
 
 test('source typing includes workspace', () => {

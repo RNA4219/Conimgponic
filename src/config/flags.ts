@@ -2,6 +2,9 @@ export type FlagSource = 'env' | 'workspace' | 'localStorage' | 'default'
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 export type FlagRolloutPhase = 'phase-a0' | 'phase-a1' | 'phase-b0'
 
+export const BETA_THRESHOLD_DEFAULT = 0.75
+export const STABLE_THRESHOLD_DEFAULT = 0.82
+
 export const DEFAULT_FLAGS = {
   autosave: {
     enabled: false,
@@ -18,7 +21,7 @@ export const DEFAULT_FLAGS = {
     profile: {
       tokenizer: 'char' as const,
       granularity: 'section' as const,
-      threshold: 0.75,
+      threshold: BETA_THRESHOLD_DEFAULT,
       prefer: 'none' as const
     }
   }
@@ -321,7 +324,7 @@ function coerceMergePrecision(flag: string): FlagCoercer<MergePrecision> {
   }
 }
 
-function coerceMergeThresholdValue(
+export function coerceMergeThresholdValue(
   rawValue: unknown
 ): FlagCoerceResult<number> | null {
   if (rawValue == null) {
@@ -350,10 +353,24 @@ function coerceMergeThresholdValue(
   }
 
   const lowered = normalized.toLowerCase()
-  if (lowered === 'legacy' || lowered === 'beta' || lowered === 'stable') {
+  if (lowered === 'legacy') {
     return {
       ok: true,
       value: DEFAULT_FLAGS.merge.profile.threshold
+    }
+  }
+
+  if (lowered === 'beta') {
+    return {
+      ok: true,
+      value: Math.max(BETA_THRESHOLD_DEFAULT, DEFAULT_FLAGS.merge.profile.threshold)
+    }
+  }
+
+  if (lowered === 'stable') {
+    return {
+      ok: true,
+      value: STABLE_THRESHOLD_DEFAULT
     }
   }
 
