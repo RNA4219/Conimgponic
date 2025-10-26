@@ -192,8 +192,8 @@
           "type": "string",
           "enum": [
             "env",
-            "remote",
-            "local",
+            "workspace",
+            "localStorage",
             "default"
           ]
         },

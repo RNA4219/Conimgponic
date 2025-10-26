@@ -19,13 +19,13 @@ graph TD
   Snapshot -->|merge.precision| MergeUI(Diff Merge visibility)
   Snapshot -->|emit| Bus(FlagSubscriberBus)
 ```
-- `FlagSnapshot` は各フラグ値と決定ソース (`'env' | 'localStorage' | 'default'`) を保持し、後方互換のため `localStorage` 直接参照と同値比較できるようにする。
+- `FlagSnapshot` は各フラグ値と決定ソース (`'env' | 'workspace' | 'localStorage' | 'default'`) を保持し、後方互換のため `localStorage` 直接参照と同値比較できるようにする。
 - `Bus` は Phase B でのホットリロード検討に備え、`subscribeFlags` 経由で差分通知（`prev`/`next`）を送出する。
 - `docs/IMPLEMENTATION-PLAN.md` §0.2 の優先順位（env → localStorage → 既定値）と `FlagSnapshot.source.*` を 1 対 1 に対応させ、`App.tsx`・`MergeDock.tsx` が段階的に後方互換参照を除去できるようマッピングを固定する。【F:docs/IMPLEMENTATION-PLAN.md†L19-L46】
 
 ## 3. API 仕様案 (`src/config/flags.ts`)
 ```ts
-export type FlagSource = 'env' | 'localStorage' | 'default';
+export type FlagSource = 'env' | 'workspace' | 'localStorage' | 'default';
 
 export interface FlagSnapshot {
   readonly autosave: { readonly enabled: boolean };
