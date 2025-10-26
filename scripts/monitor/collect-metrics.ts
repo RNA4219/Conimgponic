@@ -322,7 +322,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       metric: 'autosave_p95',
       value: 3200,
       threshold: 2500,
-      template: 'templates/alerts/rollback.md',
+      template: 'templates/alerts/rollout-monitor.md',
     },
     {
       channelType: 'pagerduty',
@@ -331,7 +331,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       metric: 'merge_auto_success_rate',
       value: 0.72,
       threshold: 0.8,
-      template: 'templates/alerts/rollback.md',
+      template: 'templates/alerts/rollout-monitor.md',
     },
   ],
   artifacts: {
