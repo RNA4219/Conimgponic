@@ -51,6 +51,7 @@ type MergeProfile = {
   - 差分計算ではトークン列生成後に安定ソート（`localeCompare` with `'en'`、`numeric: true`）。
   - スコアリングで同率の場合は `prefer` の順序 (`manual` → `ai`) を固定し、`seed` は `hash(base + ours + theirs)` を用いるが deterministic hash のみ（乱数不使用）。
 - **グローバル設定との連携**: `merge.precision` フラグで `threshold` の上下限を制約（例: precision=high → `min 0.8`）、`autosave.enabled` が true の場合はマージ結果保存時に証跡出力を強制。UI から渡される `MergeProfile` はグローバル設定を上書きしない。
+- **Flag 解決のフェイルセーフ**: env / workspace / localStorage から取得する `conimg.merge.threshold` が `0<=x<=1` の範囲外、あるいは `NaN` 判定になった場合は `FlagValidationError(code='invalid-precision')` を Collector へ転送し、`DEFAULT_FLAGS.merge.profile.threshold` へクランプした上で `flag_resolution.threshold` に採用する。Phase ガード要件と整合する値のみがテレメトリに乗る。
 - **フラグ適用**: Beta フラグ `features.merge.experimental` が false の場合、`prefer` を強制的に `'manual'` にリライトし安全側とする。
 
 ## 3) インタフェース

@@ -137,7 +137,7 @@ interface AutoSaveTelemetryContext {
 
 const sumBytes = (entries: readonly HistoryEntry[]): number => entries.reduce((acc, entry) => acc + entry.bytes, 0)
 
-const statusPhaseForState = (state: AutoSaveStatusState): AutoSavePhase => {
+export const statusPhaseForState = (state: AutoSaveStatusState): AutoSavePhase => {
   switch (state) {
     case 'disabled':
       return 'disabled'
@@ -150,7 +150,7 @@ const statusPhaseForState = (state: AutoSaveStatusState): AutoSavePhase => {
     case 'error':
       return 'error'
     case 'backoff':
-      return 'awaiting-lock'
+      return 'backoff'
   }
 }
 
@@ -343,7 +343,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       toIso(options.now()),
       options.policy,
       options.initialGuard,
-      options.flags
+      bootstrapFlags
     )
   )
 

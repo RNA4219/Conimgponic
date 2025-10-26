@@ -8,6 +8,7 @@ import {
   type FlagValidationError,
   type ResolveOptions
 } from '../../src/config'
+import { resolveAutoSaveBootstrapPlanForApp } from '../../src/App'
 
 test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with errors', () => {
   const emitted: unknown[] = []
@@ -50,6 +51,47 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
     assert.equal(firstError?.flag, 'autosave.enabled')
     assert.equal(firstError?.source, 'env')
     assert.equal(firstError?.phase, 'phase-a0')
+  } finally {
+    if (original) {
+      scope.Day8Collector = original
+    } else {
+      delete scope.Day8Collector
+    }
+  }
+})
+
+test('App bootstrap publishes flag resolution telemetry only once', () => {
+  const scope = globalThis as { Day8Collector?: { publish: (event: unknown) => void } }
+  const original = scope.Day8Collector
+  const emitted: unknown[] = []
+  scope.Day8Collector = {
+    publish(event) {
+      emitted.push(event)
+    }
+  }
+
+  try {
+    const recorded: unknown[] = []
+    const plan = resolveAutoSaveBootstrapPlanForApp((nextPlan) => {
+      recorded.push(nextPlan)
+    })
+
+    assert.equal(emitted.length, 1)
+    const event = emitted[0] as Record<string, unknown>
+    assert.equal(event?.event, 'flag_resolution')
+    assert.equal(event?.feature, 'config.flags')
+    assert.equal(event?.source, 'app.autosave')
+    assert.equal(event?.phase, 'bootstrap')
+    assert.match(String(event?.ts ?? ''), /^\d{4}-\d{2}-\d{2}T/)
+
+    const snapshot = event?.snapshot as FlagSnapshot
+    assert.deepEqual(snapshot, plan.snapshot)
+
+    const errors = event?.errors as readonly FlagValidationError[]
+    assert.equal(errors, plan.errors)
+
+    assert.equal(recorded.length, 1)
+    assert.strictEqual(recorded[0], plan)
   } finally {
     if (original) {
       scope.Day8Collector = original

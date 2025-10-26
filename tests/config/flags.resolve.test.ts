@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   DEFAULT_FLAG_SNAPSHOT,
+  DEFAULT_FLAGS,
   FEATURE_FLAG_DEFINITIONS,
   FlagResolutionError,
   FlagSnapshot,
@@ -121,8 +122,12 @@ test('invalid values aggregate errors and fall back to defaults', () => {
   assert.equal(result.snapshot.autosave.source, 'default')
   assert.equal(result.snapshot.merge.precision, DEFAULT_FLAG_SNAPSHOT.merge.precision)
   assert.equal(result.snapshot.merge.source, 'default')
+  assert.equal(
+    result.snapshot.merge.threshold,
+    DEFAULT_FLAGS.merge.profile.threshold
+  )
 
-  assert.equal(result.errors.length, 6)
+  assert.equal(result.errors.length, 9)
   const sources = result.errors.reduce<Record<FlagSource, number>>(
     (acc, error) => {
       acc[error.source] = (acc[error.source] ?? 0) + 1
@@ -131,13 +136,43 @@ test('invalid values aggregate errors and fall back to defaults', () => {
     { env: 0, workspace: 0, localStorage: 0, default: 0 }
   )
   assert.deepEqual(sources, {
-    env: 2,
-    workspace: 2,
-    localStorage: 2,
+    env: 3,
+    workspace: 3,
+    localStorage: 3,
     default: 0
   })
 
   for (const error of result.errors as readonly FlagResolutionError[]) {
     assert.ok(error.message.includes(error.flag))
   }
+})
+
+test('threshold resolves to default when env/workspace/storage provide invalid numbers', () => {
+  const env = {
+    [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: '1.25'
+  }
+  const workspace: WorkspaceRecord = {
+    'conimg.merge.threshold': 'NaN'
+  }
+  const storage = createStorage({
+    [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: '-0.2'
+  })
+
+  const { snapshot, errors } = resolveFlags(
+    { env, workspace, storage },
+    { withErrors: true }
+  )
+
+  assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
+  assert.equal(snapshot.merge.precision, 'legacy')
+  assert.equal(snapshot.merge.source, 'default')
+
+  const thresholdErrors = errors.filter((error) =>
+    error.flag === 'merge.precision' && error.message.includes('threshold must')
+  )
+  assert.equal(thresholdErrors.length, 3)
+  assert.deepEqual(
+    thresholdErrors.map((error) => error.source).sort(),
+    ['env', 'localStorage', 'workspace']
+  )
 })

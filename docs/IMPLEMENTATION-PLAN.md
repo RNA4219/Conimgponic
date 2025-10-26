@@ -101,7 +101,7 @@ Phase ガード（`autosave.enabled=false` + `AutoSaveOptions.disabled=true`）�
 ### 0.3 MergeDock / DiffMergeView タブ棚卸し
 | コンポーネント | 露出タブ / ペイン | 補足 | 出典 |
 | --- | --- | --- | --- |
-| `MergeDock.tsx` | `compiled` / `shot` / `assets` / `import` / `golden` をタブボタンで制御。`pref` セレクタで `manual-first` / `ai-first` / `diff-merge` を保持し、既存書き出し・インポート・Golden Compare を同一レイアウトで提供。 | `legacy` precision 時は 5 タブ構成を維持し、`diff-merge` 選択はプレースホルダー扱い。 | 【F:src/components/MergeDock.tsx†L24-L147】 |
+| `MergeDock.tsx` | `compiled` / `shot` / `assets` / `import` / `golden` をタブボタンで制御。`pref` セレクタで `manual-first` / `ai-first` / `diff-merge` を保持し、既存書き出し・インポート・Golden Compare を同一レイアウトで提供。 | `legacy` precision 時は 5 タブ構成を維持し、`diff-merge` 選択はプレースホルダー扱い。`beta` / `stable` precision では `phaseStats` が未提供でも Diff タブを露出 (`data-merge-diff-visible=true`) し、レビュー指標が未達の間は `data-merge-diff-enabled=false` で CTA/操作を抑制する。 | 【F:src/components/MergeDock.tsx†L24-L741】 |
 | `DiffMergeView.tsx`（計画） | `DiffMergeTabs`（タブヘッダ）配下に左 `HunkListPane`・右 `OperationPane`・`EditModal` などの複数ペインを配置し、ハンク操作を `queueMergeCommand` へ集約。 | MergeDock タブと同一階層に追加され、`precision` フラグで露出順を制御。 | 【F:docs/MERGE-DESIGN-IMPL.md†L140-L206】 |
 
 #### 0.3.1 precision=`legacy` の遷移
@@ -131,7 +131,7 @@ stateDiagram-v2
     Diff --> Compiled: レガシービューへ戻る
     Diff --> Operation: ハンク選択
     Operation --> Diff: 決定完了でハンク一覧へ戻る
-    note right of Diff: MergeDock タブ末尾に追加
+    note right of Diff: MergeDock タブ末尾に追加 (`phaseStats` 未到達でも可視、ガード未満は `data-merge-diff-enabled=false`)
     note right of Operation: queueMergeCommand を経由
 ```
 
@@ -150,8 +150,8 @@ stateDiagram-v2
     Compiled --> Assets
     Compiled --> Import
     Compiled --> Golden
-    note right of Diff: 初期タブ
-    note right of Compiled: バックアップ表示
+    note right of Diff: 初期タブ (`phaseStats` 未到達でも `data-merge-diff-visible=true`)
+    note right of Compiled: バックアップ表示 (`data-merge-diff-enabled=true` の場合のみ CTA 活性)
 ```
 
 #### 0.3.4 precision モード統合ステート図
@@ -170,7 +170,7 @@ stateDiagram-v2
         Compiled --> Diff: Diff Merge
         Diff --> Operation: ハンク選択
         Operation --> Diff: 決定完了
-        note right of Diff: MergeDock 末尾に Diff タブ
+        note right of Diff: MergeDock 末尾に Diff タブ (`visible=true`、ガード未達は `enabled=false`)
     }
     state Stable {
         [*] --> Diff
@@ -189,7 +189,7 @@ stateDiagram-v2
     Beta --> Legacy: downgrade('legacy')
     note right of Legacy: 初期タブ=Compiled
     note right of Beta: 初期タブ=Compiled
-    note right of Stable: 初期タブ=Diff
+    note right of Stable: 初期タブ=Diff (`phaseStats` 未到達時は UI のみ表示し CTA/操作は抑止)
 ```
 
 #### 0.3.5 タブ/ペイン別 I/O マトリクス

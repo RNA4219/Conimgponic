@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { MergeDock, planMergeDockTabs } from '../../src/components/MergeDock.tsx'
 import type { FlagSnapshot } from '../../src/config/flags.ts'
-import { mergeJSONL } from '../../src/lib/importers.ts'
+import { mergeCSV, mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'
 
 type MergePrecision = Parameters<typeof planMergeDockTabs>[0]
@@ -171,8 +171,72 @@ test('merge-ui: stable precision diff tab renders DiffMergeView with backup CTA 
     )
 
     assert.match(html, /data-component="diff-merge-view"/)
+    assert.match(html, /data-merge-diff-visible="true"/)
     assert.match(html, /data-testid="merge-dock-backup-cta"/)
     assert.equal(flushLog.length, 0)
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+    Date.now = originalDateNow
+  }
+})
+
+test('merge-ui: stable precision diff tab renders but keeps guard when stats missing', () => {
+  const originalWindow = globalThis.window
+  const originalDateNow = Date.now
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const mockWindow = {
+    localStorage: storage,
+    __mergeDockAutoSaveSnapshot: { lastSuccessAt: '2024-05-01T00:00:00.000Z' },
+    __mergeDockFlushNow: () => undefined,
+  } as typeof window & {
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+    __mergeDockFlushNow?: () => void
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+  Date.now = () => new Date('2024-05-01T00:02:00.000Z').getTime()
+
+  try {
+    const html = renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags: {
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'stable', precision: 'stable' },
+        },
+      }),
+    )
+
+    assert.match(html, /data-merge-diff-visible="true"/)
+    assert.match(html, /data-merge-diff-enabled="false"/)
+    assert.match(html, /data-merge-diff-exposure="default"/)
+    assert.match(html, /data-merge-diff-initial-tab="diff"/)
+    assert.match(html, /data-component="diff-merge-view"/)
+    assert.doesNotMatch(html, /data-testid="merge-dock-backup-cta"/)
   } finally {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -240,6 +304,60 @@ test('merge-ui: beta precision diff tab reflects phase plan and keeps backup CTA
       value: originalWindow,
     })
     Date.now = originalDateNow
+  }
+})
+
+test('merge-ui: beta precision diff tab renders but guard blocks activation without stats', () => {
+  const originalWindow = globalThis.window
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const mockWindow = {
+    localStorage: storage,
+  } as typeof window
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+
+  try {
+    const html = renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags: {
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'beta', precision: 'beta' },
+        },
+      }),
+    )
+
+    assert.match(html, /Diff \(Beta\)/)
+    assert.match(html, /data-merge-diff-visible="true"/)
+    assert.match(html, /data-merge-diff-enabled="false"/)
+    assert.match(html, /data-merge-diff-exposure="opt-in"/)
+    assert.doesNotMatch(html, /data-testid="merge-dock-backup-cta"/)
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
   }
 })
 
@@ -350,6 +468,51 @@ test('merge-import: jsonl importer replaces storyboard scenes array reference', 
   const { sb } = useSB.getState()
   assert.notStrictEqual(sb.scenes, previousScenes, 'scenes array should be replaced')
   assert.equal(sb.scenes[0]?.manual, 'New text')
+  useSB.setState({ sb: base })
+})
+
+test('merge-import: jsonl importer overwrites duplicate new scene ids', () => {
+  const base = structuredClone(useSB.getState().sb)
+  useSB.setState({
+    sb: {
+      ...base,
+      scenes: [],
+    },
+  })
+
+  const { sb: beforeImport } = useSB.getState()
+  const fileText = [
+    JSON.stringify({ id: 'cut-42', text: 'First text' }),
+    JSON.stringify({ id: 'cut-42', text: 'Second text' }),
+  ].join('\n')
+
+  const merged = mergeJSONL(beforeImport, `${fileText}\n`, 'manual')
+
+  assert.equal(merged.scenes.length, 1)
+  assert.equal(merged.scenes[0]?.manual, 'Second text')
+  useSB.setState({ sb: base })
+})
+
+test('merge-import: csv importer overwrites duplicate new scene ids', () => {
+  const base = structuredClone(useSB.getState().sb)
+  useSB.setState({
+    sb: {
+      ...base,
+      scenes: [],
+    },
+  })
+
+  const { sb: beforeImport } = useSB.getState()
+  const fileText = [
+    'id,text',
+    'cut-99,First text',
+    'cut-99,Second text',
+  ].join('\n')
+
+  const merged = mergeCSV(beforeImport, `${fileText}\n`, 'manual')
+
+  assert.equal(merged.scenes.length, 1)
+  assert.equal(merged.scenes[0]?.manual, 'Second text')
   useSB.setState({ sb: base })
 })
 

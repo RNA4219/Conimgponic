@@ -73,6 +73,14 @@ export function publishAutoSaveGuard(decision: AutoSaveActivationDecision): void
   })
 }
 
+export function resolveAutoSaveBootstrapPlanForApp(
+  applyPlan: (plan: AutoSaveBootstrapPlan) => void
+): AutoSaveBootstrapPlan {
+  const plan = resolveAutoSaveBootstrapPlan()
+  applyPlan(plan)
+  return plan
+}
+
 export default function App(){
   const { sb, setSBTitle, addScene } = useSB()
   const [dockOpen, setDockOpen] = useState(()=> (localStorage.getItem('dockOpen')==='0'? false: true))
@@ -111,20 +119,9 @@ export default function App(){
   }, [])
 
   useEffect(()=>{
-    const plan = resolveAutoSaveBootstrapPlan()
-    setAutoSavePlan(plan)
-    const collector = getDay8Collector()
-    if (collector){
-      collector.publish({
-        feature: 'config.flags',
-        event: 'flag_resolution',
-        source: 'app.autosave',
-        phase: 'bootstrap',
-        snapshot: plan.snapshot,
-        errors: plan.errors,
-        ts: new Date().toISOString()
-      })
-    }
+    resolveAutoSaveBootstrapPlanForApp((plan)=>{
+      setAutoSavePlan(plan)
+    })
   }, [])
 
   useEffect(()=>{
