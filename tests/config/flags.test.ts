@@ -74,7 +74,7 @@ test('resolveFlags falls back to default autosave and merge threshold when all s
 
   assert.equal(snapshot.autosave.enabled, false)
   assert.equal(snapshot.autosave.source, 'default')
-  assert.equal(snapshot.merge.threshold, 0.72)
+  assert.equal(snapshot.merge.threshold, 0.75)
   assert.equal(snapshot.merge.source, 'default')
   assert.equal(snapshot.updatedAt, '2025-01-08T00:00:00.000Z')
 })
@@ -90,7 +90,7 @@ test('collector fallback applies default autosave and merge threshold when no in
   assert.equal(resolution.snapshot.autosave.source, 'default')
   assert.equal(resolution.snapshot.merge.precision, DEFAULT_FLAGS.merge.precision)
   assert.equal(resolution.snapshot.merge.source, 'default')
-  assert.equal(DEFAULT_FLAGS.merge.profile.threshold, 0.72)
+  assert.equal(DEFAULT_FLAGS.merge.profile.threshold, 0.75)
   assert.equal(resolution.errors.length, 0)
 })
 

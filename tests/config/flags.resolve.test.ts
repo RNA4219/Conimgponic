@@ -32,7 +32,7 @@ test('env overrides workspace and localStorage for autosave and merge precision'
   }
   const workspace: WorkspaceRecord = {
     'conimg.autosave.enabled': false,
-    'conimg.merge.threshold': 0.72
+    'conimg.merge.threshold': 0.75
   }
   const storage = createStorage({
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: '0',
