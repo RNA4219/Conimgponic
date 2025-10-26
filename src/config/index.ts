@@ -19,6 +19,9 @@ export {
   DEFAULT_FLAGS,
   FEATURE_FLAG_DEFINITIONS,
   FLAG_MIGRATION_PLAN,
+  BETA_THRESHOLD_DEFAULT,
+  STABLE_THRESHOLD_DEFAULT,
+  coerceMergeThresholdValue,
   resolveFeatureFlag,
   resolveFlags
 } from './flags.js'
