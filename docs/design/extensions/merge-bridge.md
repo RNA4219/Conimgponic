@@ -12,7 +12,7 @@
 export interface MergeRequestPayload {
   traceId: string
   profile: {
-    threshold: number // 0.0–1.0, 既定 0.72 を上書き可
+    threshold: number // 0.0–1.0, 既定 0.75 を上書き可
     seed?: string
     precision: 'legacy' | 'beta' | 'stable'
   }
@@ -81,7 +81,7 @@ export interface EvidenceEnvelope {
 
 | エラーコード | 例外階層 | retryable | UI 表示 | Collector ログ | ロールバック方針 |
 | --- | --- | --- | --- | --- | --- |
-| `merge.threshold-invalid` | `MergeBridgeError` | false | トースト (error) + Diff タブへ固定 | `merge.error` (severity=error) | リクエスト破棄、既定 0.72 へ復旧。
+| `merge.threshold-invalid` | `MergeBridgeError` | false | トースト (error) + Diff タブへ固定 | `merge.error` (severity=error) | リクエスト破棄、既定 0.75 へ復旧。
 | `merge.hunk-conflict` | `MergeBridgeConflictError` | true | ハンク毎バッジ + Operation モーダル | `merge.trace` (conflict flag) | ロールバックコマンドを `commands` へ付与し、UI で手動解決を促す。
 | `merge.evidence-oversize` | `MergeBridgeError` | false | トースト (error) + 詳細リンク | `merge.error` (severity=error) | Evidence を破棄し、Diff タブへ留める。AutoSave は無変更。
 | `merge.collector-failed` | `MergeBridgeError` | true | トースト (warn) + リトライボタン | `merge.error` (severity=warn) | Evidence をローカルに保存（OPFS 一時ファイル）し、Collector 再送を待機。

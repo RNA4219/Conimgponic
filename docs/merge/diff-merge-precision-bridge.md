@@ -2,7 +2,7 @@
 
 ## 1. 背景と位置づけ
 - `MergeDock`/`DiffMergeView` の分割設計と Phase 制御は [docs/AUTOSAVE-DESIGN-IMPL.md](../AUTOSAVE-DESIGN-IMPL.md) の UI ステート管理方針、および Day8 Collector パイプライン ([Day8/docs/day8/design/03_architecture.md](../../Day8/docs/day8/design/03_architecture.md)) のメトリクス集約フローに準拠する。
-- `merge.precision` フラグを `conimg.merge.threshold` (VS Code 設定、既定 0.72) と同期させ、legacy/beta/stable の 3 モードを Phase A/B ガードでブリッジする。
+- `merge.precision` フラグを `conimg.merge.threshold` (VS Code 設定、既定 0.75) と同期させ、legacy/beta/stable の 3 モードを Phase A/B ガードでブリッジする。
 - 目的は Phase B までは Diff タブを露出させず、Phase 遷移と自動採用率 (>=80%) を担保しつつ、Diff Merge 3-way API への移行基盤を用意すること。
 
 ## 2. Precision モード別 UI/ステート遷移仕様
@@ -21,7 +21,7 @@
 {
   "requestId": "uuid",
   "precision": "legacy" | "beta" | "stable",
-  "threshold": 0.72,
+  "threshold": 0.75,
   "files": [
     {
       "path": "src/components/MergeDock.tsx",
@@ -51,7 +51,7 @@
 {
   "requestId": "uuid",
   "precision": "beta",
-  "threshold": 0.74,
+  "threshold": 0.78,
   "autoAppliedRate": 0.83,
   "bands": {
     "auto": 12,
@@ -86,7 +86,7 @@
         "metrics": {
           "blended": 0.88,
           "tokenOverlap": 0.91,
-          "threshold": 0.74
+          "threshold": 0.78
         }
       }
     ]
@@ -111,7 +111,7 @@
 | beta | `cfg` | `clamp(cfg, 0.68, 0.9)` | `>= threshold+0.05` | `[threshold-0.02, threshold+0.05)` | `< threshold-0.02` またはロック | review band >0 |
 | stable | `cfg` | `clamp(cfg, 0.7, 0.94)` | `>= threshold+0.03` | `[threshold-0.01, threshold+0.03)` | `< threshold-0.01` or lock | (review+conflict)>0 |
 
-- `cfg` は VS Code 設定 UI (default 0.72)。`merge.request.threshold` は Phase ごとに clamping された値を使用し、Phase A/B で共通化。
+- `cfg` は VS Code 設定 UI (default 0.75)。`merge.request.threshold` は Phase ごとに clamping された値を使用し、Phase A/B で共通化。
 - Phase B が無効な場合 (`required=false`) は Diff タブのアクティベーションをスキップし、Telemetry 露出率計算から除外する。
 
 ## 6. テレメトリ設計更新
