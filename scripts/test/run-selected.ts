@@ -96,14 +96,19 @@ export function runSelected(
 ): void {
   const filterResult = resolveFilter(args);
   const filteredArgs = filterResult?.filteredArgs ?? args;
-  const explicitTargets = collectExplicitTargets(filteredArgs);
+  const forwardedArgs = filteredArgs.filter((arg) => arg !== '--update-snapshots');
+  const updateSnapshots = forwardedArgs.length !== filteredArgs.length;
+  const explicitTargets = collectExplicitTargets(forwardedArgs);
   const resolvedDefaultTargets =
     defaultTargets ??
     filterResult?.targets ??
-    (includesFilterToken(args) ? [...DEFAULT_TEST_GLOBS] : determineDefaultTargets());
-  const nodeArgs = buildNodeArgs(filteredArgs, explicitTargets, resolvedDefaultTargets);
+    (includesFilterToken(forwardedArgs) ? [...DEFAULT_TEST_GLOBS] : determineDefaultTargets());
+  const nodeArgs = buildNodeArgs(forwardedArgs, explicitTargets, resolvedDefaultTargets);
 
   const childEnv = buildSpawnEnv(process.env);
+  if (updateSnapshots) {
+    childEnv.UPDATE_SNAPSHOTS = '1';
+  }
   const child = spawnImpl('node', nodeArgs, { stdio: 'inherit', env: childEnv });
 
   child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
@@ -132,7 +137,9 @@ export function collectExplicitTargets(args: readonly string[]): string[] {
 
   for (const arg of args) {
     if (inExplicitSection) {
-      targets.push(arg);
+      if (!arg.startsWith('-') || targetPattern.test(arg)) {
+        targets.push(arg);
+      }
       continue;
     }
 
@@ -358,6 +365,15 @@ function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     types: ['node'],
     allowSyntheticDefaultImports: true,
   };
+
+  const vmModulesFlag = '--experimental-vm-modules';
+  const existingNodeOptions = env.NODE_OPTIONS ?? '';
+  const hasVmModulesFlag = existingNodeOptions.split(/\s+/u).includes(vmModulesFlag);
+  env.NODE_OPTIONS = hasVmModulesFlag
+    ? existingNodeOptions
+    : existingNodeOptions.length > 0
+      ? `${existingNodeOptions} ${vmModulesFlag}`
+      : vmModulesFlag;
 
   const existing = env.TS_NODE_COMPILER_OPTIONS;
 
