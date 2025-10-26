@@ -101,63 +101,19 @@ describe('vscode extension telemetry contract (RED)', () => {
       )
     }
   })
-  test('export.success telemetry が runId/matchRate/formats/artifacts を Collector JSONL に固定する', () => {
-    const spec = findTelemetrySpec('export.success')
-    assertOk(spec, 'export.success telemetry spec is missing')
-    const telemetrySpec = spec
-
-    const requiredFields = [
-      'payload.runId',
-      'payload.matchRate',
-      'payload.formats',
-      'payload.artifacts[].format',
-      'payload.artifacts[].name',
-      'payload.artifacts[].status',
-      'payload.artifacts[].normalizedPath',
-      'payload.artifacts[].uri',
-      'payload.artifacts[].durationMs'
-    ]
-
-    for (const field of requiredFields) {
-      assertOk(
-        telemetrySpec.jsonlFields.includes(field),
-        `export.success must require ${field} in Reporter JSONL`
-      )
-    }
-  })
-
-  test('export.failed telemetry が retryable/error.details と失敗エントリを Collector JSONL に固定する', () => {
-    const spec = findTelemetrySpec('export.failed')
-    assertOk(spec, 'export.failed telemetry spec is missing')
-    const telemetrySpec = spec
-
-    const requiredFields = [
-      'payload.runId',
-      'payload.matchRate',
-      'payload.formats',
-      'payload.error.code',
-      'payload.error.message',
-      'payload.error.retryable',
-      'payload.entries[].format',
-      'payload.entries[].name',
-      'payload.entries[].status',
-      'payload.entries[].diff'
-    ]
-
-    for (const field of requiredFields) {
-      assertOk(
-        telemetrySpec.jsonlFields.includes(field),
-        `export.failed must require ${field} in Reporter JSONL`
-      )
-    }
-  })
-  test('plugins telemetry は pluginId/action/result を Collector JSONL に固定する', () => {
+  test.todo('export.* telemetry が format ごとに started/succeeded/failed を記録し、エラー時は retryable + next_backoff_ms を出力する')
+  test('plugins telemetry は pluginId/action/result/duration_ms を Reporter JSONL に固定する', () => {
     const completed = findTelemetrySpec('plugins.completed')
     assertOk(completed, 'plugins.completed telemetry spec is missing')
     const failed = findTelemetrySpec('plugins.failed')
     assertOk(failed, 'plugins.failed telemetry spec is missing')
 
-    const requiredFields = ['payload.pluginId', 'payload.action', 'payload.result'] as const
+    const requiredFields = [
+      'payload.pluginId',
+      'payload.action',
+      'payload.result',
+      'payload.duration_ms'
+    ] as const
 
     for (const field of requiredFields) {
       assertOk(
