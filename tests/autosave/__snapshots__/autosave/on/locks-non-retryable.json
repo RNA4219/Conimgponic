@@ -1,0 +1,19 @@
+{
+  "lockSequence": [
+    "attempt:web-lock",
+    "error:acquire-denied:retryable=false"
+  ],
+  "telemetry": [
+    {
+      "type": "lock:error",
+      "code": "acquire-denied",
+      "retryable": false,
+      "operation": "acquire"
+    },
+    {
+      "type": "lock:readonly-entered",
+      "reason": "acquire-failed",
+      "retryable": false
+    }
+  ]
+}
