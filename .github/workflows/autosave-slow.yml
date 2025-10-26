@@ -1,0 +1,51 @@
+name: autosave-slow
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      autosave_changed: ${{ steps.changes.outputs.autosave }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            autosave:
+              - 'src/**/autosave/**'
+              - 'tests/**/autosave.*.test.ts'
+              - 'tests/**/autosave/**'
+              - '.github/workflows/autosave*'
+
+  autosave_slow:
+    runs-on: ubuntu-latest
+    needs: detect
+    timeout-minutes: 20
+    if: >
+      github.ref == 'refs/heads/main' ||
+      needs.detect.outputs.autosave_changed == 'true' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-slow-tests'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - run: pnpm i --frozen-lockfile
+      - run: pnpm -s test:autosave
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autosave-logs
+          path: logs/**
