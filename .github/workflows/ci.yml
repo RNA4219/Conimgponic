@@ -423,7 +423,7 @@ jobs:
             golden.log
             golden-diff.txt
             runs
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       - name: Assert golden comparison passed
         if: steps.golden.outcome == 'failure'

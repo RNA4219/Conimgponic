@@ -17,7 +17,10 @@ type StepConfig = {
   if?: unknown;
   'continue-on-error'?: unknown;
 };
-type UploadStep = StepConfig & { uses: string; with?: { name?: unknown; path?: unknown } };
+type UploadStep = StepConfig & {
+  uses: string;
+  with?: { name?: unknown; path?: unknown; 'if-no-files-found'?: unknown };
+};
 type JobNeeds = string | string[] | undefined;
 type JsYamlModule = { load: (input: string) => unknown };
 const require = createRequire(import.meta.url);
@@ -76,6 +79,16 @@ describe('ci workflow golden job', () => {
       for (const expected of ['golden.log', 'golden-diff.txt', 'runs']) {
         assert.ok(entries.includes(expected), `golden artifact upload must include ${expected}`);
       }
+
+      const ifNoFilesFound = goldenUpload.with?.['if-no-files-found'];
+      if (typeof ifNoFilesFound !== 'string') {
+        throw new TypeError('golden artifact upload must configure if-no-files-found string');
+      }
+      assert.strictEqual(
+        ifNoFilesFound.trim(),
+        'error',
+        "golden artifact upload must set if-no-files-found to string 'error'",
+      );
 
       const assertStep = goldenSteps.find(
         (step) => typeof step.name === 'string' && step.name.trim() === 'Assert golden comparison passed',
