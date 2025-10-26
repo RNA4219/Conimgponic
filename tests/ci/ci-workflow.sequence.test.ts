@@ -53,6 +53,7 @@ type StepConfig = {
   uses?: unknown;
   with?: unknown;
   name?: unknown;
+  id?: unknown;
   if?: unknown;
   'continue-on-error'?: unknown;
 };
@@ -317,6 +318,29 @@ describe('ci workflow build job', () => {
       runSuiteStep,
       '${{ matrix.command }}',
       '"Run ${{ matrix.suite }} suite" step must execute ${{ matrix.command }}',
+    );
+  });
+
+  test('quality job run step exposes deterministic id for downstream steps', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const runSuiteStep = assertStepWithName(
+      steps,
+      'Run ${{ matrix.suite }} suite',
+      'quality job must include "Run ${{ matrix.suite }} suite" step',
+    );
+
+    assertStepIdEquals(
+      runSuiteStep,
+      'run_suite',
+      '"Run ${{ matrix.suite }} suite" step must expose id "run_suite" for downstream conditionals',
     );
   });
 
@@ -630,6 +654,14 @@ function assertStepWithName(
   }
 
   return match;
+}
+
+function assertStepIdEquals(step: StepConfig, expected: string, message: string): void {
+  if (typeof step.id !== 'string') {
+    assert.fail(`${message}; step.id must be configured as a string`);
+  }
+
+  assert.strictEqual(step.id.trim(), expected, message);
 }
 
 function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
