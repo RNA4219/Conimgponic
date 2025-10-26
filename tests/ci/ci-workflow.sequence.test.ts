@@ -266,6 +266,12 @@ describe('ci workflow build job', () => {
       '"Upload suite logs" step must run on all outcomes',
     );
 
+    assertUploadArtifactName(
+      uploadLogsStep,
+      'quality-${{ matrix.suite }}',
+      '"Upload suite logs" artifact must be named "quality-${{ matrix.suite }}"',
+    );
+
     assertUploadArtifactPaths(
       uploadLogsStep,
       [
@@ -490,20 +496,28 @@ function assertStepWithName(
   return match;
 }
 
-function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
-  if (typeof step.uses !== 'string') {
-    assert.fail(`${message}; step.uses must be configured as a string`);
-  }
-
-  assert.strictEqual(step.uses.trim(), expected, message);
-}
-
 function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.if !== 'string') {
     assert.fail(`${message}; step.if must be configured as a string`);
   }
 
   assert.strictEqual(step.if.trim(), expected, message);
+}
+
+function assertStepContinueOnError(step: StepConfig, message: string): void {
+  const value = step['continue-on-error'];
+
+  if (typeof value === 'boolean') {
+    assert.strictEqual(value, true, message);
+    return;
+  }
+
+  if (typeof value === 'string') {
+    assert.strictEqual(value.trim(), 'true', message);
+    return;
+  }
+
+  assert.fail(`${message}; continue-on-error must be configured as boolean true`);
 }
 
 function assertStepUsesEquals(step: StepConfig, expected: string, message: string): void {
@@ -620,6 +634,24 @@ function assertUploadArtifactPaths(
     const hasMatch = configuredPaths.includes(expectedPath);
     assert.ok(hasMatch, `${message}; path must include "${expectedPath}"`);
   }
+}
+
+function assertUploadArtifactName(
+  step: UploadArtifactStep,
+  expectedName: string,
+  message: string,
+): void {
+  const config = step.with;
+  if (!config || typeof config !== 'object') {
+    assert.fail(`${message}; step.with must be configured`);
+  }
+
+  const { name } = config as { name?: unknown };
+  if (typeof name !== 'string') {
+    assert.fail(`${message}; name must be configured as a string`);
+  }
+
+  assert.strictEqual(name.trim(), expectedName, message);
 }
 
 function assertMatrixEntries(value: unknown, message: string): asserts value is QualityMatrixEntry[] {
