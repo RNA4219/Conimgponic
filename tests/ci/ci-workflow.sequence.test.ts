@@ -312,6 +312,12 @@ describe('ci workflow build job', () => {
       'tee "logs/${{ matrix.suite }}.log"',
       '"Run ${{ matrix.suite }} suite" step must tee suite output into logs/${{ matrix.suite }}.log',
     );
+
+    assertStepRunIncludesLine(
+      runSuiteStep,
+      '${{ matrix.command }}',
+      '"Run ${{ matrix.suite }} suite" step must execute ${{ matrix.command }}',
+    );
   });
 
   test('uploads suite logs artifact on quality job matrix runs', async () => {
