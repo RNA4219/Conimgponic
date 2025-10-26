@@ -6,6 +6,7 @@ import type {
   MergeResult,
   MergeTrace,
 } from '../../../lib/merge'
+import { PRECISION_THRESHOLD_CLAMP } from '../../../lib/merge'
 
 export interface MergeBridgeDependencies {
   readonly engine: MergeEngine
@@ -38,12 +39,6 @@ export interface MergeBridge {
   readonly handleMergeRequest: (message: MergeRequestMessage) => Promise<MergeResultMessage>
 }
 
-const THRESHOLD_CLAMP: Record<MergePrecision, { readonly min: number; readonly max?: number }> = {
-  legacy: { min: 0.65 },
-  beta: { min: 0.75, max: 0.9 },
-  stable: { min: 0.82, max: 0.94 },
-}
-
 const sanitizeThreshold = (
   precision: MergePrecision,
   value: number | undefined,
@@ -57,16 +52,16 @@ const sanitizeThreshold = (
   if (value <= 0) {
     return undefined
   }
-  const clamp = THRESHOLD_CLAMP[precision]
+  const clampBounds = PRECISION_THRESHOLD_CLAMP[precision]
   let sanitized = value
-  if (sanitized < clamp.min) {
-    sanitized = clamp.min
+  if (sanitized < clampBounds.min) {
+    sanitized = clampBounds.min
   }
-  if (clamp.max !== undefined && sanitized > clamp.max) {
-    sanitized = clamp.max
+  if (clampBounds.max !== undefined && sanitized > clampBounds.max) {
+    sanitized = clampBounds.max
   }
   if (sanitized >= 1) {
-    sanitized = clamp.max ?? 0.99
+    sanitized = clampBounds.max ?? 0.99
   }
   return sanitized
 }

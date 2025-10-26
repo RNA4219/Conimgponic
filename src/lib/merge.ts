@@ -458,6 +458,14 @@ interface SectionDecision {
 
 const PRECISION_FALLBACK: MergePrecision = 'legacy';
 
+type PrecisionThresholdClamp = { readonly min: number; readonly max?: number };
+
+export const PRECISION_THRESHOLD_CLAMP: Record<MergePrecision, PrecisionThresholdClamp> = {
+  legacy: { min: 0.65 },
+  beta: { min: 0.75, max: 0.9 },
+  stable: { min: 0.82, max: 0.94 },
+} as const;
+
 const PRECISION_CONFIG: Record<MergePrecision, {
   readonly min: number;
   readonly autoDelta: (threshold: number) => number;
@@ -467,28 +475,28 @@ const PRECISION_CONFIG: Record<MergePrecision, {
   readonly thresholdClamp: (value: number) => number;
 }> = {
   legacy: {
-    min: 0.65,
+    min: PRECISION_THRESHOLD_CLAMP.legacy.min,
     autoDelta: (threshold) => threshold + 0.08,
     reviewDelta: (threshold) => threshold - 0.04,
     weights: { jaccard: 0.5, cosine: 0.5 },
     lockPolicy: 'strict',
-    thresholdClamp: (value) => Math.max(value, 0.65),
+    thresholdClamp: (value) => Math.max(value, PRECISION_THRESHOLD_CLAMP.legacy.min),
   },
   beta: {
-    min: 0.75,
+    min: PRECISION_THRESHOLD_CLAMP.beta.min,
     autoDelta: (threshold) => clamp(threshold + 0.05, 0.8, 0.92),
     reviewDelta: (threshold) => threshold - 0.02,
     weights: { jaccard: 0.4, cosine: 0.6 },
     lockPolicy: 'strict',
-    thresholdClamp: (value) => clamp(value, 0.75, 0.9),
+    thresholdClamp: (value) => clamp(value, PRECISION_THRESHOLD_CLAMP.beta.min, PRECISION_THRESHOLD_CLAMP.beta.max!),
   },
   stable: {
-    min: 0.82,
+    min: PRECISION_THRESHOLD_CLAMP.stable.min,
     autoDelta: (threshold) => clamp(threshold + 0.03, 0.86, 0.95),
     reviewDelta: (threshold) => threshold - 0.01,
     weights: { jaccard: 0.3, cosine: 0.7 },
     lockPolicy: 'strict',
-    thresholdClamp: (value) => clamp(value, 0.82, 0.94),
+    thresholdClamp: (value) => clamp(value, PRECISION_THRESHOLD_CLAMP.stable.min, PRECISION_THRESHOLD_CLAMP.stable.max!),
   },
 };
 
