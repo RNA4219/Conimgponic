@@ -7,62 +7,37 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch: {}
   schedule:
     - cron: '0 3 * * *'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   sbom:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Generate SBOM (Anchore Syft)
+        uses: anchore/sbom-action@v0.17.6
         with:
-          node-version: '20'
+          path: .
+          format: spdx-json
+          output-file: sbom.json
 
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir .pnpm-store
-
-      - name: Ensure lockfile
-        run: |
-          if [ ! -f pnpm-lock.yaml ]; then
-            pnpm install --lockfile-only
-          fi
-
-      - name: Install dependencies for SBOM
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Syft CLI
-        uses: anchore/sbom-action/download-syft@v0
-        with:
-          syft-version: latest
-
-      - name: Generate SBOM
-        run: |
-          set -euo pipefail
-          syft dir:. --scope all-layers -o cyclonedx-json=sbom.json 2>&1 | tee sbom.log
-
-      - name: Upload SBOM artifact
-        if: always()
+      - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: sbom.json
-          if-no-files-found: error
-
-      - name: Upload SBOM log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom-log
-          path: sbom.log
-          if-no-files-found: ignore
+          retention-days: 1
 
   audit:
     needs:
