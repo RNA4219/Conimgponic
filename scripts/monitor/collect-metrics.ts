@@ -133,6 +133,13 @@ export interface PluginEventPayload {
   readonly sandboxViolation?: boolean;
 }
 
+const PLUGIN_RESULT_JSONL_FIELDS = [
+  'payload.pluginId',
+  'payload.action',
+  'payload.result',
+  'payload.duration_ms',
+] as const satisfies ReadonlyArray<string>;
+
 export interface TelemetryPayloads {
   readonly 'status.autosave': StatusAutosavePayload;
   readonly 'flag_resolution': FlagResolutionPayload;
@@ -635,25 +642,14 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'plugins.completed',
         description: 'プラグイン成功結果を Reporter がサマリに集計する。',
-        jsonlFields: [
-          'payload.pluginId',
-          'payload.action',
-          'payload.result',
-          'payload.duration_ms'
-        ],
+        jsonlFields: [...PLUGIN_RESULT_JSONL_FIELDS],
         retryable: false,
         pipelineStage: 'reporter',
       },
       {
         event: 'plugins.failed',
         description: 'Sandbox 違反や失敗を rollbackTo 指標と連動させる。',
-        jsonlFields: [
-          'payload.pluginId',
-          'payload.action',
-          'payload.result',
-          'payload.duration_ms',
-          'payload.sandboxViolation'
-        ],
+        jsonlFields: [...PLUGIN_RESULT_JSONL_FIELDS, 'payload.sandboxViolation'],
         retryable: true,
         pipelineStage: 'reporter',
         guardrail: {
