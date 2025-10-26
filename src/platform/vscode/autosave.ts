@@ -343,7 +343,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       toIso(options.now()),
       options.policy,
       options.initialGuard,
-      options.flags
+      bootstrapFlags
     )
   )
 
