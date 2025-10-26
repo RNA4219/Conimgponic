@@ -9,8 +9,9 @@ from typing import Literal, Sequence, TypedDict
 
 FLOWS: tuple[str, ...] = ("build", "audit", "sbom", "golden")
 DEFAULT_LOG = Path("workflow-cookbook/logs/test.jsonl")
-REPORT_PATH = Path("reports/today.md")
-ISSUE_PATH = Path("reports/issue_suggestions.md")
+REPORT_PATH = Path("reports/day8/ci/summary.md")
+ISSUE_PATH = Path("reports/day8/ci/issues.md")
+BIRDSEYE_PATH = Path("reports/day8/ci/birdseye.json")
 FlowEntry = TypedDict(
     "FlowEntry", {"outcome": Literal["ok", "warning", "error"], "status": str, "message": str}
 )
@@ -32,7 +33,7 @@ def _load(path: Path) -> list[dict[str, str]]:
 
 def _summarize(entries: Sequence[dict[str, str]]) -> dict[str, FlowEntry]:
     summary: dict[str, FlowEntry] = {
-        flow: {"outcome": "warning", "status": "missing", "message": "no entry"} for flow in FLOWS
+        flow: {"outcome": "error", "status": "missing", "message": "not reported"} for flow in FLOWS
     }
     for entry in entries:
         flow = entry.get("flow")
@@ -40,9 +41,9 @@ def _summarize(entries: Sequence[dict[str, str]]) -> dict[str, FlowEntry]:
             continue
         status = entry.get("status", "unknown")
         lowered = status.lower()
-        if lowered in {"ok", "pass", "passed", "success"}:
+        if lowered in {"ok", "pass", "passed", "success", "succeeded", "complete"}:
             outcome: Literal["ok", "warning", "error"] = "ok"
-        elif lowered in {"warn", "warning"}:
+        elif lowered in {"warn", "warning", "skipped"}:
             outcome = "warning"
         else:
             outcome = "error"
@@ -84,10 +85,17 @@ def _write_issue(root: Path, rows: Sequence[tuple[str, FlowEntry]]) -> None:
     issue.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_birdseye(root: Path, summary: dict[str, FlowEntry], totals: dict[str, int]) -> None:
+    capsule = root / BIRDSEYE_PATH
+    capsule.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"capsule": "day8-ci", "flows": summary, "totals": totals}
+    capsule.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Analyze Day8 CI logs and emit reports")
     parser.add_argument("--root", default=".", help="Repository root to inspect")
-    parser.add_argument("--emit", choices=("report", "json"), nargs="+", default=("report",))
+    parser.add_argument("--emit", choices=("report", "json", "birdseye"), nargs="+", default=("report",))
     parser.add_argument("--focus", nargs="*", help="Subset of flows to report")
     parser.add_argument("--log", help="Override log path relative to root")
     parser.add_argument("--fail-on", choices=("warnings", "errors"), dest="fail_on")
@@ -99,11 +107,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         log = root / log
     summary = _summarize(_load(log))
     rows = _ordered(summary, list(args.focus) if args.focus else None)
+    totals = {level: sum(1 for entry in summary.values() if entry["outcome"] == level) for level in ("ok", "warning", "error")}
     if "json" in args.emit:
-        print(json.dumps({"flows": summary}, ensure_ascii=False))
+        print(json.dumps({"flows": summary, "totals": totals}, ensure_ascii=False))
     if "report" in args.emit:
         _write_report(root, rows)
         _write_issue(root, rows)
+    if "birdseye" in args.emit:
+        _write_birdseye(root, summary, totals)
     if args.fail_on == "warnings" and any(e["outcome"] != "ok" for e in summary.values()):
         return 1
     if args.fail_on == "errors" and any(e["outcome"] == "error" for e in summary.values()):

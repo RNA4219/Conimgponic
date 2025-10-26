@@ -21,7 +21,7 @@ def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
 
 
-def test_cli_emits_reports_and_json(tmp_path: Path) -> None:
+def test_cli_emits_reports_json_and_birdseye(tmp_path: Path) -> None:
     _write_log(
         tmp_path,
         "\n".join(
@@ -34,13 +34,20 @@ def test_cli_emits_reports_and_json(tmp_path: Path) -> None:
         ),
     )
 
-    result = _run(tmp_path, "--emit", "report", "json", "--focus", "docs")
+    result = _run(tmp_path, "--emit", "report", "json", "birdseye", "--focus", "docs")
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert sorted(payload["flows"]) == ["audit", "build", "golden", "sbom"]
-    assert "| build | passed" in (tmp_path / "reports" / "today.md").read_text(encoding="utf-8")
-    assert "audit" in (tmp_path / "reports" / "issue_suggestions.md").read_text(encoding="utf-8")
+    report_dir = tmp_path / "reports" / "day8" / "ci"
+    summary = (report_dir / "summary.md").read_text(encoding="utf-8")
+    assert summary.startswith("# Day8 CI reflection")
+    assert "| build | passed |" in summary
+    issues = (report_dir / "issues.md").read_text(encoding="utf-8")
+    assert "audit" in issues
+    capsule = json.loads((report_dir / "birdseye.json").read_text(encoding="utf-8"))
+    assert capsule["capsule"] == "day8-ci"
+    assert capsule["flows"]["audit"]["outcome"] == "warning"
 
 
 def test_fail_on_warnings_exits_non_zero(tmp_path: Path) -> None:
