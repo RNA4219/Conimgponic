@@ -174,7 +174,7 @@ test('createVscodeAutoSaveBridge shares AUTOSAVE-DESIGN-IMPL Phase A defaults', 
   assert.equal(last.payload.retainedBytes, history.retainedBytes)
 })
 
-test('resolveAutoSavePolicy keeps Phase A fixed limits (docs/AUTOSAVE-DESIGN-IMPL.md §1.1, docs/MERGE-DESIGN-IMPL.md §0.4)', async () => {
+test('resolveAutoSavePolicy enforces AUTOSAVE-DESIGN-IMPL Phase A defaults shared with MERGE-DESIGN-IMPL §5', async () => {
   cache.clear()
   const { resolveAutoSaveBootstrapPlan } = await importTs(join(root, 'src/config/index.ts'))
   const { initAutoSave, resolveAutoSavePolicy, AUTOSAVE_POLICY } = await importTs(
@@ -183,10 +183,12 @@ test('resolveAutoSavePolicy keeps Phase A fixed limits (docs/AUTOSAVE-DESIGN-IMP
 
   const originalHistory = process.env.VITE_AUTOSAVE_HISTORY_LIMIT
   const originalSize = process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB
+  const originalEnabled = process.env.VITE_AUTOSAVE_ENABLED
 
   try {
     process.env.VITE_AUTOSAVE_HISTORY_LIMIT = '30'
     process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = '100'
+    process.env.VITE_AUTOSAVE_ENABLED = 'true'
 
     const plan = resolveAutoSaveBootstrapPlan({ workspace: null })
     assert.equal(plan.policy, AUTOSAVE_POLICY)
@@ -221,6 +223,14 @@ test('resolveAutoSavePolicy keeps Phase A fixed limits (docs/AUTOSAVE-DESIGN-IMP
     assert.equal(workspacePolicy.maxGenerations, 20)
     assert.equal(workspacePolicy.maxBytes, 50 * 1024 * 1024)
 
+    const overridePolicy = {
+      debounceMs: 10,
+      idleMs: 20,
+      maxGenerations: 1,
+      maxBytes: 200_000,
+      disabled: false
+    }
+
     const opfs = createOpfsMock()
     Object.defineProperty(globalThis, 'navigator', {
       value: {
@@ -249,7 +259,36 @@ test('resolveAutoSavePolicy keeps Phase A fixed limits (docs/AUTOSAVE-DESIGN-IMP
         selection: [],
         version: 1
       }
-    }, { disabled: false })
+    },
+    // AUTOSAVE-DESIGN-IMPL §3.1 / MERGE-DESIGN-IMPL §5: Phase A では固定ポリシー共有のため、型を回避して policy を差し込んでも無視される。
+    { disabled: false, policy: overridePolicy } as unknown as Record<string, unknown>)
+
+    const originalSetTimeout = globalThis.setTimeout
+    const scheduledDelays: number[] = []
+    let captureDelays = false
+
+    try {
+      globalThis.setTimeout = ((callback: (...args: unknown[]) => unknown, delay?: number, ...args: unknown[]) => {
+        if (captureDelays) {
+          scheduledDelays.push(delay ?? 0)
+        }
+        return originalSetTimeout(callback as (...cbArgs: unknown[]) => unknown, delay, ...args)
+      }) as typeof setTimeout
+
+      const markDirty = (runner as { markDirty?: (meta?: { pendingBytes?: number }) => void }).markDirty
+      assert.equal(typeof markDirty, 'function')
+      captureDelays = true
+      markDirty?.({ pendingBytes: payloads[0]!.length })
+      await new Promise((resolve) => originalSetTimeout(resolve, 2600))
+      captureDelays = false
+    } finally {
+      globalThis.setTimeout = originalSetTimeout
+    }
+
+    assert.ok(scheduledDelays.includes(500))
+    assert.ok(scheduledDelays.includes(2000))
+    assert.ok(!scheduledDelays.includes(overridePolicy.debounceMs))
+    assert.ok(!scheduledDelays.includes(overridePolicy.idleMs))
 
     await runner.flushNow()
     await runner.flushNow()
@@ -266,17 +305,22 @@ test('resolveAutoSavePolicy keeps Phase A fixed limits (docs/AUTOSAVE-DESIGN-IMP
     assert.ok(totalBytes <= AUTOSAVE_POLICY.maxBytes)
 
     await runner.dispose()
-  } finally {
-    if (originalHistory == null) {
-      delete process.env.VITE_AUTOSAVE_HISTORY_LIMIT
-    } else {
-      process.env.VITE_AUTOSAVE_HISTORY_LIMIT = originalHistory
+    } finally {
+      if (originalHistory == null) {
+        delete process.env.VITE_AUTOSAVE_HISTORY_LIMIT
+      } else {
+        process.env.VITE_AUTOSAVE_HISTORY_LIMIT = originalHistory
+      }
+      if (originalSize == null) {
+        delete process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB
+      } else {
+        process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = originalSize
+      }
+      if (originalEnabled == null) {
+        delete process.env.VITE_AUTOSAVE_ENABLED
+      } else {
+        process.env.VITE_AUTOSAVE_ENABLED = originalEnabled
+      }
+      delete (globalThis as { navigator?: unknown }).navigator
     }
-    if (originalSize == null) {
-      delete process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB
-    } else {
-      process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = originalSize
-    }
-    delete (globalThis as { navigator?: unknown }).navigator
-  }
 })
