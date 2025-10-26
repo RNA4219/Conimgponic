@@ -24,6 +24,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Install Syft
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install Syft
         run: |
@@ -34,9 +40,12 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Generate SBOM (Syft)
+        env:
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
         run: |
           set -euo pipefail
           syft dir:. -o cyclonedx-json=sbom.json |& tee sbom.log
+          test -s sbom.json
 
       - name: Upload SBOM artifact
         if: always()
