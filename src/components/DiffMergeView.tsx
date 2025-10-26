@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
-import { createDiffMergeController, createInitialDiffMergeState, diffMergeReducer, retainKnownHunkIds } from './diffMergeState.js'
+import {
+  createDiffMergeController,
+  createInitialDiffMergeState,
+  diffMergeReducer,
+  retainKnownHunkIds,
+  type DiffMergeState,
+} from './diffMergeState.js'
 
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 
@@ -35,7 +41,7 @@ export interface PrecisionPhaseGuard {
 
 export const PRECISION_PHASE_GUARD: Record<MergePrecision, PrecisionPhaseGuard> = Object.freeze({
   legacy: { phase: 'phase-a', allowedTabs: ['review'], initialTab: 'review' },
-  beta: { phase: 'phase-b', allowedTabs: ['review', 'merged', 'diff'], initialTab: 'review' },
+  beta: { phase: 'phase-b', allowedTabs: ['review', 'diff', 'merged'], initialTab: 'review' },
   stable: { phase: 'phase-b', allowedTabs: ['diff', 'merged', 'review'], initialTab: 'diff' },
 })
 
@@ -188,6 +194,139 @@ export const diffMergeViewDesign: DiffMergeViewDesign = Object.freeze({
   componentResponsibilities: diffMergeComponentResponsibilities,
 })
 
+type DiffMergeController = ReturnType<typeof createDiffMergeController>
+
+interface DiffMergeNavigationProps {
+  readonly precision: MergePrecision
+  readonly navigationBadge: DiffMergeViewPlan['navigationBadge']
+  readonly tabs: DiffMergeViewPlan['tabs']
+  readonly activeTab: DiffMergeSubTabKey
+  readonly onSelect: (key: DiffMergeSubTabKey) => void
+}
+
+const DiffMergeNavigation: React.FC<DiffMergeNavigationProps> = ({
+  precision,
+  navigationBadge,
+  tabs,
+  activeTab,
+  onSelect,
+}) => (
+  <nav role="tablist" data-block="navigation" data-precision={precision} data-navigation-badge={navigationBadge ?? undefined}>
+    {tabs.map((tab) => {
+      const badge = tab.badge ? <span data-badge={tab.badge}>{tab.badge.toUpperCase()}</span> : null
+      return (
+        <button
+          key={tab.key}
+          type="button"
+          role="tab"
+          data-testid={`diff-merge-tab-${tab.key}`}
+          data-tab={tab.key}
+          aria-selected={tab.key === activeTab}
+          onClick={() => onSelect(tab.key)}
+        >
+          {tab.label}
+          {badge}
+        </button>
+      )
+    })}
+  </nav>
+)
+
+interface DiffMergeHunkListProps {
+  readonly visible: boolean
+  readonly hunks: readonly MergeHunk[]
+  readonly hunkStates: DiffMergeState['hunkStates']
+  readonly controller: DiffMergeController
+}
+
+const DiffMergeHunkList: React.FC<DiffMergeHunkListProps> = ({ visible, hunks, hunkStates, controller }) => {
+  if (!visible) return null
+  return (
+    <section data-block="hunk-list" data-testid="diff-merge-hunk-list">
+      {hunks.map((hunk) => {
+        const status = hunkStates[hunk.id] ?? 'Unreviewed'
+        const isSelected = status === 'Selected' || status === 'Editing'
+        return (
+          <article key={hunk.id} data-testid={`diff-merge-hunk-${hunk.id}`} data-hunk={hunk.id} data-status={status}>
+            <header>{hunk.section ?? hunk.id}</header>
+            <div>
+              <button
+                type="button"
+                data-testid={`diff-merge-hunk-${hunk.id}-toggle`}
+                data-hunk={hunk.id}
+                aria-pressed={isSelected}
+                onClick={() => controller.toggleSelect(hunk.id)}
+              >
+                Toggle
+              </button>
+              <button
+                type="button"
+                data-testid={`diff-merge-hunk-${hunk.id}-edit`}
+                onClick={() => controller.openEditor(hunk.id)}
+              >
+                Edit
+              </button>
+            </div>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
+interface DiffMergeOperationPaneProps {
+  readonly visible: boolean
+  readonly selectedCount: number
+  readonly queueHunkIds: readonly string[]
+  readonly controller: DiffMergeController
+}
+
+const DiffMergeOperationPane: React.FC<DiffMergeOperationPaneProps> = ({
+  visible,
+  selectedCount,
+  queueHunkIds,
+  controller,
+}) => {
+  if (!visible) return null
+  const queueHunksJson = JSON.stringify(queueHunkIds)
+  return (
+    <section data-block="operation-pane" data-testid="diff-merge-operation-pane" data-visible={selectedCount > 0 ? 'true' : 'false'}>
+      <button
+        type="button"
+        data-testid="diff-merge-queue-selected"
+        data-command="queue-merge"
+        data-hunks={queueHunksJson}
+        onClick={() => {
+          void controller.queueMerge(queueHunkIds)
+        }}
+      >
+        Queue Selected
+      </button>
+    </section>
+  )
+}
+
+interface DiffMergeEditModalProps {
+  readonly editingHunkId: string | null
+  readonly editingHunk: MergeHunk | undefined
+  readonly controller: DiffMergeController
+}
+
+const DiffMergeEditModal: React.FC<DiffMergeEditModalProps> = ({ editingHunkId, editingHunk, controller }) => {
+  if (!editingHunkId || !editingHunk) return null
+  return (
+    <section role="dialog" data-block="edit-modal" data-testid="diff-merge-edit-modal" data-hunk={editingHunkId}>
+      <header>{editingHunk.section ?? editingHunk.id}</header>
+      <button type="button" data-action="commit-edit" onClick={() => controller.commitEdit(editingHunkId)}>
+        Commit
+      </button>
+      <button type="button" data-action="cancel-edit" onClick={() => controller.cancelEdit()}>
+        Cancel
+      </button>
+    </section>
+  )
+}
+
 export interface DiffMergeViewProps {
   readonly precision: MergePrecision
   readonly hunks: readonly MergeHunk[]
@@ -195,11 +334,16 @@ export interface DiffMergeViewProps {
 }
 export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, queueMergeCommand }) => {
   const plan = useMemo(() => planDiffMergeView(precision), [precision])
-  const [activeTab, setActiveTab] = useState(plan.initialTab)
+  const storage = (globalThis as { localStorage?: DiffMergeTabStorage }).localStorage
+  const resolvedInitialTab = useMemo(
+    () => resolveDiffMergeStoredTab({ plan, precision, storage, fallback: plan.initialTab }),
+    [plan, precision, storage],
+  )
+  const [activeTab, setActiveTab] = useState(resolvedInitialTab)
 
   useEffect(() => {
-    setActiveTab(plan.initialTab)
-  }, [plan.initialTab])
+    setActiveTab(resolvedInitialTab)
+  }, [resolvedInitialTab])
 
   const [state, dispatch] = useReducer(diffMergeReducer, hunks, createInitialDiffMergeState)
   const knownHunkIds = useMemo(() => hunks.map((hunk) => hunk.id), [hunks])
@@ -224,69 +368,83 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
   const controller = useMemo(() => createDiffMergeController({ precision, dispatch, queueMergeCommand, getCurrentHunkIds }), [precision, dispatch, queueMergeCommand, getCurrentHunkIds])
   const activeLayout = useMemo(() => plan.tabs.find((tab) => tab.key === activeTab) ?? plan.tabs[0]!, [plan, activeTab])
   const selectedHunkIds = useMemo(() => Object.entries(state.hunkStates).filter(([, status]) => status === 'Selected' || status === 'Editing').map(([id]) => id), [state.hunkStates])
-  const queueCandidateIds = selectedHunkIds.length > 0 ? selectedHunkIds : knownHunkIds
+  const selectedHunkCount = selectedHunkIds.length
+  const queueCandidateIds = selectedHunkCount > 0 ? selectedHunkIds : knownHunkIds
   const queueHunkIds = useMemo(() => retainKnownHunkIds(queueCandidateIds, knownHunkIds), [queueCandidateIds, knownHunkIds])
-  const queueHunksJson = JSON.stringify(queueHunkIds)
   const editingHunkId = state.editingHunkId
   const editingHunk = editingHunkId ? hunks.find((hunk) => hunk.id === editingHunkId) : undefined
 
-  const navigation = plan.tabs.map((tab) => {
-    const badge = tab.badge ? <span data-badge={tab.badge}>{tab.badge.toUpperCase()}</span> : null
-    return (
-      <button key={tab.key} type="button" role="tab" data-testid={`diff-merge-tab-${tab.key}`} data-tab={tab.key} aria-selected={tab.key === activeTab} onClick={() => setActiveTab(tab.key)}>
-        {tab.label}
-        {badge}
-      </button>
-    )
-  })
+  const persistTabSelection = useCallback(
+    (key: DiffMergeSubTabKey) => {
+      if (!storage) return
+      storage.setItem(`${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`, key)
+    },
+    [precision, storage],
+  )
 
-  const hunkList = activeLayout.panes.includes('hunk-list') ? (
-    <section data-testid="diff-merge-hunk-list">
-      {hunks.map((hunk) => {
-        const status = state.hunkStates[hunk.id] ?? 'Unreviewed'
-        const isSelected = status === 'Selected' || status === 'Editing'
-        return (
-          <article key={hunk.id} data-testid={`diff-merge-hunk-${hunk.id}`} data-hunk={hunk.id} data-status={status}>
-            <header>{hunk.section ?? hunk.id}</header>
-            <div>
-              <button type="button" data-testid={`diff-merge-hunk-${hunk.id}-toggle`} data-hunk={hunk.id} aria-pressed={isSelected} onClick={() => controller.toggleSelect(hunk.id)}>
-                Toggle
-              </button>
-              <button type="button" data-testid={`diff-merge-hunk-${hunk.id}-edit`} onClick={() => controller.openEditor(hunk.id)}>
-                Edit
-              </button>
-            </div>
-          </article>
-        )
-      })}
-    </section>
-  ) : null
+  const handleSelectTab = useCallback(
+    (key: DiffMergeSubTabKey) => {
+      setActiveTab(key)
+      persistTabSelection(key)
+    },
+    [persistTabSelection, setActiveTab],
+  )
 
-  const operationPane = activeLayout.panes.includes('operation-pane') ? (
-    <section data-testid="diff-merge-operation-pane" data-visible={selectedHunkIds.length > 0 ? 'true' : 'false'}>
-      <button type="button" data-testid="diff-merge-queue-selected" data-command="queue-merge" data-hunks={queueHunksJson} onClick={() => { void controller.queueMerge(queueHunkIds) }}>
-        Queue Selected
-      </button>
-    </section>
-  ) : null
+  const planTabs = plan.tabs
+  const planNavigationBadge = plan.navigationBadge
+  const navigation = useMemo(
+    () => (
+      <DiffMergeNavigation
+        precision={precision}
+        navigationBadge={planNavigationBadge}
+        tabs={planTabs}
+        activeTab={activeTab}
+        onSelect={handleSelectTab}
+      />
+    ),
+    [activeTab, handleSelectTab, planNavigationBadge, planTabs, precision],
+  )
 
-  const editModal = editingHunkId && editingHunk ? (
-    <section role="dialog" data-testid="diff-merge-edit-modal" data-hunk={editingHunkId}>
-      <header>{editingHunk.section ?? editingHunk.id}</header>
-      <button type="button" data-action="commit-edit" onClick={() => controller.commitEdit(editingHunkId)}>
-        Commit
-      </button>
-      <button type="button" data-action="cancel-edit" onClick={() => controller.cancelEdit()}>
-        Cancel
-      </button>
-    </section>
-  ) : null
+  const isHunkListVisible = activeLayout.panes.includes('hunk-list')
+  const hunkList = useMemo(
+    () => (
+      <DiffMergeHunkList
+        visible={isHunkListVisible}
+        hunks={hunks}
+        hunkStates={state.hunkStates}
+        controller={controller}
+      />
+    ),
+    [controller, hunks, isHunkListVisible, state.hunkStates],
+  )
+
+  const isOperationPaneVisible = activeLayout.panes.includes('operation-pane')
+  const operationPane = useMemo(
+    () => (
+      <DiffMergeOperationPane
+        visible={isOperationPaneVisible}
+        selectedCount={selectedHunkCount}
+        queueHunkIds={queueHunkIds}
+        controller={controller}
+      />
+    ),
+    [controller, isOperationPaneVisible, queueHunkIds, selectedHunkCount],
+  )
+
+  const editModal = useMemo(
+    () => (
+      <DiffMergeEditModal
+        editingHunkId={editingHunkId ?? null}
+        editingHunk={editingHunk}
+        controller={controller}
+      />
+    ),
+    [controller, editingHunk, editingHunkId],
+  )
 
   return (
     <section data-component="diff-merge-view" data-precision={precision} data-phase={plan.phase}>
-      <nav role="tablist" data-precision={precision} data-navigation-badge={plan.navigationBadge ?? undefined}>
-        {navigation}
-      </nav>
+      {navigation}
       {hunkList}
       {operationPane}
       {editModal}
