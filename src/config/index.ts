@@ -53,16 +53,27 @@ export interface PluginBridgeBootstrapPlan {
   readonly snapshot: FlagSnapshot
   readonly enableFlag: boolean
   readonly errors: readonly FlagValidationError[]
+  readonly evaluationMs: number
+}
+
+const readClock = (): number => {
+  const perf = globalThis.performance
+  if (perf && typeof perf.now === 'function') {
+    return perf.now.call(perf)
+  }
+  return Date.now()
 }
 
 export function resolveAutoSaveBootstrapPlan(
   options?: ResolveOptions,
   config?: { readonly optionsDisabled?: boolean }
 ): AutoSaveBootstrapPlan {
+  const startedAt = readClock()
   const { snapshot, errors } = resolveFlags(options, { withErrors: true })
+  const evaluationMs = Math.max(0, Math.round(readClock() - startedAt))
   const planErrors = errors satisfies readonly FlagValidationError[]
 
-  publishFlagResolution('app.autosave', 'bootstrap', snapshot, planErrors)
+  publishFlagResolution('app.autosave', 'bootstrap', snapshot, planErrors, evaluationMs)
   const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
 
   const workspaceInput: WorkspaceConfiguration | null | undefined = options?.workspace
@@ -86,12 +97,15 @@ export function resolveAutoSaveBootstrapPlan(
 export function resolvePluginBridgeBootstrapPlan(
   options?: ResolveOptions
 ): PluginBridgeBootstrapPlan {
+  const startedAt = readClock()
   const { snapshot, errors } = resolveFlags(options, { withErrors: true })
+  const evaluationMs = Math.max(0, Math.round(readClock() - startedAt))
 
-  publishFlagResolution('vscode.plugins', 'bootstrap', snapshot, errors)
+  publishFlagResolution('vscode.plugins', 'bootstrap', snapshot, errors, evaluationMs)
   return {
     snapshot,
     enableFlag: snapshot.plugins.enabled,
-    errors
+    errors,
+    evaluationMs
   }
 }
