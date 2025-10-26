@@ -28,6 +28,7 @@ DiffMergeView のタブ初期化を precision 別に localStorage へ永続化�
 - Behavior:
   - `resolveDiffMergeStoredTab` は precision ごとの許容タブか検証し、無効な保存値を破棄して初期タブを決定すること。
   - `DiffMergeView` は初期表示時に storage からタブ状態を復元し、タブ切替時に許容タブのみを storage へ保存すること。
+  - 選択中タブは `queueMergeCommand` の `telemetryContext.lastTab` に必ず反映されること（Day8 Guardrails の型安全/TDD/最小差分ガイド遵守）。
 - I/O Contract:
   - Input: `precision`, `hunks`, `queueMergeCommand`
   - Storage: `localStorage['diff-merge.lastTab.<precision>']`
@@ -60,9 +61,10 @@ pnpm test -- --filter diff-merge-view-state
 
 ## Plan
 
-1. `resolveDiffMergeStoredTab` に許容タブ検証と初期値永続化の責務を追加するユニットテストを記述する。
+1. `tests/merge/diff-merge-view-state.test.ts` へ選択タブが `queueMergeCommand` の `telemetryContext.lastTab` に伝播することを検証するテストを追加し、TDD 先行で Day8 HUB/TASKS 方針どおり Task Seed を更新する。
 2. `DiffMergeView` で precision 別許容タブ集合を生成し、初期復元・タブ切替時に localStorage を更新するロジックを実装する。
-3. `pnpm test tests/components/DiffMergeView.test.tsx` と `pnpm test -- --filter diff-merge-view-state` を実行し、storage 永続化のリグレッションが解消されたことを確認する。
+3. `DiffMergeView` が `createDiffMergeController` へ `resolveCurrentTab` を渡す最小差分の修正を加え、テストを緑化する。
+4. `pnpm test tests/components/DiffMergeView.test.tsx` と `pnpm test -- --filter diff-merge-view-state` を実行し、storage 永続化とテレメトリ伝播のリグレッションが解消されたことを確認する。
 
 ## Patch
 

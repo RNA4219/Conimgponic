@@ -195,6 +195,61 @@ test('DiffMergeView stable precision restores last selected tab from storage', (
   }
 })
 
+test('DiffMergeView propagates active tab selection to queueMerge telemetry payload', async () => {
+  type DiffMergeController = ReturnType<typeof createDiffMergeController>
+  const storage = new MemoryStorage()
+  const storageKey = 'diff-merge.lastTab.stable'
+  storage.setItem(storageKey, 'merged')
+  const original = (globalThis as { localStorage?: MemoryStorage }).localStorage
+  ;(globalThis as { localStorage?: MemoryStorage }).localStorage = storage
+
+  const payloads: DiffMergeQueueCommandPayload[] = []
+  let capturedController: DiffMergeController | undefined
+  const previousHook = (globalThis as {
+    __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+  }).__diffMergeViewOnControllerReady
+  ;(globalThis as {
+    __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+  }).__diffMergeViewOnControllerReady = (controller) => {
+    capturedController = controller
+  }
+
+  try {
+    renderToStaticMarkup(
+      createElement(DiffMergeView, {
+        precision: 'stable',
+        hunks: sampleHunks,
+        queueMergeCommand: async (payload) => {
+          payloads.push(payload)
+          return successEvent
+        },
+      }),
+    )
+
+    assert.ok(capturedController)
+
+    await capturedController?.queueMerge(['h1'])
+
+    assert.equal(payloads.length, 1)
+    assert.equal(payloads[0]?.telemetryContext.lastTab, 'merged')
+  } finally {
+    if (previousHook) {
+      ;(globalThis as {
+        __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+      }).__diffMergeViewOnControllerReady = previousHook
+    } else {
+      delete (globalThis as {
+        __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+      }).__diffMergeViewOnControllerReady
+    }
+    if (original === undefined) {
+      delete (globalThis as { localStorage?: MemoryStorage }).localStorage
+    } else {
+      ;(globalThis as { localStorage?: MemoryStorage }).localStorage = original
+    }
+  }
+})
+
 class MemoryStorage implements DiffMergeTabStorage {
   #map = new Map<string, string>()
 
