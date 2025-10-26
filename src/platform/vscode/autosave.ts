@@ -474,9 +474,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const statusBeforeSaving = state.status
     const retryCountBeforeSaving = state.retryCount
     state.status = 'saving'
-    if (retryCountBeforeSaving === 0 && statusBeforeSaving !== 'backoff') {
-      state.retryCount = 0
-    }
+    const shouldPreserveRetryCount =
+      statusBeforeSaving === 'backoff' || retryCountBeforeSaving > 0
+    state.retryCount = shouldPreserveRetryCount ? retryCountBeforeSaving : 0
     options.sendMessage(
       createStatusMessage(
         request.reqId,

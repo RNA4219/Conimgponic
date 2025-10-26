@@ -20,6 +20,12 @@ export interface DiffMergeState {
   readonly editingHunkId: string | null
 }
 
+export interface DiffMergeAutoAppliedState {
+  readonly rate: number | null
+  readonly target: number
+  readonly meetsTarget: boolean | null
+}
+
 export type DiffMergeAction =
   | { readonly type: 'toggleSelect'; readonly hunkId: string }
   | { readonly type: 'markSkipped'; readonly hunkId: string }
@@ -128,14 +134,24 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
 
 const lastTabForPrecision: Record<MergePrecision, DiffMergeSubTabKey> = Object.freeze({ legacy: 'review', beta: 'review', stable: 'diff' })
 
+const resolveAutoSaveRequested = (
+  precision: MergePrecision,
+  autoApplied: DiffMergeAutoAppliedState | undefined,
+): boolean => {
+  if (autoApplied?.meetsTarget === false) return false
+  return precision !== 'legacy'
+}
+
 const toQueuePayload = ({
   precision,
   hunkIds,
   lastTab,
+  autoApplied,
 }: {
   readonly precision: MergePrecision
   readonly hunkIds: readonly string[]
   readonly lastTab?: DiffMergeSubTabKey | null
+  readonly autoApplied?: DiffMergeAutoAppliedState
 }) => ({
   type: 'queue-merge' as const,
   precision,
@@ -146,7 +162,7 @@ const toQueuePayload = ({
     analyzerSurface: 'diff-merge.queue' as const,
     lastTab: lastTab ?? lastTabForPrecision[precision],
   },
-  metadata: { autoSaveRequested: precision !== 'legacy' },
+  metadata: { autoSaveRequested: resolveAutoSaveRequested(precision, autoApplied) },
 })
 
 export const retainKnownHunkIds = (
@@ -166,6 +182,7 @@ export const createDiffMergeController = ({
   getCurrentHunkIds,
   onError,
   resolveCurrentTab,
+  autoApplied,
 }: {
   readonly precision: MergePrecision
   readonly dispatch: (action: DiffMergeAction) => void
@@ -173,6 +190,7 @@ export const createDiffMergeController = ({
   readonly getCurrentHunkIds: () => readonly string[]
   readonly onError?: (event: MergeDecisionEvent) => void
   readonly resolveCurrentTab?: () => DiffMergeSubTabKey | null
+  readonly autoApplied?: DiffMergeAutoAppliedState
 }) => ({
   queueMerge: async (hunkIds: readonly string[]) => {
     const ids = [...retainKnownHunkIds(hunkIds, getCurrentHunkIds())]
@@ -180,7 +198,12 @@ export const createDiffMergeController = ({
     dispatch({ type: 'queueMerge', hunkIds: ids })
     try {
       const result = await queueMergeCommand(
-        toQueuePayload({ precision, hunkIds: ids, lastTab: resolveCurrentTab?.() ?? null }),
+        toQueuePayload({
+          precision,
+          hunkIds: ids,
+          lastTab: resolveCurrentTab?.() ?? null,
+          autoApplied,
+        }),
       )
       dispatch({ type: 'queueResult', hunkIds: ids, result: result.status })
       if (result.status === 'error') onError?.(result)
