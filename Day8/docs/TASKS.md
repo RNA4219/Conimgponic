@@ -34,3 +34,4 @@
 - [ ] Guardrails 変更時に [docs/UPSTREAM_WEEKLY_LOG.md](UPSTREAM_WEEKLY_LOG.md) を確認し、Seed へ必要な差分メモを追加した。
 - [ ] Plan / Patch / Tests / Commands / Notes セクションで進捗と検証ログを更新した。
 - [ ] 完了後に関連 PR・コミットリンクを追記し、後続作業の有無を明記した。
+- [ ] 既存ハンク選択・編集中に新規ハンクが追加されても `'Selected'` / `'Editing'` 状態が維持される検証ログを残した。
