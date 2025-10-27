@@ -188,7 +188,7 @@ const parseMergePrecision = (value: unknown): MergePrecision | undefined => {
 
 export const getDefaultPreference = (precision: MergePrecision, diffEnabled: boolean): MergeDockPreference => {
   if (precision === 'stable') {
-    return diffEnabled ? 'manual-first' : 'diff-merge'
+    return 'diff-merge'
   }
   return precision !== 'legacy' && diffEnabled ? 'diff-merge' : 'manual-first'
 }
@@ -565,7 +565,7 @@ export const resolveMergeDockPhasePlan = ({
       ? rawPlan.initialTab
       : effectiveTabs[0]?.id ?? rawPlan.initialTab
   let diffExposure: 'hidden' | 'opt-in' | 'default' = rawPlan.diff?.exposure ?? 'hidden'
-  const diffTabsPlan = rawPlan.diff
+  let diffTabsPlan = rawPlan.diff
     ? {
         exposure: rawPlan.diff.exposure,
         ...(rawPlan.diff.backupAfterMs ? { backupAfterMs: rawPlan.diff.backupAfterMs } : {}),
@@ -577,6 +577,9 @@ export const resolveMergeDockPhasePlan = ({
   if (meetsTarget === false) {
     diffExposure = 'opt-in'
     diffEnabled = false
+    if (diffTabsPlan) {
+      diffTabsPlan = { ...diffTabsPlan, exposure: 'opt-in' }
+    }
   }
 
   return {

@@ -207,6 +207,7 @@ stateDiagram-v2
 - precision 切替は `merge.precision` フラグの再評価で発火し、`MergeDock` のタブ DOM を再構成する。【F:docs/design/merge/diff-merge-view.md†L26-L78】
 - `stable` でのみ Diff タブが初期表示となり、`Legacy`/`Beta` は `Compiled` を初期タブとして `diff-merge` を遅延マウントする。既存 UI との整合は `docs/MERGE-DESIGN-IMPL.md` §5 のタブ制御要件と同期する。【F:docs/MERGE-DESIGN-IMPL.md†L168-L206】
 - レビュー観点: Diff Merge / AutoSave の協調要件が `docs/tasks/task-autosave-project-locks.md` のガードと矛盾しないかを `docs/AUTOSAVE-DESIGN-IMPL.md`・`docs/MERGE-DESIGN-IMPL.md` を基準に突き合わせる。
+- Collector 指標で `autoApplied.rate < threshold.autoTarget` を検出した場合は Diff ガードを Phase B 相当に降格（`exposure='opt-in'`, `enabled=false`）し、ロールアウト閾値を再評価する。
 
 
 ### 0.4 AutoSave Webview Bridge 設計

@@ -799,6 +799,100 @@ describe('createVscodeAutoSaveBridge', () => {
     expectPhase('disabled')
   })
 
+  it('autosave.status テレメトリの phase を saving/backoff/saved と guard 無効化で検証する', async () => {
+    const statusTelemetry: AutoSaveTelemetryEvent[] = []
+    const start = Date.parse('2024-01-01T00:00:00.000Z')
+    let ticks = 0
+    const now = () => new Date(start + ticks++ * 1000)
+    let attempts = 0
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now,
+      sendMessage: () => {},
+      atomicWrite: async ({ request }) => {
+        attempts += 1
+        if (attempts === 1) {
+          return {
+            ok: false as const,
+            error: {
+              name: 'AutoSaveError',
+              message: 'temporary lock',
+              code: 'write-failed',
+              retryable: true
+            }
+          }
+        }
+        return {
+          ok: true as const,
+          bytes: request.payload.pendingBytes,
+          generation: request.payload.queuedGeneration,
+          lastSuccessAt: new Date(start + 60_000).toISOString(),
+          lockStrategy: 'web-lock'
+        }
+      },
+      telemetry: (event) => statusTelemetry.push(event)
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    const retryRequest = createRequest('req-phase-retry', 'corr-phase-retry', guardEnabled, 1024, 1)
+    await bridge.handleSnapshotRequest(retryRequest)
+
+    bridge.reportDirty(1024, guardEnabled)
+    const successRequest = createRequest('req-phase-success', 'corr-phase-success', guardEnabled, 1024, 2)
+    await bridge.handleSnapshotRequest(successRequest)
+
+    const statusEvents = statusTelemetry.filter((event) => event.name === 'autosave.status')
+    const expectStatusPhase = (correlationId: string, state: string, expectedPhase: string) => {
+      const event = statusEvents.find(
+        (candidate) =>
+          candidate.properties?.correlationId === correlationId && candidate.properties?.state === state
+      )
+      assert.ok(event, `${state} autosave.status telemetry が必要`)
+      assert.equal(event.properties?.phase, expectedPhase)
+    }
+
+    expectStatusPhase(retryRequest.correlationId, 'saving', retryRequest.phase ?? 'A-2')
+    expectStatusPhase(retryRequest.correlationId, 'backoff', retryRequest.phase ?? 'A-2')
+    expectStatusPhase(successRequest.correlationId, 'saving', successRequest.phase ?? 'A-2')
+    expectStatusPhase(successRequest.correlationId, 'saved', successRequest.phase ?? 'A-2')
+
+    const guardTelemetry: AutoSaveTelemetryEvent[] = []
+    const guardStart = Date.parse('2024-01-02T00:00:00.000Z')
+    let guardTicks = 0
+    const guardNow = () => new Date(guardStart + guardTicks++ * 1000)
+    const guardBridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: guardNow,
+      sendMessage: () => {},
+      atomicWrite: async () => {
+        assert.fail('guard 無効化ショートサーキットでは atomicWrite を呼ばない')
+      },
+      telemetry: (event) => guardTelemetry.push(event)
+    })
+
+    const guardRequest = createRequest(
+      'req-guard-phase-check',
+      'corr-guard-phase-check',
+      { featureFlag: { value: false, source: 'env' }, optionsDisabled: true },
+      0,
+      0
+    )
+    await guardBridge.handleSnapshotRequest(guardRequest)
+
+    const guardStatus = guardTelemetry.find(
+      (event) =>
+        event.name === 'autosave.status' &&
+        event.properties?.correlationId === guardRequest.correlationId &&
+        event.properties?.state === 'disabled'
+    )
+    assert.ok(guardStatus, 'guard 無効化 autosave.status テレメトリが必要')
+    assert.equal(guardStatus.properties?.phase, 'A-1')
+  })
+
   it('maintains retryCount when retrying after backoff', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     let attempt = 0
@@ -1482,6 +1576,37 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(disabledTelemetry, 'guard 無効化テレメトリが必要')
     assert.equal(disabledTelemetry.properties?.state, 'disabled')
     assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+  })
+
+  it('reportDirty の autosave.status telemetry で guard 無効化と dirty 遷移の phase を付与する', () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        /* noop */
+      },
+      atomicWrite: async () => {
+        assert.fail('reportDirty テレメトリ検証では atomicWrite を呼ばない')
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(256, { featureFlag: { value: false, source: 'env' }, optionsDisabled: true })
+    const disabledTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'disabled'
+    )
+    assert.ok(disabledTelemetry, 'guard 無効化テレメトリが必要')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+
+    bridge.reportDirty(512, guardEnabled)
+    const dirtyTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'dirty'
+    )
+    assert.ok(dirtyTelemetry, 'dirty テレメトリが必要')
+    assert.equal(dirtyTelemetry.properties?.phase, 'A-1')
   })
 
   it('guard disable short circuit と非 retryable 降格で status.envelope.phase を A-1 に揃える', async () => {

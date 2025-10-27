@@ -217,6 +217,19 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   assert.equal(plan.autoApplied.meetsTarget, false)
 })
 
+test('diff exposure falls back to opt-in when auto applied underperforms', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+    autoAppliedRate: 0.84,
+  })
+
+  assert.ok(plan.threshold.autoTarget > plan.autoApplied.rate)
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+})
+
 test('beta precision diff plan triggers backup CTA when diff is enabled', () => {
   const phasePlan = resolveMergeDockPhasePlan({
     precision: 'beta',
@@ -350,7 +363,32 @@ test('stable precision retains diff merge preference across guard transitions', 
   assert.equal(nextPreference, 'ai-first')
 })
 
-test('stable precision restores manual preference once diff guard lifts', () => {
+test('stable precision keeps diff merge preference as default when diff unlocks', () => {
+  const unlockedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+  })
+
+  assert.equal(unlockedPlan.diff.enabled, true)
+
+  const defaultPreference = getDefaultPreference('stable', unlockedPlan.diff.enabled)
+
+  assert.equal(defaultPreference, 'diff-merge')
+
+  const nextPreference = resolvePreferenceSelection({
+    precision: 'stable',
+    previousPrecision: 'stable',
+    diffEnabled: unlockedPlan.diff.enabled,
+    previousDiffEnabled: false,
+    preference: 'diff-merge',
+    defaultPreference,
+  })
+
+  assert.equal(nextPreference, 'diff-merge')
+})
+
+test('stable precision keeps diff merge preference once diff guard lifts but allows manual override', () => {
   const guardedPlan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.82,
@@ -396,7 +434,7 @@ test('stable precision restores manual preference once diff guard lifts', () => 
     defaultPreference: defaultUnlockedPreference,
   })
 
-  assert.equal(nextPreference, 'manual-first')
+  assert.equal(nextPreference, 'diff-merge')
 
   preference = nextPreference
 

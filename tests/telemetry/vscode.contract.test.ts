@@ -4,7 +4,8 @@ import { describe, test } from 'node:test'
 
 import {
   COLLECT_METRICS_CONTRACT,
-  FLAG_RESOLUTION_SOURCE_VARIANTS
+  FLAG_RESOLUTION_SOURCE_VARIANTS,
+  TELEMETRY_ENVELOPE_METADATA_FIELDS
 } from '../../scripts/monitor/collect-metrics.js'
 import {
   collectFlagResolutionPayloads,
@@ -145,7 +146,7 @@ const findTelemetrySpec = (event: string) =>
 // RED: VS Code 拡張メッセージ/テレメトリ JSONL 契約と再試行条件を固定する。
 describe('vscode extension telemetry contract (RED)', () => {
   test('message envelope は type/apiVersion/reqId/ts を含む Day8 Collector 順序を固定する', () => {
-    deepStrictEqual(COLLECT_METRICS_CONTRACT.telemetry.envelope, [
+    const expectedEnvelopeOrder = [
       'type',
       'apiVersion',
       'reqId',
@@ -154,15 +155,16 @@ describe('vscode extension telemetry contract (RED)', () => {
       'phase',
       'schema',
       'event',
-      'feature',
-      'component',
-      'kind',
-      'source',
-      'evaluation_ms',
+      ...TELEMETRY_ENVELOPE_METADATA_FIELDS,
       'attempt',
       'maxAttempts',
       'backoffMs',
-    ])
+    ] as const
+
+    deepStrictEqual(
+      COLLECT_METRICS_CONTRACT.telemetry.envelope,
+      Array.from(expectedEnvelopeOrder)
+    )
 
     assertOk(
       telemetrySchema.required,
@@ -204,6 +206,22 @@ describe('vscode extension telemetry contract (RED)', () => {
     const kind = properties.kind
     const source = properties.source
     const evaluationMs = properties.evaluation_ms
+
+    deepStrictEqual(
+      TELEMETRY_ENVELOPE_METADATA_FIELDS,
+      ['feature', 'component', 'kind', 'source', 'evaluation_ms']
+    )
+
+    const metadataDefinition =
+      telemetrySchema.definitions?.telemetryEnvelopeMetadataField
+    assertOk(
+      metadataDefinition?.enum,
+      'telemetry schema must enumerate metadata fields'
+    )
+    deepStrictEqual(
+      metadataDefinition.enum,
+      Array.from(TELEMETRY_ENVELOPE_METADATA_FIELDS)
+    )
 
     assertOk(feature, 'feature property must be defined')
     const featureSchema = resolveSchemaRef(feature)
@@ -374,6 +392,11 @@ describe('vscode extension telemetry contract (RED)', () => {
       'flag_resolution payload must include errors array'
     )
     deepStrictEqual(event.payload.errors, [])
+    deepStrictEqual(event.feature, 'config.flags')
+    deepStrictEqual(event.component, 'flags')
+    deepStrictEqual(event.kind, 'flag_resolution')
+    strictEqual(event.source, 'app.autosave')
+    strictEqual(event.evaluation_ms, 42)
     const allowedPhases = new Set(allowedPhaseEnum)
     assertOk(
       allowedPhases.has(event.payload.phase),
@@ -384,6 +407,54 @@ describe('vscode extension telemetry contract (RED)', () => {
       retryable: false,
       default_used: false
     })
+  })
+
+  test('publishFlagResolution は overrides reqId/correlationId を UUID に正規化する', () => {
+    const captured: Day8CollectorFlagResolutionEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorFlagResolutionEvent)
+      }
+    } as Day8Collector
+
+    try {
+      const payload: FlagResolutionEventPayload = {
+        flag: 'autosave.enabled',
+        variant: 'true',
+        source: 'env',
+        phase: 'phase-a0',
+        evaluation_ms: 42,
+        errors: [],
+        threshold: null,
+        status: 'success',
+        detail: { retryable: false, default_used: false }
+      }
+      publishFlagResolution('app.autosave', 'bootstrap', [payload], 42, {
+        reqId: 'not-a-uuid',
+        correlationId: 'also-not-a-uuid'
+      })
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    assertOk(captured.length > 0, 'flag_resolution telemetry must be published when overrides provided')
+    const [event] = captured
+    assertOk(event, 'flag_resolution event must be captured when overrides provided')
+    assertOk(UUID_REGEX.test(event.reqId), 'flag_resolution reqId overrides must be normalized to uuid')
+    assertOk(UUID_REGEX.test(event.correlationId), 'flag_resolution correlationId overrides must be normalized to uuid')
+    strictEqual(event.correlationId, event.reqId, 'flag_resolution correlationId overrides must match reqId when normalized')
+    strictEqual(
+      event.reqId === 'not-a-uuid',
+      false,
+      'flag_resolution reqId override must not leak invalid value'
+    )
+    strictEqual(
+      event.correlationId === 'also-not-a-uuid',
+      false,
+      'flag_resolution correlationId override must not leak invalid value'
+    )
   })
 
   test('publishFlagResolution は phase-a2/b1 を Collector 契約フェーズへ変換する', () => {

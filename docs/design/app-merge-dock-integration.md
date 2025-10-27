@@ -52,6 +52,7 @@ FlagSnapshot を単一ソースとして利用し、AutoSave ブートストラ�
 - **legacy**: Diff タブ非表示。MergeDock の既存タブ配列と初期アクティブタブ（Overview）を維持。戻り動線は既存 `merge.lastTab` のみ。
 - **beta**: Diff タブを末尾に追加。初期タブは従来どおり Overview。`phaseStats` が未提供でもタブは可視化されるが、レビュー帯域が 0 の間は `data-merge-diff-enabled=false` として Diff Merge 操作とバックアップ CTA を抑止する。Diff へ遷移後の戻りはタブ UI で行い、`merge.lastTab` が Diff でも `precision` を legacy に戻した瞬間に `overview` へフォールバック。
 - **stable**: Diff タブを `settings` 直前へ挿入し、初期アクティブタブを Diff とする。`phaseStats` が未提供でも初期表示 (`data-merge-diff-visible=true`) を維持しつつ、レビュー/コンフリクト指標が未達の場合は `data-merge-diff-enabled=false` で CTA と `diff-merge` preference を非活性化する。ユーザが他タブへ戻った場合は `merge.lastTab` を更新し、次回マウント時に尊重。
+  - Collector での `autoApplied.rate` が `threshold.autoTarget` を下回った際は Diff を Phase B 相当へ降格し、`exposure='opt-in'` と `enabled=false` を再適用する。
 - バックアップ CTA は `precision in {beta, stable}` かつ `AutoSavePhase !== 'disabled'`、`lastSuccessAt` が 5 分超過時に表示する（[docs/MERGEDOCK-FLAG-DESIGN.md](../MERGEDOCK-FLAG-DESIGN.md) §4.2）。
 
 ### 4.2 ロールバック手順
