@@ -70,7 +70,7 @@ test('run-selected respects tests root when autorun is skipped', async () => {
 
     assert.deepStrictEqual(nodeArgs.slice(0, nodeBaseArgs.length), nodeBaseArgs);
 
-    const loaderFlagIndex = nodeBaseArgs.findIndex((value) => value === '--import' || value === '--loader');
+    const loaderFlagIndex = nodeBaseArgs.findIndex((value: string) => value === '--import' || value === '--loader');
     assert.ok(loaderFlagIndex >= 0, 'node test base args must include loader flag');
 
     const loaderFlag = nodeBaseArgs[loaderFlagIndex];
