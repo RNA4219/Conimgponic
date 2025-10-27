@@ -106,9 +106,10 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "retryable": { "type": "boolean" }
+                  "retryable": { "type": "boolean" },
+                  "default_used": { "type": "boolean" }
                 },
-                "required": ["retryable"]
+                "required": ["retryable", "default_used"]
               },
               "errors": {
                 "type": "array",
