@@ -547,6 +547,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
 const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease> => {
   const signal = ctx.signal;
   let aborted = false;
+  let rejectOnAbort: ((error: ProjectLockError) => void) | undefined;
   const abortError = () =>
     makeError('acquire-denied', 'Fallback acquisition aborted', 'acquire', true, signal?.reason);
   const throwIfAborted = () => {
@@ -557,11 +558,22 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
 
   const onAbort = () => {
     aborted = true;
+    if (rejectOnAbort) {
+      const error = abortError();
+      rejectOnAbort(error);
+      rejectOnAbort = undefined;
+    }
   };
 
   if (signal?.aborted) {
     throw abortError();
   }
+
+  const abortAwaitable: Promise<never> | undefined = signal
+    ? new Promise<never>((_, reject) => {
+        rejectOnAbort = reject;
+      })
+    : undefined;
 
   signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -603,11 +615,18 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
     };
 
     throwIfAborted();
-    await saveJSON(FALLBACK_LOCK_PATH, next);
+    const writePromise = saveJSON(FALLBACK_LOCK_PATH, next);
+    if (abortAwaitable) {
+      await Promise.race([writePromise, abortAwaitable]);
+      rejectOnAbort = undefined;
+    } else {
+      await writePromise;
+    }
     throwIfAborted();
 
     return buildLease('file-lock', FALLBACK_LOCK_PATH, ttl, ctx.heartbeatMs, ctx, acquiredAt);
   } finally {
+    rejectOnAbort = undefined;
     signal?.removeEventListener('abort', onAbort);
   }
 

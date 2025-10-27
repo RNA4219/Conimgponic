@@ -10,6 +10,7 @@ import {
   releaseProjectLock,
   projectLockEvents,
   WEB_LOCK_KEY,
+  FALLBACK_LOCK_PATH,
   type ProjectLockEvent
 } from '../../src/lib/locks'
 import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
@@ -251,6 +252,130 @@ scenario(
       ctx.opfs.files.has('project/.lock'),
       false,
       'fallback lock file must not be created when acquisition aborts before start'
+    )
+  }
+)
+
+scenario(
+  'AS-LK-12: Fallback acquisition aborts during pending write without creating lock file',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    const controller = new AbortController()
+    let resolveWrite: (() => void) | undefined
+    let notifyWriteStarted: (() => void) | undefined
+    const writeStarted = new Promise<void>((resolve) => {
+      notifyWriteStarted = resolve
+    })
+
+    const originalGetDirectory = ctx.opfs.storage.getDirectory
+    const wrapDirectory = (
+      directory: Awaited<ReturnType<typeof originalGetDirectory>>,
+      prefix: string
+    ): Awaited<ReturnType<typeof originalGetDirectory>> => {
+      const getDirectoryHandle = directory.getDirectoryHandle.bind(directory)
+      const getFileHandle = directory.getFileHandle.bind(directory)
+      const removeEntry = directory.removeEntry.bind(directory)
+      const entries = directory.entries.bind(directory)
+      return {
+        async getDirectoryHandle(name: string, options?: { create?: boolean }) {
+          const next = await getDirectoryHandle(name, options as { create?: boolean })
+          const nextPrefix = prefix ? `${prefix}/${name}` : name
+          return wrapDirectory(next, nextPrefix)
+        },
+        async getFileHandle(name: string) {
+          const handle = await getFileHandle(name)
+          const filePath = prefix ? `${prefix}/${name}` : name
+          if (filePath === FALLBACK_LOCK_PATH) {
+            const createWritable = handle.createWritable.bind(handle)
+            const getFile = handle.getFile.bind(handle)
+            return {
+              async createWritable() {
+                const writable = await createWritable()
+                const originalWrite = writable.write.bind(writable)
+                const originalClose = writable.close.bind(writable)
+                return {
+                  async write(data: string) {
+                    notifyWriteStarted?.()
+                    await new Promise<void>((resolve) => {
+                      resolveWrite = resolve
+                    })
+                    await originalWrite(data)
+                  },
+                  async close() {
+                    await originalClose()
+                  }
+                }
+              },
+              async getFile() {
+                return getFile()
+              }
+            }
+          }
+          return handle
+        },
+        async removeEntry(name: string) {
+          return removeEntry(name)
+        },
+        async *entries() {
+          for await (const entry of entries()) {
+            yield entry
+          }
+        }
+      }
+    }
+
+    ctx.opfs.storage.getDirectory = async () => wrapDirectory(await originalGetDirectory(), '')
+    t.after(() => {
+      ctx.opfs.storage.getDirectory = originalGetDirectory
+    })
+
+    const acquirePromise = projectLockApi.acquire({
+      preferredStrategy: 'file-lock',
+      signal: controller.signal,
+      retry: false
+    })
+
+    await writeStarted
+
+    const failTimer = setTimeout(() => {
+      resolveWrite?.()
+      assert.fail('acquireProjectLock must reject promptly after AbortSignal aborts fallback write')
+    }, 100)
+
+    controller.abort(new DOMException('User cancelled project lock acquire', 'AbortError'))
+
+    let rejection: ProjectLockError | undefined
+    try {
+      await assert.rejects(acquirePromise, (error: unknown) => {
+        assert.ok(error instanceof ProjectLockError, 'acquire must reject with ProjectLockError')
+        rejection = error
+        assert.equal(error.code, 'acquire-denied', 'error code must indicate acquisition denied')
+        assert.equal(error.retryable, true, 'abort-triggered failure must remain retryable')
+        return true
+      })
+    } finally {
+      clearTimeout(failTimer)
+      resolveWrite?.()
+    }
+
+    const error = rejection!
+
+    assert.deepEqual(sequence, ['attempt:file-lock', 'error:acquire-denied:retryable=true'])
+    assert.deepEqual(telemetry, [
+      { type: 'lock:error', code: 'acquire-denied', retryable: true, operation: 'acquire' },
+      { type: 'lock:readonly-entered', reason: 'acquire-failed', retryable: false }
+    ])
+
+    assert.equal(
+      ctx.opfs.files.has('project/.lock'),
+      false,
+      'fallback lock file must not be created when acquisition aborts during pending write'
     )
   }
 )
