@@ -200,6 +200,22 @@ test('syncHunks preserves selected and editing states while appending new hunks'
   assert.equal(h.state().hunkStates.h3, 'Unreviewed')
 })
 
+test('cancelEdit resets editing hunk to Unreviewed idle state', () => {
+  // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md（型安全・最小差分・TDD）と
+  // Day8/docs/day8/guides/07_contributing.md（タスク分割・衝突回避）を引用し、
+  // `cancelEdit` 後に対象ハンクが `'Unreviewed'` へ戻る idle 遷移を赤テストで固める。
+  const h = harness()
+
+  h.controller.openEditor('h1')
+  assert.equal(h.state().editingHunkId, 'h1')
+  assert.equal(h.state().hunkStates.h1, 'Editing')
+
+  h.controller.cancelEdit()
+
+  assert.equal(h.state().editingHunkId, null)
+  assert.equal(h.state().hunkStates.h1, 'Unreviewed')
+})
+
 test('openEditor/commitEdit', () => {
   const h = harness()
   h.controller.openEditor('h1')
