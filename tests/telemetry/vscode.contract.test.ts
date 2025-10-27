@@ -85,6 +85,54 @@ const assertPayloadSchema = (
   return payloadSchema
 }
 
+const resolveSchemaRef = (schema: JsonSchemaObject | undefined) => {
+  if (!schema) {
+    return undefined
+  }
+  if (schema.$ref) {
+    return telemetrySchema.definitions?.[schema.$ref.replace('#/definitions/', '')]
+  }
+  return schema
+}
+
+const assertFlagValidationErrorSchema = (schema: JsonSchemaObject | undefined) => {
+  assertOk(schema && typeof schema === 'object', 'flag_resolution payload errors must define item schema')
+  const resolved = resolveSchemaRef(schema)
+  assertOk(resolved, 'flag_resolution payload error items must resolve to schema')
+  assertOk(resolved.type === 'object', 'flag_resolution payload errors must emit objects')
+  assertOk(resolved.required, 'flag_resolution payload error objects must define required fields')
+  deepStrictEqual(
+    Array.from(resolved.required).sort(),
+    ['code', 'message', 'flag', 'retryable', 'source', 'phase', 'raw'].sort()
+  )
+  assertOk(resolved.properties, 'flag_resolution payload error objects must define properties')
+  const properties = resolved.properties
+
+  const codeSchema = resolveSchemaRef(properties.code)
+  assertOk(codeSchema && codeSchema.type === 'string', 'flag_resolution payload error code must be string')
+  assertOk(codeSchema.enum, 'flag_resolution payload error code must define enum')
+  deepStrictEqual(codeSchema.enum, ['invalid-boolean', 'invalid-precision'])
+
+  for (const key of ['message', 'flag', 'raw'] as const) {
+    const stringSchema = resolveSchemaRef(properties[key])
+    assertOk(stringSchema && stringSchema.type === 'string', `flag_resolution payload error ${key} must be string`)
+    assertOk(stringSchema.minLength === 1, `flag_resolution payload error ${key} must enforce minLength`)
+  }
+
+  const retryableSchema = resolveSchemaRef(properties.retryable)
+  assertOk(retryableSchema && retryableSchema.type === 'boolean', 'flag_resolution payload error retryable must be boolean')
+  assertOk('const' in retryableSchema && retryableSchema.const === false, 'flag_resolution payload error retryable must be const false')
+
+  const sourceSchema = resolveSchemaRef(properties.source)
+  assertOk(sourceSchema && sourceSchema.enum, 'flag_resolution payload error source must resolve to enum')
+  deepStrictEqual(sourceSchema.enum, Array.from(FLAG_RESOLUTION_SOURCE_VARIANTS))
+
+  const phaseSchema = resolveSchemaRef(properties.phase)
+  assertOk(phaseSchema && phaseSchema.type === 'string', 'flag_resolution payload error phase must be string')
+  assertOk(phaseSchema.enum, 'flag_resolution payload error phase must enumerate rollout phases')
+  deepStrictEqual(phaseSchema.enum, ['phase-a0', 'phase-a1', 'phase-a2', 'phase-b0', 'phase-b1'])
+}
+
 const findTelemetrySpec = (event: string) =>
   COLLECT_METRICS_CONTRACT.telemetry.events.find((spec) => spec.event === event)
 
@@ -158,6 +206,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.source',
       'payload.phase',
       'payload.evaluation_ms',
+      'payload.errors',
       'payload.threshold',
       'payload.status',
       'payload.detail.retryable',
@@ -240,6 +289,11 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(captured.length > 0, 'flag_resolution telemetry must be published')
     const [event] = captured
     assertOk(event, 'flag_resolution event must be captured')
+    assertOk(
+      Array.isArray(event.payload.errors),
+      'flag_resolution payload must include errors array'
+    )
+    deepStrictEqual(event.payload.errors, [])
     const allowedPhases = new Set(allowedPhaseEnum)
     assertOk(
       allowedPhases.has(event.payload.phase),
@@ -326,6 +380,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     const errorsSchema = payloadSchema.properties.errors
     assertOk(errorsSchema, 'flag_resolution payload schema must define errors array')
     assertOk(errorsSchema.type === 'array', 'flag_resolution payload errors must be an array')
+    assertFlagValidationErrorSchema(errorsSchema.items)
 
     const detailSchema = payloadSchema.properties.detail
     assertOk(detailSchema, 'flag_resolution payload schema must define detail object')
