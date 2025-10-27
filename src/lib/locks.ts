@@ -628,12 +628,47 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
   let allowWeb = options.preferredStrategy !== 'file-lock';
   let delay = backoff.initialDelayMs;
   let fallbackNotified = false;
+  const createAbortError = () =>
+    makeError('acquire-timeout', 'Project lock acquisition aborted', 'acquire', true, ctx.signal?.reason);
+  const getAbortError = () => (ctx.signal?.aborted ? createAbortError() : undefined);
+  const abortIfSignaled = () => {
+    const abortError = getAbortError();
+    if (abortError) {
+      emitError(abortError);
+      throw abortError;
+    }
+  };
+  const waitForBackoff = (ms: number): Promise<void> => {
+    if (ms <= 0) {
+      abortIfSignaled();
+      return Promise.resolve();
+    }
+    const { signal } = ctx;
+    if (!signal) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    abortIfSignaled();
+    return new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        signal.removeEventListener('abort', onAbort);
+        clearTimeout(timer);
+        reject(createAbortError());
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  };
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    abortIfSignaled();
     const order: LockAcquisitionStrategy[] =
       options.preferredStrategy === 'file-lock' ? ['file-lock'] : ['web-lock', 'file-lock'];
 
     for (const strategy of order) {
+      abortIfSignaled();
       if (strategy === 'web-lock' && !allowWeb) continue;
       projectLockEvents.emit({ type: 'lock:attempt', strategy, retry: attempt });
 
@@ -689,7 +724,16 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
 
     if (attempt < maxAttempts - 1) {
       projectLockEvents.emit({ type: 'lock:waiting', retry: attempt + 1, delayMs: delay });
-      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      abortIfSignaled();
+      try {
+        await waitForBackoff(delay);
+      } catch (error) {
+        const projectError =
+          error instanceof ProjectLockError ? error : createAbortError();
+        emitError(projectError);
+        throw projectError;
+      }
+      abortIfSignaled();
       delay *= backoff.factor;
     }
   }

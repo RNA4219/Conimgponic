@@ -256,6 +256,59 @@ scenario(
 )
 
 scenario(
+  'AS-I-03: Abort during retry backoff cancels wait and surfaces acquire-timeout',
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+    ctx.opfs.files.set(
+      'project/.lock',
+      JSON.stringify({ leaseId: 'held-lease', ownerId: 'another-owner', acquiredAt: 0, expiresAt: 30_000, ttlSeconds: 30, mtime: 0 })
+    )
+    const uuids = ['backoff-lease', 'backoff-owner']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+    const controller = new AbortController()
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+      if (event.type === 'lock:waiting')
+        queueMicrotask(() => controller.abort(new DOMException('User aborted lock backoff', 'AbortError')))
+    })
+    t.after(unsubscribe)
+    await assert.rejects(
+      projectLockApi.acquire({ preferredStrategy: 'file-lock', signal: controller.signal }),
+      (error: unknown) =>
+        (assert.ok(error instanceof ProjectLockError),
+        assert.equal(error.code, 'acquire-timeout'),
+        assert.equal(error.retryable, true),
+        true)
+    )
+    const eventTypes = events.map((event) => event.type)
+    assert.deepEqual(eventTypes, ['lock:attempt', 'lock:warning', 'lock:error', 'lock:waiting', 'lock:error'])
+
+    assert.equal(
+      (events.find((event): event is Extract<ProjectLockEvent, { type: 'lock:waiting' }> => event.type === 'lock:waiting') ??
+        assert.fail('lock:waiting not emitted')).delayMs,
+      500
+    )
+
+    assert.deepEqual(
+      events
+        .filter((event): event is Extract<ProjectLockEvent, { type: 'lock:error' }> => event.type === 'lock:error')
+        .map((event) => event.error.code),
+      ['fallback-conflict', 'acquire-timeout']
+    )
+    assert.equal(
+      eventTypes.includes('lock:readonly-entered'),
+      false,
+      'abort-triggered backoff cancellation must not emit readonly transition'
+    )
+  }
+)
+
+scenario(
   'AS-I-03: Expired fallback lock refreshes acquiredAt timestamp and telemetry',
   {
     locks: {
