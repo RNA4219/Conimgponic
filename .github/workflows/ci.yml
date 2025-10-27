@@ -337,14 +337,19 @@ jobs:
           grep -E ':[0-9]+:[0-9]+: |not ok|FAIL|Error' "logs/${{ matrix.suite }}.log" > "logs/${{ matrix.suite }}-failures.log" || true
 
       - name: Upload suite logs
-        if: always()
+        if: |
+          always() &&
+          (
+            steps.run_suite_autosave.outcome != 'skipped' ||
+            steps.run_suite_default.outcome != 'skipped'
+          )
         uses: actions/upload-artifact@v4
         with:
           name: quality-${{ matrix.suite }}
           path: |
             logs/${{ matrix.suite }}.log
             logs/${{ matrix.suite }}-failures.log
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       - name: Report suite failure
         if: |

@@ -467,8 +467,14 @@ describe('ci workflow build job', () => {
 
     assertStepIfEquals(
       uploadLogsStep,
-      'always()',
-      '"Upload suite logs" step must run on all outcomes',
+      [
+        'always() &&',
+        '(',
+        "  steps.run_suite_autosave.outcome != 'skipped' ||",
+        "  steps.run_suite_default.outcome != 'skipped'",
+        ')',
+      ].join('\n'),
+      '"Upload suite logs" step must run only when any run suite step executes',
     );
 
     assertUploadArtifactName(
@@ -484,6 +490,12 @@ describe('ci workflow build job', () => {
         'logs/${{ matrix.suite }}-failures.log',
       ],
       '"Upload suite logs" artifact must include suite and failure logs',
+    );
+
+    assertUploadArtifactIfNoFilesFoundEquals(
+      uploadLogsStep,
+      'error',
+      '"Upload suite logs" artifact must fail when logs are missing',
     );
   });
 
@@ -1207,6 +1219,24 @@ function assertUploadArtifactPaths(
     const hasMatch = configuredPaths.includes(expectedPath);
     assert.ok(hasMatch, `${message}; path must include "${expectedPath}"`);
   }
+}
+
+function assertUploadArtifactIfNoFilesFoundEquals(
+  step: UploadArtifactStep,
+  expected: string,
+  message: string,
+): void {
+  const config = step.with;
+  if (!config || typeof config !== 'object') {
+    assert.fail(`${message}; step.with must be configured`);
+  }
+
+  const value = (config as { 'if-no-files-found'?: unknown })['if-no-files-found'];
+  if (typeof value !== 'string') {
+    assert.fail(`${message}; if-no-files-found must be configured as a string`);
+  }
+
+  assert.strictEqual(value.trim(), expected, message);
 }
 
 function assertUploadArtifactName(
