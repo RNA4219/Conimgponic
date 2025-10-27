@@ -779,7 +779,12 @@ export function MergeDock(props?: MergeDockProps){
               バックアップを今すぐ実行
             </button>
           ) : null}
-          <DiffMergeView precision={precision} hunks={emptyDiffHunks} queueMergeCommand={diffMergeNoopCommand} />
+          <DiffMergeView
+            precision={precision}
+            hunks={emptyDiffHunks}
+            queueMergeCommand={diffMergeNoopCommand}
+            autoApplied={phasePlan.autoApplied}
+          />
         </div>
       )}
 
