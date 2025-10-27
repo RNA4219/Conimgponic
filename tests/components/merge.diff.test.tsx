@@ -51,7 +51,7 @@ test('beta precision enables diff tab when review band is present', () => {
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
   assert.equal(plan.threshold.request, 0.75)
-  assert.equal(plan.threshold.autoTarget, 0.92)
+  assert.equal(plan.threshold.autoTarget, 0.8)
   assert.deepEqual(plan.threshold.reviewBand, { min: 0.73, max: 0.8 })
   assert.deepEqual(plan.threshold.conflictBand, { max: 0.73 })
   assert.equal(plan.guard.phaseBRequired, true)
@@ -89,7 +89,7 @@ test('beta precision suppresses diff tab when review band is empty', () => {
     ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
   )
   assert.equal(plan.threshold.request, 0.85)
-  assert.equal(plan.threshold.autoTarget, 0.92)
+  assert.equal(plan.threshold.autoTarget, 0.9)
   assert.equal(plan.autoApplied.rate, 0.75)
   assert.equal(plan.autoApplied.meetsTarget, false)
 })
@@ -217,16 +217,16 @@ test('beta precision auto target clamps to rollout maximum', () => {
   assert.equal(plan.autoTarget, 0.92)
 })
 
-test('beta autoApplied meetsTarget flips at 0.92 boundary', () => {
+test('beta autoApplied meetsTarget flips at 0.8 boundary', () => {
   const below = resolveMergeDockPhasePlan({
     precision: 'beta',
     threshold: 0.75,
-    autoAppliedRate: 0.91,
+    autoAppliedRate: 0.79,
   })
   const atTarget = resolveMergeDockPhasePlan({
     precision: 'beta',
     threshold: 0.75,
-    autoAppliedRate: 0.92,
+    autoAppliedRate: 0.8,
   })
 
   assert.equal(below.autoApplied.meetsTarget, false)
@@ -247,16 +247,16 @@ test('stable precision auto target clamps to rollout maximum', () => {
   assert.equal(plan.autoTarget, 0.95)
 })
 
-test('stable autoApplied meetsTarget flips at 0.95 boundary', () => {
+test('stable autoApplied meetsTarget flips at 0.91 boundary', () => {
   const below = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.88,
-    autoAppliedRate: 0.94,
+    autoAppliedRate: 0.9,
   })
   const atTarget = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.88,
-    autoAppliedRate: 0.95,
+    autoAppliedRate: 0.91,
   })
 
   assert.equal(below.autoApplied.meetsTarget, false)
@@ -321,7 +321,7 @@ test('env precision threshold from flags overrides workspace and storage setting
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.guard.phaseBRequired, true)
   assert.equal(plan.threshold.request, 0.75)
-  assert.equal(plan.autoApplied.target, 0.92)
+  assert.equal(plan.autoApplied.target, 0.8)
 })
 
 test('resolveMergeThresholdSnapshot clamps beta workspace threshold below rollout minimum', () => {
