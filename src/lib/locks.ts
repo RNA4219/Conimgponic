@@ -451,7 +451,10 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
 
           webLockHandles.set(ctx.leaseId, {
             release: async () => {
-              if (releaseInvoked) return;
+              if (releaseInvoked) {
+                if (releaseError) throw releaseError;
+                return;
+              }
               releaseInvoked = true;
               let releaseFailure: ProjectLockError | undefined;
               if (releaseMethod) {
@@ -469,7 +472,10 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
                 captureCompletionError(error);
               }
               const errorToThrow = releaseFailure ?? releaseError;
-              if (errorToThrow) throw errorToThrow;
+              if (errorToThrow) {
+                releaseError = errorToThrow;
+                throw errorToThrow;
+              }
             },
           });
 
