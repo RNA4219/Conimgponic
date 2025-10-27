@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 const tsNodeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
 if (tsNodeEnv) {
   tsNodeEnv.TS_NODE_IGNORE_DIAGNOSTICS = '2304,2307,2578,2580,5097'
@@ -11,13 +13,10 @@ if (typeof globalThis.releaseMonitor === 'undefined') {
   ;(globalThis as typeof globalThis & { releaseMonitor?: Promise<void> }).releaseMonitor = Promise.resolve()
 }
 
-// @ts-expect-error node:test diagnostics are suppressed via TS_NODE_IGNORE_DIAGNOSTICS
 import assert from 'node:assert/strict'
-// @ts-expect-error node:test diagnostics are suppressed via TS_NODE_IGNORE_DIAGNOSTICS
 import test from 'node:test'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
-// @ts-expect-error ts-node resolves TS extensions via experimental specifier resolution
 const mergeDockModule = await import('../../src/components/MergeDock')
 const {
   resolveMergeDockPhasePlan,
@@ -334,6 +333,63 @@ test('stable precision retains diff merge preference across guard transitions', 
   })
 
   assert.equal(nextPreference, 'ai-first')
+})
+
+test('stable precision restores manual preference once diff guard lifts', () => {
+  const guardedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+  })
+  const unlockedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+  })
+
+  assert.equal(guardedPlan.diff.enabled, false)
+  assert.equal(unlockedPlan.diff.enabled, true)
+
+  const defaultGuardedPreference = sanitizePreference(
+    getDefaultPreference('stable', guardedPlan.diff.enabled),
+    'stable',
+    guardedPlan.diff.enabled,
+  )
+
+  let preference = defaultGuardedPreference
+  const onPreferenceChange = (
+    next: 'manual-first' | 'ai-first' | 'diff-merge',
+    diffEnabled: boolean,
+  ) => {
+    preference = sanitizePreference(next, 'stable', diffEnabled)
+  }
+
+  onPreferenceChange('manual-first', guardedPlan.diff.enabled)
+
+  assert.equal(preference, 'diff-merge')
+
+  const defaultUnlockedPreference = sanitizePreference(
+    getDefaultPreference('stable', unlockedPlan.diff.enabled),
+    'stable',
+    unlockedPlan.diff.enabled,
+  )
+  const nextPreference = resolvePreferenceSelection({
+    precision: 'stable',
+    previousPrecision: 'stable',
+    diffEnabled: unlockedPlan.diff.enabled,
+    previousDiffEnabled: guardedPlan.diff.enabled,
+    preference,
+    defaultPreference: defaultUnlockedPreference,
+  })
+
+  assert.equal(nextPreference, 'manual-first')
+
+  preference = nextPreference
+
+  assert.equal(sanitizePreference('manual-first', 'stable', unlockedPlan.diff.enabled), 'manual-first')
+
+  onPreferenceChange('manual-first', unlockedPlan.diff.enabled)
+
+  assert.equal(preference, 'manual-first')
 })
 
 test('stable precision respects manual preference when review band unlocks diff', () => {
