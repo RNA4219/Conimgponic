@@ -60,7 +60,26 @@ export const TELEMETRY_SOURCES = [
 
 export type TelemetrySource = (typeof TELEMETRY_SOURCES)[number];
 
-export interface MessageEnvelope {
+export const TELEMETRY_ENVELOPE_METADATA_FIELDS = [
+  'feature',
+  'component',
+  'kind',
+  'source',
+  'evaluation_ms',
+] as const;
+
+export type TelemetryEnvelopeMetadataField =
+  (typeof TELEMETRY_ENVELOPE_METADATA_FIELDS)[number];
+
+type TelemetryEnvelopeMetadata = {
+  readonly feature?: TelemetryFeature;
+  readonly component?: TelemetryComponent;
+  readonly kind?: TelemetryKind;
+  readonly source?: TelemetrySource;
+  readonly evaluation_ms?: number;
+};
+
+export interface MessageEnvelope extends TelemetryEnvelopeMetadata {
   readonly type: string;
   readonly apiVersion: 1;
   /** RFC4122 形式の UUID。Collector 再送信時も固定。無効な overrides は Collector 側で再発行される。 */
@@ -69,11 +88,6 @@ export interface MessageEnvelope {
   /** RFC4122 形式の UUID。reqId と一致させること。無効な overrides は Collector 側で reqId に正規化される。 */
   readonly correlationId: string;
   readonly phase: RolloutPhase;
-  readonly feature?: TelemetryFeature;
-  readonly component?: TelemetryComponent;
-  readonly kind?: TelemetryKind;
-  readonly source?: TelemetrySource;
-  readonly evaluation_ms?: number;
 }
 
 export interface TelemetryJsonlRecordBase extends MessageEnvelope {
@@ -631,11 +645,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       'phase',
       'schema',
       'event',
-      'feature',
-      'component',
-      'kind',
-      'source',
-      'evaluation_ms',
+      ...TELEMETRY_ENVELOPE_METADATA_FIELDS,
       'attempt',
       'maxAttempts',
       'backoffMs',
