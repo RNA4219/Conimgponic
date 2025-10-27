@@ -69,6 +69,12 @@ type UploadArtifactStep = StepConfig & {
   };
 };
 
+type PathsFilterStep = StepConfig & {
+  with?: {
+    filters?: unknown;
+  };
+};
+
 type JsYamlModule = {
   load: (input: string) => unknown;
 };
@@ -195,6 +201,34 @@ describe('ci workflow build job', () => {
         `quality job matrix.include entry for suite "${suiteName}" must ${expectedValue ? 'enable' : 'disable'} collect_failures`,
       );
     }
+  });
+
+  test('autosave paths filter monitors required globs', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const detectAutosaveChanges = assertDetectAutosaveChangesStep(
+      steps,
+      'quality job must include "Detect autosave changes" step for autosave suite',
+    );
+
+    assertPathsFilterGlobs(
+      detectAutosaveChanges,
+      'autosave',
+      [
+        'src/**/autosave/**',
+        'tests/**/autosave.*.test.ts',
+        'tests/**/autosave/**',
+        '.github/workflows/autosave*',
+      ],
+      '"Detect autosave changes" step must monitor required autosave paths',
+    );
   });
 
   test('runs recommended pnpm commands for autosave and reports', async () => {
@@ -1033,6 +1067,26 @@ function assertStepWithNameAndId(
   return match;
 }
 
+function assertDetectAutosaveChangesStep(
+  steps: StepConfig[],
+  message: string,
+): PathsFilterStep {
+  const step = assertStepWithNameAndId(
+    steps,
+    'Detect autosave changes',
+    'autosave_paths',
+    message,
+  );
+
+  assertStepUsesEquals(
+    step,
+    'dorny/paths-filter@v3',
+    `${message}; step must use dorny/paths-filter@v3`,
+  );
+
+  return step;
+}
+
 type RunSuiteStepId = (typeof expectedRunSuiteStepIds)[number];
 
 type RunSuiteStepCollection = Record<RunSuiteStepId, StepConfig>;
@@ -1286,6 +1340,48 @@ function assertStringSetEquals(actual: string[], expected: string[], message: st
       ...actualSorted.map((entry) => `  - ${entry}`),
     ].join('\n'),
   );
+}
+
+function assertPathsFilterGlobs(
+  step: PathsFilterStep,
+  filterName: string,
+  expectedGlobs: string[],
+  message: string,
+): void {
+  const config = step.with;
+  if (!config || typeof config !== 'object') {
+    assert.fail(`${message}; step.with must be configured as an object`);
+  }
+
+  const filters = (config as { filters?: unknown }).filters;
+
+  if (typeof filters !== 'string') {
+    assert.fail(`${message}; step.with.filters must be configured as a string`);
+  }
+
+  const parsed = load(filters);
+
+  if (!parsed || typeof parsed !== 'object') {
+    assert.fail(`${message}; filters YAML must deserialize into an object`);
+  }
+
+  const filterEntries = (parsed as Record<string, unknown>)[filterName];
+
+  if (!Array.isArray(filterEntries)) {
+    assert.fail(`${message}; filters must define array for "${filterName}"`);
+  }
+
+  const globs = filterEntries.map((entry, index) => {
+    if (typeof entry !== 'string') {
+      assert.fail(
+        `${message}; filters.${filterName}[${index}] must be configured as a string`,
+      );
+    }
+
+    return entry.trim();
+  });
+
+  assertStringSetEquals(globs, expectedGlobs, message);
 }
 
 function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
