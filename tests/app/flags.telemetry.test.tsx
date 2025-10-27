@@ -10,7 +10,10 @@ import {
   type ResolveOptions
 } from '../../src/config'
 import { resolveAutoSaveBootstrapPlanForApp } from '../../src/App'
-import { FLAG_RESOLUTION_SOURCE_VARIANTS } from '../../scripts/monitor/collect-metrics'
+import {
+  COLLECT_METRICS_CONTRACT,
+  FLAG_RESOLUTION_SOURCE_VARIANTS
+} from '../../scripts/monitor/collect-metrics'
 
 const stubPerformance = (values: readonly number[]): (() => void) => {
   const scope = globalThis as typeof globalThis & {
@@ -51,7 +54,6 @@ const expectFlagTelemetry = (
   emitted: readonly unknown[],
   config: {
     readonly origin: string
-    readonly phase: string
     readonly evaluationMs: number
     readonly flags: readonly FlagExpectation[]
   }
@@ -66,18 +68,45 @@ const expectFlagTelemetry = (
   assert.equal(events.length, config.flags.length)
   assert.equal(events.length, emitted.length)
 
+  const retryPolicy = COLLECT_METRICS_CONTRACT.telemetry.retryPolicy
   const actual = events
     .map((event) => {
+      assert.equal(event.type, 'telemetry.event')
+      assert.equal(event.apiVersion, 1)
       assert.equal(event.feature, 'config.flags')
       assert.equal(event.event, 'flag_resolution')
       assert.equal(event.source, config.origin)
-      assert.equal(event.phase, config.phase)
       assert.equal(event.schema, 'vscode.telemetry.v1')
+
+      const envelopePhase = event.phase
+      assert.equal(typeof envelopePhase, 'string')
 
       const evaluationMs = event.evaluation_ms
       assert.equal(typeof evaluationMs, 'number')
       assert.ok(Number.isFinite(evaluationMs))
       assert.equal(evaluationMs, config.evaluationMs)
+
+      const reqId = (event as { reqId?: unknown }).reqId
+      assert.ok(typeof reqId === 'string' && (reqId as string).length > 0)
+
+      const correlationId = (event as { correlationId?: unknown }).correlationId
+      assert.ok(typeof correlationId === 'string' && (correlationId as string).length > 0)
+
+      const attempt = (event as { attempt?: unknown }).attempt
+      assert.ok(
+        typeof attempt === 'number' &&
+          Number.isInteger(attempt) &&
+          (attempt as number) >= 1 &&
+          (attempt as number) <= retryPolicy.maxAttempts
+      )
+      assert.equal((event as { maxAttempts?: unknown }).maxAttempts, retryPolicy.maxAttempts)
+
+      const backoffMs = (event as { backoffMs?: unknown }).backoffMs
+      assert.ok(Array.isArray(backoffMs))
+      assert.deepEqual(backoffMs, retryPolicy.backoffMs)
+
+      const ts = (event as { ts?: unknown }).ts
+      assert.ok(typeof ts === 'string' && Number.isFinite(Date.parse(ts)))
 
       assert.ok(!('snapshot' in event))
       assert.ok(!('errors' in event))
@@ -90,6 +119,7 @@ const expectFlagTelemetry = (
       const variant = String(payload.variant)
       const source = String(payload.source)
       const phase = String(payload.phase)
+      assert.equal(envelopePhase, phase)
       const payloadEvaluation = payload.evaluation_ms
       assert.equal(payloadEvaluation, config.evaluationMs)
 
@@ -207,7 +237,6 @@ test('resolveAutoSaveBootstrapPlan publishes flag resolution telemetry with erro
 
     expectFlagTelemetry(emitted, {
       origin: 'app.autosave',
-      phase: 'bootstrap',
       evaluationMs: 48,
       flags: snapshotFlags(plan.snapshot, planErrors, 48)
     })
@@ -245,7 +274,6 @@ test('resolveAutoSaveBootstrapPlan publishes a single flag resolution telemetry 
     assert.ok(plan)
     expectFlagTelemetry(emitted, {
       origin: 'app.autosave',
-      phase: 'bootstrap',
       evaluationMs: 68,
       flags: snapshotFlags(plan.snapshot, plan.errors, 68)
     })
@@ -279,7 +307,6 @@ test('App bootstrap publishes flag resolution telemetry only once', () => {
 
     expectFlagTelemetry(emitted, {
       origin: 'app.autosave',
-      phase: 'bootstrap',
       evaluationMs: 48,
       flags: snapshotFlags(plan.snapshot, plan.errors, 48)
     })
@@ -319,7 +346,6 @@ test('resolvePluginBridgeBootstrapPlan publishes flag resolution telemetry with 
     assert.ok(Array.isArray(plan.errors))
     expectFlagTelemetry(emitted, {
       origin: 'vscode.plugins',
-      phase: 'bootstrap',
       evaluationMs: plan.evaluationMs,
       flags: snapshotFlags(plan.snapshot, plan.errors, plan.evaluationMs)
     })
