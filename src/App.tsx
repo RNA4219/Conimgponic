@@ -13,7 +13,11 @@ import {
 import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { buildPackage } from './lib/package'
-import { initAutoSave, type AutoSaveInitResult, type AutoSavePhaseGuardSnapshot } from './lib/autosave'
+import {
+  initAutoSave,
+  type AutoSaveInitResult,
+  type AutoSavePhaseGuardSnapshot
+} from './lib/autosave'
 import { getDay8Collector } from './telemetry/day8Collector'
 
 function getDockOpenPreference(): boolean {
@@ -101,6 +105,37 @@ export function resolveAutoSaveBootstrapPlanForApp(
   return plan
 }
 
+export interface AutoSaveStoryboardStore {
+  readonly getState: () => { readonly sb: Storyboard }
+  readonly subscribe: (
+    listener: (state: { readonly sb: Storyboard }) => void
+  ) => () => void
+}
+
+export interface AutoSaveRunnerRef {
+  current: AutoSaveInitResult | null
+}
+
+export function watchAutoSaveStoryboardDiffs(
+  store: AutoSaveStoryboardStore,
+  runnerRef: AutoSaveRunnerRef,
+  runner: AutoSaveInitResult
+): () => void {
+  let previousSerialized = JSON.stringify(store.getState().sb)
+  return store.subscribe((state) => {
+    const serialized = JSON.stringify(state.sb)
+    if (serialized === previousSerialized) {
+      return
+    }
+    previousSerialized = serialized
+    if (runnerRef.current !== runner) {
+      return
+    }
+    const pendingBytes = serialized.length
+    runnerRef.current?.markDirty({ pendingBytes })
+  })
+}
+
 export default function App(){
   const { sb, setSBTitle, addScene } = useSB()
   const [dockOpen, setDockOpen] = useState(()=> getDockOpenPreference())
@@ -165,20 +200,7 @@ export default function App(){
     )
     autoSaveRunner.current = runner
 
-    const encoder = new TextEncoder()
-    let previousSerialized = JSON.stringify(useSB.getState().sb)
-    const unsubscribe = useSB.subscribe((state) => {
-      const serialized = JSON.stringify(state.sb)
-      if (serialized === previousSerialized) {
-        return
-      }
-      previousSerialized = serialized
-      if (autoSaveRunner.current !== runner) {
-        return
-      }
-      const pendingBytes = encoder.encode(serialized).length
-      runner.markDirty({ pendingBytes })
-    })
+    const unsubscribe = watchAutoSaveStoryboardDiffs(useSB, autoSaveRunner, runner)
 
     return ()=>{
       unsubscribe()
