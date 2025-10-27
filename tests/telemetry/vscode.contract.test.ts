@@ -177,7 +177,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'source',
       'phase',
       'evaluation_ms',
-      'threshold'
+      'threshold',
+      'errors'
     ])
     assertOk(
       payloadSchema.properties,
@@ -238,7 +239,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'source',
       'phase',
       'evaluation_ms',
-      'threshold'
+      'threshold',
+      'errors'
     ])
 
     assertOk(payloadSchema.properties, 'flag_resolution payload schema must define properties')
@@ -246,6 +248,10 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(sourceSchema, 'flag_resolution payload schema must define source')
     assertOk(sourceSchema.enum, 'flag_resolution source must define enum')
     deepStrictEqual(sourceSchema.enum, Array.from(FLAG_RESOLUTION_SOURCE_VARIANTS))
+
+    const errorsSchema = payloadSchema.properties.errors
+    assertOk(errorsSchema, 'flag_resolution payload schema must define errors array')
+    assertOk(errorsSchema.type === 'array', 'flag_resolution payload errors must be an array')
   })
 
   test('publishFlagResolution は errors/threshold を Collector payload に伝搬する', () => {
