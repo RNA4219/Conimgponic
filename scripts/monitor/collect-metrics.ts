@@ -25,6 +25,41 @@ export type TelemetryEventName =
   | 'plugins.completed'
   | 'plugins.failed';
 
+export const TELEMETRY_FEATURES = [
+  'autosave-diff-merge',
+  'config.flags',
+] as const;
+
+export type TelemetryFeature = (typeof TELEMETRY_FEATURES)[number];
+
+export const TELEMETRY_COMPONENTS = [
+  'autosave',
+  'merge',
+  'flags',
+  'export',
+] as const;
+
+export type TelemetryComponent = (typeof TELEMETRY_COMPONENTS)[number];
+
+export const TELEMETRY_KINDS = [
+  'save',
+  'ui',
+  'merge',
+  'flag_resolution',
+  'export',
+  'error',
+] as const;
+
+export type TelemetryKind = (typeof TELEMETRY_KINDS)[number];
+
+export const TELEMETRY_SOURCES = [
+  'app.autosave',
+  'app.flags',
+  'vscode.plugins',
+] as const;
+
+export type TelemetrySource = (typeof TELEMETRY_SOURCES)[number];
+
 export interface MessageEnvelope {
   readonly type: string;
   readonly apiVersion: 1;
@@ -34,6 +69,11 @@ export interface MessageEnvelope {
   /** RFC4122 形式の UUID。reqId と一致させること。 */
   readonly correlationId: string;
   readonly phase: RolloutPhase;
+  readonly feature?: TelemetryFeature;
+  readonly component?: TelemetryComponent;
+  readonly kind?: TelemetryKind;
+  readonly source?: TelemetrySource;
+  readonly evaluation_ms?: number;
 }
 
 export interface TelemetryJsonlRecordBase extends MessageEnvelope {
@@ -591,6 +631,11 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       'phase',
       'schema',
       'event',
+      'feature',
+      'component',
+      'kind',
+      'source',
+      'evaluation_ms',
       'attempt',
       'maxAttempts',
       'backoffMs',
@@ -619,6 +664,11 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         event: 'flag_resolution',
         description: 'Feature flag の判定結果を Analyzer の restore_success_rate 推定に反映する。',
         jsonlFields: [
+          'feature',
+          'component',
+          'kind',
+          'source',
+          'evaluation_ms',
           'payload.flag',
           'payload.variant',
           'payload.source',

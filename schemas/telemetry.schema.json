@@ -12,6 +12,11 @@
     "phase": { "$ref": "#/definitions/rolloutPhase" },
     "schema": { "type": "string", "const": "vscode.telemetry.v1" },
     "event": { "$ref": "#/definitions/telemetryEventName" },
+    "feature": { "$ref": "#/definitions/telemetryFeature" },
+    "component": { "$ref": "#/definitions/telemetryComponent" },
+    "kind": { "$ref": "#/definitions/telemetryKind" },
+    "source": { "$ref": "#/definitions/telemetrySource" },
+    "evaluation_ms": { "type": "number", "minimum": 0 },
     "attempt": { "type": "integer", "minimum": 0 },
     "maxAttempts": { "type": "integer", "minimum": 1 },
     "backoffMs": {
@@ -29,6 +34,11 @@
     "phase",
     "schema",
     "event",
+    "feature",
+    "component",
+    "kind",
+    "source",
+    "evaluation_ms",
     "attempt",
     "maxAttempts",
     "backoffMs",
@@ -370,6 +380,22 @@
         "source",
         "phase"
       ]
+    },
+    "telemetryFeature": {
+      "type": "string",
+      "enum": ["autosave-diff-merge", "config.flags"]
+    },
+    "telemetryComponent": {
+      "type": "string",
+      "enum": ["autosave", "merge", "flags", "export"]
+    },
+    "telemetryKind": {
+      "type": "string",
+      "enum": ["save", "ui", "merge", "flag_resolution", "export", "error"]
+    },
+    "telemetrySource": {
+      "type": "string",
+      "enum": ["app.autosave", "app.flags", "vscode.plugins"]
     }
   }
 }

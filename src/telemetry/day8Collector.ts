@@ -8,6 +8,9 @@ import type {
 import {
   COLLECT_METRICS_CONTRACT,
   type MessageEnvelope,
+  type TelemetryComponent,
+  type TelemetryKind,
+  type TelemetrySource,
   type RolloutPhase
 } from '../../scripts/monitor/collect-metrics.js'
 
@@ -67,11 +70,16 @@ type CollectorTelemetryEnvelope = MessageEnvelope & {
 
 type CollectorTelemetryEnvelopeSeed = Omit<CollectorTelemetryEnvelope, 'phase'>
 
+type FlagResolutionComponent = Extract<TelemetryComponent, 'flags'>
+type FlagResolutionKind = Extract<TelemetryKind, 'flag_resolution'>
+
 export type Day8CollectorFlagResolutionEvent = CollectorTelemetryEnvelope & {
   readonly schema: 'vscode.telemetry.v1'
   readonly feature: 'config.flags'
   readonly event: 'flag_resolution'
-  readonly source: string
+  readonly component: FlagResolutionComponent
+  readonly kind: FlagResolutionKind
+  readonly source: TelemetrySource
   readonly evaluation_ms: number
   readonly payload: FlagResolutionContractPayload
 }
@@ -147,7 +155,7 @@ const createTelemetryId = (): string => {
 }
 
 export const publishFlagResolution = (
-  source: string,
+  source: TelemetrySource,
   phase: string,
   payloads: readonly FlagResolutionEventPayload[],
   evaluationMs: number,
@@ -174,6 +182,8 @@ export const publishFlagResolution = (
       ...applyPhaseToEnvelope(envelopeSeed, contractPayload.phase),
       schema: 'vscode.telemetry.v1',
       feature: 'config.flags',
+      component: 'flags',
+      kind: 'flag_resolution',
       event: 'flag_resolution',
       source,
       evaluation_ms: evaluationMs,
