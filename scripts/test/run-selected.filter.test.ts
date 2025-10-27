@@ -12,10 +12,11 @@ const moduleTsUrl = new URL('./run-selected.ts', import.meta.url);
 const moduleJsUrl = new URL('./run-selected.js', import.meta.url);
 const NODE_BASE_ARGS = [
   '--experimental-vm-modules',
-  '--loader',
-  'ts-node/esm',
+  '--import',
+  'tsx/esm',
   '--experimental-specifier-resolution=node',
   '--test',
+  '--test-timeout=30000',
 ] as const;
 
 test('runSelected resolves autosave filter in autorun scenario', async () => {
@@ -60,8 +61,10 @@ test('runSelected resolves autosave filter in autorun scenario', async () => {
     'tests/app/autosave.plan.test.ts',
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
+    'tests/lib/autosave.policy.test.ts',
     'tests/lib/autosave/history.flow.test.ts',
     'tests/lib/autosave/init.test.ts',
+    'tests/lib/autosave/queue-followup.test.ts',
     'tests/lib/autosave/restore.flow.test.ts',
     'tests/lib/autosave/scheduler.test.ts',
     'tests/views/view-switch.autosave.test.ts',
@@ -80,8 +83,10 @@ test('maps --filter autosave to autosave test glob', async () => {
     'tests/app/autosave.plan.test.ts',
     'tests/lib/autosave.dispose.test.ts',
     'tests/lib/autosave.phase-guard.test.ts',
+    'tests/lib/autosave.policy.test.ts',
     'tests/lib/autosave/history.flow.test.ts',
     'tests/lib/autosave/init.test.ts',
+    'tests/lib/autosave/queue-followup.test.ts',
     'tests/lib/autosave/restore.flow.test.ts',
     'tests/lib/autosave/scheduler.test.ts',
     'tests/views/view-switch.autosave.test.ts',

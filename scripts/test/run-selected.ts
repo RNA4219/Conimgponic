@@ -13,8 +13,8 @@ const DEFAULT_TEST_GLOBS = [
 ] as const;
 const NODE_TEST_BASE_ARGS = [
   '--experimental-vm-modules',
-  '--loader',
-  'ts-node/esm',
+  '--import',
+  'tsx/esm',
   '--experimental-specifier-resolution=node',
   '--test',
   '--test-timeout=30000',

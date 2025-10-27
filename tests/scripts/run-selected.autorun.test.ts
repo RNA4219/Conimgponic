@@ -7,7 +7,14 @@ import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 type SpawnFn = typeof import('node:child_process')['spawn']; type RunSelectedModule = typeof import('../../scripts/test/run-selected.js')
-const scriptUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url), repoRoot = fileURLToPath(new URL('../..', import.meta.url)), BASE_ARGS = ['--loader', 'ts-node/esm', '--test'] as const
+const scriptUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url), repoRoot = fileURLToPath(new URL('../..', import.meta.url)), BASE_ARGS = [
+  '--experimental-vm-modules',
+  '--import',
+  'tsx/esm',
+  '--experimental-specifier-resolution=node',
+  '--test',
+  '--test-timeout=30000'
+] as const
 
 const createChildProcess = (): ChildProcess => {
   const stub: Partial<ChildProcess> = {}
@@ -44,17 +51,17 @@ const createFakeNodeEnvironment = () => {
 test('autoruns via CLI when RUN_SELECTED_SKIP_AUTORUN is unset', () => {
   const { env, readArgs } = createFakeNodeEnvironment()
   Reflect.deleteProperty(env, 'RUN_SELECTED_SKIP_AUTORUN')
-  const status = spawnSync(process.execPath, ['--loader', 'ts-node/esm', 'scripts/test/run-selected.ts', '--test-name-pattern=__noop__'], { cwd: repoRoot, env, encoding: 'utf8' }).status
+  const status = spawnSync(process.execPath, ['--import', 'tsx/esm', 'scripts/test/run-selected.ts', '--test-name-pattern=__noop__'], { cwd: repoRoot, env, encoding: 'utf8' }).status
   assert.equal(status, 0)
   const recorded = readArgs() ?? []
   assert.ok(recorded.length > 0)
-  assert.deepEqual(recorded.slice(0, 3), BASE_ARGS)
+  assert.deepEqual(recorded.slice(0, BASE_ARGS.length), BASE_ARGS)
 })
 
 test('RUN_SELECTED_SKIP_AUTORUN=1 keeps CI filter flows manual', async (t) => {
   const { env, readArgs } = createFakeNodeEnvironment()
   env.RUN_SELECTED_SKIP_AUTORUN = '1'
-  const cliResult = spawnSync(process.execPath, ['--loader', 'ts-node/esm', 'scripts/test/run-selected.ts'], { cwd: repoRoot, env, encoding: 'utf8' })
+  const cliResult = spawnSync(process.execPath, ['--import', 'tsx/esm', 'scripts/test/run-selected.ts'], { cwd: repoRoot, env, encoding: 'utf8' })
   assert.equal(cliResult.status, 0)
   assert.equal(readArgs(), undefined)
   const originalSkip = process.env.RUN_SELECTED_SKIP_AUTORUN
@@ -73,7 +80,7 @@ test('RUN_SELECTED_SKIP_AUTORUN=1 keeps CI filter flows manual', async (t) => {
         runSelected(['--filter', filter, '--test-name-pattern=__noop__'], spawnStub)
         assert.equal(spawnCalls.length, 1)
         const [, nodeArgs] = spawnCalls.pop()!
-        assert.deepEqual(nodeArgs.slice(0, 3), BASE_ARGS)
+        assert.deepEqual(nodeArgs.slice(0, BASE_ARGS.length), BASE_ARGS)
         const sanitizedIndex = nodeArgs.indexOf('--test-name-pattern=__noop__')
         assert.notEqual(sanitizedIndex, -1)
         const forwarded = nodeArgs.slice(sanitizedIndex + 1)
