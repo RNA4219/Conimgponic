@@ -165,9 +165,27 @@ export default function App(){
     )
     autoSaveRunner.current = runner
 
+    const encoder = new TextEncoder()
+    let previousSerialized = JSON.stringify(useSB.getState().sb)
+    const unsubscribe = useSB.subscribe((state) => {
+      const serialized = JSON.stringify(state.sb)
+      if (serialized === previousSerialized) {
+        return
+      }
+      previousSerialized = serialized
+      if (autoSaveRunner.current !== runner) {
+        return
+      }
+      const pendingBytes = encoder.encode(serialized).length
+      runner.markDirty({ pendingBytes })
+    })
+
     return ()=>{
-      autoSaveRunner.current?.dispose()
-      autoSaveRunner.current = null
+      unsubscribe()
+      if (autoSaveRunner.current === runner){
+        autoSaveRunner.current?.dispose()
+        autoSaveRunner.current = null
+      }
     }
   }, [autoSavePlan])
 
