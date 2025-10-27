@@ -46,6 +46,14 @@ const isBootstrapMessage = (
   message: AutoSaveBridgeMessage
 ): message is AutoSaveBridgeBootstrapMessage => message.type === 'bridge.bootstrap'
 
+const isStatusMessage = (
+  message: AutoSaveBridgeMessage
+): message is AutoSaveStatusMessage => message.type === 'status.autosave'
+
+const isSnapshotResultMessage = (
+  message: AutoSaveBridgeMessage
+): message is AutoSaveSnapshotResultMessage => message.type === 'snapshot.result'
+
 const createRequest = (
   reqId: string,
   correlationId: string,
@@ -556,6 +564,7 @@ describe('createVscodeAutoSaveBridge', () => {
 
   it('autosave.status telemetry includes performance.flush_latency_ms for saving/backoff/saved/error/disabled', async () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
+    const recordedMessages: AutoSaveBridgeMessage[] = []
     const offsets = [0, 10, 20, 50, 70, 90, 140, 160, 180, 240], baseTs = Date.parse('2024-01-01T00:00:00.000Z')
     const now = (): Date => {
       const offset = offsets.shift()
@@ -568,7 +577,7 @@ describe('createVscodeAutoSaveBridge', () => {
       initialGuard: guardEnabled,
       flags: createDefaultFlags(),
       now,
-      sendMessage: () => {},
+      sendMessage: (message) => recordedMessages.push(message),
       atomicWrite: async (): Promise<AutoSaveAtomicWriteResult> =>
         scenario === 'success'
           ? {
@@ -607,17 +616,52 @@ describe('createVscodeAutoSaveBridge', () => {
       ['error', 'corr-fatal', 60],
       ['disabled', 'corr-fatal', 60]
     ]
-    for (const [state, correlationId, latency] of expectations) {
-      const event = telemetry.find(
+    const findStatusTelemetry = (
+      state: AutoSaveStatusMessage['payload']['state'],
+      correlationId: string
+    ) =>
+      telemetry.find(
         (candidate) =>
           candidate.name === 'autosave.status' &&
           candidate.properties?.state === state &&
           candidate.properties?.correlationId === correlationId
       )
+
+    for (const [state, correlationId, latency] of expectations) {
+      const event = findStatusTelemetry(state, correlationId)
       assert.equal(
         event?.properties?.performance?.flush_latency_ms,
         latency,
         `autosave.status telemetry for ${state} (${correlationId}) should include flush latency`
+      )
+    }
+
+    const statusMessages = recordedMessages.filter(isStatusMessage) as AutoSaveStatusMessage[]
+    const snapshotResults = recordedMessages.filter(isSnapshotResultMessage) as AutoSaveSnapshotResultMessage[]
+
+    const durationFor = (correlationId: string): number => {
+      const saving = statusMessages
+        .filter((message) => message.payload.state === 'saving')
+        .find((message) => message.correlationId === correlationId)
+      assert.ok(saving, `saving status message for ${correlationId} is required`)
+      const result = snapshotResults.find((message) => message.correlationId === correlationId)
+      assert.ok(result, `snapshot.result message for ${correlationId} is required`)
+      return Date.parse(result.ts) - Date.parse(saving.ts)
+    }
+
+    const durationExpectations: readonly [AutoSaveStatusMessage['payload']['state'], string][] = [
+      ['saved', 'corr-success'],
+      ['backoff', 'corr-backoff'],
+      ['error', 'corr-fatal']
+    ]
+
+    for (const [state, correlationId] of durationExpectations) {
+      const telemetryEvent = findStatusTelemetry(state, correlationId)
+      assert.ok(telemetryEvent, `autosave.status telemetry for ${state} (${correlationId}) should exist`)
+      assert.equal(
+        telemetryEvent.properties?.performance?.flush_latency_ms,
+        durationFor(correlationId),
+        `flush latency for ${state} (${correlationId}) should match saving→snapshot.result duration`
       )
     }
   })
