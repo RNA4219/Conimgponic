@@ -211,7 +211,7 @@ describe('vscode extension telemetry contract (RED)', () => {
         phase: 'phase-a0',
         evaluation_ms: 42,
         errors: [],
-        threshold: null
+        threshold: null,
       }
       publishFlagResolution('app.autosave', 'bootstrap', [payload], 42)
     } finally {
@@ -356,7 +356,84 @@ describe('vscode extension telemetry contract (RED)', () => {
       )
     }
   })
-  test.todo('export.* telemetry が format ごとに started/succeeded/failed を記録し、エラー時は retryable + next_backoff_ms を出力する')
+  test('export.failed/plugins.failed telemetry は retry backoff を Collector 契約で固定する', () => {
+    const exportFailed = findTelemetrySpec('export.failed')
+    assertOk(exportFailed, 'export.failed telemetry spec is missing')
+
+    const exportRequiredFields = [
+      'payload.runId',
+      'payload.matchRate',
+      'payload.formats',
+      'payload.error.code',
+      'payload.error.message',
+      'payload.error.retryable',
+      'payload.entries[].format',
+      'payload.entries[].name',
+      'payload.entries[].status',
+      'payload.entries[].diff',
+      'payload.next_backoff_ms',
+    ] as const
+
+    for (const field of exportRequiredFields) {
+      assertOk(
+        exportFailed.jsonlFields.includes(field),
+        `export.failed must require ${field} in Reporter JSONL`
+      )
+    }
+
+    const exportThen = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'export.failed'
+    )
+    const exportPayloadSchema = assertPayloadSchema(exportThen, [
+      'runId',
+      'matchRate',
+      'formats',
+      'error',
+      'entries',
+      'next_backoff_ms',
+    ])
+
+    assertOk(
+      exportPayloadSchema.properties,
+      'export.failed payload schema must define properties'
+    )
+    const exportBackoffSchema = exportPayloadSchema.properties.next_backoff_ms
+    assertOk(
+      exportBackoffSchema,
+      'export.failed payload schema must define next_backoff_ms'
+    )
+    deepStrictEqual(exportBackoffSchema, { type: 'number', minimum: 0 })
+
+    const pluginsFailed = findTelemetrySpec('plugins.failed')
+    assertOk(pluginsFailed, 'plugins.failed telemetry spec is missing')
+    assertOk(
+      pluginsFailed.jsonlFields.includes('payload.next_backoff_ms'),
+      'plugins.failed must require payload.next_backoff_ms in Reporter JSONL'
+    )
+
+    const pluginsThen = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'plugins.failed'
+    )
+    const pluginsPayloadSchema = assertPayloadSchema(pluginsThen, [
+      'pluginId',
+      'action',
+      'result',
+      'duration_ms',
+      'sandboxViolation',
+      'next_backoff_ms',
+    ])
+
+    assertOk(
+      pluginsPayloadSchema.properties,
+      'plugins.failed payload schema must define properties'
+    )
+    const pluginsBackoffSchema = pluginsPayloadSchema.properties.next_backoff_ms
+    assertOk(
+      pluginsBackoffSchema,
+      'plugins.failed payload schema must define next_backoff_ms'
+    )
+    deepStrictEqual(pluginsBackoffSchema, { type: 'number', minimum: 0 })
+  })
   test('plugins telemetry は pluginId/action/result/duration_ms を Reporter JSONL に固定する', () => {
     const completed = findTelemetrySpec('plugins.completed')
     assertOk(completed, 'plugins.completed telemetry spec is missing')

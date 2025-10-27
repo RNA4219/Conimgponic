@@ -141,6 +141,7 @@ export interface ExportFailedPayload {
     readonly retryable: boolean;
   };
   readonly entries: ReadonlyArray<ExportFailureEntryTelemetry>;
+  readonly next_backoff_ms: number;
 }
 
 export interface PluginEventPayload {
@@ -149,6 +150,7 @@ export interface PluginEventPayload {
   readonly result: 'success' | 'failure';
   readonly duration_ms: number;
   readonly sandboxViolation?: boolean;
+  readonly next_backoff_ms?: number;
 }
 
 const PLUGIN_RESULT_JSONL_FIELDS = [
@@ -167,7 +169,10 @@ export interface TelemetryPayloads {
   readonly 'export.failed': ExportFailedPayload;
   readonly 'plugins.invoked': PluginEventPayload;
   readonly 'plugins.completed': PluginEventPayload;
-  readonly 'plugins.failed': PluginEventPayload & { readonly sandboxViolation: true };
+  readonly 'plugins.failed': PluginEventPayload & {
+    readonly sandboxViolation: true;
+    readonly next_backoff_ms: number;
+  };
 }
 
 export interface TelemetryEventSpec<E extends TelemetryEventName = TelemetryEventName> {
@@ -658,6 +663,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.entries[].name',
           'payload.entries[].status',
           'payload.entries[].diff',
+          'payload.next_backoff_ms',
         ],
         retryable: true,
         pipelineStage: 'reporter',
@@ -683,7 +689,11 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'plugins.failed',
         description: 'Sandbox 違反や失敗を rollbackTo 指標と連動させる。',
-        jsonlFields: [...PLUGIN_RESULT_JSONL_FIELDS, 'payload.sandboxViolation'],
+        jsonlFields: [
+          ...PLUGIN_RESULT_JSONL_FIELDS,
+          'payload.sandboxViolation',
+          'payload.next_backoff_ms',
+        ],
         retryable: true,
         pipelineStage: 'reporter',
         guardrail: {
