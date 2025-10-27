@@ -545,42 +545,72 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
 
   return buildLease('web-lock', WEB_LOCK_KEY, ctx.ttlMs ?? WEB_LOCK_TTL_MS, ctx.heartbeatMs, ctx);
 };
-const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease> => {
-  const now = Date.now();
-  const record = (await loadJSON(FALLBACK_LOCK_PATH)) as FallbackLockLeaseRecord | null;
 
-  if (record && record.leaseId !== ctx.leaseId && record.expiresAt > now) {
-    projectLockEvents.emit({
-      type: 'lock:warning',
-      lease: buildLease(
-        'file-lock',
-        FALLBACK_LOCK_PATH,
-        ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS,
-        ctx.heartbeatMs,
-        ctx,
-        record.acquiredAt
-      ),
-      warning: 'fallback-degraded',
-      detail: 'Existing fallback lease still active',
-    });
-    throw makeError('fallback-conflict', 'Fallback lock already held', 'acquire', true);
+const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease> => {
+  const signal = ctx.signal;
+  let aborted = false;
+  const abortError = () =>
+    makeError('acquire-denied', 'Fallback acquisition aborted', 'acquire', true, signal?.reason);
+  const throwIfAborted = () => {
+    if ((signal?.aborted ?? false) || aborted) {
+      throw abortError();
+    }
+  };
+
+  const onAbort = () => {
+    aborted = true;
+  };
+
+  if (signal?.aborted) {
+    throw abortError();
   }
 
-  const ttl = ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS;
-  const isReentrantActiveLease =
-    record !== null && record.leaseId === ctx.leaseId && record.expiresAt > now;
-  const acquiredAt = isReentrantActiveLease ? record.acquiredAt : now;
-  const next: FallbackLockLeaseRecord = {
-    leaseId: ctx.leaseId,
-    ownerId: ctx.ownerId,
-    acquiredAt,
-    expiresAt: now + ttl,
-    ttlSeconds: fallbackTtlSeconds,
-    mtime: now,
-  };
-  await saveJSON(FALLBACK_LOCK_PATH, next);
-  return buildLease('file-lock', FALLBACK_LOCK_PATH, ttl, ctx.heartbeatMs, ctx, acquiredAt);
+  signal?.addEventListener('abort', onAbort, { once: true });
+
+  try {
+    const now = Date.now();
+    throwIfAborted();
+    const record = (await loadJSON(FALLBACK_LOCK_PATH)) as FallbackLockLeaseRecord | null;
+    throwIfAborted();
+
+    if (record && record.leaseId !== ctx.leaseId && record.expiresAt > now) {
+      projectLockEvents.emit({
+        type: 'lock:warning',
+        lease: buildLease(
+          'file-lock',
+          FALLBACK_LOCK_PATH,
+          ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS,
+          ctx.heartbeatMs,
+          ctx,
+          record.acquiredAt
+        ),
+        warning: 'fallback-degraded',
+        detail: 'Existing fallback lease still active',
+      });
+      throw makeError('fallback-conflict', 'Fallback lock already held', 'acquire', true);
+    }
+
+    const ttl = ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS;
+    const isReentrantActiveLease =
+      record !== null && record.leaseId === ctx.leaseId && record.expiresAt > now;
+    const acquiredAt = isReentrantActiveLease ? record.acquiredAt : now;
+    const next: FallbackLockLeaseRecord = {
+      leaseId: ctx.leaseId,
+      ownerId: ctx.ownerId,
+      acquiredAt,
+      expiresAt: now + ttl,
+      ttlSeconds: fallbackTtlSeconds,
+      mtime: now,
+    };
+    throwIfAborted();
+    await saveJSON(FALLBACK_LOCK_PATH, next);
+    throwIfAborted();
+    return buildLease('file-lock', FALLBACK_LOCK_PATH, ttl, ctx.heartbeatMs, ctx, acquiredAt);
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+  }
 };
+
 const removeFallbackFile=async():Promise<void>=>{try{const root=await getRoot();const segments=FALLBACK_LOCK_PATH.split('/').filter(Boolean);const file=segments.pop();if(!file)return;let dir:FileSystemDirectoryHandle=root;for(const segment of segments)dir=await dir.getDirectoryHandle(segment,{create:false});await dir.removeEntry(file);}catch(error){if((error as DOMException)?.name!=='NotFoundError')throw error;}};
 const releaseFallbackLease=async(lease:ProjectLockLease,force?:boolean):Promise<void>=>{const record=(await loadJSON(FALLBACK_LOCK_PATH)) as FallbackLockLeaseRecord|null;if(!force&&record&&record.leaseId!==lease.leaseId&&record.expiresAt>Date.now())throw makeError('lease-stale','Fallback lease owned by another client','release',false);await removeFallbackFile();};
 export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {

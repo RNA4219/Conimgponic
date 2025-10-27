@@ -217,6 +217,45 @@ scenario(
 )
 
 scenario(
+  'AS-I-03: Fallback acquisition aborts immediately when signal is already aborted',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    const controller = new AbortController()
+    controller.abort(new DOMException('User aborted lock acquisition', 'AbortError'))
+
+    const error = (await assert.rejects(async () => {
+      await projectLockApi.acquire({
+        preferredStrategy: 'file-lock',
+        signal: controller.signal,
+        retry: false
+      })
+    })) as ProjectLockError
+
+    assert.ok(error instanceof ProjectLockError, 'acquire must reject with ProjectLockError')
+    assert.equal(error.code, 'acquire-denied', 'error code must indicate acquisition denied')
+    assert.equal(error.retryable, true, 'abort-triggered failure must remain retryable')
+
+    assert.deepEqual(sequence, ['attempt:file-lock', 'error:acquire-denied:retryable=true'])
+    assert.deepEqual(telemetry, [
+      { type: 'lock:error', code: 'acquire-denied', retryable: true, operation: 'acquire' },
+      { type: 'lock:readonly-entered', reason: 'acquire-failed', retryable: false }
+    ])
+
+    assert.equal(
+      ctx.opfs.files.has('project/.lock'),
+      false,
+      'fallback lock file must not be created when acquisition aborts before start'
+    )
+  }
+)
+
+scenario(
   'AS-I-03: Expired fallback lock refreshes acquiredAt timestamp and telemetry',
   {
     locks: {
