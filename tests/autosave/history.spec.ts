@@ -4,7 +4,7 @@ import { beforeEach } from 'node:test'
 import type { TestContext } from 'node:test'
 
 import { ENABLED_GUARD, scenario } from '../lib/autosave/setup'
-import type { AutoSaveInitResult, AutoSaveTelemetryEvent } from '../../src/lib/autosave'
+import type { AutoSaveInitResult } from '../../src/lib/autosave'
 import { AUTOSAVE_RETRY_POLICY } from '../../src/lib/autosave'
 import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
 import type { Storyboard } from '../../src/types'
@@ -60,37 +60,6 @@ const makeCollector = () => {
   return telemetry
 }
 
-type RunnerTelemetryEvent = AutoSaveTelemetryEvent & { readonly slo: 'p99-success' | 'p95-latency' }
-
-const captureRunnerTelemetry = () => {
-  const events: RunnerTelemetryEvent[] = []
-  const scope = globalThis as {
-    __AUTOSAVE_RUNNER_HOST__?: { telemetry?: (event: RunnerTelemetryEvent) => void; [key: string]: unknown }
-  }
-  const previous = scope.__AUTOSAVE_RUNNER_HOST__
-  scope.__AUTOSAVE_RUNNER_HOST__ = {
-    ...(typeof previous === 'object' && previous !== null ? previous : {}),
-    telemetry(event: RunnerTelemetryEvent) {
-      events.push(event)
-      const legacyTelemetry =
-        previous && typeof previous === 'object' && typeof previous.telemetry === 'function'
-          ? previous.telemetry
-          : null
-      legacyTelemetry?.(event)
-    }
-  }
-  return {
-    events,
-    restore() {
-      if (previous === undefined) {
-        delete scope.__AUTOSAVE_RUNNER_HOST__
-      } else {
-        scope.__AUTOSAVE_RUNNER_HOST__ = previous
-      }
-    }
-  }
-}
-
 const waitForIdle = async (t: TestContext, runner: AutoSaveInitResult): Promise<void> => {
   for (let i = 0; i < 200; i += 1) {
     await Promise.resolve()
@@ -107,12 +76,8 @@ beforeEach(reset)
 
 scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', async (t, ctx) => {
   const telemetry = makeCollector()
-  const runnerTelemetry = captureRunnerTelemetry()
   t.after(() => {
     delete (globalThis as { Day8Collector?: unknown }).Day8Collector
-  })
-  t.after(() => {
-    runnerTelemetry.restore()
   })
 
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 1, 0, 0, 0) })
@@ -155,7 +120,9 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
   assert.ok(firstHistoryPath)
   assert.ok(!historyPaths.includes(firstHistoryPath!), 'oldest history entry should be rotated out')
 
-  const writeSucceededEvents = runnerTelemetry.events.filter(
+  const runnerTelemetry = ctx.runnerTelemetry
+
+  const writeSucceededEvents = runnerTelemetry.filter(
     (event) => event.detail && (event.detail as { event?: unknown }).event === 'write-succeeded'
   )
   assert.ok(writeSucceededEvents.length > 0, 'write-succeeded telemetry should be recorded')
@@ -169,7 +136,7 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
     assert.equal(typeof detail.retryCount, 'number')
   })
 
-  const gcCompletedEvents = runnerTelemetry.events.filter(
+  const gcCompletedEvents = runnerTelemetry.filter(
     (event) => event.detail && (event.detail as { event?: unknown }).event === 'gc-completed'
   )
   assert.ok(gcCompletedEvents.length > 0, 'gc-completed telemetry should be recorded')
@@ -182,6 +149,28 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
     assert.ok(Number.isFinite(detail.bytes), 'gc-completed telemetry must include bytes')
     assert.equal(typeof detail.retryCount, 'number')
   })
+
+  const saveCompletedEvents = runnerTelemetry.filter(
+    (event) => event.detail && (event.detail as { event?: unknown }).event === 'autosave.save.completed'
+  )
+  assert.ok(saveCompletedEvents.length > 0, 'autosave.save.completed telemetry should be recorded')
+  saveCompletedEvents.forEach((event) => {
+    assert.equal(event.phase, 'gc')
+    assert.equal(event.slo, 'p99-success')
+    const detail = event.detail as Record<string, unknown>
+    assert.equal(detail.event, 'autosave.save.completed')
+    assert.equal(typeof detail.duration_ms, 'number')
+    assert.equal(detail.source, 'auto')
+  })
+
+  const disposeEvents = runnerTelemetry.filter(
+    (event) => event.detail && (event.detail as { event?: unknown }).event === 'autosave.save.error'
+  )
+  assert.ok(disposeEvents.length > 0, 'dispose should emit autosave.save.error telemetry')
+  const disposeEvent = disposeEvents[disposeEvents.length - 1]!
+  assert.equal(disposeEvent.phase, 'disabled')
+  assert.equal(disposeEvent.slo, 'p95-latency')
+  assert.equal((disposeEvent.detail as { reason?: unknown }).reason, 'dispose')
 
   assert.ok(telemetry.length > 0, 'autosave saves should publish telemetry events')
   telemetry.forEach((entry, index) => {
@@ -205,11 +194,6 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
 })
 
 scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, ctx) => {
-  const runnerTelemetry = captureRunnerTelemetry()
-  t.after(() => {
-    runnerTelemetry.restore()
-  })
-
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 2, 0, 0, 0) })
 
   const failure = new ProjectLockError('acquire-denied', 'Mock failure', {
@@ -244,7 +228,9 @@ scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, 
     await Promise.resolve()
   }
 
-  const retryScheduled = runnerTelemetry.events.filter(
+  const runnerTelemetry = ctx.runnerTelemetry
+
+  const retryScheduled = runnerTelemetry.filter(
     (event) => event.detail && (event.detail as { event?: unknown }).event === 'retry-scheduled'
   )
   assert.ok(retryScheduled.length >= AUTOSAVE_RETRY_POLICY.maxAttempts - 1)
@@ -258,7 +244,7 @@ scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, 
     assert.equal(typeof detail.delayMs, 'number')
   })
 
-  const retryExhausted = runnerTelemetry.events.find(
+  const retryExhausted = runnerTelemetry.find(
     (event) => event.detail && (event.detail as { event?: unknown }).event === 'retry-exhausted'
   )
   assert.ok(retryExhausted, 'retry-exhausted telemetry should be recorded')

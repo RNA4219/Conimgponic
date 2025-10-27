@@ -1163,6 +1163,27 @@ export function initAutoSave(
       markDirty: () => {}
     }
   }
+  const runnerOutput: AutoSaveRunnerIOContract['output'] = {
+    emit: () => {},
+    telemetry: (event) => {
+      const host = resolveAutoSaveRunnerHost()
+      host?.telemetry?.(event)
+    }
+  }
+  const notifyOutputTelemetry = (
+    event: 'autosave.save.completed' | 'autosave.save.error',
+    phase: AutoSavePhase,
+    slo: 'p99-success' | 'p95-latency',
+    detail: Record<string, unknown>
+  ): void => {
+    runnerOutput.telemetry({
+      feature: 'autosave',
+      phase,
+      at: new Date().toISOString(),
+      slo,
+      detail: { event, ...detail }
+    })
+  }
   const encoder = new TextEncoder()
   const pendingQueue: AutoSaveQueueEntry[] = []
   let phase: AutoSavePhase = 'idle'
@@ -1343,15 +1364,24 @@ export function initAutoSave(
         phase = 'gc';
         lastSuccessAt = ts;
         const savedBytes = pendingBytes
+        const durationMs = Date.now() - flushStartedAt
         publishSaveCompletedCollectorEvent({
           guard,
-          durationMs: Date.now() - flushStartedAt,
+          durationMs,
           bytes: savedBytes,
           generation,
           retryCount: flushRetryCount,
           source,
           ts,
           leaseId: lease.leaseId
+        })
+        notifyOutputTelemetry('autosave.save.completed', 'gc', 'p99-success', {
+          duration_ms: durationMs,
+          bytes: savedBytes,
+          generation,
+          retry_count: flushRetryCount,
+          source,
+          lease_id: lease.leaseId
         })
         if (consumedCount > 0) {
           pendingQueue.splice(0, consumedCount)
@@ -1402,6 +1432,13 @@ export function initAutoSave(
           : error instanceof Error
           ? makeError('write-failed', error.message, true, error)
           : makeError('write-failed', 'Unexpected AutoSave failure', true, undefined, { value: error })
+      notifyOutputTelemetry('autosave.save.error', stage, 'p95-latency', {
+        code: autoError.code,
+        retryable: autoError.retryable,
+        retry_count: attempt + 1,
+        source,
+        reason: stage === 'awaiting-lock' ? 'lock' : 'write'
+      })
       if (stage === 'awaiting-lock') {
         emitRunnerTelemetry('lock-rejected', 'awaiting-lock', telemetryAt, {
           code: autoError.code,
@@ -1428,6 +1465,14 @@ export function initAutoSave(
             bytes: pendingBytes,
             delayMs: delay,
             code: autoError.code
+          })
+          notifyOutputTelemetry('autosave.save.error', 'error', 'p95-latency', {
+            code: autoError.code,
+            retryable: autoError.retryable,
+            retry_count: nextAttempt,
+            source,
+            reason: 'retry-scheduled',
+            delay_ms: delay
           })
           const wait = new Promise<void>((resolve) => {
             const settle = () => {
@@ -1469,6 +1514,18 @@ export function initAutoSave(
             bytes: pendingBytes,
             code: autoError.code
           })
+          notifyOutputTelemetry(
+            'autosave.save.error',
+            stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
+            'p95-latency',
+            {
+              code: autoError.code,
+              retryable: autoError.retryable,
+              retry_count: nextAttempt,
+              source,
+              reason: 'retry-exhausted'
+            }
+          )
           phase = 'error'
           pendingBytes = 0
           pendingQueue.length = 0
@@ -1485,6 +1542,18 @@ export function initAutoSave(
           code: autoError.code,
           retryable: false
         })
+        notifyOutputTelemetry(
+          'autosave.save.error',
+          stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
+          'p95-latency',
+          {
+            code: autoError.code,
+            retryable: autoError.retryable,
+            retry_count: attempt + 1,
+            source,
+            reason: 'retry-exhausted'
+          }
+        )
         retryCount = 0
         phase = 'error'
         pendingBytes = 0
@@ -1608,6 +1677,9 @@ export function initAutoSave(
         queuedGeneration = 0
         inflightGeneration = null
         inflightQueueCount = 0
+        notifyOutputTelemetry('autosave.save.error', 'disabled', 'p95-latency', {
+          reason: 'dispose'
+        })
       })()
       await disposePromise
     },

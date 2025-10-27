@@ -8,7 +8,11 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 import type * as AutoSaveModule from '../../../src/lib/autosave'
-import type { AutoSaveInitResult, AutoSavePhaseGuardSnapshot } from '../../../src/lib/autosave'
+import type {
+  AutoSaveInitResult,
+  AutoSavePhaseGuardSnapshot,
+  AutoSaveTelemetryEvent
+} from '../../../src/lib/autosave'
 
 interface LockHandleLike {
   release(): Promise<void>
@@ -156,12 +160,14 @@ export const createOpfs = (): OpfsMock => {
 type AutoSaveTestModule = AutoSaveModule & {
   opfs: OpfsMock
   collectorEvents: Array<Record<string, unknown>>
+  runnerTelemetry: RunnerTelemetryEvent[]
 }
 
 export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Promise<AutoSaveTestModule> => {
   cache.clear()
   const opfs = createOpfs()
   const collectorEvents: Array<Record<string, unknown>> = []
+  const runnerTelemetry: RunnerTelemetryEvent[] = []
   const collectorScope = globalThis as {
     Day8Collector?: { publish?: (event: Record<string, unknown>) => void }
   }
@@ -169,6 +175,24 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
   collectorScope.Day8Collector = {
     publish(event: Record<string, unknown>) {
       collectorEvents.push(event)
+    }
+  }
+  const runnerHostScope = globalThis as {
+    __AUTOSAVE_RUNNER_HOST__?: {
+      telemetry?: (event: RunnerTelemetryEvent) => void
+      [key: string]: unknown
+    }
+  }
+  const previousRunnerHost = runnerHostScope.__AUTOSAVE_RUNNER_HOST__
+  runnerHostScope.__AUTOSAVE_RUNNER_HOST__ = {
+    ...(typeof previousRunnerHost === 'object' && previousRunnerHost !== null ? previousRunnerHost : {}),
+    telemetry(event: RunnerTelemetryEvent) {
+      runnerTelemetry.push(event)
+      const legacy =
+        previousRunnerHost && typeof previousRunnerHost === 'object'
+          ? (previousRunnerHost.telemetry as ((event: RunnerTelemetryEvent) => void) | undefined)
+          : undefined
+      legacy?.(event)
     }
   }
   const navigatorValue = {
@@ -195,6 +219,13 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
       collectorScope.Day8Collector = previousCollector
     }
   })
+  t.after(() => {
+    if (previousRunnerHost === undefined) {
+      delete runnerHostScope.__AUTOSAVE_RUNNER_HOST__
+    } else {
+      runnerHostScope.__AUTOSAVE_RUNNER_HOST__ = previousRunnerHost
+    }
+  })
   const runners: AutoSaveInitResult[] = []
   t.after(async () => {
     const registered = runners.splice(0)
@@ -213,10 +244,14 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
     runners.push(runner)
     return runner
   }
-  return { ...module, initAutoSave, opfs, collectorEvents }
+  return { ...module, initAutoSave, opfs, collectorEvents, runnerTelemetry }
 }
 
-type ScenarioContext = Awaited<ReturnType<typeof setup>>
+export type RunnerTelemetryEvent = AutoSaveTelemetryEvent & {
+  readonly slo: 'p99-success' | 'p95-latency'
+}
+
+export type ScenarioContext = Awaited<ReturnType<typeof setup>>
 
 type ScenarioHandler = (t: TestContext, ctx: ScenarioContext) => unknown | Promise<unknown>
 
