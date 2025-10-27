@@ -78,6 +78,23 @@ describe('AutoSaveIndicator view model (RED scenarios)', () => {
     assert.match(viewModel.toast?.message ?? '', /ロック取得を再試行中です \(3\)/u)
   })
 
+  it('Backoff: 再試行待機中は進行表示と履歴制御を維持する', () => {
+    // R: バックオフフェーズのスナップショットを用意
+    const snapshot = createSnapshot({ phase: 'backoff', retryCount: 2 })
+
+    // E: ビューモデルを生成
+    const viewModel = deriveAutoSaveIndicatorViewModel({
+      snapshot,
+      historySummary: HISTORY_BASELINE
+    })
+
+    // D: バックオフ中は進行表示と履歴非活性を維持
+    assert.equal(viewModel.statusLabel, '再試行待機')
+    assert.equal(viewModel.indicator, 'progress')
+    assert.equal(viewModel.history.access, 'disabled')
+    assert.equal(viewModel.isAnimating, true)
+  })
+
   it('Readonly: 閲覧専用モードのバナーと履歴制御を行う', () => {
     // R: ReadOnly ロック状態を準備
     const lockState: AutoSaveIndicatorLockState = {

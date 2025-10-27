@@ -13,6 +13,7 @@ const ANIMATING_PHASES: ReadonlySet<AutoSavePhase> = new Set([
   'dirty',
   'debouncing',
   'awaiting-lock',
+  'backoff',
   'writing-current',
   'updating-index',
   'gc'
@@ -152,6 +153,17 @@ export const AUTOSAVE_PHASE_STATE_MAP = Object.freeze({
     history: {
       access: 'disabled',
       note: '同一タブ二重保存を避けるため履歴操作をブロックし、Collector ログも 1 行に抑制'
+    }
+  },
+  backoff: {
+    label: '再試行待機',
+    description:
+      '再試行可能なエラーから回復中。指数バックオフ中に `retryCount` を維持し次の保存を待機',
+    nextPhases: ['debouncing', 'awaiting-lock', 'error'],
+    indicator: 'progress',
+    history: {
+      access: 'disabled',
+      note: 'バックオフ完了までは履歴操作を無効化し、再試行後に再度ロック取得を試みる'
     }
   },
   'writing-current': {
