@@ -360,7 +360,18 @@ test('stable precision retains diff merge preference across guard transitions', 
     defaultPreference: getDefaultPreference('stable', unlockedPlan.diff.enabled),
   })
 
-  assert.equal(nextPreference, 'ai-first')
+  assert.equal(nextPreference, 'diff-merge')
+
+  const manualAiFirstPreference = resolvePreferenceSelection({
+    precision: 'stable',
+    previousPrecision: 'stable',
+    diffEnabled: unlockedPlan.diff.enabled,
+    previousDiffEnabled: unlockedPlan.diff.enabled,
+    preference: 'ai-first',
+    defaultPreference: getDefaultPreference('stable', unlockedPlan.diff.enabled),
+  })
+
+  assert.equal(manualAiFirstPreference, 'ai-first')
 })
 
 test('stable precision keeps diff merge preference as default when diff unlocks', () => {
@@ -445,7 +456,7 @@ test('stable precision keeps diff merge preference once diff guard lifts but all
   assert.equal(preference, 'manual-first')
 })
 
-test('stable precision respects manual preference when review band unlocks diff', () => {
+test('stable precision restores diff merge default when guard unlocks before manual override', () => {
   const guardedPlan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.82,
@@ -459,16 +470,55 @@ test('stable precision respects manual preference when review band unlocks diff'
   assert.equal(guardedPlan.diff.enabled, false)
   assert.equal(unlockedPlan.diff.enabled, true)
 
-  const defaultPreference = getDefaultPreference('stable', guardedPlan.diff.enabled)
-  const nextPreference = resolvePreferenceSelection({
+  const guardedDefault = getDefaultPreference('stable', guardedPlan.diff.enabled)
+  const unlockedDefault = getDefaultPreference('stable', unlockedPlan.diff.enabled)
+
+  assert.equal(guardedDefault, 'diff-merge')
+  assert.equal(unlockedDefault, 'diff-merge')
+
+  const restoredPreference = resolvePreferenceSelection({
     precision: 'stable',
     previousPrecision: 'stable',
     diffEnabled: unlockedPlan.diff.enabled,
     previousDiffEnabled: guardedPlan.diff.enabled,
     preference: 'manual-first',
+    defaultPreference: unlockedDefault,
+  })
+
+  assert.equal(restoredPreference, 'diff-merge')
+
+  const manualOverridePreference = resolvePreferenceSelection({
+    precision: 'stable',
+    previousPrecision: 'stable',
+    diffEnabled: unlockedPlan.diff.enabled,
+    previousDiffEnabled: unlockedPlan.diff.enabled,
+    preference: 'manual-first',
+    defaultPreference: unlockedDefault,
+  })
+
+  assert.equal(manualOverridePreference, 'manual-first')
+})
+
+test('stable precision respects manual preference after diff remains unlocked', () => {
+  const unlockedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+  })
+
+  assert.equal(unlockedPlan.diff.enabled, true)
+
+  const defaultPreference = getDefaultPreference('stable', unlockedPlan.diff.enabled)
+  const nextPreference = resolvePreferenceSelection({
+    precision: 'stable',
+    previousPrecision: 'stable',
+    diffEnabled: unlockedPlan.diff.enabled,
+    previousDiffEnabled: unlockedPlan.diff.enabled,
+    preference: 'manual-first',
     defaultPreference,
   })
 
+  assert.equal(defaultPreference, 'diff-merge')
   assert.equal(nextPreference, 'manual-first')
 })
 
