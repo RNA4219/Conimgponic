@@ -383,6 +383,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   const ready = createDeferred();
   const releaseDeferred = createDeferred();
   const completionDeferred = createDeferred();
+  let requestSettled: Promise<void> = Promise.resolve();
   let releaseInvoked = false;
   let releaseError: ProjectLockError | undefined;
   let releasedPromise: Promise<unknown> | undefined;
@@ -418,15 +419,6 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
     }
   };
 
-  const releaseMonitor = releaseDeferred.promise.then(async () => {
-    await awaitReleased(releasedPromise);
-    try {
-      await completionDeferred.promise;
-    } catch (error) {
-      captureCompletionError(error);
-    }
-  });
-
   const toReleaseProjectError = (error: unknown): ProjectLockError =>
     error instanceof ProjectLockError && error.operation === 'release' && error.retryable
       ? error
@@ -439,7 +431,10 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
     })
     .then(
       () => completionDeferred.resolve(),
-      (error) => completionDeferred.reject(error),
+      (error) => {
+        captureCompletionError(error);
+        completionDeferred.reject(error);
+      },
     );
 
   try {
@@ -483,11 +478,6 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
               }
               releaseDeferred.resolve();
               try {
-                await releaseMonitor;
-              } catch (error) {
-                captureCompletionError(error);
-              }
-              try {
                 await completionDeferred.promise;
               } catch (error) {
                 captureCompletionError(error);
@@ -524,6 +514,13 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
         if (!completionDeferred.isSettled()) completionDeferred.reject(projectError);
         throw projectError;
       });
+    requestSettled = requestOutcome.then(
+      () => undefined,
+      (error) => {
+        captureCompletionError(error);
+        throw error;
+      },
+    );
     requestOutcome.catch(() => undefined);
   } catch (cause) {
     const projectError =

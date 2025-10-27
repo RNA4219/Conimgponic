@@ -422,6 +422,80 @@ scenario(
   }
 )
 
+test('AS-LK-05: acquireProjectLock/releaseProjectLock emits lock:released after Web Lock released', async (t) => {
+  const events: ProjectLockEvent[] = []
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    events.push(event)
+  })
+  t.after(unsubscribe)
+
+  const releaseGate = createDeferred<void>()
+  const releasedDeferred = createDeferred<void>()
+
+  const releaseMock = t.mock.fn(async () => {
+    releaseGate.resolve()
+    await releasedDeferred.promise
+  })
+
+  const request = t.mock.fn((...args: unknown[]) => {
+    assert.equal(args.length, 3, 'navigator.locks.request must receive key, options, and callback')
+    const [key, options, callback] = args as [
+      string,
+      { mode: 'exclusive'; signal?: AbortSignal },
+      (lock: { release: () => Promise<void>; released: Promise<void> }) => Promise<unknown>
+    ]
+    assert.equal(key, WEB_LOCK_KEY)
+    assert.equal(options.mode, 'exclusive')
+    const handle = {
+      release: releaseMock,
+      released: releasedDeferred.promise
+    }
+    const callbackResult = Promise.resolve(callback(handle))
+    return callbackResult
+  })
+
+  const originalNavigator = (globalThis as typeof globalThis & { navigator?: unknown }).navigator
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { locks: { request } },
+    configurable: true
+  })
+  t.after(() => {
+    if (originalNavigator === undefined) {
+      delete (globalThis as { navigator?: unknown }).navigator
+    } else {
+      Object.defineProperty(globalThis, 'navigator', { value: originalNavigator, configurable: true })
+    }
+  })
+
+  const lease = await acquireProjectLock({ preferredStrategy: 'web-lock', retry: false })
+  assert.equal(lease.strategy, 'web-lock')
+
+  const releasePromise = releaseProjectLock(lease)
+
+  await releaseGate.promise
+  assert.equal(releaseMock.mock.calls.length, 1, 'lock.release must be invoked exactly once')
+
+  const releaseState = await Promise.race([
+    releasePromise.then(() => 'resolved' as const),
+    new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), 0))
+  ])
+  assert.equal(releaseState, 'pending', 'releaseProjectLock must wait for Web Lock released promise')
+
+  releasedDeferred.resolve()
+  await releasePromise
+
+  assert.equal(
+    events.filter((event): event is Extract<ProjectLockEvent, { type: 'lock:released' }> => event.type === 'lock:released').length,
+    1,
+    'lock:released must emit exactly once'
+  )
+  assert.equal(
+    events.some((event) => event.type === 'lock:readonly-entered'),
+    false,
+    'lock:readonly-entered must not fire on successful release'
+  )
+})
+
 test('AS-LK-03: Web Lock は release() まで request が解決せず、lock.released 完了まで待機する', async (t) => {
   const events: ProjectLockEvent[] = []
   const unsubscribe = projectLockEvents.subscribe((event) => {
