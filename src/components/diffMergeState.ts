@@ -111,7 +111,11 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
     if (!ids.length) return state
     const updates: Record<string, DiffMergeHunkStatus> = {}
     for (const id of ids) updates[id] = 'Queued'
-    return { ...state, hunkStates: { ...state.hunkStates, ...updates } }
+    const targeted = new Set(ids)
+    const editingHunkId =
+      state.editingHunkId !== null && targeted.has(state.editingHunkId) ? null : state.editingHunkId
+    // Guardrail: 「型安全・最小差分・TDD」―編集解除を最小差分で保証
+    return { ...state, hunkStates: { ...state.hunkStates, ...updates }, editingHunkId }
   }
   if (action.type === 'queueResult') {
     const knownIds = Object.keys(state.hunkStates)
@@ -120,7 +124,11 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
     const updates: Record<string, DiffMergeHunkStatus> = {}
     const status: DiffMergeHunkStatus = action.result === 'success' ? 'Merged' : action.result === 'conflict' ? 'Conflict' : 'Selected'
     for (const id of ids) updates[id] = status
-    return { ...state, hunkStates: { ...state.hunkStates, ...updates } }
+    const targeted = new Set(ids)
+    const editingHunkId =
+      state.editingHunkId !== null && targeted.has(state.editingHunkId) ? null : state.editingHunkId
+    // Guardrail: 「型安全・最小差分・TDD」―結果反映時も編集状態をクリア
+    return { ...state, hunkStates: { ...state.hunkStates, ...updates }, editingHunkId }
   }
   if (action.type === 'override') {
     if (!hasHunkState(state, action.hunkId)) return state
