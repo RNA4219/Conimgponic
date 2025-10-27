@@ -331,6 +331,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p logs
+          : > "logs/${{ matrix.suite }}-failures.log"
           ${{ matrix.command }} |& tee "logs/${{ matrix.suite }}.log"
 
       - name: Run ${{ matrix.suite }} suite
@@ -341,6 +342,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p logs
+          : > "logs/${{ matrix.suite }}-failures.log"
           ${{ matrix.command }} |& tee "logs/${{ matrix.suite }}.log"
 
       - name: Extract failed test output
