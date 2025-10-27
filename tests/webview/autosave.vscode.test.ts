@@ -657,6 +657,15 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(errorStatus, 'non-retryable error should emit status.autosave error state')
     assert.equal(errorStatus.payload.retryCount, 1)
 
+    const disabledStatus = sent.find(
+      (msg): msg is AutoSaveStatusMessage =>
+        msg.type === 'status.autosave' &&
+        msg.correlationId === 'corr-error' &&
+        msg.payload.state === 'disabled'
+    )
+    assert.ok(disabledStatus, 'non-retryable error should transition to disabled state')
+    assert.equal(disabledStatus.payload.retryCount, 1)
+
     const errorTelemetry = telemetry.find(
       (event) =>
         event.name === 'autosave.status' &&
@@ -665,6 +674,15 @@ describe('createVscodeAutoSaveBridge', () => {
     )
     assert.ok(errorTelemetry, 'autosave.status telemetry for error state should exist')
     assert.equal(errorTelemetry.properties?.retryCount, 1)
+
+    const disabledTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' &&
+        event.properties?.state === 'disabled' &&
+        event.properties?.correlationId === 'corr-error'
+    )
+    assert.ok(disabledTelemetry, 'autosave.status telemetry for disabled state should exist')
+    assert.equal(disabledTelemetry.properties?.retryCount, 1)
   })
 
   it('treats thrown non-retryable AutoSaveError as terminal failure', async () => {

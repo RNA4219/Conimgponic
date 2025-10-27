@@ -386,7 +386,6 @@ const handleNonRetryableError = (
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
   )
-  state.retryCount = 0
   const statusBeforeDisable = state.status
   state.status = 'disabled'
   state.guard = {
@@ -401,7 +400,7 @@ const handleNonRetryableError = (
       request.phase ?? PHASE_SNAPSHOT,
       'disabled',
       state.guard,
-      state.retryCount,
+      retryCountBeforeReset,
       state.lastSuccessAt
     )
   )
@@ -409,10 +408,15 @@ const handleNonRetryableError = (
     options,
     {
       name: 'autosave.status',
-      properties: { state: 'disabled', correlationId: request.correlationId }
+      properties: {
+        state: 'disabled',
+        correlationId: request.correlationId,
+        retryCount: retryCountBeforeReset
+      }
     },
     { before: statusBeforeDisable, after: state.status, guard: state.guard }
   )
+  state.retryCount = 0
 }
 
 export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): AutoSaveHostBridge => {
