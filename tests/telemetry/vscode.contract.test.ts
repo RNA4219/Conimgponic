@@ -386,6 +386,54 @@ describe('vscode extension telemetry contract (RED)', () => {
     })
   })
 
+  test('publishFlagResolution は overrides reqId/correlationId を UUID に正規化する', () => {
+    const captured: Day8CollectorFlagResolutionEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorFlagResolutionEvent)
+      }
+    } as Day8Collector
+
+    try {
+      const payload: FlagResolutionEventPayload = {
+        flag: 'autosave.enabled',
+        variant: 'true',
+        source: 'env',
+        phase: 'phase-a0',
+        evaluation_ms: 42,
+        errors: [],
+        threshold: null,
+        status: 'success',
+        detail: { retryable: false, default_used: false }
+      }
+      publishFlagResolution('app.autosave', 'bootstrap', [payload], 42, {
+        reqId: 'not-a-uuid',
+        correlationId: 'also-not-a-uuid'
+      })
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    assertOk(captured.length > 0, 'flag_resolution telemetry must be published when overrides provided')
+    const [event] = captured
+    assertOk(event, 'flag_resolution event must be captured when overrides provided')
+    assertOk(UUID_REGEX.test(event.reqId), 'flag_resolution reqId overrides must be normalized to uuid')
+    assertOk(UUID_REGEX.test(event.correlationId), 'flag_resolution correlationId overrides must be normalized to uuid')
+    strictEqual(event.correlationId, event.reqId, 'flag_resolution correlationId overrides must match reqId when normalized')
+    strictEqual(
+      event.reqId === 'not-a-uuid',
+      false,
+      'flag_resolution reqId override must not leak invalid value'
+    )
+    strictEqual(
+      event.correlationId === 'also-not-a-uuid',
+      false,
+      'flag_resolution correlationId override must not leak invalid value'
+    )
+  })
+
   test('publishFlagResolution は phase-a2/b1 を Collector 契約フェーズへ変換する', () => {
     const captured: Day8CollectorFlagResolutionEvent[] = []
     const scope = globalThis as { Day8Collector?: Day8Collector }

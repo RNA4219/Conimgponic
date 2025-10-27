@@ -6,9 +6,19 @@
   "properties": {
     "type": { "type": "string", "minLength": 1 },
     "apiVersion": { "type": "integer", "const": 1 },
-    "reqId": { "type": "string", "minLength": 1, "format": "uuid" },
+    "reqId": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uuid",
+      "description": "RFC4122 UUID issued by the Collector. Retries reuse the same value."
+    },
     "ts": { "type": "string", "format": "date-time" },
-    "correlationId": { "type": "string", "minLength": 1, "format": "uuid" },
+    "correlationId": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uuid",
+      "description": "RFC4122 UUID that matches reqId. Invalid overrides are normalized by the Collector."
+    },
     "phase": { "$ref": "#/definitions/rolloutPhase" },
     "schema": { "type": "string", "const": "vscode.telemetry.v1" },
     "event": { "$ref": "#/definitions/telemetryEventName" },

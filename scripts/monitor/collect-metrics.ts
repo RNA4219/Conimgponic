@@ -63,10 +63,10 @@ export type TelemetrySource = (typeof TELEMETRY_SOURCES)[number];
 export interface MessageEnvelope {
   readonly type: string;
   readonly apiVersion: 1;
-  /** RFC4122 形式の UUID。Collector 再送信時も固定。 */
+  /** RFC4122 形式の UUID。Collector 再送信時も固定。無効な overrides は Collector 側で再発行される。 */
   readonly reqId: string;
   readonly ts: string;
-  /** RFC4122 形式の UUID。reqId と一致させること。 */
+  /** RFC4122 形式の UUID。reqId と一致させること。無効な overrides は Collector 側で reqId に正規化される。 */
   readonly correlationId: string;
   readonly phase: RolloutPhase;
   readonly feature?: TelemetryFeature;
