@@ -3,7 +3,14 @@ import test from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import {createDiffMergeController,createInitialDiffMergeState,diffMergeReducer,DiffMergeAction,DiffMergeState,MergeDecisionEvent} from '../../src/components/diffMergeState'
+import {
+  createDiffMergeController,
+  createInitialDiffMergeState,
+  diffMergeReducer,
+  DiffMergeAction,
+  DiffMergeState,
+  MergeDecisionEvent,
+} from '../../src/components/diffMergeState'
 import { DiffMergeView, planDiffMergeView, resolveDiffMergeStoredTab } from '../../src/components/DiffMergeView'
 import type {
   DiffMergeQueueCommandPayload,

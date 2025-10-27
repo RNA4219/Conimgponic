@@ -3,15 +3,15 @@
 ## メタデータ
 
 ```yaml
-task_id: 20251031-05
+task_id: 20251027-05
 repo: local://Conimgponic
 base_branch: work
 work_branch: feat/diff-merge-queue-merge-error-handling
 priority: P2
 langs: [typescript]
 status: draft
-last_reviewed_at: 2025-10-31
-next_review_due: 2025-11-14
+last_reviewed_at: 2025-10-27
+next_review_due: 2025-11-10
 ```
 
 ## Objective
@@ -68,11 +68,11 @@ pnpm test -- --filter diff-merge-view-state
 
 ## Tests
 
-- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（緑、Promise 未処理拒否なし）
+- 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（緑、Promise 未処理拒否なし）
 
 ## Commands
 
-- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`
+- 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`
 
 ## Notes
 

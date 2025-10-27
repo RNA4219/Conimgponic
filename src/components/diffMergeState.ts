@@ -235,7 +235,7 @@ export const createDiffMergeController = ({
   readonly resolveCurrentTab?: () => DiffMergeSubTabKey | null
   readonly autoApplied?: DiffMergeAutoAppliedState
 }) => ({
-  queueMerge: async (hunkIds: readonly string[]) => {
+  queueMerge: async (hunkIds: readonly string[]): Promise<void> => {
     const ids = [...retainKnownHunkIds(hunkIds, getCurrentHunkIds())]
     if (!ids.length) return
     dispatch({ type: 'queueMerge', hunkIds: ids })
