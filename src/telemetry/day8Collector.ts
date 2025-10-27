@@ -27,11 +27,12 @@ export interface FlagResolutionEventPayload {
   readonly phase: FlagRolloutPhase
   readonly evaluation_ms: number
   readonly errors: readonly FlagValidationError[]
+  readonly threshold: number | null
 }
 
 export type FlagResolutionContractPayload = Pick<
   FlagResolutionEventPayload,
-  'flag' | 'variant' | 'source' | 'phase' | 'evaluation_ms'
+  'flag' | 'variant' | 'source' | 'phase' | 'evaluation_ms' | 'threshold'
 >
 
 export type Day8CollectorFlagResolutionEvent = {
@@ -75,7 +76,8 @@ export const publishFlagResolution = (
       variant: payload.variant,
       source: payload.source,
       phase: payload.phase,
-      evaluation_ms: payload.evaluation_ms
+      evaluation_ms: payload.evaluation_ms,
+      threshold: payload.threshold
     }
     collector.publish({
       schema: 'vscode.telemetry.v1',

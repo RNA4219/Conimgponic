@@ -81,6 +81,7 @@ export interface FlagResolutionPayload {
   readonly source: FlagResolutionSource;
   readonly phase: RolloutPhase;
   readonly evaluation_ms: number;
+  readonly threshold: number | null;
 }
 
 export type MergeTracePhase = 'queued' | 'applying' | 'completed';
@@ -585,7 +586,14 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'flag_resolution',
         description: 'Feature flag の判定結果を Analyzer の restore_success_rate 推定に反映する。',
-        jsonlFields: ['payload.flag', 'payload.variant', 'payload.source', 'payload.phase', 'payload.evaluation_ms'],
+        jsonlFields: [
+          'payload.flag',
+          'payload.variant',
+          'payload.source',
+          'payload.phase',
+          'payload.evaluation_ms',
+          'payload.threshold',
+        ],
         retryable: true,
         pipelineStage: 'analyzer',
         guardrail: {
