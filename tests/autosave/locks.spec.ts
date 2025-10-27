@@ -293,6 +293,81 @@ scenario(
 )
 
 scenario(
+  'AS-I-03: Expired fallback lock with reused leaseId refreshes acquiredAt timestamp',
+  {
+    locks: {
+      async request() {
+        throw new DOMException('Lock already held', 'AbortError')
+      }
+    }
+  },
+  async (t, { opfs }) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 120_000 })
+
+    const expiredRecord = {
+      leaseId: 'reused-lease',
+      ownerId: 'stale-owner',
+      acquiredAt: 2_000,
+      expiresAt: 30_000,
+      ttlSeconds: 30,
+      mtime: 30_000
+    }
+    opfs.files.set('project/.lock', JSON.stringify(expiredRecord))
+
+    const uuids = ['reused-lease', 'fresh-owner']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock' })
+    const acquisitionNow = Date.now()
+
+    assert.equal(lease.strategy, 'file-lock')
+    assert.equal(lease.viaFallback, true)
+    assert.equal(lease.leaseId, 'reused-lease')
+    assert.ok(
+      Math.abs(lease.acquiredAt - acquisitionNow) <= 1,
+      'acquiredAt must refresh to current time when fallback leaseId is reused after expiry'
+    )
+    assert.notEqual(
+      lease.acquiredAt,
+      expiredRecord.acquiredAt,
+      'expired fallback lease timestamps must not persist when reusing the same leaseId'
+    )
+
+    const fallbackRecordRaw = opfs.files.get('project/.lock')
+    assert.ok(fallbackRecordRaw, 'fallback record must exist after reacquisition')
+    const fallbackRecord = JSON.parse(fallbackRecordRaw)
+    assert.equal(
+      fallbackRecord.acquiredAt,
+      lease.acquiredAt,
+      'fallback record acquiredAt must match refreshed lease timestamp when leaseId is reused'
+    )
+
+    await projectLockApi.release(lease)
+
+    assert.deepEqual(sequence, [
+      'attempt:web-lock',
+      'error:acquire-denied:retryable=true',
+      'attempt:file-lock',
+      'warning:fallback-engaged',
+      'fallback-engaged',
+      'acquired:file-lock',
+      'released'
+    ])
+    assert.deepEqual(telemetry, [
+      { type: 'lock:error', code: 'acquire-denied', retryable: true, operation: 'acquire' }
+    ])
+  }
+)
+
+scenario(
   'AS-I-03: Non-retryable Web Lock failure stops acquisition with telemetry',
   {
     locks: {
