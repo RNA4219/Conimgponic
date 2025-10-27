@@ -180,20 +180,21 @@ test('beta precision enables diff tab when review band is present', () => {
   assert.equal(plan.guard.phaseBRequired, true)
 })
 
-test('beta precision without phase stats keeps diff visible but guarded', () => {
+test('beta precision without phase stats suppresses diff tab until guard lifts', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'beta',
     threshold: 0.7,
   })
 
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.visible, false)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.guard.phaseBRequired, false)
   assert.deepEqual(
     plan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
+    ['compiled', 'shot', 'assets', 'import', 'golden'],
   )
+  assert.equal(plan.tabs.initialTab, 'compiled')
 })
 
 test('beta precision suppresses diff tab when review band is empty', () => {
@@ -205,12 +206,13 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   })
 
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.visible, false)
   assert.equal(plan.guard.phaseBRequired, false)
   assert.deepEqual(
     plan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
+    ['compiled', 'shot', 'assets', 'import', 'golden'],
   )
+  assert.equal(plan.tabs.initialTab, 'compiled')
   assert.equal(plan.threshold.request, 0.85)
   assert.equal(plan.threshold.autoTarget, 0.9)
   assert.equal(plan.autoApplied.rate, 0.75)
@@ -290,21 +292,21 @@ test('beta precision resolves diff backup eligibility when autosave is stale', (
   assert.equal(shouldRender, true)
 })
 
-test('stable precision without phase stats keeps diff visible and gated', () => {
+test('stable precision without phase stats defers diff until guard lifts', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.82,
   })
 
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.visible, true)
-  assert.equal(plan.diff.exposure, 'default')
+  assert.equal(plan.diff.visible, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.guard.phaseBRequired, false)
   assert.deepEqual(
     plan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
+    ['compiled', 'shot', 'assets', 'import', 'golden'],
   )
-  assert.equal(plan.tabs.initialTab, 'diff')
+  assert.equal(plan.tabs.initialTab, 'compiled')
 })
 
 test('stable precision keeps diff opt-in until auto apply meets target', () => {
@@ -318,6 +320,25 @@ test('stable precision keeps diff opt-in until auto apply meets target', () => {
   assert.equal(plan.threshold.autoTarget, 0.89)
   assert.equal(plan.autoApplied.rate, 0.88)
   assert.equal(plan.autoApplied.meetsTarget, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.diff.enabled, false)
+})
+
+test('stable precision hides diff tab when auto apply underperforms', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.81,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.threshold.autoTarget > (plan.autoApplied.rate ?? 0), true)
+  assert.deepEqual(
+    plan.tabs.tabs.map((entry) => entry.id),
+    ['compiled', 'shot', 'assets', 'import', 'golden'],
+  )
+  assert.equal(plan.tabs.initialTab, 'compiled')
+  assert.equal(plan.diff.visible, false)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.diff.enabled, false)
 })
@@ -499,8 +520,8 @@ test('stable precision sourced from workspace threshold stays opt-in without rev
 
   assert.equal(plan.threshold.request, 0.88)
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.visible, true)
-  assert.equal(plan.diff.exposure, 'default')
+  assert.equal(plan.diff.visible, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.guard.phaseBRequired, false)
 })
 
@@ -527,15 +548,15 @@ test('stable precision tab planning restores stored merge.lastTab preference', (
   })
 
   assert.equal(phasePlan.tabs.initialTab, 'compiled')
-  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'default', backupAfterMs: 300000 })
+  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
   assert.deepEqual(
     phasePlan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
+    ['compiled', 'shot', 'assets', 'import', 'golden'],
   )
   assert.equal(phasePlan.diff.initialTab, 'compiled')
-  assert.equal(phasePlan.diff.visible, true)
+  assert.equal(phasePlan.diff.visible, false)
   assert.equal(phasePlan.diff.enabled, false)
-  assert.equal(phasePlan.diff.exposure, 'default')
+  assert.equal(phasePlan.diff.exposure, 'opt-in')
 })
 
 test('stable precision restores last selected non-diff tab when merge.lastTab is set', () => {
