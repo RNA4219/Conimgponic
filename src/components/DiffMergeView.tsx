@@ -214,7 +214,7 @@ export const diffMergeViewDesign: DiffMergeViewDesign = Object.freeze({
       precision: 'beta',
       origin: 'operation-pane.queue',
       hunkIds: [],
-      telemetryContext: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', lastTab: 'review' },
+      telemetryContext: { collectorSurface: 'diff-merge.operation-pane', analyzerSurface: 'diff-merge.queue', lastTab: 'review' },
       metadata: { autoSaveRequested: false },
     } satisfies DiffMergeQueueCommandPayload,
     response: {
