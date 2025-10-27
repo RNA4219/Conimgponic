@@ -1,6 +1,11 @@
 export type FlagSource = 'env' | 'workspace' | 'localStorage' | 'default'
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
-export type FlagRolloutPhase = 'phase-a0' | 'phase-a1' | 'phase-b0'
+export type FlagRolloutPhase =
+  | 'phase-a0'
+  | 'phase-a1'
+  | 'phase-a2'
+  | 'phase-b0'
+  | 'phase-b1'
 
 export const BETA_THRESHOLD_DEFAULT = 0.75
 export const STABLE_THRESHOLD_DEFAULT = 0.82
