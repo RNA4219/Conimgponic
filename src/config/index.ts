@@ -45,7 +45,8 @@ export type {
   FlagValidationIssue,
   FlagValueSnapshot,
   MergePrecision,
-  ResolveOptions
+  ResolveOptions,
+  WorkspaceConfiguration
 } from './flags.js'
 
 export type { FlagResolutionEventPayload } from '../telemetry/day8Collector.js'

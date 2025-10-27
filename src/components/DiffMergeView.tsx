@@ -9,6 +9,19 @@ import {
   type DiffMergeState,
 } from './diffMergeState.js'
 
+const isDevelopmentEnvironment = (): boolean => {
+  const meta =
+    typeof import.meta !== 'undefined'
+      ? (import.meta as { env?: { MODE?: string } }).env ?? undefined
+      : undefined
+  if (meta?.MODE) {
+    return meta.MODE !== 'production'
+  }
+  const processEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+  const nodeEnv = processEnv?.NODE_ENV
+  return nodeEnv ? nodeEnv !== 'production' : true
+}
+
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
 
 export interface MergeHunk {
@@ -410,7 +423,7 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
       resolveCurrentTab: () => activeTab,
       autoApplied,
     })
-    if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
+    if (isDevelopmentEnvironment()) {
       const hook = (globalThis as {
         __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
       }).__diffMergeViewOnControllerReady

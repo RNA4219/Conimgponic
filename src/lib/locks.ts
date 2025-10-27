@@ -404,7 +404,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   };
 
   try {
-    const requestOutcome = locks
+    const requestOutcome: Promise<unknown> = locks
       .request(
         WEB_LOCK_KEY,
         { mode: 'exclusive', signal: ctx.signal },
@@ -417,6 +417,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
           if (!released || typeof (released as Promise<unknown>).then !== 'function') {
             throw makeError('acquire-denied', 'Web Lock handle missing released promise', 'acquire', false);
           }
+          const releasedPromise = released as Promise<unknown>;
 
           webLockHandles.set(ctx.leaseId, {
             release: async () => {
@@ -433,7 +434,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
           try {
             await releaseDeferred.promise;
           } finally {
-            await awaitReleased(released);
+            await awaitReleased(releasedPromise);
             completionDeferred.resolve();
           }
         }

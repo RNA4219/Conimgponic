@@ -371,6 +371,12 @@ export type AutoSavePhaseTransitionMap = Readonly<Record<AutoSavePhase, readonly
 export const AUTOSAVE_STATE_TRANSITION_MAP: AutoSavePhaseTransitionMap = Object.freeze({
   disabled: ['idle:init|タイマー初期化+監視開始'],
   idle: ['debouncing:change-detected|debounce セット+pendingBytes 集計', 'awaiting-lock:flushNow|手動保存→即時ロック取得', 'disabled:dispose|監視解除+ロック解放+タイマー停止'],
+  dirty: [
+    'debouncing:alias-sync|UI dirty 表示を内部 debouncing と同期',
+    'idle:debounce-cancelled|pendingBytes リセット',
+    'awaiting-lock:flushNow|手動保存→デバウンスキャンセル+即時ロック',
+    'disabled:dispose|監視解除+ジョブキャンセル'
+  ],
   debouncing: ['idle:debounce-cancelled|pendingBytes リセット', 'awaiting-lock:idle-confirmed|ロック要求開始+phase 更新', 'awaiting-lock:flushNow|手動保存→デバウンスキャンセル+即時ロック', 'disabled:dispose|監視解除+ジョブキャンセル'],
   'awaiting-lock': ['writing-current:lock-acquired|current.json.tmp 書込+retryCount リセット', 'backoff:lock-retry|retryable&&attempts<maxAttempts→バックオフ開始', 'error:flight-error|retryable=false or attempts>=maxAttempts', 'disabled:dispose|ロック要求取消+バックオフ解除'],
   'writing-current': ['updating-index:write-committed|rename+index 更新準備', 'error:flight-error|ロールバック+retryCount++', 'disabled:dispose|フライト完了待機後ロック解放'],
@@ -864,7 +870,7 @@ const isAutoSaveError = (value: unknown): value is AutoSaveError => {
 }
 
 const parseIndexFile = (value: unknown): AutoSaveIndexPayload => {
-  if (!value || typeof value !== 'object') return { current: null, history: [] }
+  if (!value || typeof value !== 'object') return { current: null, history: [], generation: null }
   const input = value as Record<string, unknown>
   const current = input.current as AutoSaveHistoryEntry | null | undefined
   const history = Array.isArray(input.history) ? (input.history as AutoSaveHistoryEntry[]) : []
@@ -886,7 +892,7 @@ const parseIndexFile = (value: unknown): AutoSaveIndexPayload => {
 
 const loadIndex = async (): Promise<AutoSaveIndexPayload> => {
   const text = await loadText(INDEX_PATH)
-  if (!text) return { current: null, history: [] }
+  if (!text) return { current: null, history: [], generation: null }
   try {
     return parseIndexFile(JSON.parse(text))
   } catch (error) {
