@@ -530,20 +530,24 @@ describe('createVscodeAutoSaveBridge', () => {
     const disabledByGuard = status('disabled', undefined, (event) => event.properties?.source === 'phase-guard')
     assert.ok(disabledByGuard, 'phase guard disabled telemetry is required')
     assert.equal(disabledByGuard.properties?.retryCount, 0)
+    assert.equal(disabledByGuard.properties?.detail?.retry_count, 0)
 
     bridge.reportDirty(1024, guardEnabled)
     const dirtyEvent = status('dirty', undefined, (event) => event.properties?.pendingBytes === 1024)
     assert.ok(dirtyEvent, 'dirty telemetry should exist')
     assert.equal(dirtyEvent.properties?.retryCount, 0)
+    assert.equal(dirtyEvent.properties?.detail?.retry_count, 0)
 
     const retryRequest = createRequest('req-retry', 'corr-retry', guardEnabled, 1024, 1)
     await bridge.handleSnapshotRequest(retryRequest)
     const savingEvent = status('saving', 'corr-retry')
     assert.ok(savingEvent, 'saving telemetry should exist for retry request')
     assert.equal(savingEvent.properties?.retryCount, 0)
+    assert.equal(savingEvent.properties?.detail?.retry_count, 0)
     const backoffEvent = status('backoff', 'corr-retry')
     assert.ok(backoffEvent, 'backoff telemetry should exist after retryable failure')
     assert.equal(backoffEvent.properties?.retryCount, 1)
+    assert.equal(backoffEvent.properties?.detail?.retry_count, 1)
     assert.ok(backoffEvent.properties && !('attempt' in backoffEvent.properties))
 
     const retrySuccess = createRequest('req-success', 'corr-success', guardEnabled, 1024, 2)
@@ -551,15 +555,18 @@ describe('createVscodeAutoSaveBridge', () => {
     const savingRetryEvent = status('saving', 'corr-success')
     assert.ok(savingRetryEvent, 'saving telemetry should exist for retry success')
     assert.equal(savingRetryEvent.properties?.retryCount, 1)
+    assert.equal(savingRetryEvent.properties?.detail?.retry_count, 1)
     const savedEvent = status('saved', 'corr-success')
     assert.ok(savedEvent, 'saved telemetry should exist after successful retry')
     assert.equal(savedEvent.properties?.retryCount, 0)
+    assert.equal(savedEvent.properties?.detail?.retry_count, 0)
 
     const disabledRequest = createRequest('req-disabled', 'corr-disabled', guardReadonly, 512, 3)
     await bridge.handleSnapshotRequest(disabledRequest)
     const disabledDuringRequest = status('disabled', 'corr-disabled')
     assert.ok(disabledDuringRequest, 'disabled telemetry should exist for guard-disabled request')
     assert.equal(disabledDuringRequest.properties?.retryCount, 0)
+    assert.equal(disabledDuringRequest.properties?.detail?.retry_count, 0)
   })
 
   it('autosave.status telemetry includes request phase for saving/backoff/saved transitions', async () => {

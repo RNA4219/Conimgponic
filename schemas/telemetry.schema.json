@@ -90,6 +90,22 @@
                   "rollbackTo": { "$ref": "#/definitions/rolloutPhase" }
                 },
                 "required": ["current", "rollbackTo"]
+              },
+              "detail": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "retry_count": { "type": "integer", "minimum": 0 }
+                },
+                "required": ["retry_count"]
+              },
+              "performance": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "flush_latency_ms": { "type": "number", "minimum": 0 }
+                },
+                "required": ["flush_latency_ms"]
               }
             },
             "required": [
@@ -98,7 +114,9 @@
               "latency_ms",
               "attempt",
               "phase_step",
-              "guard"
+              "guard",
+              "detail",
+              "performance"
             ]
           }
         }

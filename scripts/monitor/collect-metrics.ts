@@ -123,6 +123,8 @@ export interface StatusAutosavePayload {
   readonly attempt: number;
   readonly phase_step: AutoSavePhaseStep;
   readonly guard: StatusAutosaveGuardSnapshot;
+  readonly detail: { readonly retry_count: number };
+  readonly performance: { readonly flush_latency_ms: number };
 }
 
 export const FLAG_RESOLUTION_SOURCE_VARIANTS = [
@@ -665,7 +667,9 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.attempt',
           'payload.phase_step',
           'payload.guard.current',
-          'payload.guard.rollbackTo'
+          'payload.guard.rollbackTo',
+          'payload.detail.retry_count',
+          'payload.performance.flush_latency_ms'
         ],
         retryable: true,
         pipelineStage: 'collector',
