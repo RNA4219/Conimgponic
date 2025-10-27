@@ -538,7 +538,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           request.reqId,
           request.correlationId,
           ts,
-          request.phase ?? PHASE_SNAPSHOT,
+          PHASE_STATUS,
           'disabled',
           state.guard,
           state.retryCount,
