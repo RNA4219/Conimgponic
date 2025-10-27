@@ -28,6 +28,7 @@ type JsonSchemaObject = {
   readonly type?: string
   readonly enum?: readonly string[]
   readonly $ref?: string
+  readonly format?: string
   readonly properties?: {
     readonly [key: string]: JsonSchemaObject
   }
@@ -65,6 +66,9 @@ type TelemetrySchemaConditional = {
 const telemetrySchema = JSON.parse(
   readFileSync(new URL('../../schemas/telemetry.schema.json', import.meta.url), 'utf-8')
 ) as TelemetrySchema
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const findConditional = (predicate: (entry: TelemetrySchemaConditional) => boolean) => {
   const entry = telemetrySchema.allOf.find(predicate)
@@ -171,6 +175,14 @@ describe('vscode extension telemetry contract (RED)', () => {
       'backoffMs',
       'payload',
     ])
+
+    const properties = telemetrySchema.properties
+    assertOk(properties, 'telemetry schema must define properties')
+    const reqId = properties.reqId
+    const correlationId = properties.correlationId
+    assertOk(reqId && correlationId, 'telemetry schema must define reqId/correlationId')
+    strictEqual(reqId.format, 'uuid', 'telemetry reqId must enforce uuid format')
+    strictEqual(correlationId.format, 'uuid', 'telemetry correlationId must enforce uuid format')
   })
   test('status.autosave telemetry は phase 情報と guard スナップショットを記録する', () => {
     const spec = findTelemetrySpec('status.autosave')
@@ -289,6 +301,13 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(captured.length > 0, 'flag_resolution telemetry must be published')
     const [event] = captured
     assertOk(event, 'flag_resolution event must be captured')
+    assertOk(UUID_REGEX.test(event.reqId), 'flag_resolution reqId must be uuid')
+    assertOk(UUID_REGEX.test(event.correlationId), 'flag_resolution correlationId must be uuid')
+    strictEqual(
+      event.correlationId,
+      event.reqId,
+      'flag_resolution correlationId must match reqId'
+    )
     assertOk(
       Array.isArray(event.payload.errors),
       'flag_resolution payload must include errors array'

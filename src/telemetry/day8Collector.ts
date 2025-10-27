@@ -104,7 +104,7 @@ const createCollectorTelemetryEnvelopeSeed = (
   overrides?: TelemetryEnvelopeOverrides
 ): CollectorTelemetryEnvelopeSeed => {
   const retryPolicy = COLLECT_METRICS_CONTRACT.telemetry.retryPolicy
-  const reqId = overrides?.reqId ?? createTelemetryId('req', phase)
+  const reqId = overrides?.reqId ?? createTelemetryId()
   const correlationId = overrides?.correlationId ?? reqId
   const maxAttempts = overrides?.maxAttempts ?? retryPolicy.maxAttempts
   const attempt = Math.min(Math.max(1, overrides?.attempt ?? 1), maxAttempts)
@@ -130,10 +130,20 @@ const applyPhaseToEnvelope = (
   phase
 })
 
-const createTelemetryId = (prefix: string, context: string): string => {
+const UUID_TEMPLATE = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
+
+const createTelemetryId = (): string => {
   const scope = globalThis as { crypto?: { randomUUID?: () => string } }
-  const random = scope.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`
-  return `${prefix}-${context}-${random}`
+  const randomUuid = scope.crypto?.randomUUID?.()
+  if (randomUuid && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(randomUuid)) {
+    return randomUuid
+  }
+
+  return UUID_TEMPLATE.replace(/[xy]/g, (char) => {
+    const rand = Math.floor(Math.random() * 16)
+    const value = char === 'x' ? rand : (rand & 0x3) | 0x8
+    return value.toString(16)
+  })
 }
 
 export const publishFlagResolution = (
