@@ -127,6 +127,18 @@ const defaultEnv = (() => {
 const defaultStorage: Pick<Storage, 'getItem'> | null =
   typeof localStorage !== 'undefined' ? localStorage : null
 
+const WORKSPACE_KEY_PREFIX = 'conimg.' as const
+
+export const workspaceKeyCandidates = (key: string): readonly string[] => {
+  if (key.startsWith(WORKSPACE_KEY_PREFIX)) {
+    const trimmed = key.slice(WORKSPACE_KEY_PREFIX.length)
+    if (trimmed) {
+      return [trimmed, key]
+    }
+  }
+  return [key]
+}
+
 function readWorkspaceValue(
   workspace: WorkspaceConfiguration | null | undefined,
   key: string
@@ -135,20 +147,16 @@ function readWorkspaceValue(
     return undefined
   }
 
-  const candidates = [key]
-  const prefix = 'conimg.'
-  if (key.startsWith(prefix)) {
-    const trimmed = key.slice(prefix.length)
-    if (trimmed) {
-      candidates.push(trimmed)
-    }
-  }
+  const candidates = workspaceKeyCandidates(key)
 
   const withGetter = workspace as {
     readonly get?: <T = unknown>(candidate: string) => T | undefined
   }
   if (typeof withGetter.get === 'function') {
     for (const candidate of candidates) {
+      if (candidate.startsWith(WORKSPACE_KEY_PREFIX)) {
+        continue
+      }
       const value = withGetter.get(candidate)
       if (value !== undefined) {
         return value
