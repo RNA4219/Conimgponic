@@ -471,7 +471,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         options,
         {
           name: 'autosave.status',
-          properties: { state: 'disabled', source: 'phase-guard', correlationId }
+          properties: { state: 'disabled', source: 'phase-guard', correlationId, retryCount: state.retryCount }
         },
         { before: previousStatus, after: state.status, guard }
       )
@@ -492,15 +492,15 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         pendingBytes
       )
     )
-    emitTelemetry(
-      options,
-      {
-        name: 'autosave.status',
-        properties: { state: 'dirty', pendingBytes, correlationId }
-      },
-      { before: previousStatus, after: state.status, guard }
-    )
-  }
+      emitTelemetry(
+        options,
+        {
+          name: 'autosave.status',
+          properties: { state: 'dirty', pendingBytes, correlationId, retryCount: state.retryCount }
+        },
+        { before: previousStatus, after: state.status, guard }
+      )
+    }
 
   const handleSnapshotRequest = async (request: AutoSaveSnapshotRequestMessage): Promise<void> => {
     const statusBeforeRequest = state.status
@@ -536,7 +536,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         options,
         {
           name: 'autosave.status',
-          properties: { state: 'disabled', correlationId: request.correlationId }
+          properties: { state: 'disabled', correlationId: request.correlationId, retryCount: state.retryCount }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
       )
@@ -566,7 +566,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       options,
       {
         name: 'autosave.status',
-        properties: { state: 'saving', reqId: request.reqId, correlationId: request.correlationId }
+        properties: { state: 'saving', reqId: request.reqId, correlationId: request.correlationId, retryCount: state.retryCount }
       },
       { before: statusBeforeSaving, after: state.status, guard: state.guard }
     )
@@ -605,11 +605,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           options,
           {
             name: 'autosave.status',
-            properties: {
-              state: 'backoff',
-              correlationId: request.correlationId,
-              attempt: state.retryCount
-            }
+            properties: { state: 'backoff', correlationId: request.correlationId, retryCount: state.retryCount }
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
         )
@@ -617,13 +613,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           options,
           {
             name: 'autosave.snapshot.result',
-            properties: {
-              ok: false,
-              code: writeResult.error.code,
-              retryable: true,
-              correlationId: request.correlationId,
-              attempt: state.retryCount
-            }
+            properties: { ok: false, code: writeResult.error.code, retryable: true, correlationId: request.correlationId, retryCount: state.retryCount }
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
         )
@@ -685,7 +675,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       options,
       {
         name: 'autosave.status',
-        properties: { state: 'saved', reqId: request.reqId, correlationId: request.correlationId }
+        properties: { state: 'saved', reqId: request.reqId, correlationId: request.correlationId, retryCount: state.retryCount }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }
     )
