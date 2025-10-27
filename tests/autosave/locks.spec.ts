@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
+import type { TestContext } from 'node:test'
 
 import {
   acquireProjectLock,
@@ -12,7 +13,39 @@ import {
   type ProjectLockEvent
 } from '../../src/lib/locks'
 import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
-import { scenario } from '../lib/autosave/setup'
+import {
+  scenario as baseScenario,
+  type ScenarioContext,
+  type SetupOverrides
+} from '../lib/autosave/setup'
+
+type LockScenarioHandler = (t: TestContext, ctx: ScenarioContext) => unknown | Promise<unknown>
+
+const assertNoRunnerTelemetry = (ctx: ScenarioContext): void => {
+  assert.equal(
+    ctx.runnerTelemetry.length,
+    0,
+    'AutoSave runner telemetry must remain empty during lock scenarios'
+  )
+}
+
+const scenario = (
+  name: string,
+  overridesOrHandler: SetupOverrides | LockScenarioHandler,
+  handler?: LockScenarioHandler
+): void => {
+  if (typeof overridesOrHandler === 'function') {
+    baseScenario(name, async (t, ctx) => {
+      await overridesOrHandler(t, ctx)
+      assertNoRunnerTelemetry(ctx)
+    })
+    return
+  }
+  baseScenario(name, overridesOrHandler, async (t, ctx) => {
+    await handler!(t, ctx)
+    assertNoRunnerTelemetry(ctx)
+  })
+}
 
 const snapshotBase = new URL('./__snapshots__/autosave/on/', import.meta.url)
 
