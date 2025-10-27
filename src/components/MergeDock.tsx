@@ -186,16 +186,44 @@ const parseMergePrecision = (value: unknown): MergePrecision | undefined => {
   return undefined
 }
 
-const getDefaultPreference = (precision: MergePrecision, diffEnabled: boolean): MergeDockPreference =>
-  precision === 'stable' && diffEnabled ? 'diff-merge' : 'manual-first'
+export const getDefaultPreference = (precision: MergePrecision, diffEnabled: boolean): MergeDockPreference => {
+  if (precision === 'stable') return 'diff-merge'
+  return precision !== 'legacy' && diffEnabled ? 'diff-merge' : 'manual-first'
+}
 
-const sanitizePreference = (
+export const sanitizePreference = (
   preference: MergeDockPreference,
   precision: MergePrecision,
   diffEnabled: boolean,
 ): MergeDockPreference => {
-  if (precision === 'stable' && diffEnabled) return preference
+  if (precision === 'stable') {
+    if (preference === 'diff-merge') return 'diff-merge'
+    return preference
+  }
+  if (diffEnabled) return preference
   return preference === 'diff-merge' ? 'manual-first' : preference
+}
+
+export const resolvePreferenceSelection = (input: {
+  readonly precision: MergePrecision
+  readonly previousPrecision: MergePrecision
+  readonly diffEnabled: boolean
+  readonly previousDiffEnabled: boolean
+  readonly preference: MergeDockPreference
+  readonly defaultPreference: MergeDockPreference
+}): MergeDockPreference => {
+  const {
+    precision,
+    previousPrecision,
+    diffEnabled,
+    previousDiffEnabled,
+    preference,
+    defaultPreference,
+  } = input
+  const precisionChanged = previousPrecision !== precision
+  const diffUnlocked = !previousDiffEnabled && diffEnabled
+  const basePreference = precisionChanged || diffUnlocked ? defaultPreference : preference
+  return sanitizePreference(basePreference, precision, diffEnabled)
 }
 
 const sanitizeActiveTab = (
@@ -665,21 +693,40 @@ export function MergeDock(props?: MergeDockProps){
   const activeTab = useStore(store, (state) => state.activeTab)
   const preference = useStore(store, (state) => state.preference)
   const previousPrecisionRef = useRef(precision)
+  const previousDiffEnabledRef = useRef(phasePlan.diff.enabled)
   useEffect(() => {
-    const precisionChanged = previousPrecisionRef.current !== precision
-    previousPrecisionRef.current = precision
+    const previousPrecision = previousPrecisionRef.current
+    const previousDiffEnabled = previousDiffEnabledRef.current
+    const precisionChanged = previousPrecision !== precision
     const nextTab = precisionChanged
       ? plan.initialTab
       : sanitizeActiveTab(activeTab, plan, phasePlan.diff.visible)
-    const basePreference = precisionChanged ? defaultPreference : preference
-    const nextPreference = sanitizePreference(basePreference, precision, phasePlan.diff.enabled)
+    const nextPreference = resolvePreferenceSelection({
+      precision,
+      previousPrecision,
+      diffEnabled: phasePlan.diff.enabled,
+      previousDiffEnabled,
+      preference,
+      defaultPreference,
+    })
+    previousPrecisionRef.current = precision
+    previousDiffEnabledRef.current = phasePlan.diff.enabled
     if (nextTab !== activeTab || nextPreference !== preference) {
       store.setState({
         ...(nextTab !== activeTab ? { activeTab: nextTab } : {}),
         ...(nextPreference !== preference ? { preference: nextPreference } : {}),
       })
     }
-  }, [activeTab, plan, phasePlan.diff.visible, precision, preference, defaultPreference, store])
+  }, [
+    activeTab,
+    plan,
+    phasePlan.diff.visible,
+    phasePlan.diff.enabled,
+    precision,
+    preference,
+    defaultPreference,
+    store,
+  ])
   useEffect(() => {
     if (!storage) return
     storage.setItem('merge.lastTab', activeTab)
@@ -853,7 +900,12 @@ export function MergeDock(props?: MergeDockProps){
             <select value={preference} onChange={(e) => onPreferenceChange(e.target.value as MergeDockPreference)}>
               <option value="manual-first">Manual優先</option>
               <option value="ai-first">AI優先</option>
-              <option value="diff-merge">差分マージ（暫定）</option>
+              <option
+                value="diff-merge"
+                disabled={precision === 'stable' && !phasePlan.diff.enabled}
+              >
+                差分マージ（暫定）
+              </option>
             </select>
           </div>
           <pre>{compiledDisplay}</pre>
