@@ -229,6 +229,36 @@ test('run-selected strips unsupported coverage flag', async () => {
   }
 });
 
+test('run-selected removes filter flag before invoking node', async () => {
+  const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
+  process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
+
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const { buildNodeArgs, getNodeTestBaseArgsForTest } = await import(moduleUrl);
+
+  try {
+    const baseArgs = getNodeTestBaseArgsForTest();
+    const nodeArgs = buildNodeArgs(
+      ['--filter', 'tests/ci/test-commands.test.ts'],
+      ['tests/ci/test-commands.test.ts'],
+      [],
+    );
+
+    assert.deepStrictEqual(nodeArgs.slice(0, baseArgs.length), baseArgs);
+    assert.ok(!nodeArgs.includes('--filter'), 'node arguments should not include --filter flag');
+    assert.ok(
+      nodeArgs.includes('tests/ci/test-commands.test.ts'),
+      'filter value should still be forwarded as explicit target',
+    );
+  } finally {
+    if (originalValue === undefined) {
+      delete process.env.RUN_SELECTED_SKIP_AUTORUN;
+    } else {
+      process.env.RUN_SELECTED_SKIP_AUTORUN = originalValue;
+    }
+  }
+});
+
 test('run-selected preserves bundler module resolution and enables synthetic defaults', async () => {
   const skipAutorunOriginal = process.env.RUN_SELECTED_SKIP_AUTORUN;
   const compilerOptionsOriginal = process.env.TS_NODE_COMPILER_OPTIONS;
