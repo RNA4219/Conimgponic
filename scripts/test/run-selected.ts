@@ -11,6 +11,14 @@ const DEFAULT_TEST_GLOBS = [
   'tests/**/*.test.tsx',
   'tests/**/*.test.mjs',
 ] as const;
+const NODE_TEST_BASE_ARGS = [
+  '--experimental-vm-modules',
+  '--loader',
+  'ts-node/esm',
+  '--experimental-specifier-resolution=node',
+  '--test',
+  '--test-timeout=30000',
+] as const;
 const TEST_COVERAGE_FLAG = '--test-coverage';
 const TEST_COVERAGE_MINIMUM_MAJOR_VERSION = 22;
 const FILTER_TARGETS: Record<string, readonly string[]> = {
@@ -190,7 +198,7 @@ export function buildNodeArgs(
   targets: readonly string[],
   defaultTargets: readonly string[],
 ): string[] {
-  const baseArgs = ['--loader', 'tsx', '--test', '--test-timeout=30000'];
+  const baseArgs = [...NODE_TEST_BASE_ARGS];
   const sanitizedArgs = sanitizeArgs(args);
 
   if (targets.length > 0) {
@@ -353,5 +361,59 @@ function hasDefaultTestSuffix(fileName: string): boolean {
 }
 
 function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return { ...baseEnv };
+  const env: NodeJS.ProcessEnv = { ...baseEnv };
+  const compilerOptions = mergeCompilerOptions(env.TS_NODE_COMPILER_OPTIONS);
+  env.TS_NODE_COMPILER_OPTIONS = JSON.stringify(compilerOptions);
+  return env;
+}
+
+type CompilerOptions = Record<string, unknown> & {
+  types?: readonly string[];
+};
+
+function mergeCompilerOptions(raw: string | undefined): CompilerOptions {
+  const parsed = parseCompilerOptions(raw);
+  const types = normalizeTypes(parsed.types);
+
+  return {
+    ...parsed,
+    moduleResolution: 'bundler',
+    allowSyntheticDefaultImports: true,
+    types,
+  };
+}
+
+function parseCompilerOptions(raw: string | undefined): CompilerOptions {
+  if (raw === undefined || raw.trim() === '') {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as CompilerOptions;
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
+    }
+  } catch (error) {
+    console.warn('Failed to parse TS_NODE_COMPILER_OPTIONS, falling back to defaults.', error);
+  }
+
+  return {};
+}
+
+function normalizeTypes(value: CompilerOptions['types']): readonly string[] {
+  if (!Array.isArray(value)) {
+    return ['node'];
+  }
+
+  const deduplicated = new Set<string>();
+
+  for (const entry of value) {
+    if (typeof entry === 'string' && entry.length > 0) {
+      deduplicated.add(entry);
+    }
+  }
+
+  deduplicated.add('node');
+
+  return [...deduplicated];
 }
