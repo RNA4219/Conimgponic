@@ -35,6 +35,7 @@ globalThis.localStorage = {
 };
 const mod = await import(${JSON.stringify(moduleUrl.href)});
 mod.resolveFlags({ storage: null });
+mod.resolveFlags({ storage: null }, { withErrors: true });
 console.log(JSON.stringify({ callsLength: calls.length }));
 `
   const result = spawnSync(
