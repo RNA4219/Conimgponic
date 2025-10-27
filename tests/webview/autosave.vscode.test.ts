@@ -1599,14 +1599,22 @@ describe('createVscodeAutoSaveBridge', () => {
       (event) => event.name === 'autosave.status' && event.properties?.state === 'disabled'
     )
     assert.ok(disabledTelemetry, 'guard 無効化テレメトリが必要')
-    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+    assert.equal(
+      disabledTelemetry.properties?.phase,
+      'A-1',
+      "guard 無効化 autosave.status telemetry は envelope phase 'A-1' を含む"
+    )
 
     bridge.reportDirty(512, guardEnabled)
     const dirtyTelemetry = telemetry.find(
       (event) => event.name === 'autosave.status' && event.properties?.state === 'dirty'
     )
     assert.ok(dirtyTelemetry, 'dirty テレメトリが必要')
-    assert.equal(dirtyTelemetry.properties?.phase, 'A-1')
+    assert.equal(
+      dirtyTelemetry.properties?.phase,
+      'A-1',
+      "dirty autosave.status telemetry は envelope phase 'A-1' を含む"
+    )
   })
 
   it('guard disable short circuit と非 retryable 降格で status.envelope.phase を A-1 に揃える', async () => {

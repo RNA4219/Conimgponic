@@ -483,6 +483,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     state.guard = mergeGuard(state.guard, guard, shouldForceDisable)
     const ts = toIso(options.now())
     const correlationId = nextCorrelationId(state)
+    const envelopePhase = PHASE_STATUS
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
@@ -492,7 +493,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           nextReqId(state),
           correlationId,
           ts,
-          PHASE_STATUS,
+          envelopePhase,
           'disabled',
           state.guard,
           state.retryCount,
@@ -508,7 +509,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             source: 'phase-guard',
             correlationId,
             retryCount: state.retryCount,
-            phase: PHASE_STATUS
+            phase: envelopePhase
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
@@ -522,7 +523,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         reqId,
         correlationId,
         ts,
-        PHASE_STATUS,
+        envelopePhase,
         'dirty',
         state.guard,
         state.retryCount,
@@ -539,7 +540,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             pendingBytes,
             correlationId,
             retryCount: state.retryCount,
-            phase: PHASE_STATUS
+            phase: envelopePhase
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
