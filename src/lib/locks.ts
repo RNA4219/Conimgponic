@@ -501,7 +501,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
         if (!completionDeferred.isSettled()) completionDeferred.reject(projectError);
         throw projectError;
       });
-    requestSettled = requestOutcome.then(
+    const requestSettled = requestOutcome.then(
       () => undefined,
       (error) => {
         captureCompletionError(error);

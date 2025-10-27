@@ -459,7 +459,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
 
   const reportDirty = (pendingBytes: number, guard: AutoSavePhaseGuardSnapshot): void => {
     const previousStatus = state.status
-    const shouldForceDisable = state.forceDisabled || state.guard.optionsDisabled
+    const shouldForceDisable = state.forceDisabled
     state.guard = mergeGuard(state.guard, guard, shouldForceDisable)
     const ts = toIso(options.now())
     const correlationId = nextCorrelationId(state)
@@ -516,7 +516,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
   const handleSnapshotRequest = async (request: AutoSaveSnapshotRequestMessage): Promise<void> => {
     const statusBeforeRequest = state.status
     const incomingGuard = request.payload.guard
-    const shouldForceDisable = state.forceDisabled || state.guard.optionsDisabled
+    const shouldForceDisable = state.forceDisabled
     state.guard = mergeGuard(state.guard, incomingGuard, shouldForceDisable)
     const ts = toIso(options.now())
     if (!isGuardEnabled(state.guard)) {

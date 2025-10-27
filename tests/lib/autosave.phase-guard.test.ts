@@ -214,6 +214,81 @@ scenario(
 )
 
 scenario(
+  'fallback guard reads VS Code configuration scoped by conimg prefix',
+  async (t: any, { initAutoSave }: any) => {
+    const storage = new Map<string, string>([['autosave.enabled', '1']])
+    const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem(key: string){ return storage.get(key) ?? null }
+      },
+      configurable: true
+    })
+    // VS Code mock は docs/AUTOSAVE-DESIGN-IMPL.md §3.2/§3.6 と docs/MERGE-DESIGN-IMPL.md §5.4 の要件に従い、
+    // getConfiguration('conimg').get('autosave.enabled') のみをサポートする。
+    const workspaceConfig = {
+      get(key: string){
+        if (key !== 'autosave.enabled') return undefined
+        return 'false'
+      }
+    }
+    const vscode = {
+      workspace: {
+        getConfiguration(section: string){
+          if (section !== 'conimg') throw new Error('unexpected section')
+          return workspaceConfig
+        }
+      }
+    }
+    const originalVscode = Object.getOwnPropertyDescriptor(globalThis, 'vscode')
+    Object.defineProperty(globalThis, 'vscode', { value: vscode, configurable: true })
+    const originalWorkspace = Object.getOwnPropertyDescriptor(globalThis, '__AUTOSAVE_WORKSPACE__')
+    Object.defineProperty(globalThis, '__AUTOSAVE_WORKSPACE__', {
+      value: vscode.workspace.getConfiguration('conimg'),
+      configurable: true
+    })
+    const events: Record<string, unknown>[] = []
+    const originalCollector = Object.getOwnPropertyDescriptor(globalThis, 'Day8Collector')
+    Object.defineProperty(globalThis, 'Day8Collector', {
+      value: { publish(event: Record<string, unknown>){ events.push(event) } },
+      configurable: true
+    })
+
+    t.after(() => {
+      if (originalLocalStorage) {
+        Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
+      } else {
+        delete (globalThis as any).localStorage
+      }
+      if (originalWorkspace) {
+        Object.defineProperty(globalThis, '__AUTOSAVE_WORKSPACE__', originalWorkspace)
+      } else {
+        delete (globalThis as any).__AUTOSAVE_WORKSPACE__
+      }
+      if (originalVscode) {
+        Object.defineProperty(globalThis, 'vscode', originalVscode)
+      } else {
+        delete (globalThis as any).vscode
+      }
+      if (originalCollector) {
+        Object.defineProperty(globalThis, 'Day8Collector', originalCollector)
+      } else {
+        delete (globalThis as any).Day8Collector
+      }
+    })
+
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false })
+
+    assert.equal(runner.snapshot().phase, 'disabled')
+    assert.equal(events.length, 1)
+    const guard = events[0]?.guard as { featureFlag?: { value?: boolean; source?: string } }
+    assert.equal(guard?.featureFlag?.source, 'workspace')
+    assert.equal(guard?.featureFlag?.value, false)
+    assert.doesNotThrow(() => runner.dispose())
+  }
+)
+
+scenario(
   'workspace source takes precedence over global overrides',
   async (t: any, { initAutoSave }: any) => {
     const flags = createFlags(false)

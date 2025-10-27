@@ -154,6 +154,40 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.strictEqual(state.guard, expectedGuard, 'ブートストラップ後の guard 状態は initialGuard と一致する')
   })
 
+  it('resolveFlags は VS Code の conimg スコープ設定を workspace source として扱う', () => {
+    // VS Code mock は docs/AUTOSAVE-DESIGN-IMPL.md §3.2/§3.6 と docs/MERGE-DESIGN-IMPL.md §5.4 の前提に従い、
+    // getConfiguration('conimg').get('autosave.enabled') のみを提供する。
+    const workspaceConfig = {
+      get: (key: string): unknown => (key === 'autosave.enabled' ? 'false' : undefined)
+    }
+    const vscode = {
+      workspace: {
+        getConfiguration: (section: string) => {
+          assert.equal(section, 'conimg', 'autosave は conimg セクションに格納される')
+          return workspaceConfig
+        }
+      }
+    }
+    const originalVscode = Object.getOwnPropertyDescriptor(globalThis, 'vscode')
+    Object.defineProperty(globalThis, 'vscode', { value: vscode, configurable: true })
+    try {
+      const snapshot = resolveFlags({
+        workspace: vscode.workspace.getConfiguration('conimg'),
+        env: {},
+        storage: null,
+        clock: () => new Date('2024-01-04T00:00:00.000Z')
+      })
+      assert.equal(snapshot.autosave.source, 'workspace')
+      assert.equal(snapshot.autosave.value, false)
+    } finally {
+      if (originalVscode) {
+        Object.defineProperty(globalThis, 'vscode', originalVscode)
+      } else {
+        delete (globalThis as any).vscode
+      }
+    }
+  })
+
   it('flags オプション未指定でも bootstrap で解決済み FlagSnapshot を共有する', () => {
     const sent: AutoSaveBridgeMessage[] = []
     const now = () => new Date('2024-01-03T00:00:00.000Z')

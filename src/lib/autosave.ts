@@ -1,3 +1,4 @@
+import { workspaceKeyCandidates } from '../config/flags.js'
 import type { FlagSnapshot, WorkspaceConfiguration } from '../config/flags.js'
 import type { Storyboard } from '../types'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
@@ -59,18 +60,6 @@ export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze(AUTOSAVE_POLICY_VAL
 
 export const AUTOSAVE_DEFAULTS = AUTOSAVE_POLICY
 
-const WORKSPACE_KEY_PREFIX = 'conimg.' as const
-
-const resolveWorkspaceKeyCandidates = (key: string): readonly string[] => {
-  if (key.startsWith(WORKSPACE_KEY_PREFIX)) {
-    const trimmed = key.slice(WORKSPACE_KEY_PREFIX.length)
-    if (trimmed) {
-      return [trimmed, key]
-    }
-  }
-  return [key]
-}
-
 const readWorkspaceValue = (
   workspace: WorkspaceConfiguration | null | undefined,
   key: string
@@ -78,13 +67,10 @@ const readWorkspaceValue = (
   if (!workspace) {
     return undefined
   }
-  const candidates = resolveWorkspaceKeyCandidates(key)
+  const candidates = workspaceKeyCandidates(key)
   const candidateWithGetter = workspace as { get?: (name: string) => unknown }
   if (typeof candidateWithGetter.get === 'function') {
     for (const candidate of candidates) {
-      if (candidate.startsWith('conimg.')) {
-        continue
-      }
       const value = candidateWithGetter.get(candidate)
       if (value !== undefined) {
         return value

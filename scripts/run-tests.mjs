@@ -41,8 +41,8 @@ if (testFiles.length === 0) {
 }
 
 const args = [
-  '--loader',
-  'ts-node/esm',
+  '--import',
+  'tsx/esm',
   '--test',
   '--test-reporter=junit',
   '--test-reporter-destination=file=reports/junit.xml',
