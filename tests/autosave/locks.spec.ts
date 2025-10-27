@@ -436,6 +436,74 @@ scenario(
 )
 
 scenario(
+  'AS-LK-09: Web Lock release rejection demotes to readonly without lock:released',
+  {
+    locks: {
+      async request(_key, optionsOrCallback, callback) {
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+
+        const handle: LockHandleLike & { released: Promise<void> } = {
+          async release() {
+            throw new DOMException('Release denied', 'InvalidStateError')
+          },
+          released: Promise.resolve()
+        }
+
+        return handler(handle)
+      }
+    }
+  },
+  async (t) => {
+    const uuids = ['lease-release-reject', 'owner-release-reject']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock', retry: false })
+
+    await assert.rejects(projectLockApi.release(lease), (error: unknown) => {
+      assert.ok(error instanceof ProjectLockError)
+      assert.equal(error.code, 'release-failed')
+      assert.equal(error.retryable, false)
+      return true
+    })
+
+    assert.equal(
+      events.some((event) => event.type === 'lock:released' && event.leaseId === lease.leaseId),
+      false,
+      'lock:released must not emit when release is rejected'
+    )
+
+    const readonlyEvent = events.find(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }> => event.type === 'lock:readonly-entered'
+    )
+    if (!readonlyEvent) {
+      assert.fail('lock:readonly-entered not emitted after release rejection')
+    }
+    assert.equal(readonlyEvent.reason, 'release-failed')
+    assert.equal(readonlyEvent.retryable, false)
+
+    const errorEvent = events.find(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }> => event.type === 'lock:error'
+    )
+    if (!errorEvent) {
+      assert.fail('lock:error not emitted after release rejection')
+    }
+    assert.equal(errorEvent.retryable, false)
+    assert.equal(errorEvent.error.code, 'release-failed')
+  }
+)
+
+scenario(
   'AS-I-03: Web Lock handle without release resolves via released promise',
   {
     locks: {

@@ -3,7 +3,14 @@ import test from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import {createDiffMergeController,createInitialDiffMergeState,diffMergeReducer,DiffMergeAction,DiffMergeState,MergeDecisionEvent} from '../../src/components/diffMergeState'
+import {
+  createDiffMergeController,
+  createInitialDiffMergeState,
+  diffMergeReducer,
+  DiffMergeAction,
+  DiffMergeState,
+  MergeDecisionEvent,
+} from '../../src/components/diffMergeState'
 import { DiffMergeView, planDiffMergeView, resolveDiffMergeStoredTab } from '../../src/components/DiffMergeView'
 import type {
   DiffMergeQueueCommandPayload,
@@ -84,6 +91,44 @@ test('queueMerge success', async () => {
   await controller.queueMerge(['h1'])
   assert.equal(payloads.length, 1)
   assert.equal(state.hunkStates.h1, 'Merged')
+})
+
+test('queueMerge resolves even when queueMergeCommand throws', async () => {
+  // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の TDD・最小差分方針と
+  // Day8/docs/day8/guides/07_contributing.md の「1タスク=1PR」を引用し、
+  // 例外発生時も queueMerge が reject せずに error 通知で完結することを赤テストで確認する。
+  let hunks = [createMergeHunk('h1')]
+  let state: DiffMergeState = createInitialDiffMergeState(hunks)
+  const dispatched: DiffMergeAction[] = []
+  const events: MergeDecisionEvent[] = []
+  const dispatch: Dispatch = (action) => {
+    dispatched.push(action)
+    state = diffMergeReducer(state, action)
+    if (action.type === 'syncHunks') hunks = [...action.hunks]
+  }
+  const controller = createDiffMergeController({
+    precision: 'stable',
+    dispatch,
+    queueMergeCommand: async () => {
+      throw new Error('queue failure')
+    },
+    getCurrentHunkIds: () => hunks.map((hunk) => hunk.id),
+    onError: (event) => {
+      events.push(event)
+    },
+  })
+
+  await assert.doesNotReject(async () => controller.queueMerge(['h1']))
+
+  assert.equal(state.hunkStates.h1, 'Selected')
+  assert.deepEqual(
+    dispatched.filter((action) => action.type === 'queueResult'),
+    [{ type: 'queueResult', hunkIds: ['h1'], result: 'error' }],
+  )
+  assert.equal(events.length, 1)
+  assert.equal(events[0]?.status, 'error')
+  assert.deepEqual(events[0]?.hunkIds, ['h1'])
+  assert.equal(events[0]?.telemetry.retryable, true)
 })
 
 test('queueMerge ignores removed hunks after sync', async () => {
@@ -198,6 +243,22 @@ test('syncHunks preserves selected and editing states while appending new hunks'
   assert.equal(h.state().hunkStates.h1, 'Editing')
   assert.equal(h.state().editingHunkId, 'h1')
   assert.equal(h.state().hunkStates.h3, 'Unreviewed')
+})
+
+test('cancelEdit resets editing hunk to Unreviewed idle state', () => {
+  // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md（型安全・最小差分・TDD）と
+  // Day8/docs/day8/guides/07_contributing.md（タスク分割・衝突回避）を引用し、
+  // `cancelEdit` 後に対象ハンクが `'Unreviewed'` へ戻る idle 遷移を赤テストで固める。
+  const h = harness()
+
+  h.controller.openEditor('h1')
+  assert.equal(h.state().editingHunkId, 'h1')
+  assert.equal(h.state().hunkStates.h1, 'Editing')
+
+  h.controller.cancelEdit()
+
+  assert.equal(h.state().editingHunkId, null)
+  assert.equal(h.state().hunkStates.h1, 'Unreviewed')
 })
 
 test('openEditor/commitEdit', () => {

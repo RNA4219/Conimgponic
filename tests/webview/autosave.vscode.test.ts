@@ -1375,7 +1375,7 @@ describe('createVscodeAutoSaveBridge', () => {
 
     const errorStatus = fatalStatuses.find((message) => message.payload.state === 'error')
     assert.ok(errorStatus, '非 retryable エラーで state=error を通知する必要がある')
-    assert.equal(errorStatus.phase, 'A-1')
+    assert.equal(errorStatus.phase, 'A-2')
     assert.equal(errorStatus.reqId, fatalRequest.reqId)
     assert.equal(errorStatus.correlationId, fatalRequest.correlationId)
     assert.equal(errorStatus.payload.retryCount, 0)

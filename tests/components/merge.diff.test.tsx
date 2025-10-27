@@ -1,6 +1,6 @@
 const tsNodeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
-if (tsNodeEnv && !tsNodeEnv.TS_NODE_IGNORE_DIAGNOSTICS) {
-  tsNodeEnv.TS_NODE_IGNORE_DIAGNOSTICS = '2304,2307,2580,5097'
+if (tsNodeEnv) {
+  tsNodeEnv.TS_NODE_IGNORE_DIAGNOSTICS = '2304,2307,2578,2580,5097'
 }
 
 declare global {
@@ -74,6 +74,47 @@ test('resolveMergeThresholdSnapshot reads conimg-prefixed workspace getter key',
 
   assert.equal(snapshot.threshold, 0.88)
   assert.equal(snapshot.precision, 'stable')
+})
+
+test('resolveMergeThresholdSnapshot retries with conimg-prefixed workspace getter key when bare key throws', () => {
+  const workspace = {
+    get(key: string) {
+      if (key === 'merge.threshold') {
+        throw new Error('Unknown configuration key')
+      }
+      if (key === 'conimg.merge.threshold') {
+        return 0.97
+      }
+      return undefined
+    },
+  }
+
+  const stableFlags: Pick<FlagSnapshot, 'merge'> = {
+    merge: {
+      value: 'stable',
+      source: 'workspace',
+      errors: [],
+      precision: 'stable',
+      threshold: Number.NaN,
+    },
+  }
+
+  const { precision, threshold } = resolveMergeThresholdSnapshot({
+    workspace,
+    storage: null,
+    flags: stableFlags,
+  })
+  const plan = resolveMergeDockPhasePlan({
+    precision,
+    threshold,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 1 },
+  })
+
+  assert.equal(precision, 'stable')
+  assert.equal(plan.threshold.request, 0.94)
+  assert.equal(plan.threshold.autoTarget, 0.95)
+  assert.equal(plan.diff.enabled, true)
+  assert.equal(plan.guard.phaseBRequired, true)
 })
 
 test('legacy precision clamps threshold and hides diff tab', () => {

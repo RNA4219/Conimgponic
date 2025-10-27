@@ -38,6 +38,7 @@ type QualityJobStrategyConfig = {
 };
 
 type QualityJobConfig = {
+  needs?: JobNeedsConfig;
   strategy?: QualityJobStrategyConfig;
   steps?: StepConfig[];
 };
@@ -66,6 +67,12 @@ type UploadArtifactStep = StepConfig & {
     name?: unknown;
     path?: unknown;
     'if-no-files-found'?: unknown;
+  };
+};
+
+type PathsFilterStep = StepConfig & {
+  with?: {
+    filters?: unknown;
   };
 };
 
@@ -147,6 +154,16 @@ describe('ci workflow build job', () => {
     );
   });
 
+  test('quality job depends on sbom job', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    assertJobNeedsIncludeAll(quality.needs, ['sbom'], 'quality job must depend on sbom job');
+  });
+
   test('quality job configures collect_failures per suite', async () => {
     const workflow = await readWorkflowYaml();
     const quality = workflow.jobs?.quality;
@@ -195,6 +212,34 @@ describe('ci workflow build job', () => {
         `quality job matrix.include entry for suite "${suiteName}" must ${expectedValue ? 'enable' : 'disable'} collect_failures`,
       );
     }
+  });
+
+  test('autosave paths filter monitors required globs', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const detectAutosaveChanges = assertDetectAutosaveChangesStep(
+      steps,
+      'quality job must include "Detect autosave changes" step for autosave suite',
+    );
+
+    assertPathsFilterGlobs(
+      detectAutosaveChanges,
+      'autosave',
+      [
+        'src/**/autosave/**',
+        'tests/**/autosave.*.test.ts',
+        'tests/**/autosave/**',
+        '.github/workflows/autosave*',
+      ],
+      '"Detect autosave changes" step must monitor required autosave paths',
+    );
   });
 
   test('runs recommended pnpm commands for autosave and reports', async () => {
@@ -420,8 +465,8 @@ describe('ci workflow build job', () => {
 
     assertLineIncludes(
       auditRunLines,
-      'https://raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh',
-      'audit job must install osv-scanner via official install script',
+      'https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64',
+      'audit job must install osv-scanner from official release',
     );
 
     assertLineIncludes(
@@ -1033,6 +1078,26 @@ function assertStepWithNameAndId(
   return match;
 }
 
+function assertDetectAutosaveChangesStep(
+  steps: StepConfig[],
+  message: string,
+): PathsFilterStep {
+  const step = assertStepWithNameAndId(
+    steps,
+    'Detect autosave changes',
+    'autosave_paths',
+    message,
+  );
+
+  assertStepUsesEquals(
+    step,
+    'dorny/paths-filter@v3',
+    `${message}; step must use dorny/paths-filter@v3`,
+  );
+
+  return step;
+}
+
 type RunSuiteStepId = (typeof expectedRunSuiteStepIds)[number];
 
 type RunSuiteStepCollection = Record<RunSuiteStepId, StepConfig>;
@@ -1288,6 +1353,48 @@ function assertStringSetEquals(actual: string[], expected: string[], message: st
   );
 }
 
+function assertPathsFilterGlobs(
+  step: PathsFilterStep,
+  filterName: string,
+  expectedGlobs: string[],
+  message: string,
+): void {
+  const config = step.with;
+  if (!config || typeof config !== 'object') {
+    assert.fail(`${message}; step.with must be configured as an object`);
+  }
+
+  const filters = (config as { filters?: unknown }).filters;
+
+  if (typeof filters !== 'string') {
+    assert.fail(`${message}; step.with.filters must be configured as a string`);
+  }
+
+  const parsed = load(filters);
+
+  if (!parsed || typeof parsed !== 'object') {
+    assert.fail(`${message}; filters YAML must deserialize into an object`);
+  }
+
+  const filterEntries = (parsed as Record<string, unknown>)[filterName];
+
+  if (!Array.isArray(filterEntries)) {
+    assert.fail(`${message}; filters must define array for "${filterName}"`);
+  }
+
+  const globs = filterEntries.map((entry, index) => {
+    if (typeof entry !== 'string') {
+      assert.fail(
+        `${message}; filters.${filterName}[${index}] must be configured as a string`,
+      );
+    }
+
+    return entry.trim();
+  });
+
+  assertStringSetEquals(globs, expectedGlobs, message);
+}
+
 function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.if !== 'string') {
     assert.fail(`${message}; step.if must be configured as a string`);
@@ -1376,7 +1483,7 @@ function assertJobNeedsIncludeAll(
   expected: string[],
   message: string,
 ): void {
-  const needs = normalizeJobNeeds(value);
+  const needs = normalizeJobNeeds(value, message);
 
   for (const dependency of expected) {
     const hasMatch = needs.includes(dependency);
@@ -1384,7 +1491,7 @@ function assertJobNeedsIncludeAll(
   }
 }
 
-function normalizeJobNeeds(value: JobNeedsConfig): string[] {
+function normalizeJobNeeds(value: JobNeedsConfig, message: string): string[] {
   if (typeof value === 'string') {
     return [value];
   }
@@ -1393,7 +1500,7 @@ function normalizeJobNeeds(value: JobNeedsConfig): string[] {
     return value;
   }
 
-  assert.fail('build job must configure needs as a string or array of strings');
+  assert.fail(`${message}; needs must be configured as a string or array of strings`);
 }
 
 function assertLineIncludes(lines: string[], expected: string, message: string): void {
