@@ -67,19 +67,32 @@ export const createInitialDiffMergeState = (hunks: readonly MergeHunk[]): DiffMe
 
 export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction): DiffMergeState => {
   if (action.type === 'syncHunks') {
-    const nextEntries = action.hunks.map((hunk) => {
+    const nextStates: Record<string, DiffMergeHunkStatus> = {}
+    const previousIds = Object.keys(state.hunkStates)
+    let mutated = action.hunks.length !== previousIds.length
+
+    for (const hunk of action.hunks) {
       const previous = state.hunkStates[hunk.id]
-      const nextStatus: DiffMergeHunkStatus = previous ?? 'Unreviewed'
-      return [hunk.id, nextStatus] as const
-    })
-    const hunkStates = Object.fromEntries(nextEntries) as Record<string, DiffMergeHunkStatus>
+      if (previous === undefined) {
+        nextStates[hunk.id] = 'Unreviewed'
+        mutated = true
+        continue
+      }
+      nextStates[hunk.id] = previous
+    }
+
     const editingHunkId =
-      state.editingHunkId !== null && Object.prototype.hasOwnProperty.call(hunkStates, state.editingHunkId)
+      state.editingHunkId !== null && Object.prototype.hasOwnProperty.call(nextStates, state.editingHunkId)
         ? state.editingHunkId
         : null
-    // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の「型安全・最小差分・TDD」に従い、既知ハンクのみ状態を保持し未知ハンクを初期化する。
+
+    if (!mutated && editingHunkId === state.editingHunkId) {
+      return state
+    }
+
+    // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の「型安全・最小差分・TDD」に従い、既存 ID の状態と編集対象を維持しつつ未知ハンクのみ初期化する。
     return {
-      hunkStates,
+      hunkStates: nextStates,
       editingHunkId,
     }
   }

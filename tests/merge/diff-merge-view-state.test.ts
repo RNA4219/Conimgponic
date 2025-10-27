@@ -172,6 +172,34 @@ test('syncHunks retains known selection and editing when new hunks arrive', () =
   assert.equal(h.state().hunkStates.h3, 'Unreviewed')
 })
 
+test('syncHunks preserves selected and editing states while appending new hunks', () => {
+  // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の「型安全・最小差分・TDD」と
+  // Day8/docs/day8/guides/07_contributing.md の「1タスク=1PR」を引用し、新規ハンク追加時も
+  // `'Selected'` / `'Editing'` が失われないことを赤テストで確認する。
+  const h = harness()
+
+  h.controller.toggleSelect('h1')
+  assert.equal(h.state().hunkStates.h1, 'Selected')
+
+  const appended = [createMergeHunk('h1'), createMergeHunk('h2')]
+  h.dispatch({ type: 'syncHunks', hunks: appended })
+
+  assert.equal(h.state().hunkStates.h1, 'Selected')
+  assert.equal(h.state().hunkStates.h2, 'Unreviewed')
+  assert.equal(h.state().editingHunkId, null)
+
+  h.controller.openEditor('h1')
+  assert.equal(h.state().hunkStates.h1, 'Editing')
+  assert.equal(h.state().editingHunkId, 'h1')
+
+  const withAnother = [...appended, createMergeHunk('h3')]
+  h.dispatch({ type: 'syncHunks', hunks: withAnother })
+
+  assert.equal(h.state().hunkStates.h1, 'Editing')
+  assert.equal(h.state().editingHunkId, 'h1')
+  assert.equal(h.state().hunkStates.h3, 'Unreviewed')
+})
+
 test('openEditor/commitEdit', () => {
   const h = harness()
   h.controller.openEditor('h1')
