@@ -43,8 +43,9 @@
 
 | ID | 条件 | 期待されるイベント | 結果 |
 | --- | --- | --- | --- |
-| RL-REL-01 | 正常解除 | `lock:release-requested` → `lock:released` | Web Lock `release` 呼び出し |
-| RL-REL-02 | `release` で例外 | `lock:release-requested` → `lock:error` → `lock:readonly-entered(reason=release-failed)` | 強制降格 |
+| RL-REL-01 | 正常解除 | `lock:release-requested` → `lock:released` | Web Lock ラッパーが `release` を持つ場合は呼び出し、常に `lock.released` プロミス完了を待機 |
+| RL-REL-02 | `release` で例外 | `lock:release-requested` → `lock:error` → `lock:readonly-entered(reason=release-failed)` | `lock.released` 待機中に例外を捕捉し強制降格 |
+| RL-REL-03 | Web Lock `release` 非提供 | `lock:release-requested` → `lock:released` | `lock.released` プロミス解決のみで完了し、フォールバックへ降格せずイベント順序を維持 |
 
 ## 監査・メトリクス検証
 

@@ -382,10 +382,11 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
 
   const ready = createDeferred();
   const releaseDeferred = createDeferred();
-  const completionDeferred = createDeferred();
   let releaseInvoked = false;
   let releaseError: ProjectLockError | undefined;
-  let requestSettled!: Promise<void>;
+  let releasedPromise: Promise<unknown> | undefined;
+  const releaseMonitor = releaseDeferred.promise.then(() => awaitReleased(releasedPromise));
+  let requestSettled: Promise<void> = Promise.resolve();
 
   const awaitReleased = async (released: Promise<unknown> | undefined) => {
     if (!released) return;
@@ -456,12 +457,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
           });
 
           ready.resolve();
-          try {
-            await releaseDeferred.promise;
-          } finally {
-            await awaitReleased(releasedPromise);
-            completionDeferred.resolve();
-          }
+          await releaseDeferred.promise;
         }
       )
       .catch((error) => {
