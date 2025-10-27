@@ -10,6 +10,7 @@
     "lint": "eslint \"{src,tests}/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "test": "tsx scripts/test/run-selected.ts",
+    "test:ci": "pnpm test -- --filter ci",
     "test:autosave": "pnpm test -- --filter autosave",
     "test:merge": "pnpm test -- --filter merge",
     "test:cli": "pnpm test -- --filter cli",
