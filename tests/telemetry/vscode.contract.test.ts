@@ -16,6 +16,7 @@ import {
 type JsonSchemaObject = {
   readonly type?: string
   readonly enum?: readonly string[]
+  readonly $ref?: string
   readonly properties?: {
     readonly [key: string]: JsonSchemaObject
   }
@@ -27,6 +28,9 @@ type TelemetrySchema = {
   readonly required?: readonly string[]
   readonly allOf: readonly TelemetrySchemaConditional[]
   readonly properties?: {
+    readonly [key: string]: JsonSchemaObject
+  }
+  readonly definitions?: {
     readonly [key: string]: JsonSchemaObject
   }
 }
@@ -181,7 +185,14 @@ describe('vscode extension telemetry contract (RED)', () => {
     )
     const phaseSchema = payloadSchema.properties.phase
     assertOk(phaseSchema, 'flag_resolution payload schema must define phase')
-    assertOk(phaseSchema.enum, 'flag_resolution phase must define enum')
+    const allowedPhaseEnum =
+      phaseSchema.enum ??
+      (phaseSchema.$ref
+        ? telemetrySchema.definitions?.[
+            phaseSchema.$ref.replace('#/definitions/', '')
+          ]?.enum ?? null
+        : null)
+    assertOk(allowedPhaseEnum, 'flag_resolution phase must define enum')
 
     const captured: Day8CollectorFlagResolutionEvent[] = []
     const scope = globalThis as { Day8Collector?: Day8Collector }
@@ -210,7 +221,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(captured.length > 0, 'flag_resolution telemetry must be published')
     const [event] = captured
     assertOk(event, 'flag_resolution event must be captured')
-    const allowedPhases = new Set(phaseSchema.enum)
+    const allowedPhases = new Set(allowedPhaseEnum)
     assertOk(
       allowedPhases.has(event.payload.phase),
       `flag_resolution payload.phase must be one of ${Array.from(allowedPhases).join(', ')}`
@@ -235,6 +246,50 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(sourceSchema, 'flag_resolution payload schema must define source')
     assertOk(sourceSchema.enum, 'flag_resolution source must define enum')
     deepStrictEqual(sourceSchema.enum, Array.from(FLAG_RESOLUTION_SOURCE_VARIANTS))
+  })
+
+  test('publishFlagResolution は errors/threshold を Collector payload に伝搬する', () => {
+    const captured: Day8CollectorFlagResolutionEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorFlagResolutionEvent)
+      }
+    } as Day8Collector
+
+    const errors: FlagResolutionEventPayload['errors'] = [
+      {
+        code: 'invalid-boolean',
+        flag: 'autosave.enabled',
+        raw: 'not-a-bool',
+        message: 'expected boolean',
+        retryable: false,
+        source: 'env',
+        phase: 'phase-a0'
+      }
+    ]
+
+    try {
+      const payload: FlagResolutionEventPayload = {
+        flag: 'autosave.enabled',
+        variant: 'false',
+        source: 'env',
+        phase: 'phase-a0',
+        evaluation_ms: 7,
+        errors,
+        threshold: 0.75
+      }
+      publishFlagResolution('app.autosave', 'bootstrap', [payload], 13)
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    assertOk(captured.length > 0, 'flag_resolution telemetry must be published')
+    const [event] = captured
+    assertOk(event, 'flag_resolution event must be captured')
+    deepStrictEqual(event.payload.errors, errors)
+    deepStrictEqual(event.payload.threshold, 0.75)
   })
 
   test('telemetry schema の status.autosave payload が Collector 要件を固定する', () => {
