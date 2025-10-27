@@ -158,13 +158,19 @@ describe('ci workflow build job', () => {
       const qualitySteps = quality.steps;
       assertStepArray(qualitySteps, 'workflow.jobs.quality.steps must be an array');
 
-      const runSuiteStep = assertStepWithName(
+      const { autosave: runSuiteAutosave, default: runSuiteDefault } = assertRunSuiteSteps(
         qualitySteps,
-        'Run ${{ matrix.suite }} suite',
-        'quality job must include "Run ${{ matrix.suite }} suite" step',
+        'quality job must include "Run ${{ matrix.suite }} suite" steps for autosave and default suites',
       );
 
-      assertStepContinueOnError(runSuiteStep, '"Run ${{ matrix.suite }} suite" step must enable continue-on-error');
+      assertStepContinueOnError(
+        runSuiteAutosave,
+        '"Run ${{ matrix.suite }} suite" autosave step must enable continue-on-error',
+      );
+      assertStepContinueOnError(
+        runSuiteDefault,
+        '"Run ${{ matrix.suite }} suite" default step must enable continue-on-error',
+      );
 
       const reportFailureStep = assertStepWithName(
         qualitySteps,
@@ -174,8 +180,11 @@ describe('ci workflow build job', () => {
 
       assertStepIfEquals(
         reportFailureStep,
-        "steps.run_suite.outcome == 'failure'",
-        '"Report suite failure" step must run only when the suite fails',
+        [
+          "steps.run_suite_autosave.outcome == 'failure' ||",
+          "steps.run_suite_default.outcome == 'failure'",
+        ].join('\n'),
+        '"Report suite failure" step must run only when any run suite step fails',
       );
 
       assertStepRunIncludesLine(
@@ -323,28 +332,45 @@ describe('ci workflow build job', () => {
     const steps = quality.steps;
     assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
 
-    const runSuiteStep = assertStepWithName(
+    const { autosave: runSuiteAutosave, default: runSuiteDefault } = assertRunSuiteSteps(
       steps,
-      'Run ${{ matrix.suite }} suite',
-      'quality job must include "Run ${{ matrix.suite }} suite" step',
+      'quality job must include "Run ${{ matrix.suite }} suite" steps for autosave and default suites',
     );
 
     assertStepRunIncludesLine(
-      runSuiteStep,
+      runSuiteAutosave,
       'mkdir -p logs',
-      '"Run ${{ matrix.suite }} suite" step must create logs directory',
+      '"Run ${{ matrix.suite }} suite" autosave step must create logs directory',
     );
 
     assertStepRunIncludesLine(
-      runSuiteStep,
+      runSuiteDefault,
+      'mkdir -p logs',
+      '"Run ${{ matrix.suite }} suite" default step must create logs directory',
+    );
+
+    assertStepRunIncludesLine(
+      runSuiteAutosave,
       'tee "logs/${{ matrix.suite }}.log"',
-      '"Run ${{ matrix.suite }} suite" step must tee suite output into logs/${{ matrix.suite }}.log',
+      '"Run ${{ matrix.suite }} suite" autosave step must tee suite output into logs/${{ matrix.suite }}.log',
     );
 
     assertStepRunIncludesLine(
-      runSuiteStep,
+      runSuiteDefault,
+      'tee "logs/${{ matrix.suite }}.log"',
+      '"Run ${{ matrix.suite }} suite" default step must tee suite output into logs/${{ matrix.suite }}.log',
+    );
+
+    assertStepRunIncludesLine(
+      runSuiteAutosave,
       '${{ matrix.command }}',
-      '"Run ${{ matrix.suite }} suite" step must execute ${{ matrix.command }}',
+      '"Run ${{ matrix.suite }} suite" autosave step must execute ${{ matrix.command }}',
+    );
+
+    assertStepRunIncludesLine(
+      runSuiteDefault,
+      '${{ matrix.command }}',
+      '"Run ${{ matrix.suite }} suite" default step must execute ${{ matrix.command }}',
     );
   });
 
@@ -358,16 +384,21 @@ describe('ci workflow build job', () => {
     const steps = quality.steps;
     assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
 
-    const runSuiteStep = assertStepWithName(
+    const { autosave: runSuiteAutosave, default: runSuiteDefault } = assertRunSuiteSteps(
       steps,
-      'Run ${{ matrix.suite }} suite',
-      'quality job must include "Run ${{ matrix.suite }} suite" step',
+      'quality job must include "Run ${{ matrix.suite }} suite" steps for autosave and default suites',
     );
 
     assertStepIdEquals(
-      runSuiteStep,
-      'run_suite',
-      '"Run ${{ matrix.suite }} suite" step must expose id "run_suite" for downstream conditionals',
+      runSuiteAutosave,
+      'run_suite_autosave',
+      '"Run ${{ matrix.suite }} suite" autosave step must expose id "run_suite_autosave" for downstream conditionals',
+    );
+
+    assertStepIdEquals(
+      runSuiteDefault,
+      'run_suite_default',
+      '"Run ${{ matrix.suite }} suite" default step must expose id "run_suite_default" for downstream conditionals',
     );
   });
 
@@ -437,7 +468,12 @@ describe('ci workflow build job', () => {
 
     assertStepIfEquals(
       extractFailuresStep,
-      "steps.run_suite.outcome == 'failure' && matrix.collect_failures",
+      [
+        'matrix.collect_failures && (',
+        "steps.run_suite_autosave.outcome == 'failure' ||",
+        "steps.run_suite_default.outcome == 'failure'",
+        ')',
+      ].join('\n'),
       '"Extract failed test output" step must run only when suite fails and collection is enabled',
     );
 
@@ -709,6 +745,33 @@ function assertStepWithName(
   return match;
 }
 
+type RunSuiteSteps = {
+  autosave: StepConfig;
+  default: StepConfig;
+};
+
+function assertRunSuiteSteps(steps: StepConfig[], message: string): RunSuiteSteps {
+  const matches = steps.filter(
+    (step) => typeof step.name === 'string' && step.name.trim() === 'Run ${{ matrix.suite }} suite',
+  );
+
+  if (matches.length !== 2) {
+    assert.fail(`${message}; expected exactly 2 steps but found ${matches.length}`);
+  }
+
+  const autosaveStep = matches.find((step) => typeof step.id === 'string' && step.id.trim() === 'run_suite_autosave');
+  if (!autosaveStep) {
+    assert.fail(`${message}; missing step with id "run_suite_autosave"`);
+  }
+
+  const defaultStep = matches.find((step) => typeof step.id === 'string' && step.id.trim() === 'run_suite_default');
+  if (!defaultStep) {
+    assert.fail(`${message}; missing step with id "run_suite_default"`);
+  }
+
+  return { autosave: autosaveStep, default: defaultStep };
+}
+
 function assertStepIdEquals(step: StepConfig, expected: string, message: string): void {
   if (typeof step.id !== 'string') {
     assert.fail(`${message}; step.id must be configured as a string`);
@@ -730,7 +793,10 @@ function assertStepIfEquals(step: StepConfig, expected: string, message: string)
     assert.fail(`${message}; step.if must be configured as a string`);
   }
 
-  assert.strictEqual(step.if.trim(), expected, message);
+  const actualNormalized = normalizeMultiline(step.if);
+  const expectedNormalized = normalizeMultiline(expected);
+
+  assert.strictEqual(actualNormalized, expectedNormalized, message);
 }
 
 function assertStepContinueOnError(step: StepConfig, message: string): void {
@@ -795,6 +861,14 @@ function assertRunScriptHasPrecedingLine(
   );
 
   assert.notStrictEqual(precedingIndex, -1, message);
+}
+
+function normalizeMultiline(value: string): string {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .join('\n')
+    .trim();
 }
 
 function assertJobNeedsIncludeAll(
