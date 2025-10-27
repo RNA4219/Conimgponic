@@ -1354,6 +1354,13 @@ export function initAutoSave(
     try {
       await projectLockApi.withProjectLock(async (lease) => {
         if (disposed) throw disabledError()
+        const lockTelemetryAt = new Date().toISOString()
+        emitRunnerTelemetry('lock-acquired', 'awaiting-lock', lockTelemetryAt, {
+          retryCount,
+          strategy: lease.strategy,
+          viaFallback: lease.viaFallback,
+          leaseMs: lease.ttlMillis
+        })
         phase = 'writing-current'; await saveText('project/autosave/current.json.tmp', payload); await renameFile('project/autosave/current.json.tmp', 'project/autosave/current.json')
         phase = 'updating-index'; const ts = new Date().toISOString(); const flushRetryCount = retryCount; emitRunnerTelemetry(
           'write-succeeded',

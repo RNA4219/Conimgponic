@@ -10,14 +10,17 @@ import {
   releaseProjectLock,
   projectLockEvents,
   WEB_LOCK_KEY,
+  WEB_LOCK_TTL_MS,
   type ProjectLockEvent
 } from '../../src/lib/locks'
 import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
 import {
+  ENABLED_GUARD,
   scenario as baseScenario,
   type ScenarioContext,
   type SetupOverrides
 } from '../lib/autosave/setup'
+import type { Storyboard } from '../../src/types'
 
 type LockScenarioHandler = (t: TestContext, ctx: ScenarioContext) => unknown | Promise<unknown>
 
@@ -28,6 +31,16 @@ const assertNoRunnerTelemetry = (ctx: ScenarioContext): void => {
     'AutoSave runner telemetry must remain empty during lock scenarios'
   )
 }
+
+const createStoryboard = (): Storyboard => ({
+  id: 'autosave-lock-telemetry',
+  title: 'AutoSave Lock Telemetry',
+  scenes: [
+    { id: 'scene-1', manual: 'Lock telemetry check', ai: 'Lock', status: 'idle', assets: [] }
+  ],
+  selection: [],
+  version: 1
+})
 
 const scenario = (
   name: string,
@@ -213,6 +226,48 @@ scenario(
     })
 
     await assertSnapshot('locks-as-i-03-fallback-error', { lockSequence: sequence, telemetry })
+  }
+)
+
+baseScenario(
+  'AS-I-07: Successful lock acquisition emits autosave runner telemetry',
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 1) })
+
+    const runner = ctx.initAutoSave(createStoryboard, { disabled: false }, ENABLED_GUARD)
+    t.after(async () => {
+      await runner.dispose()
+    })
+
+    runner.markDirty({ pendingBytes: 4096 })
+    await runner.flushNow()
+
+    const lockEvents = ctx.runnerTelemetry.filter((event) => {
+      const detail = event.detail as { event?: unknown } | undefined
+      return detail?.event === 'lock-acquired'
+    })
+
+    assert.ok(lockEvents.length > 0, 'lock-acquired telemetry should be recorded after successful flush')
+
+    const lockEvent = lockEvents[0]!
+    assert.equal(lockEvent.phase, 'awaiting-lock')
+    assert.equal(lockEvent.slo, 'p95-latency')
+
+    const detail = lockEvent.detail as Record<string, unknown>
+    assert.equal(detail.event, 'lock-acquired')
+    assert.equal(detail.retryCount, 0)
+    assert.equal(detail.strategy, 'web-lock')
+    assert.equal(detail.leaseMs, WEB_LOCK_TTL_MS)
+    assert.equal(detail.viaFallback, false)
+
+    const writeSucceededIndex = ctx.runnerTelemetry.findIndex(
+      (event) => (event.detail as { event?: unknown } | undefined)?.event === 'write-succeeded'
+    )
+    const lockAcquiredIndex = ctx.runnerTelemetry.indexOf(lockEvent)
+    assert.ok(
+      writeSucceededIndex === -1 || lockAcquiredIndex <= writeSucceededIndex,
+      'lock-acquired telemetry must precede write-succeeded events'
+    )
   }
 )
 
