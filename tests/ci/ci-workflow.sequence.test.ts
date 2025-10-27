@@ -241,6 +241,7 @@ describe('ci workflow build job', () => {
         'tests/**/autosave/**',
         '.github/workflows/autosave*',
         'tests/**/*autosave*.test.ts',
+        'tests/**/*autosave*.spec.ts',
       ],
       '"Detect autosave changes" step must monitor required autosave paths',
     );
