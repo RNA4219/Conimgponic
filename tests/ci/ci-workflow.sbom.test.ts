@@ -24,6 +24,33 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
 
 describe('ci workflow sbom job', () => {
+  test('installs syft exactly once and prepares PATH', async () => {
+    const workflow = await loadWorkflow();
+    const sbomSteps = expectJobSteps(workflow.jobs?.sbom, 'sbom job must exist');
+
+    const installSteps = sbomSteps.filter((step): step is StepConfig & { name: string; run: string } => {
+      if (typeof step.name !== 'string') return false;
+      if (step.name.trim() !== 'Install Syft') return false;
+      return typeof step.run === 'string';
+    });
+
+    assert.strictEqual(
+      installSteps.length,
+      1,
+      'sbom job must define exactly one Install Syft step',
+    );
+
+    const installScript = installSteps[0].run;
+    assert(
+      installScript.includes('mkdir -p "$HOME/.local/bin"'),
+      'Install Syft step must create the local bin directory',
+    );
+    assert(
+      installScript.includes('echo "$HOME/.local/bin" >> "$GITHUB_PATH"'),
+      'Install Syft step must append the local bin directory to GITHUB_PATH',
+    );
+  });
+
   test('generates sbom.json via Anchore SBOM action and always uploads artifact', async () => {
     try {
       const workflow = await loadWorkflow();
