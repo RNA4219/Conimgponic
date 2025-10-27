@@ -237,8 +237,36 @@ describe('ci workflow build job', () => {
         'tests/**/autosave.*.test.ts',
         'tests/**/autosave/**',
         '.github/workflows/autosave*',
+        'tests/**/*autosave*.test.ts',
       ],
       '"Detect autosave changes" step must monitor required autosave paths',
+    );
+  });
+
+  test('autosave paths filter monitors suffix-based autosave tests', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const detectAutosaveChanges = assertDetectAutosaveChangesStep(
+      steps,
+      'quality job must include "Detect autosave changes" step for autosave suite',
+    );
+
+    const globs = getPathsFilterGlobs(
+      detectAutosaveChanges,
+      'autosave',
+      '"Detect autosave changes" step must configure autosave filters',
+    );
+
+    assert(
+      globs.includes('tests/**/*autosave*.test.ts'),
+      '"Detect autosave changes" filters.autosave must monitor suffix-based autosave tests',
     );
   });
 
@@ -1353,12 +1381,11 @@ function assertStringSetEquals(actual: string[], expected: string[], message: st
   );
 }
 
-function assertPathsFilterGlobs(
+function getPathsFilterGlobs(
   step: PathsFilterStep,
   filterName: string,
-  expectedGlobs: string[],
   message: string,
-): void {
+): string[] {
   const config = step.with;
   if (!config || typeof config !== 'object') {
     assert.fail(`${message}; step.with must be configured as an object`);
@@ -1391,6 +1418,17 @@ function assertPathsFilterGlobs(
 
     return entry.trim();
   });
+
+  return globs;
+}
+
+function assertPathsFilterGlobs(
+  step: PathsFilterStep,
+  filterName: string,
+  expectedGlobs: string[],
+  message: string,
+): void {
+  const globs = getPathsFilterGlobs(step, filterName, message);
 
   assertStringSetEquals(globs, expectedGlobs, message);
 }
