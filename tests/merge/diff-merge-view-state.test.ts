@@ -294,6 +294,15 @@ test('DiffMergeView OperationPane queue emits operation pane collector telemetry
   }
 })
 
+test('DiffMergeView OperationPane disables queue when no selection per Guardrails/Contributing TDD mandate', () => {
+  const html = renderView('stable')
+  assert.match(
+    html,
+    /data-testid="diff-merge-queue-selected"[^>]*data-hunks="\[]"/,
+  )
+  assert.match(html, /data-testid="diff-merge-queue-selected"[^>]*disabled/)
+})
+
 class MemoryStorage implements DiffMergeTabStorage {
   #map = new Map<string, string>()
 

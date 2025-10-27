@@ -342,7 +342,11 @@ const DiffMergeOperationPane: React.FC<DiffMergeOperationPaneProps> = ({
         data-testid="diff-merge-queue-selected"
         data-command="queue-merge"
         data-hunks={queueHunksJson}
+        disabled={selectedCount === 0}
         onClick={() => {
+          if (selectedCount === 0) {
+            return
+          }
           void controller.queueMerge(queueHunkIds)
         }}
       >
@@ -434,7 +438,7 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
   const activeLayout = useMemo(() => plan.tabs.find((tab) => tab.key === activeTab) ?? plan.tabs[0]!, [plan, activeTab])
   const selectedHunkIds = useMemo(() => Object.entries(state.hunkStates).filter(([, status]) => status === 'Selected' || status === 'Editing').map(([id]) => id), [state.hunkStates])
   const selectedHunkCount = selectedHunkIds.length
-  const queueCandidateIds = selectedHunkCount > 0 ? selectedHunkIds : knownHunkIds
+  const queueCandidateIds = selectedHunkIds
   const queueHunkIds = useMemo(() => retainKnownHunkIds(queueCandidateIds, knownHunkIds), [queueCandidateIds, knownHunkIds])
   const editingHunkId = state.editingHunkId
   const editingHunk = editingHunkId ? hunks.find((hunk) => hunk.id === editingHunkId) : undefined
