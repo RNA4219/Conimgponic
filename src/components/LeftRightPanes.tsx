@@ -3,6 +3,15 @@ import { chatStream } from '../lib/ollama'
 
 const MAX_INPUT = 50000
 
+type KeyboardShortcutEvent = {
+  key: string
+  ctrlKey: boolean
+}
+
+export function isGenerateShortcut(event: KeyboardShortcutEvent): boolean{
+  return event.key === 'Enter' && event.ctrlKey
+}
+
 export function LeftRight(){
   const [left, setLeft] = useState('')
   const [right, setRight] = useState('')
@@ -35,7 +44,16 @@ export function LeftRight(){
     <div className="split">
       <div className="pane">
         <header>左：手入力</header>
-        <textarea value={left} onChange={e=>setLeft(e.target.value)} placeholder="ここにテキストを貼り付け → 自動分割へ" />
+        <textarea
+          value={left}
+          onChange={e=>setLeft(e.target.value)}
+          onKeyDown={event=>{
+            if (!isGenerateShortcut(event)) return
+            event.preventDefault()
+            void onGenerate()
+          }}
+          placeholder="ここにテキストを貼り付け → 自動分割へ"
+        />
       </div>
       <div className="pane">
         <header>右：生成AI {busy && <span className="badge">生成中…</span>}</header>
