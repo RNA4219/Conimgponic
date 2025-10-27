@@ -94,3 +94,6 @@ flowchart LR
 - [ ] `export.request/result` ハンドシェイク実装と URI 発行
 - [ ] ゴールデン比較テスト (Markdown/CSV/JSONL/Package) GREEN 化
 - [ ] Telemetry Collector → Day8 送信動作の統合テスト
+
+## 9. 進捗記録
+- WBS.csv に `Status` 列を追加し、AutoSave・マージ・回帰試験の各タスクを現状どおり「未着手」で明示化。
