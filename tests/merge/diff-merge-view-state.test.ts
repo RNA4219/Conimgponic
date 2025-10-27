@@ -294,7 +294,7 @@ test('DiffMergeView OperationPane queue emits operation pane collector telemetry
   }
 })
 
-test('DiffMergeView OperationPane disables queue trigger with no selection', () => {
+test('DiffMergeView OperationPane marks queue trigger inert when selection is empty', () => {
   const html = renderToStaticMarkup(
     createElement(DiffMergeView, {
       precision: 'beta',
@@ -305,8 +305,9 @@ test('DiffMergeView OperationPane disables queue trigger with no selection', () 
 
   assert.match(html, /data-testid="diff-merge-operation-pane"/)
   assert.match(html, /data-testid="diff-merge-operation-pane"[\s\S]*?data-visible="false"/)
-  assert.match(html, /data-testid="diff-merge-queue-selected"[\s\S]*?disabled/)
   assert.match(html, /data-testid="diff-merge-queue-selected"[\s\S]*?data-hunks="\[\]"/)
+  assert.match(html, /data-testid="diff-merge-queue-selected"[\s\S]*?disabled/)
+  assert.match(html, /data-testid="diff-merge-queue-selected"[\s\S]*?aria-disabled="true"/)
 })
 
 class MemoryStorage implements DiffMergeTabStorage {

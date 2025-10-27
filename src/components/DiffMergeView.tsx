@@ -323,32 +323,32 @@ const DiffMergeHunkList: React.FC<DiffMergeHunkListProps> = ({ visible, hunks, h
 interface DiffMergeOperationPaneProps {
   readonly visible: boolean
   readonly selectedCount: number
-  readonly queueHunkIds: readonly string[]
+  readonly queueCandidateIds: readonly string[]
   readonly controller: DiffMergeController
 }
 
 const DiffMergeOperationPane: React.FC<DiffMergeOperationPaneProps> = ({
   visible,
   selectedCount,
-  queueHunkIds,
+  queueCandidateIds,
   controller,
 }) => {
   if (!visible) return null
-  const queueHunksJson = JSON.stringify(queueHunkIds)
-  const hasQueueHunks = queueHunkIds.length > 0
+  const hasQueueHunks = queueCandidateIds.length > 0
   return (
     <section data-block="operation-pane" data-testid="diff-merge-operation-pane" data-visible={selectedCount > 0 ? 'true' : 'false'}>
       <button
         type="button"
         data-testid="diff-merge-queue-selected"
         data-command="queue-merge"
-        data-hunks={queueHunksJson}
+        data-hunks={JSON.stringify(queueCandidateIds)}
         disabled={!hasQueueHunks}
+        aria-disabled={hasQueueHunks ? 'false' : 'true'}
         onClick={() => {
           if (!hasQueueHunks) {
             return
           }
-          void controller.queueMerge(queueHunkIds)
+          void controller.queueMerge(queueCandidateIds)
         }}
       >
         Queue Selected
@@ -444,11 +444,11 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
         .map(([id]) => id),
     [state.hunkStates],
   )
-  const selectedHunkCount = selectedHunkIds.length
-  const queueHunkIds = useMemo(
+  const queueCandidateIds = useMemo(
     () => retainKnownHunkIds(selectedHunkIds, knownHunkIds),
     [selectedHunkIds, knownHunkIds],
   )
+  const queueCandidateCount = queueCandidateIds.length
   const editingHunkId = state.editingHunkId
   const editingHunk = editingHunkId ? hunks.find((hunk) => hunk.id === editingHunkId) : undefined
 
@@ -506,12 +506,12 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
     () => (
       <DiffMergeOperationPane
         visible={isOperationPaneVisible}
-        selectedCount={selectedHunkCount}
-        queueHunkIds={queueHunkIds}
+        selectedCount={queueCandidateCount}
+        queueCandidateIds={queueCandidateIds}
         controller={controller}
       />
     ),
-    [controller, isOperationPaneVisible, queueHunkIds, selectedHunkCount],
+    [controller, isOperationPaneVisible, queueCandidateCount, queueCandidateIds],
   )
 
   const editModal = useMemo(

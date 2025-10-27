@@ -66,16 +66,21 @@ pnpm test -- --filter diff-merge-view-state
 ## Patch
 
 - 2025-10-31: `DiffMergeView` の `queueHunkIds` 計算を選択済みハンク限定に変更し、OperationPane ボタンへ `disabled` ガードを追加。
+- 2025-10-27: OperationPane の `queueCandidateIds` を公開し、未選択時は `aria-disabled` 付きでキューを防止。
 
 ## Tests
 
 - 2025-10-31: `pnpm test -- --filter diff-merge-view-state`（`ts-node/esm` が `.tsx` を解決できず失敗）
 - 2025-10-31: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`（緑）
+- 2025-10-27: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`（緑）
+- 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（緑）
 
 ## Commands
 
 - 2025-10-31: `pnpm test -- --filter diff-merge-view-state`
 - 2025-10-31: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`
+- 2025-10-27: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`
+- 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`
 
 ## Notes
 
