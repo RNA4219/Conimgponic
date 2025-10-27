@@ -280,8 +280,8 @@ const handleNonRetryableError = (
   previousStatus: AutoSaveStatusState
 ): void => {
   const guardForTelemetry = state.guard
+  const retryCountBeforeReset = state.retryCount
   state.status = 'error'
-  state.retryCount = 0
   const ts = toIso(options.now())
   options.sendMessage(
     createSnapshotResultMessage(request, ts, { ok: false, error })
@@ -307,7 +307,7 @@ const handleNonRetryableError = (
       request.phase ?? PHASE_SNAPSHOT,
       'error',
       state.guard,
-      state.retryCount,
+      retryCountBeforeReset,
       state.lastSuccessAt
     )
   )
@@ -315,10 +315,15 @@ const handleNonRetryableError = (
     options,
     {
       name: 'autosave.status',
-      properties: { state: 'error', correlationId: request.correlationId }
+      properties: {
+        state: 'error',
+        correlationId: request.correlationId,
+        retryCount: retryCountBeforeReset
+      }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
   )
+  state.retryCount = 0
   const statusBeforeDisable = state.status
   state.status = 'disabled'
   state.guard = {

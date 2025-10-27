@@ -598,6 +598,75 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(savedStatus.payload.retryCount, 0)
   })
 
+  it('propagates retryCount when backoff transitions to non-retryable error', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    let attempt = 0
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => {
+        attempt += 1
+        if (attempt === 1) {
+          return {
+            ok: false,
+            error: {
+              name: 'AutoSaveError',
+              message: 'temporary failure',
+              code: 'write-failed',
+              retryable: true
+            }
+          }
+        }
+        return {
+          ok: false,
+          error: {
+            name: 'AutoSaveError',
+            message: 'permanent failure',
+            code: 'data-corrupted',
+            retryable: false
+          }
+        }
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-backoff', 'corr-backoff', guardEnabled, 1024, 1)
+    )
+
+    const backoffState = bridge.inspectState()
+    assert.equal(backoffState.status, 'backoff')
+    assert.equal(backoffState.retryCount, 1)
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-error', 'corr-error', guardEnabled, 1024, 2)
+    )
+
+    const errorStatus = sent.find(
+      (msg): msg is AutoSaveStatusMessage =>
+        msg.type === 'status.autosave' &&
+        msg.correlationId === 'corr-error' &&
+        msg.payload.state === 'error'
+    )
+    assert.ok(errorStatus, 'non-retryable error should emit status.autosave error state')
+    assert.equal(errorStatus.payload.retryCount, 1)
+
+    const errorTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' &&
+        event.properties?.state === 'error' &&
+        event.properties?.correlationId === 'corr-error'
+    )
+    assert.ok(errorTelemetry, 'autosave.status telemetry for error state should exist')
+    assert.equal(errorTelemetry.properties?.retryCount, 1)
+  })
+
   it('treats thrown non-retryable AutoSaveError as terminal failure', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const telemetry: AutoSaveTelemetryEvent[] = []
