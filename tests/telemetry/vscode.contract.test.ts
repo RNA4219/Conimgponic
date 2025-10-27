@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok as assertOk } from 'node:assert/strict'
+import { deepStrictEqual, ok as assertOk, strictEqual } from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 
@@ -448,6 +448,50 @@ describe('vscode extension telemetry contract (RED)', () => {
       retryable: false,
       default_used: true
     })
+  })
+
+  test('publishFlagResolution は Collector 封筒フィールドを契約既定値で埋める', () => {
+    const retryPolicy = COLLECT_METRICS_CONTRACT.telemetry.retryPolicy
+    const payload: FlagResolutionEventPayload = {
+      flag: 'autosave',
+      variant: 'enabled',
+      source: 'env',
+      phase: 'phase-a0',
+      evaluation_ms: 5,
+      errors: [],
+      threshold: null,
+      status: 'success',
+      detail: { retryable: false, default_used: false }
+    }
+
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const captured: Day8CollectorFlagResolutionEvent[] = []
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorFlagResolutionEvent)
+      }
+    } as Day8Collector
+
+    try {
+      publishFlagResolution('app.autosave', 'bootstrap', [payload], 7)
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    strictEqual(captured.length, 1)
+    const event = captured[0]
+
+    strictEqual(event.type, 'telemetry.event')
+    strictEqual(event.apiVersion, 1)
+    assertOk(event.reqId.length > 0)
+    assertOk(event.correlationId.length > 0)
+    assertOk(!Number.isNaN(Date.parse(event.ts)))
+    strictEqual(event.phase, 'A-0')
+    strictEqual(event.attempt, 1)
+    strictEqual(event.maxAttempts, retryPolicy.maxAttempts)
+    deepStrictEqual(event.backoffMs, retryPolicy.backoffMs)
+    strictEqual(event.reqId, event.correlationId)
   })
 
   test('collectFlagResolutionPayloads は workspace 設定の検証失敗で default threshold へフォールバックした場合に default_used=true を通知する', () => {
