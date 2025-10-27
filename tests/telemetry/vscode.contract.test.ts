@@ -291,9 +291,14 @@ describe('vscode extension telemetry contract (RED)', () => {
     }
 
     assertOk(captured.length >= 2, 'flag_resolution telemetry must capture all payloads')
-    const phases = captured.map((event) => event.payload.phase)
-    deepStrictEqual(phases.includes('A-2'), true)
-    deepStrictEqual(phases.includes('B-1'), true)
+    const [phaseA2Event, phaseB1Event] = captured
+    assertOk(phaseA2Event, 'phase-a2 telemetry must be captured')
+    deepStrictEqual(phaseA2Event.payload.flag, 'autosave.enabled')
+    deepStrictEqual(phaseA2Event.payload.phase, 'A-2')
+
+    assertOk(phaseB1Event, 'phase-b1 telemetry must be captured')
+    deepStrictEqual(phaseB1Event.payload.flag, 'plugins.enable')
+    deepStrictEqual(phaseB1Event.payload.phase, 'B-1')
   })
 
   test('telemetry schema の flag_resolution payload が FlagSource と必須フィールドを同期する', () => {
