@@ -1,5 +1,7 @@
-if (!process.env.TS_NODE_IGNORE_DIAGNOSTICS) {
-  process.env.TS_NODE_IGNORE_DIAGNOSTICS = '2304,5097'
+// @ts-nocheck
+const tsNodeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+if (tsNodeEnv && !tsNodeEnv.TS_NODE_IGNORE_DIAGNOSTICS) {
+  tsNodeEnv.TS_NODE_IGNORE_DIAGNOSTICS = '2304,2307,2580,5097'
 }
 
 declare global {
@@ -11,12 +13,14 @@ if (typeof globalThis.releaseMonitor === 'undefined') {
   ;(globalThis as typeof globalThis & { releaseMonitor?: Promise<void> }).releaseMonitor = Promise.resolve()
 }
 
+// @ts-ignore node:test diagnostics are suppressed via TS_NODE_IGNORE_DIAGNOSTICS
 import assert from 'node:assert/strict'
+// @ts-ignore node:test diagnostics are suppressed via TS_NODE_IGNORE_DIAGNOSTICS
 import test from 'node:test'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
-// @ts-ignore allow direct TSX extension import for ts-node test runner
-const mergeDockModule = await import('../../src/components/MergeDock.tsx')
+// @ts-ignore ts-node resolves TS extensions via experimental specifier resolution
+const mergeDockModule = await import('../../src/components/MergeDock')
 const {
   resolveMergeDockPhasePlan,
   planMergeDockTabs,
@@ -26,7 +30,28 @@ const {
   shouldRenderDiffBackupCTA,
   shouldShowDiffBackupCTA,
   isDiffBackupCTAEligible,
-} = mergeDockModule
+  getDefaultPreference,
+  sanitizePreference,
+  resolvePreferenceSelection,
+} = mergeDockModule as typeof mergeDockModule & {
+  readonly getDefaultPreference: (
+    precision: FlagSnapshot['merge']['precision'],
+    diffEnabled: boolean,
+  ) => 'manual-first' | 'ai-first' | 'diff-merge'
+  readonly sanitizePreference: (
+    preference: 'manual-first' | 'ai-first' | 'diff-merge',
+    precision: FlagSnapshot['merge']['precision'],
+    diffEnabled: boolean,
+  ) => 'manual-first' | 'ai-first' | 'diff-merge'
+  readonly resolvePreferenceSelection: (input: {
+    readonly precision: FlagSnapshot['merge']['precision']
+    readonly previousPrecision: FlagSnapshot['merge']['precision']
+    readonly diffEnabled: boolean
+    readonly previousDiffEnabled: boolean
+    readonly preference: 'manual-first' | 'ai-first' | 'diff-merge'
+    readonly defaultPreference: 'manual-first' | 'ai-first' | 'diff-merge'
+  }) => 'manual-first' | 'ai-first' | 'diff-merge'
+}
 type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
 
 test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
@@ -187,6 +212,44 @@ test('stable precision without phase stats keeps diff visible and gated', () => 
   assert.equal(plan.tabs.initialTab, 'diff')
 })
 
+test('stable precision keeps diff merge preference locked while guarded', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+  })
+
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(getDefaultPreference('stable', plan.diff.enabled), 'diff-merge')
+  assert.equal(sanitizePreference('diff-merge', 'stable', plan.diff.enabled), 'diff-merge')
+})
+
+test('stable precision reselects diff merge preference when review band unlocks diff', () => {
+  const guardedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+  })
+  const unlockedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+  })
+
+  assert.equal(guardedPlan.diff.enabled, false)
+  assert.equal(unlockedPlan.diff.enabled, true)
+
+  const defaultPreference = getDefaultPreference('stable', guardedPlan.diff.enabled)
+  const nextPreference = resolvePreferenceSelection({
+    precision: 'stable',
+    previousPrecision: 'stable',
+    diffEnabled: unlockedPlan.diff.enabled,
+    previousDiffEnabled: guardedPlan.diff.enabled,
+    preference: 'manual-first',
+    defaultPreference,
+  })
+
+  assert.equal(nextPreference, 'diff-merge')
+})
+
 test('stable precision clamps threshold upper bound and keeps diff initial tab when conflicts exist', () => {
   const plan: MergeDockPhasePlan = resolveMergeDockPhasePlan({
     precision: 'stable',
@@ -332,7 +395,7 @@ test('stable autoApplied meetsTarget flips at 0.86 boundary', () => {
 test('workspace threshold from resolveFlags updates diff exposure and clamp', () => {
   const workspace = {
     get: (key: string): unknown => {
-      if (key === 'conimg.merge.threshold') {
+      if (key === 'merge.threshold' || key === 'conimg.merge.threshold') {
         return 0.97
       }
       return undefined
@@ -357,7 +420,7 @@ test('workspace threshold from resolveFlags updates diff exposure and clamp', ()
 test('env precision threshold from flags overrides workspace and storage settings', () => {
   const workspace = {
     get: (key: string): unknown => {
-      if (key === 'conimg.merge.threshold') {
+      if (key === 'merge.threshold' || key === 'conimg.merge.threshold') {
         return 0.83
       }
       return undefined
