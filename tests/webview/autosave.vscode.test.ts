@@ -859,6 +859,65 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledTelemetry.properties?.phaseAfter, 'disabled')
   })
 
+  it('keeps autosave disabled for queued request after fatal error', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    let writeCount = 0
+    const fatalError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'corrupted',
+      code: 'data-corrupted',
+      retryable: false
+    }
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (msg) => sent.push(msg),
+      atomicWrite: async () => {
+        writeCount += 1
+        if (writeCount > 1) {
+          throw new Error('atomicWrite must not run after fatal error')
+        }
+        return { ok: false, error: fatalError }
+      }
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-fatal', 'corr-fatal', guardEnabled, 1024, 1)
+    )
+
+    await bridge.handleSnapshotRequest(
+      createRequest('req-queued', 'corr-queued', guardEnabled, 512, 2)
+    )
+
+    assert.equal(writeCount, 1, 'atomicWrite must not run for queued request after fatal error')
+    const queuedSnapshot = sent.find(
+      (msg): msg is AutoSaveSnapshotResultMessage =>
+        msg.type === 'snapshot.result' && msg.correlationId === 'corr-queued'
+    )
+    assert.ok(queuedSnapshot, 'queued snapshot should emit snapshot.result when disabled')
+    if (queuedSnapshot.payload.ok !== false) {
+      assert.fail('queued snapshot should respond with ok=false payload when disabled')
+    }
+    assert.equal(queuedSnapshot.payload.error.code, 'disabled')
+
+    const queuedStatuses = sent.filter(
+      (msg): msg is AutoSaveStatusMessage =>
+        msg.type === 'status.autosave' && msg.correlationId === 'corr-queued'
+    )
+    assert.deepEqual(
+      queuedStatuses.map((msg) => msg.payload.state),
+      ['disabled'],
+      'queued request should transition directly to disabled state'
+    )
+    assert.ok(
+      queuedStatuses.every((msg) => msg.payload.guard.optionsDisabled),
+      'disabled guard must be preserved across queued requests'
+    )
+  })
+
   it('downgrades to disabled when non-retryable error occurs', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const telemetry: AutoSaveTelemetryEvent[] = []
