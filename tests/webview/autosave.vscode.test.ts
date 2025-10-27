@@ -993,6 +993,72 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(retryStatusTelemetry.properties?.state, 'disabled')
   })
 
+  it('keeps readonly downgrade across reportDirty/handleSnapshotRequest after fatal error', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    let writeCount = 0
+    const fatalError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'fatal corruption',
+      code: 'data-corrupted',
+      retryable: false
+    }
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (msg) => sent.push(msg),
+      atomicWrite: async () => {
+        writeCount += 1
+        if (writeCount === 1) {
+          return { ok: false, error: fatalError }
+        }
+        assert.fail('atomicWrite must not run after fatal error')
+      }
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-initial', 'corr-initial', guardEnabled, 1024, 1)
+    )
+
+    const messageCountBeforeRetry = sent.length
+    bridge.reportDirty(2048, guardEnabled)
+    const lastMessage = sent.at(-1)
+    assert.ok(lastMessage && lastMessage.type === 'status.autosave', 'reportDirty should emit status.autosave')
+    assert.equal(lastMessage.payload.state, 'disabled')
+    assert.equal(lastMessage.payload.guard.optionsDisabled, true)
+
+    await bridge.handleSnapshotRequest(
+      createRequest('req-after', 'corr-after', guardEnabled, 2048, 2)
+    )
+
+    assert.equal(writeCount, 1, 'atomicWrite must not run after fatal error')
+
+    const retryResult = sent
+      .slice(messageCountBeforeRetry)
+      .find(
+        (msg): msg is AutoSaveSnapshotResultMessage =>
+          msg.type === 'snapshot.result' && msg.correlationId === 'corr-after'
+      )
+    assert.ok(retryResult, 'snapshot.result should be emitted for disabled retry request')
+    if (retryResult.payload.ok !== false) {
+      assert.fail('retry snapshot should respond with ok=false payload')
+    }
+    assert.equal(retryResult.payload.error.code, 'disabled')
+    assert.equal(retryResult.payload.error.retryable, false)
+
+    const retryStatuses = sent
+      .slice(messageCountBeforeRetry)
+      .filter(
+        (msg): msg is AutoSaveStatusMessage =>
+          msg.type === 'status.autosave' && msg.correlationId === 'corr-after'
+      )
+    assert.ok(retryStatuses.length > 0, 'disabled retry should emit autosave status updates')
+    assert.ok(retryStatuses.every((msg) => msg.payload.state === 'disabled'))
+    assert.ok(retryStatuses.every((msg) => msg.payload.guard.optionsDisabled))
+  })
+
   it('downgrades to disabled when non-retryable error occurs', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const telemetry: AutoSaveTelemetryEvent[] = []
