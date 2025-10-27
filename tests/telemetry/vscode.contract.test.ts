@@ -147,7 +147,9 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.source',
       'payload.phase',
       'payload.evaluation_ms',
-      'payload.threshold'
+      'payload.threshold',
+      'payload.status',
+      'payload.detail.retryable'
     ]
 
     for (const field of requiredFields) {
@@ -178,6 +180,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'phase',
       'evaluation_ms',
       'threshold',
+      'status',
+      'detail',
       'errors'
     ])
     assertOk(
@@ -213,6 +217,8 @@ describe('vscode extension telemetry contract (RED)', () => {
         evaluation_ms: 42,
         errors: [],
         threshold: null,
+        status: 'success',
+        detail: { retryable: false }
       }
       publishFlagResolution('app.autosave', 'bootstrap', [payload], 42)
     } finally {
@@ -227,6 +233,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       allowedPhases.has(event.payload.phase),
       `flag_resolution payload.phase must be one of ${Array.from(allowedPhases).join(', ')}`
     )
+    deepStrictEqual(event.payload.status, 'success')
+    deepStrictEqual(event.payload.detail, { retryable: false })
   })
 
   test('telemetry schema の flag_resolution payload が FlagSource と必須フィールドを同期する', () => {
@@ -240,6 +248,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'phase',
       'evaluation_ms',
       'threshold',
+      'status',
+      'detail',
       'errors'
     ])
 
@@ -252,6 +262,16 @@ describe('vscode extension telemetry contract (RED)', () => {
     const errorsSchema = payloadSchema.properties.errors
     assertOk(errorsSchema, 'flag_resolution payload schema must define errors array')
     assertOk(errorsSchema.type === 'array', 'flag_resolution payload errors must be an array')
+
+    const detailSchema = payloadSchema.properties.detail
+    assertOk(detailSchema, 'flag_resolution payload schema must define detail object')
+    assertOk(detailSchema.type === 'object', 'flag_resolution payload detail must be an object')
+    assertOk(detailSchema.required, 'flag_resolution payload detail must define required fields')
+    deepStrictEqual(detailSchema.required, ['retryable'])
+    assertOk(detailSchema.properties, 'flag_resolution payload detail must define properties')
+    const retryableSchema = detailSchema.properties.retryable
+    assertOk(retryableSchema, 'flag_resolution payload detail must define retryable property')
+    deepStrictEqual(retryableSchema, { type: 'boolean' })
   })
 
   test('publishFlagResolution は errors/threshold を Collector payload に伝搬する', () => {
@@ -284,7 +304,9 @@ describe('vscode extension telemetry contract (RED)', () => {
         phase: 'phase-a0',
         evaluation_ms: 7,
         errors,
-        threshold: 0.75
+        threshold: 0.75,
+        status: 'failure',
+        detail: { retryable: false }
       }
       publishFlagResolution('app.autosave', 'bootstrap', [payload], 13)
     } finally {
@@ -296,6 +318,8 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(event, 'flag_resolution event must be captured')
     deepStrictEqual(event.payload.errors, errors)
     deepStrictEqual(event.payload.threshold, 0.75)
+    deepStrictEqual(event.payload.status, 'failure')
+    deepStrictEqual(event.payload.detail, { retryable: false })
   })
 
   test('telemetry schema の status.autosave payload が Collector 要件を固定する', () => {

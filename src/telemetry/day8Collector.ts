@@ -36,6 +36,8 @@ export interface FlagResolutionEventPayload {
   readonly evaluation_ms: number
   readonly errors: readonly FlagValidationError[]
   readonly threshold: number | null
+  readonly status: 'success' | 'failure'
+  readonly detail: { readonly retryable: boolean }
 }
 
 export type FlagResolutionContractPayload = {
@@ -46,6 +48,8 @@ export type FlagResolutionContractPayload = {
   readonly evaluation_ms: number
   readonly errors: readonly FlagValidationError[]
   readonly threshold: number | null
+  readonly status: 'success' | 'failure'
+  readonly detail: { readonly retryable: boolean }
 }
 
 export type Day8CollectorFlagResolutionEvent = {
@@ -91,7 +95,9 @@ export const publishFlagResolution = (
       phase: FLAG_PHASE_TO_CONTRACT_PHASE[payload.phase],
       evaluation_ms: payload.evaluation_ms,
       errors: payload.errors,
-      threshold: payload.threshold
+      threshold: payload.threshold,
+      status: payload.status,
+      detail: payload.detail
     }
     collector.publish({
       schema: 'vscode.telemetry.v1',

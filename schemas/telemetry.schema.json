@@ -101,6 +101,15 @@
               },
               "evaluation_ms": { "type": "number", "minimum": 0 },
               "threshold": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+              "status": { "type": "string", "enum": ["success", "failure"] },
+              "detail": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "retryable": { "type": "boolean" }
+                },
+                "required": ["retryable"]
+              },
               "errors": {
                 "type": "array",
                 "items": { "$ref": "#/definitions/flagValidationError" }
@@ -113,6 +122,8 @@
               "phase",
               "evaluation_ms",
               "threshold",
+              "status",
+              "detail",
               "errors"
             ]
           }

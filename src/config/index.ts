@@ -82,15 +82,24 @@ const toFlagPayload = (
   planErrors: readonly FlagValidationError[],
   evaluationMs: number,
   options?: { readonly threshold?: number }
-): FlagResolutionEventPayload => ({
-  flag,
-  variant: String(variant),
-  source,
-  phase: FEATURE_FLAG_DEFINITIONS[flag].phase,
-  evaluation_ms: evaluationMs,
-  errors: mergeErrors(flag, snapshotErrors, planErrors),
-  threshold: options?.threshold ?? null
-})
+): FlagResolutionEventPayload => {
+  const errors = mergeErrors(flag, snapshotErrors, planErrors)
+  const retryable = errors.some((error) => error.retryable)
+  const status: FlagResolutionEventPayload['status'] =
+    errors.length === 0 ? 'success' : 'failure'
+
+  return {
+    flag,
+    variant: String(variant),
+    source,
+    phase: FEATURE_FLAG_DEFINITIONS[flag].phase,
+    evaluation_ms: evaluationMs,
+    errors,
+    threshold: options?.threshold ?? null,
+    status,
+    detail: { retryable }
+  }
+}
 
 export const collectFlagResolutionPayloads = (
   snapshot: FlagSnapshot,

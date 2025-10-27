@@ -43,6 +43,8 @@ type FlagExpectation = {
   readonly phase: string
   readonly threshold: number | null
   readonly errors: readonly FlagValidationError[]
+  readonly status: 'success' | 'failure'
+  readonly detail: { readonly retryable: boolean }
 }
 
 const expectFlagTelemetry = (
@@ -107,13 +109,23 @@ const expectFlagTelemetry = (
       const payloadErrors = (payload as { errors?: unknown }).errors
       assert.ok(Array.isArray(payloadErrors), 'flag_resolution payload errors must be an array')
 
+      const status = payload.status
+      assert.ok(status === 'success' || status === 'failure', 'flag_resolution payload must include status')
+
+      const detail = payload.detail
+      assert.ok(detail && typeof detail === 'object', 'flag_resolution payload must include detail')
+      const retryableValue = (detail as { retryable?: unknown }).retryable
+      assert.equal(typeof retryableValue, 'boolean', 'flag_resolution payload detail.retryable must be boolean')
+
       return {
         flag,
         variant,
         source,
         phase,
         threshold: thresholdValue as number | null,
-        errors: payloadErrors as FlagValidationError[]
+        errors: payloadErrors as FlagValidationError[],
+        status: status as 'success' | 'failure',
+        detail: { retryable: retryableValue as boolean }
       }
     })
     .sort((a, b) => a.flag.localeCompare(b.flag))
@@ -125,7 +137,9 @@ const expectFlagTelemetry = (
       source: entry.source,
       phase: entry.phase,
       threshold: entry.threshold,
-      errors: entry.errors
+      errors: entry.errors,
+      status: entry.status,
+      detail: entry.detail
     }))
     .sort((a, b) => a.flag.localeCompare(b.flag))
 
@@ -144,7 +158,9 @@ const snapshotFlags = (
     source: payload.source,
     phase: phaseToContract(payload.phase),
     threshold: payload.threshold,
-    errors: payload.errors
+    errors: payload.errors,
+    status: payload.status,
+    detail: payload.detail
   }))
 }
 
