@@ -375,7 +375,7 @@ const handleNonRetryableError = (
       request.reqId,
       request.correlationId,
       ts,
-      PHASE_STATUS,
+      request.phase ?? PHASE_SNAPSHOT,
       'error',
       state.guard,
       retryCountBeforeReset,
@@ -390,7 +390,7 @@ const handleNonRetryableError = (
         state: 'error',
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
-        phase: PHASE_STATUS
+        phase: request.phase ?? PHASE_SNAPSHOT
       }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
