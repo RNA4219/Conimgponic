@@ -7,6 +7,8 @@ import {
   resolveMergeThresholdPlan,
   resolveMergeThresholdSnapshot,
   type MergeDockPhasePlan,
+  diffBackupPolicy,
+  shouldRenderDiffBackupCTA,
 } from '../../src/components/MergeDock.tsx'
 
 test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
@@ -88,6 +90,28 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   assert.equal(plan.threshold.autoTarget, 0.92)
   assert.equal(plan.autoApplied.rate, 0.75)
   assert.equal(plan.autoApplied.meetsTarget, false)
+})
+
+test('beta precision diff plan triggers backup CTA when diff is enabled', () => {
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'beta',
+    threshold: 0.75,
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+  })
+
+  assert.equal(phasePlan.diff.enabled, true)
+  const lastSuccessAt = new Date('2024-01-01T00:00:00Z').toISOString()
+  const showBackupCTA = shouldRenderDiffBackupCTA({
+    diffPlan: phasePlan.diff,
+    tabPlan: phasePlan.tabs,
+    policy: diffBackupPolicy,
+    precision: 'beta',
+    activeTab: 'diff',
+    autoSave: { flushNow: () => undefined, lastSuccessAt },
+    now: Date.parse('2024-01-01T00:10:00Z'),
+  })
+
+  assert.equal(showBackupCTA, true)
 })
 
 test('stable precision without phase stats keeps diff visible and gated', () => {
