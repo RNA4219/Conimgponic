@@ -404,6 +404,11 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
     }
   };
 
+  const toReleaseProjectError = (error: unknown): ProjectLockError =>
+    error instanceof ProjectLockError && error.operation === 'release' && error.retryable
+      ? error
+      : makeError('release-failed', 'Web Lock release invocation failed', 'release', true, error);
+
   try {
     const requestOutcome: Promise<unknown> = locks
       .request(
@@ -414,44 +419,40 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
             throw makeError('acquire-denied', 'Web Lock handle missing', 'acquire', false);
           }
 
-          const handle = lock as { released?: unknown; release?: unknown };
+          type WebLockHandle = {
+            released?: unknown;
+            release?: () => Promise<void> | void;
+          };
+          const handle = lock as WebLockHandle;
           const released = handle.released;
-          releasedPromise =
-            released && typeof (released as Promise<unknown>).then === 'function'
-              ? (released as Promise<unknown>)
-              : Promise.resolve();
-          const releaseMethod =
+          if (!released || typeof (released as Promise<unknown>).then !== 'function') {
+            throw makeError('acquire-denied', 'Web Lock handle missing released promise', 'acquire', false);
+          }
+          const releasedPromise = released as Promise<unknown>;
+          type ReleaseMethod = () => Promise<void> | void;
+          const releaseMethod: ReleaseMethod | undefined =
             typeof handle.release === 'function'
-              ? (handle.release as () => Promise<void>).bind(handle)
+              ? ((handle.release as ReleaseMethod).bind(handle) as ReleaseMethod)
               : undefined;
 
           webLockHandles.set(ctx.leaseId, {
             release: async () => {
               if (releaseInvoked) return;
               releaseInvoked = true;
-              releaseDeferred.resolve();
+              let releaseFailure: ProjectLockError | undefined;
               if (releaseMethod) {
                 try {
                   await releaseMethod();
                 } catch (error) {
-                  if (!releaseError) {
-                    releaseError =
-                      error instanceof ProjectLockError
-                        ? error.operation === 'release'
-                          ? error
-                          : makeError(
-                              'release-failed',
-                              'Web Lock release invocation failed',
-                              'release',
-                              error.retryable,
-                              error,
-                            )
-                        : makeError('release-failed', 'Web Lock release invocation failed', 'release', true, error);
-                  }
+                  releaseFailure = toReleaseProjectError(error);
+                  if (!releaseError) releaseError = releaseFailure;
                 }
               }
-              await Promise.all([requestSettled, releaseMonitor]);
-              if (releaseError) throw releaseError;
+              releaseDeferred.resolve();
+              await completionDeferred.promise;
+              await requestSettled;
+              const errorToThrow = releaseFailure ?? releaseError;
+              if (errorToThrow) throw errorToThrow;
             },
           });
 

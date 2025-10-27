@@ -405,4 +405,5 @@ test('AS-LK-03: Web Lock は release() まで request が解決せず、lock.rel
     false,
     'fallback events must not fire for Web Lock strategy'
   )
+  assert.equal(releaseMock.mock.calls.length, 1, 'lock.release must be called exactly once overall')
 })
