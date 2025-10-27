@@ -67,9 +67,20 @@ export const createInitialDiffMergeState = (hunks: readonly MergeHunk[]): DiffMe
 
 export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction): DiffMergeState => {
   if (action.type === 'syncHunks') {
+    const nextEntries = action.hunks.map((hunk) => {
+      const previous = state.hunkStates[hunk.id]
+      const nextStatus: DiffMergeHunkStatus = previous ?? 'Unreviewed'
+      return [hunk.id, nextStatus] as const
+    })
+    const hunkStates = Object.fromEntries(nextEntries) as Record<string, DiffMergeHunkStatus>
+    const editingHunkId =
+      state.editingHunkId !== null && Object.prototype.hasOwnProperty.call(hunkStates, state.editingHunkId)
+        ? state.editingHunkId
+        : null
+    // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の「型安全・最小差分・TDD」に従い、既知ハンクのみ状態を保持し未知ハンクを初期化する。
     return {
-      hunkStates: buildHunkStateMap(action.hunks),
-      editingHunkId: null,
+      hunkStates,
+      editingHunkId,
     }
   }
   if (action.type === 'resetMany') {

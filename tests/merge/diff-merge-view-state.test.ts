@@ -145,6 +145,33 @@ test('syncHunks resets selection and queues latest hunks', async () => {
   assert.equal(state.hunkStates.h3, 'Merged')
 })
 
+test('syncHunks retains known selection and editing when new hunks arrive', () => {
+  // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の「型安全・最小差分・TDD」を踏まえ、
+  // 既存ハンク選択・編集状態を保ったまま新規ハンクを初期化することを確認する。
+  const h = harness()
+
+  h.dispatch({ type: 'toggleSelect', hunkId: 'h1' })
+  assert.equal(h.state().hunkStates.h1, 'Selected')
+
+  const synced = [createMergeHunk('h1'), createMergeHunk('h2')]
+  h.dispatch({ type: 'syncHunks', hunks: synced })
+
+  assert.equal(h.state().hunkStates.h1, 'Selected')
+  assert.equal(h.state().hunkStates.h2, 'Unreviewed')
+  assert.equal(h.state().editingHunkId, null)
+
+  h.dispatch({ type: 'openEditor', hunkId: 'h1' })
+  assert.equal(h.state().editingHunkId, 'h1')
+  assert.equal(h.state().hunkStates.h1, 'Editing')
+
+  const extended = [createMergeHunk('h1'), createMergeHunk('h2'), createMergeHunk('h3')]
+  h.dispatch({ type: 'syncHunks', hunks: extended })
+
+  assert.equal(h.state().hunkStates.h1, 'Editing')
+  assert.equal(h.state().editingHunkId, 'h1')
+  assert.equal(h.state().hunkStates.h3, 'Unreviewed')
+})
+
 test('openEditor/commitEdit', () => {
   const h = harness()
   h.controller.openEditor('h1')
