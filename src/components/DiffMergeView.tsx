@@ -9,6 +9,8 @@ import {
   type DiffMergeState,
 } from './diffMergeState.js'
 
+export { createDiffMergeController } from './diffMergeState.js'
+
 const isDevelopmentEnvironment = (): boolean => {
   const meta =
     typeof import.meta !== 'undefined'
@@ -201,6 +203,35 @@ export const resolveDiffMergeStoredTab = ({
   return resolved
 }
 
+export interface DiffMergeNavigationKeyHandlerOptions {
+  readonly tabs: readonly DiffMergeSubTabKey[]
+  readonly resolveActive: () => DiffMergeSubTabKey
+  readonly onSelect: (key: DiffMergeSubTabKey) => void
+}
+
+export const createDiffMergeNavigationKeyHandler = ({
+  tabs,
+  resolveActive,
+  onSelect,
+}: DiffMergeNavigationKeyHandlerOptions): React.KeyboardEventHandler<HTMLElement> => {
+  const ordered = tabs.slice()
+  return (event) => {
+    const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+    if (direction === 0 || ordered.length === 0) {
+      return
+    }
+    event.preventDefault()
+    const active = resolveActive()
+    const currentIndex = ordered.findIndex((tab) => tab === active)
+    const fallbackIndex = currentIndex >= 0 ? currentIndex : 0
+    const nextIndex = (fallbackIndex + direction + ordered.length) % ordered.length
+    const next = ordered[nextIndex] ?? ordered[0]
+    if (next !== active) {
+      onSelect(next)
+    }
+  }
+}
+
 const flowDiagrams = Object.freeze<Record<MergePrecision, string>>({
   legacy: 'mermaid\nstateDiagram-v2\n  [*] --> Review\n  Review --> Review: toggle-select | mark-skipped\n  Review --> Review: override | reopen\n  Review --> [*]: queue-merge\n',
   beta: 'mermaid\nstateDiagram-v2\n  [*] --> Review\n  Review --> Merged: queue-merge\n  Review --> Edit: open-editor\n  Edit --> Review: commit-edit\n  Edit --> Review: cancel-edit\n  Merged --> Review: reopen | queue-result-conflict | queue-result-error\n  Merged --> Done: queue-result-success\n  Done --> Review: reopen\n  Review --> Diff: select-tab(diff)\n  Diff --> Review: select-tab(review)\n',
@@ -248,6 +279,7 @@ interface DiffMergeNavigationProps {
   readonly tabs: DiffMergeViewPlan['tabs']
   readonly activeTab: DiffMergeSubTabKey
   readonly onSelect: (key: DiffMergeSubTabKey) => void
+  readonly onKeyDown: React.KeyboardEventHandler<HTMLElement>
 }
 
 const DiffMergeNavigation: React.FC<DiffMergeNavigationProps> = ({
@@ -256,8 +288,16 @@ const DiffMergeNavigation: React.FC<DiffMergeNavigationProps> = ({
   tabs,
   activeTab,
   onSelect,
+  onKeyDown,
 }) => (
-  <nav role="tablist" data-block="navigation" data-precision={precision} data-navigation-badge={navigationBadge ?? undefined}>
+  <nav
+    role="tablist"
+    data-block="navigation"
+    data-precision={precision}
+    data-navigation-badge={navigationBadge ?? undefined}
+    aria-keyshortcuts="ArrowLeft ArrowRight"
+    onKeyDown={onKeyDown}
+  >
     {tabs.map((tab) => {
       const badge = tab.badge ? <span data-badge={tab.badge}>{tab.badge.toUpperCase()}</span> : null
       return (
@@ -475,6 +515,16 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
 
   const planTabs = plan.tabs
   const planNavigationBadge = plan.navigationBadge
+  const planTabKeys = useMemo(() => planTabs.map((tab) => tab.key), [planTabs])
+  const handleNavigationKeyDown = useMemo(
+    () =>
+      createDiffMergeNavigationKeyHandler({
+        tabs: planTabKeys,
+        resolveActive: () => activeTab,
+        onSelect: handleSelectTab,
+      }),
+    [activeTab, handleSelectTab, planTabKeys],
+  )
   const navigation = useMemo(
     () => (
       <DiffMergeNavigation
@@ -483,9 +533,10 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
         tabs={planTabs}
         activeTab={activeTab}
         onSelect={handleSelectTab}
+        onKeyDown={handleNavigationKeyDown}
       />
     ),
-    [activeTab, handleSelectTab, planNavigationBadge, planTabs, precision],
+    [activeTab, handleNavigationKeyDown, handleSelectTab, planNavigationBadge, planTabs, precision],
   )
 
   const isHunkListVisible = activeLayout.panes.includes('hunk-list')
