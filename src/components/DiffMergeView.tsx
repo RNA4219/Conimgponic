@@ -335,6 +335,7 @@ const DiffMergeOperationPane: React.FC<DiffMergeOperationPaneProps> = ({
 }) => {
   if (!visible) return null
   const queueHunksJson = JSON.stringify(queueHunkIds)
+  const hasQueueHunks = queueHunkIds.length > 0
   return (
     <section data-block="operation-pane" data-testid="diff-merge-operation-pane" data-visible={selectedCount > 0 ? 'true' : 'false'}>
       <button
@@ -342,7 +343,11 @@ const DiffMergeOperationPane: React.FC<DiffMergeOperationPaneProps> = ({
         data-testid="diff-merge-queue-selected"
         data-command="queue-merge"
         data-hunks={queueHunksJson}
+        disabled={!hasQueueHunks}
         onClick={() => {
+          if (!hasQueueHunks) {
+            return
+          }
           void controller.queueMerge(queueHunkIds)
         }}
       >
@@ -432,10 +437,18 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
     return instance
   }, [activeTab, precision, dispatch, queueMergeCommand, getCurrentHunkIds, autoApplied])
   const activeLayout = useMemo(() => plan.tabs.find((tab) => tab.key === activeTab) ?? plan.tabs[0]!, [plan, activeTab])
-  const selectedHunkIds = useMemo(() => Object.entries(state.hunkStates).filter(([, status]) => status === 'Selected' || status === 'Editing').map(([id]) => id), [state.hunkStates])
+  const selectedHunkIds = useMemo(
+    () =>
+      Object.entries(state.hunkStates)
+        .filter(([, status]) => status === 'Selected' || status === 'Editing')
+        .map(([id]) => id),
+    [state.hunkStates],
+  )
   const selectedHunkCount = selectedHunkIds.length
-  const queueCandidateIds = selectedHunkCount > 0 ? selectedHunkIds : knownHunkIds
-  const queueHunkIds = useMemo(() => retainKnownHunkIds(queueCandidateIds, knownHunkIds), [queueCandidateIds, knownHunkIds])
+  const queueHunkIds = useMemo(
+    () => retainKnownHunkIds(selectedHunkIds, knownHunkIds),
+    [selectedHunkIds, knownHunkIds],
+  )
   const editingHunkId = state.editingHunkId
   const editingHunk = editingHunkId ? hunks.find((hunk) => hunk.id === editingHunkId) : undefined
 

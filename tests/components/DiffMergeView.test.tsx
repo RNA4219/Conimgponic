@@ -53,7 +53,8 @@ test('beta precision surfaces queueMergeCommand action payloads', () => {
   const html = render('beta')
   assert.match(html, /data-testid="diff-merge-queue-selected"/)
   assert.match(html, /data-command="queue-merge"/)
-  assert.match(html, /data-hunks="\[&quot;h1&quot;\]"/)
+  assert.match(html, /data-hunks="\[\]"/)
+  assert.match(html, /data-testid="diff-merge-queue-selected"[\s\S]*?disabled/)
 })
 
 test('beta precision renders uniform layout sections', () => {
