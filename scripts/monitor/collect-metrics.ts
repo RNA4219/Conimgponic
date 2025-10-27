@@ -559,7 +559,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       'phase',
       'schema',
       'event',
-      'attempt',
+      'retryCount',
       'maxAttempts',
       'backoffMs',
     ],
@@ -571,7 +571,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.state',
           'payload.debounce_ms',
           'payload.latency_ms',
-          'payload.attempt',
+          'payload.retryCount',
           'payload.phase_step',
           'payload.guard.current',
           'payload.guard.rollbackTo'

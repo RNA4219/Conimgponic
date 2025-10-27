@@ -9,7 +9,8 @@ import {
   type AutoSavePhaseGuardSnapshot,
   type AutoSaveSnapshotRequestMessage,
   type AutoSaveSnapshotResultMessage,
-  type AutoSaveStatusMessage
+  type AutoSaveStatusMessage,
+  type AutoSaveStatusState
 } from '../../src/lib/autosave'
 import { resolveFlags } from '../../src/config'
 import {
@@ -445,6 +446,73 @@ describe('createVscodeAutoSaveBridge', () => {
     expectPhases(savedEvent, { before: 'awaiting-lock', after: 'idle', lock: 'web-lock' })
   })
 
+  it('autosave.status telemetry includes retryCount for all states', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    let tick = 0
+    const retryableError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'retryable failure',
+      code: 'write-failed',
+      retryable: true
+    }
+    const atomicWriteResults: AutoSaveAtomicWriteResult[] = [
+      { ok: false, error: retryableError },
+      {
+        ok: true,
+        bytes: 1024,
+        generation: 2,
+        lastSuccessAt: new Date('2024-01-01T00:00:05.000Z').toISOString(),
+        lockStrategy: 'web-lock'
+      }
+    ]
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => {
+        const ts = new Date('2024-01-01T00:00:00.000Z')
+        ts.setMilliseconds(tick * 250)
+        tick += 1
+        return ts
+      },
+      sendMessage: () => {},
+      atomicWrite: async () => {
+        const next = atomicWriteResults.shift()
+        if (!next) {
+          throw new Error('unexpected atomicWrite invocation')
+        }
+        return next
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(1024, guardReadonly)
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-retry', 'corr-retry', guardEnabled, 1024, 1)
+    )
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-success', 'corr-success', guardEnabled, 1024, 2)
+    )
+
+    const expectRetryCount = (state: AutoSaveStatusState): void => {
+      const events = telemetry.filter(
+        (event) => event.name === 'autosave.status' && event.properties?.state === state
+      )
+      assert.ok(events.length > 0, `${state} telemetry should exist`)
+      for (const event of events) {
+        assert.equal(
+          typeof event.properties?.retryCount,
+          'number',
+          `${state} telemetry should include retryCount`
+        )
+      }
+    }
+
+    ;(['disabled', 'dirty', 'saving', 'backoff', 'saved'] as const).forEach(expectRetryCount)
+  })
+
   it('enforces history max generations and size limit', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const bridge = createVscodeAutoSaveBridge({
@@ -527,7 +595,7 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(snapshotTelemetry.properties?.retryable, true)
     assert.equal(snapshotTelemetry.properties?.code, 'write-failed')
     assert.equal(snapshotTelemetry.properties?.phaseAfter, 'backoff')
-    assert.equal(snapshotTelemetry.properties?.attempt, 1)
+    assert.equal(snapshotTelemetry.properties?.retryCount, 1)
 
     const statusTelemetry = telemetry.filter(
       (event) => event.name === 'autosave.status' && event.properties?.correlationId === 'corr-throw'

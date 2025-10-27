@@ -85,7 +85,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'phase',
       'schema',
       'event',
-      'attempt',
+      'retryCount',
       'maxAttempts',
       'backoffMs',
     ])
@@ -103,7 +103,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'phase',
       'schema',
       'event',
-      'attempt',
+      'retryCount',
       'maxAttempts',
       'backoffMs',
       'payload',
@@ -118,7 +118,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.state',
       'payload.debounce_ms',
       'payload.latency_ms',
-      'payload.attempt',
+      'payload.retryCount',
       'payload.phase_step',
       'payload.guard.current',
       'payload.guard.rollbackTo'
@@ -172,7 +172,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'variant',
       'source',
       'phase',
-      'evaluation_ms'
+      'evaluation_ms',
+      'threshold'
     ])
     assertOk(
       payloadSchema.properties,
@@ -180,7 +181,11 @@ describe('vscode extension telemetry contract (RED)', () => {
     )
     const phaseSchema = payloadSchema.properties.phase
     assertOk(phaseSchema, 'flag_resolution payload schema must define phase')
-    assertOk(phaseSchema.enum, 'flag_resolution phase must define enum')
+    if ('$ref' in phaseSchema) {
+      deepStrictEqual(phaseSchema.$ref, '#/definitions/rolloutPhase')
+    } else {
+      assertOk(phaseSchema.enum, 'flag_resolution phase must define enum')
+    }
 
     const captured: Day8CollectorFlagResolutionEvent[] = []
     const scope = globalThis as { Day8Collector?: Day8Collector }
@@ -208,7 +213,10 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(captured.length > 0, 'flag_resolution telemetry must be published')
     const [event] = captured
     assertOk(event, 'flag_resolution event must be captured')
-    const allowedPhases = new Set(phaseSchema.enum)
+    const allowedPhases =
+      'enum' in phaseSchema && Array.isArray(phaseSchema.enum)
+        ? new Set(phaseSchema.enum)
+        : new Set(['A-0', 'A-1', 'A-2', 'B-0', 'B-1'])
     assertOk(
       allowedPhases.has(event.payload.phase),
       `flag_resolution payload.phase must be one of ${Array.from(allowedPhases).join(', ')}`
@@ -243,7 +251,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'state',
       'debounce_ms',
       'latency_ms',
-      'attempt',
+      'retryCount',
       'phase_step',
       'guard'
     ])
