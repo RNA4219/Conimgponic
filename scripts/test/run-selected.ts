@@ -255,6 +255,26 @@ export function sanitizeArgs(
       continue;
     }
 
+    if (arg === '--reporter') {
+      sanitized.push('--test-reporter');
+      continue;
+    }
+
+    if (arg.startsWith('--reporter=')) {
+      sanitized.push(`--test-reporter${arg.slice('--reporter'.length)}`);
+      continue;
+    }
+
+    if (arg === '--reporter-destination') {
+      sanitized.push('--test-reporter-destination');
+      continue;
+    }
+
+    if (arg.startsWith('--reporter-destination=')) {
+      sanitized.push(`--test-reporter-destination${arg.slice('--reporter-destination'.length)}`);
+      continue;
+    }
+
     if (arg === TEST_COVERAGE_FLAG && !coverageSupported) {
       continue;
     }

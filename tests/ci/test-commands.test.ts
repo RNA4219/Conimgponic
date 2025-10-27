@@ -229,6 +229,32 @@ test('run-selected strips unsupported coverage flag', async () => {
   }
 });
 
+test('run-selected normalizes reporter flags for node test CLI', async () => {
+  const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
+  process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
+
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const { sanitizeArgs } = await import(moduleUrl);
+
+  try {
+    assert.deepStrictEqual(sanitizeArgs(['--reporter', 'tap']), ['--test-reporter', 'tap']);
+    assert.deepStrictEqual(
+      sanitizeArgs(['--reporter=tap', '--reporter-destination=file=out.tap']),
+      ['--test-reporter=tap', '--test-reporter-destination=file=out.tap'],
+    );
+    assert.deepStrictEqual(
+      sanitizeArgs(['--reporter-destination', 'file=out.tap']),
+      ['--test-reporter-destination', 'file=out.tap'],
+    );
+  } finally {
+    if (originalValue === undefined) {
+      delete process.env.RUN_SELECTED_SKIP_AUTORUN;
+    } else {
+      process.env.RUN_SELECTED_SKIP_AUTORUN = originalValue;
+    }
+  }
+});
+
 test('run-selected removes filter flag before invoking node', async () => {
   const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
   process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
