@@ -386,6 +386,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   let releaseInvoked = false;
   let releaseError: ProjectLockError | undefined;
   let releasedPromise: Promise<unknown> | undefined;
+  let requestOutcome!: Promise<unknown>;
   const captureCompletionError = (error: unknown) => {
     if (releaseError) return;
     releaseError =
@@ -418,13 +419,8 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
     }
   };
 
-  const releaseMonitor = releaseDeferred.promise.then(async () => {
+  const releaseMonitor: Promise<void> = releaseDeferred.promise.then(async () => {
     await awaitReleased(releasedPromise);
-    try {
-      await completionDeferred.promise;
-    } catch (error) {
-      captureCompletionError(error);
-    }
   });
 
   const toReleaseProjectError = (error: unknown): ProjectLockError =>
@@ -432,18 +428,8 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
       ? error
       : makeError('release-failed', 'Web Lock release invocation failed', 'release', true, error);
 
-  releaseDeferred.promise
-    .then(async () => {
-      await awaitReleased(releasedPromise);
-      await requestSettled;
-    })
-    .then(
-      () => completionDeferred.resolve(),
-      (error) => completionDeferred.reject(error),
-    );
-
   try {
-    const requestOutcome: Promise<unknown> = locks
+    requestOutcome = locks
       .request(
         WEB_LOCK_KEY,
         { mode: 'exclusive', signal: ctx.signal },
@@ -524,6 +510,19 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
         if (!completionDeferred.isSettled()) completionDeferred.reject(projectError);
         throw projectError;
       });
+    releaseMonitor
+      .then(async () => {
+        try {
+          await requestOutcome;
+        } catch (error) {
+          captureCompletionError(error);
+          throw error;
+        }
+      })
+      .then(
+        () => completionDeferred.resolve(),
+        (error) => completionDeferred.reject(error),
+      );
     requestOutcome.catch(() => undefined);
   } catch (cause) {
     const projectError =

@@ -103,8 +103,8 @@ scenario(
     })
 
     const telemetry: TelemetrySnapshot = []
-    const { sequence, unsubscribe } = collectLockSequence(telemetry)
-    t.after(unsubscribe)
+    const { sequence, unsubscribe: unsubscribeSequence } = collectLockSequence(telemetry)
+    t.after(unsubscribeSequence)
 
     const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock' })
     await projectLockApi.release(lease)
@@ -236,6 +236,10 @@ scenario(
       return value
     })
 
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe: unsubscribeSequence } = collectLockSequence(telemetry)
+    t.after(unsubscribeSequence)
+
     const events: ProjectLockEvent[] = []
     const unsubscribe = projectLockEvents.subscribe((event) => {
       events.push(event)
@@ -253,7 +257,7 @@ scenario(
       })
     ])
     assert.equal(outcome, 'released')
-    await releasePromise
+    await assert.doesNotReject(async () => releasePromise)
 
     const releasedEvent = events.find(
       (event): event is Extract<ProjectLockEvent, { type: 'lock:released' }> => event.type === 'lock:released'
@@ -262,6 +266,9 @@ scenario(
       assert.fail('lock:released not emitted')
     }
     assert.equal(releasedEvent.leaseId, lease.leaseId)
+
+    assert.deepEqual(sequence, ['attempt:web-lock', 'acquired:web-lock', 'released'])
+    assert.deepEqual(telemetry, [])
   }
 )
 
