@@ -349,6 +349,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.phase',
       'payload.collisions',
       'payload.processing_ms',
+      'payload.digest',
       'payload.guardrail.metric',
       'payload.guardrail.observed',
       'payload.guardrail.tolerance_pct',

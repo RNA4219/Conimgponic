@@ -615,6 +615,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.phase',
           'payload.collisions',
           'payload.processing_ms',
+          'payload.digest',
           'payload.guardrail.metric',
           'payload.guardrail.observed',
           'payload.guardrail.tolerance_pct',
