@@ -504,7 +504,10 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
 
   const handleSnapshotRequest = async (request: AutoSaveSnapshotRequestMessage): Promise<void> => {
     const statusBeforeRequest = state.status
-    state.guard = request.payload.guard
+    const incomingGuard = request.payload.guard
+    state.guard = state.guard.optionsDisabled
+      ? { featureFlag: incomingGuard.featureFlag, optionsDisabled: true }
+      : incomingGuard
     const ts = toIso(options.now())
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
