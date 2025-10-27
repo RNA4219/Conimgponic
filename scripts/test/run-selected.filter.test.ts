@@ -5,18 +5,14 @@ import assert from 'node:assert/strict';
 import type { ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { resolveTsxRegisterArgs } from './run-selected.ts';
+
 type SpawnFn = typeof import('node:child_process')['spawn'];
 type RunSelectedModule = typeof import('./run-selected.js');
 
 const moduleTsUrl = new URL('./run-selected.ts', import.meta.url);
 const moduleJsUrl = new URL('./run-selected.js', import.meta.url);
-const NODE_BASE_ARGS = [
-  '--experimental-vm-modules',
-  '--loader',
-  'ts-node/esm',
-  '--experimental-specifier-resolution=node',
-  '--test',
-] as const;
+const NODE_BASE_ARGS = [...resolveTsxRegisterArgs(), '--test', '--test-timeout=30000'] as const;
 
 test('runSelected resolves autosave filter in autorun scenario', async () => {
   const module = await importRunSelectedModule();

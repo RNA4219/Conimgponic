@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { resolveTsxRegisterArgs } from '../../scripts/test/run-selected.ts';
+
 const packageJsonPath = fileURLToPath(new URL('../../package.json', import.meta.url));
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
   scripts?: Record<string, string>;
@@ -16,13 +18,7 @@ const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
 const ensureCommand =
   "node --input-type=module --eval \"import { mkdirSync } from 'node:fs'; const dir = process.argv.at(-1); if (!dir) throw new Error('missing dir'); mkdirSync(dir, { recursive: true });\"";
 
-const NODE_BASE_ARGS = [
-  '--experimental-vm-modules',
-  '--loader',
-  'ts-node/esm',
-  '--experimental-specifier-resolution=node',
-  '--test',
-] as const;
+const NODE_BASE_ARGS = [...resolveTsxRegisterArgs(), '--test', '--test-timeout=30000'] as const;
 
 const resolveScript = (name: string): string => {
   const scripts = packageJson.scripts;

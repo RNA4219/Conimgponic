@@ -6,8 +6,13 @@ import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-type SpawnFn = typeof import('node:child_process')['spawn']; type RunSelectedModule = typeof import('../../scripts/test/run-selected.js')
-const scriptUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url), repoRoot = fileURLToPath(new URL('../..', import.meta.url)), BASE_ARGS = ['--loader', 'ts-node/esm', '--test'] as const
+import { resolveTsxRegisterArgs } from '../../scripts/test/run-selected.ts'
+
+type SpawnFn = typeof import('node:child_process')['spawn']
+type RunSelectedModule = typeof import('../../scripts/test/run-selected.ts')
+const scriptUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url)
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
+const BASE_ARGS = [...resolveTsxRegisterArgs(), '--test', '--test-timeout=30000'] as const
 
 const createChildProcess = (): ChildProcess => {
   const stub: Partial<ChildProcess> = {}
@@ -48,7 +53,7 @@ test('autoruns via CLI when RUN_SELECTED_SKIP_AUTORUN is unset', () => {
   assert.equal(status, 0)
   const recorded = readArgs() ?? []
   assert.ok(recorded.length > 0)
-  assert.deepEqual(recorded.slice(0, 3), BASE_ARGS)
+  assert.deepEqual(recorded.slice(0, BASE_ARGS.length), BASE_ARGS)
 })
 
 test('RUN_SELECTED_SKIP_AUTORUN=1 keeps CI filter flows manual', async (t) => {
@@ -73,7 +78,7 @@ test('RUN_SELECTED_SKIP_AUTORUN=1 keeps CI filter flows manual', async (t) => {
         runSelected(['--filter', filter, '--test-name-pattern=__noop__'], spawnStub)
         assert.equal(spawnCalls.length, 1)
         const [, nodeArgs] = spawnCalls.pop()!
-        assert.deepEqual(nodeArgs.slice(0, 3), BASE_ARGS)
+        assert.deepEqual(nodeArgs.slice(0, BASE_ARGS.length), BASE_ARGS)
         const sanitizedIndex = nodeArgs.indexOf('--test-name-pattern=__noop__')
         assert.notEqual(sanitizedIndex, -1)
         const forwarded = nodeArgs.slice(sanitizedIndex + 1)

@@ -13,6 +13,36 @@ const DEFAULT_TEST_GLOBS = [
 ] as const;
 const TEST_COVERAGE_FLAG = '--test-coverage';
 const TEST_COVERAGE_MINIMUM_MAJOR_VERSION = 22;
+
+type TsxRegisterArgs = readonly [string, string];
+
+export function resolveTsxRegisterArgs(nodeVersion: string = process.versions.node): TsxRegisterArgs {
+  const [majorToken = '0', minorToken = '0'] = nodeVersion.split('.', 3);
+  const major = Number.parseInt(majorToken, 10);
+  const minor = Number.parseInt(minorToken, 10);
+
+  if (Number.isNaN(major) || Number.isNaN(minor)) {
+    return ['--loader', 'tsx'];
+  }
+
+  if (major > 20) {
+    return ['--import', 'tsx'];
+  }
+
+  if (major === 20) {
+    return minor >= 6 ? ['--import', 'tsx'] : ['--loader', 'tsx'];
+  }
+
+  if (major > 18) {
+    return ['--import', 'tsx'];
+  }
+
+  if (major === 18 && minor >= 19) {
+    return ['--import', 'tsx'];
+  }
+
+  return ['--loader', 'tsx'];
+}
 const FILTER_TARGETS: Record<string, readonly string[]> = {
   autosave: [
     'tests/app/autosave.*.test.ts',
@@ -190,7 +220,7 @@ export function buildNodeArgs(
   targets: readonly string[],
   defaultTargets: readonly string[],
 ): string[] {
-  const baseArgs = ['--loader', 'tsx', '--test', '--test-timeout=30000'];
+  const baseArgs = [...resolveTsxRegisterArgs(), '--test', '--test-timeout=30000'];
   const sanitizedArgs = sanitizeArgs(args);
 
   if (targets.length > 0) {
