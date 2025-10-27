@@ -170,7 +170,7 @@ scenario(
       configurable: true
     })
     const workspace = {
-      get(key: string){ return key === 'conimg.autosave.enabled' ? false : undefined }
+      get(key: string){ return key === 'autosave.enabled' ? false : undefined }
     }
     const originalWorkspace = Object.getOwnPropertyDescriptor(globalThis, '__AUTOSAVE_WORKSPACE__')
     Object.defineProperty(globalThis, '__AUTOSAVE_WORKSPACE__', {
