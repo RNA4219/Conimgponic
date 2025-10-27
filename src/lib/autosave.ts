@@ -29,6 +29,7 @@ export interface AutoSaveOptions {
 }
 
 type AssertTrue<T extends true> = T
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _AutoSaveOptionsPolicyInvariant = AssertTrue<
   AutoSaveOptions extends { readonly policy?: unknown } ? false : true
 >
@@ -94,6 +95,7 @@ type AutoSavePolicyResolutionInput =
 export const resolveAutoSavePolicy = (
   _input?: AutoSavePolicyResolutionInput
 ): AutoSavePolicy => {
+  void _input
   // Phase A: 保存ポリシーは固定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 および
   // `docs/IMPLEMENTATION-PLAN.md` §0.4 の要件に合わせ、入力に関わらず
   // `AUTOSAVE_POLICY` をそのまま返却する。
