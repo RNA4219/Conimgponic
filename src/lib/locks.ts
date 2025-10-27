@@ -383,6 +383,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   const ready = createDeferred();
   const releaseDeferred = createDeferred();
   const completionDeferred = createDeferred();
+  let requestSettled!: Promise<void>;
   let releaseInvoked = false;
   let releaseError: ProjectLockError | undefined;
   let releasedPromise: Promise<unknown> | undefined;
@@ -519,7 +520,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
           completionDeferred.reject(error);
         },
       );
-    requestSettled.catch(() => undefined);
+    requestOutcome.catch(() => undefined);
   } catch (cause) {
     const projectError =
       cause instanceof ProjectLockError
