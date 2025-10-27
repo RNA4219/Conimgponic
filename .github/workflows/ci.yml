@@ -304,6 +304,7 @@ jobs:
               - '.github/workflows/autosave*'
               - 'tests/**/*autosave*.test.ts'
               - 'tests/**/*autosave*.spec.ts'
+              - 'tests/extensions/vscode/flags-handshake.spec.ts'
 
       - name: Determine autosave execution
         if: matrix.suite == 'autosave'
