@@ -174,6 +174,28 @@ test('resolveDiffMergeStoredTab persists plan initial tab when fallback is not p
   assert.deepEqual(events, [`remove:${key}`, `set:${key}:${plan.initialTab}`])
 })
 
+test('resolveDiffMergeStoredTab ignores storage persistence errors while keeping selection', () => {
+  const precision = 'stable' as const
+  const plan = planDiffMergeView(precision)
+  const key = storageKeyFor(precision)
+  const events: string[] = []
+  const storage: DiffMergeTabStorage = {
+    getItem: () => 'summary',
+    setItem: () => {
+      events.push(`set:${key}:diff`)
+      throw new Error('persist-failed')
+    },
+    removeItem: (target) => {
+      events.push(`remove:${target}`)
+    },
+  }
+
+  const resolved = resolveDiffMergeStoredTab({ plan, precision, storage, fallback: plan.initialTab })
+
+  assert.equal(resolved, plan.initialTab)
+  assert.deepEqual(events, [`remove:${key}`, `set:${key}:diff`])
+})
+
 test('DiffMergeView queue telemetry captures the active tab selection', async () => {
   type DiffMergeController = ReturnType<typeof createDiffMergeController>
   const storageKey = storageKeyFor('stable')
