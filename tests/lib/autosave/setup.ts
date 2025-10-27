@@ -153,11 +153,24 @@ export const createOpfs = (): OpfsMock => {
   return { files, storage: { async getDirectory(){ return makeDir('') } } }
 }
 
-type AutoSaveTestModule = AutoSaveModule & { opfs: OpfsMock }
+type AutoSaveTestModule = AutoSaveModule & {
+  opfs: OpfsMock
+  collectorEvents: Array<Record<string, unknown>>
+}
 
 export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Promise<AutoSaveTestModule> => {
   cache.clear()
   const opfs = createOpfs()
+  const collectorEvents: Array<Record<string, unknown>> = []
+  const collectorScope = globalThis as {
+    Day8Collector?: { publish?: (event: Record<string, unknown>) => void }
+  }
+  const previousCollector = collectorScope.Day8Collector
+  collectorScope.Day8Collector = {
+    publish(event: Record<string, unknown>) {
+      collectorEvents.push(event)
+    }
+  }
   const navigatorValue = {
     storage: opfs.storage,
     locks: {
@@ -175,6 +188,13 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
     ...overrides.navigator
   }
   Object.defineProperty(globalThis, 'navigator', { value: navigatorValue, configurable: true })
+  t.after(() => {
+    if (previousCollector === undefined) {
+      delete collectorScope.Day8Collector
+    } else {
+      collectorScope.Day8Collector = previousCollector
+    }
+  })
   const runners: AutoSaveInitResult[] = []
   t.after(async () => {
     const registered = runners.splice(0)
@@ -193,7 +213,7 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
     runners.push(runner)
     return runner
   }
-  return { ...module, initAutoSave, opfs }
+  return { ...module, initAutoSave, opfs, collectorEvents }
 }
 
 type ScenarioContext = Awaited<ReturnType<typeof setup>>
