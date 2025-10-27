@@ -28,6 +28,7 @@ DiffMerge の編集モード中に `queueMerge` / `queueResult` が発火した�
 - Behavior:
   - 編集モード (`editingHunkId`) がセットされた状態で `queueMerge` または `queueResult` が対象ハンクを処理するとき、`editingHunkId` は `null` に戻ること。
   - Guardrails（Day8/workflow-cookbook/GUARDRAILS.md）の「型安全・最小差分・TDD」を遵守し、先に赤テストを追加すること。
+  - `cancelEdit` アクションで編集中ハンクが `'Unreviewed'` に戻り、`editingHunkId` が `null` へ遷移する idle ケースをテストで確認すること。
 - Constraints:
   - 既存 reducer シグネチャを変更しない。
   - 対象ハンクの判定は既存の known hunk フロー (`retainKnownHunkIds`) を活用する。
@@ -55,8 +56,9 @@ pnpm test -- --filter diff-merge-view-state
 ## Plan
 
 1. `tests/merge/diff-merge-view-state.test.ts` に編集モード中の `queueMerge` / `queueResult` が `editingHunkId` を `null` にする赤テストを Day8/docs/TASKS.md に沿って追加する。
-2. `diffMergeReducer` の `queueMerge` / `queueResult` 分岐で対象ハンクを検出し、Guardrails の「型安全・最小差分・TDD」を引用したコメントを添えて `editingHunkId` を `null` にする実装を追加する。
-3. `pnpm test -- --filter diff-merge-view-state` を実行し、緑化ログを Tests セクションに記録する。
+2. 同テストファイルへ `cancelEdit` の idle 遷移を確認する赤テストを追記し、Day8/workflow-cookbook/HUB.codex.md のタスク分割フローを踏まえた検証観点を固める。
+3. `diffMergeReducer` の `queueMerge` / `queueResult` 分岐で対象ハンクを検出し、Guardrails の「型安全・最小差分・TDD」を引用したコメントを添えて `editingHunkId` を `null` にする実装を追加する。
+4. `pnpm test -- --filter diff-merge-view-state` を実行し、緑化ログを Tests セクションに記録する。
 
 ## Patch
 
@@ -64,15 +66,17 @@ pnpm test -- --filter diff-merge-view-state
 
 ## Tests
 
-- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（緑）
+- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（初回・緑）
 - 2025-10-31: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`（緑）
 - 2025-10-31: `pnpm test -- --filter diff-merge-view-state`（`ts-node/esm` が `.tsx` を解決できず失敗）
+- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（再実行・緑）
 
 ## Commands
 
-- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`
+- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（初回）
 - 2025-10-31: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`
 - 2025-10-31: `pnpm test -- --filter diff-merge-view-state`
+- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（再実行）
 
 ## Notes
 
