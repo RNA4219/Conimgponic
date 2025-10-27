@@ -30,3 +30,4 @@ next_review_due: 2025-11-14
 
 - 命名・ディレクトリ整備
 - ドキュメント差分反映
+- [ ] DiffMerge 編集モード中の queue 操作で `editingHunkId` が `null` に戻るテスト（`tests/merge/diff-merge-view-state.test.ts`）の結果を確認し、`pnpm test -- --filter diff-merge-view-state` の成功ログを添付

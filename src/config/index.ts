@@ -87,6 +87,7 @@ const toFlagPayload = (
   const retryable = errors.some((error) => error.retryable)
   const status: FlagResolutionEventPayload['status'] =
     errors.length === 0 ? 'success' : 'failure'
+  const defaultUsed = source === 'default'
 
   return {
     flag,
@@ -97,7 +98,7 @@ const toFlagPayload = (
     errors,
     threshold: options?.threshold ?? null,
     status,
-    detail: { retryable }
+    detail: { retryable, default_used: defaultUsed }
   }
 }
 

@@ -432,6 +432,16 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
       ? error
       : makeError('release-failed', 'Web Lock release invocation failed', 'release', true, error);
 
+  releaseDeferred.promise
+    .then(async () => {
+      await awaitReleased(releasedPromise);
+      await requestSettled;
+    })
+    .then(
+      () => completionDeferred.resolve(),
+      (error) => completionDeferred.reject(error),
+    );
+
   try {
     const requestOutcome: Promise<unknown> = locks
       .request(
