@@ -114,6 +114,15 @@ const expectedPnpmAuditStepId = 'pnpm_audit';
 const expectedPnpmAuditExitCodeExport = 'echo "exit_code=$status" >> "$GITHUB_OUTPUT"';
 const expectedAuditFailureStepName = 'Fail when pnpm audit reports vulnerabilities';
 const expectedAuditFailureCondition = "steps.pnpm_audit.outputs.exit_code != '0'";
+const expectedAuditFailureExitCommand = 'exit "${{ steps.pnpm_audit.outputs.exit_code }}"';
+const expectedPnpmAuditRunLines = [
+  'set -euo pipefail',
+  'set +e',
+  expectedAuditReportRedirection,
+  'status=$?',
+  'set -e',
+  expectedPnpmAuditExitCodeExport,
+];
 
 const { load } = await importJsYaml();
 
@@ -450,8 +459,8 @@ describe('ci workflow build job', () => {
     );
     assertStepRunIncludesLine(
       failureStep,
-      'exit 1',
-      'audit job failure step must exit with status 1 when pnpm audit fails',
+      expectedAuditFailureExitCommand,
+      'audit job failure step must exit using the pnpm audit exit code when vulnerabilities are found',
     );
 
     const pnpmAuditIndex = steps.indexOf(pnpmAuditStep);
@@ -465,6 +474,68 @@ describe('ci workflow build job', () => {
     assert.ok(
       failureIndex > osvScannerIndex,
       'audit job failure step must run after osv-scanner to ensure reports are generated first',
+    );
+  });
+
+  test('audit job defers pnpm audit failure until after osv-scanner completes', async () => {
+    const workflow = await readWorkflowYaml();
+    const audit = workflow.jobs?.audit;
+    if (!audit) {
+      assert.fail('workflow.jobs.audit must exist');
+    }
+
+    const steps = audit.steps;
+    assertStepArray(steps, 'workflow.jobs.audit.steps must be an array');
+
+    const pnpmAuditStep = assertStepWithNameAndId(
+      steps,
+      'Run pnpm audit',
+      expectedPnpmAuditStepId,
+      'audit job must configure pnpm audit step with deterministic id',
+    );
+
+    const osvScannerStep = assertStepWithName(
+      steps,
+      'Run osv-scanner',
+      'audit job must run osv-scanner',
+    );
+
+    const failureStep = assertStepWithName(
+      steps,
+      expectedAuditFailureStepName,
+      'audit job must terminate when pnpm audit reports vulnerabilities',
+    );
+
+    const pnpmAuditRunLines = extractRunLines([pnpmAuditStep]);
+    assert.deepStrictEqual(
+      pnpmAuditRunLines,
+      expectedPnpmAuditRunLines,
+      'audit job pnpm audit step must preserve exit code while producing audit-report.json',
+    );
+
+    assertStepRunIncludesLine(
+      osvScannerStep,
+      expectedOsvReportOutputFlag,
+      'audit job must write osv-scanner results to osv-report.json',
+    );
+
+    assertStepRunIncludesLine(
+      failureStep,
+      expectedAuditFailureExitCommand,
+      'audit job failure step must exit using preserved pnpm audit exit code',
+    );
+
+    const pnpmAuditIndex = steps.indexOf(pnpmAuditStep);
+    const osvScannerIndex = steps.indexOf(osvScannerStep);
+    const failureIndex = steps.indexOf(failureStep);
+
+    assert.ok(
+      pnpmAuditIndex > -1 && pnpmAuditIndex < osvScannerIndex,
+      'audit job must run osv-scanner after pnpm audit collects exit code',
+    );
+    assert.ok(
+      osvScannerIndex < failureIndex,
+      'audit job failure step must run after osv-scanner completes',
     );
   });
 

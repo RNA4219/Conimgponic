@@ -131,7 +131,7 @@ jobs:
 
       - name: Fail when pnpm audit reports vulnerabilities
         if: steps.pnpm_audit.outputs.exit_code != '0'
-        run: exit 1
+        run: exit "${{ steps.pnpm_audit.outputs.exit_code }}"
 
   license:
     needs:
