@@ -35,6 +35,7 @@ export interface FlagResolutionEventPayload {
   readonly phase: FlagRolloutPhase
   readonly evaluation_ms: number
   readonly errors: readonly FlagValidationError[]
+  readonly threshold: number | null
 }
 
 export type FlagResolutionContractPayload = {

@@ -79,14 +79,16 @@ const toFlagPayload = (
   source: FlagSource,
   snapshotErrors: readonly FlagValidationError[],
   planErrors: readonly FlagValidationError[],
-  evaluationMs: number
+  evaluationMs: number,
+  options?: { readonly threshold?: number }
 ): FlagResolutionEventPayload => ({
   flag,
   variant: String(variant),
   source,
   phase: FEATURE_FLAG_DEFINITIONS[flag].phase,
   evaluation_ms: evaluationMs,
-  errors: mergeErrors(flag, snapshotErrors, planErrors)
+  errors: mergeErrors(flag, snapshotErrors, planErrors),
+  threshold: options?.threshold ?? null
 })
 
 export const collectFlagResolutionPayloads = (
@@ -118,7 +120,8 @@ export const collectFlagResolutionPayloads = (
       snapshot.merge.source,
       snapshot.merge.errors,
       errors,
-      evaluation
+      evaluation,
+      { threshold: snapshot.merge.threshold }
     )
   ]
 }

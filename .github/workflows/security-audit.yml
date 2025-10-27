@@ -206,15 +206,32 @@ jobs:
           fi
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
 
-      - name: Upload audit artifacts
+      - name: Upload audit report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: security-reports
-          path: |
-            audit-report.json
-            audit-summary.json
-            osv-report.json
+          name: security-audit-report
+          path: audit-report.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+      - name: Upload audit summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-summary
+          path: audit-summary.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+      - name: Upload OSV report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-osv-report
+          path: osv-report.json
           if-no-files-found: warn
           retention-days: 7
           overwrite: true
