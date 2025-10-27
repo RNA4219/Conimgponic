@@ -381,11 +381,12 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   };
 
   const ready = createDeferred();
-  const releaseDeferred = createDeferred();
+  const releaseRequested = createDeferred();
+  const callbackSettled = createDeferred();
   let releaseInvoked = false;
   let releaseError: ProjectLockError | undefined;
   let releasedPromise: Promise<unknown> | undefined;
-  const releaseMonitor = releaseDeferred.promise.then(() => awaitReleased(releasedPromise));
+  let releaseMonitor: Promise<void> = Promise.resolve();
   let requestSettled: Promise<void> = Promise.resolve();
 
   const awaitReleased = async (released: Promise<unknown> | undefined) => {
@@ -437,27 +438,39 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
 
           webLockHandles.set(ctx.leaseId, {
             release: async () => {
-              if (releaseInvoked) return;
+              if (releaseInvoked) {
+                await callbackSettled.promise;
+                await requestSettled;
+                await releaseMonitor;
+                if (releaseError) throw releaseError;
+                return;
+              }
               releaseInvoked = true;
               let releaseFailure: ProjectLockError | undefined;
-              if (releaseMethod) {
-                try {
+              try {
+                if (releaseMethod) {
                   await releaseMethod();
-                } catch (error) {
-                  releaseFailure = toReleaseProjectError(error);
-                  if (!releaseError) releaseError = releaseFailure;
                 }
+              } catch (error) {
+                releaseFailure = toReleaseProjectError(error);
+                if (!releaseError) releaseError = releaseFailure;
+              } finally {
+                releaseRequested.resolve();
               }
-              releaseDeferred.resolve();
-              await completionDeferred.promise;
+              await callbackSettled.promise;
               await requestSettled;
+              await releaseMonitor;
               const errorToThrow = releaseFailure ?? releaseError;
               if (errorToThrow) throw errorToThrow;
             },
           });
 
           ready.resolve();
-          await releaseDeferred.promise;
+          try {
+            await releaseRequested.promise;
+          } finally {
+            callbackSettled.resolve();
+          }
         }
       )
       .catch((error) => {
@@ -481,6 +494,10 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
     requestSettled = requestOutcome.then(
       () => undefined,
       () => undefined,
+    );
+    releaseMonitor = requestOutcome.then(
+      () => awaitReleased(releasedPromise),
+      () => awaitReleased(releasedPromise),
     );
   } catch (cause) {
     throw cause instanceof ProjectLockError

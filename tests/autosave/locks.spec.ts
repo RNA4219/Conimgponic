@@ -49,6 +49,23 @@ type TelemetrySnapshot = Array<Record<string, unknown>>
 
 type LockHandleLike = { release(): Promise<void> }
 
+type Deferred = { promise: Promise<void>; resolve: () => void }
+
+const createDeferred = (): Deferred => {
+  let resolve!: () => void
+  const promise = new Promise<void>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
+type WebLockAcquireState = {
+  releaseInvoked: Deferred
+  callbackCompleted: Deferred
+}
+
+let acquireState: WebLockAcquireState | undefined
+
 const collectLockSequence = (telemetry: TelemetrySnapshot) => {
   const sequence: LockSnapshotEvent[] = []
   const unsubscribe = projectLockEvents.subscribe((event) => {
@@ -83,6 +100,69 @@ const collectLockSequence = (telemetry: TelemetrySnapshot) => {
   })
   return { sequence, unsubscribe }
 }
+
+scenario(
+  'AS-R-04: Web Lock release resolves without readonly downgrade',
+  {
+    locks: {
+      async request(_key, _options, callback) {
+        const releaseInvoked = createDeferred()
+        const callbackCompleted = createDeferred()
+        const released = new Promise<void>((resolve) => {
+          callbackCompleted.promise.then(resolve)
+        })
+        acquireState = { releaseInvoked, callbackCompleted }
+        try {
+          return await callback({
+            released,
+            async release() {
+              releaseInvoked.resolve()
+            }
+          })
+        } finally {
+          callbackCompleted.resolve()
+        }
+      }
+    }
+  },
+  async (t) => {
+    const uuids = ['lease-web', 'owner-web']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    acquireState = undefined
+
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+    t.after(() => {
+      acquireState = undefined
+    })
+
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock' })
+    assert.equal(lease.strategy, 'web-lock')
+    assert.ok(acquireState, 'web lock state missing')
+
+    const releasePromise = releaseProjectLock(lease)
+
+    await acquireState.releaseInvoked.promise
+    await acquireState.callbackCompleted.promise
+
+    await Promise.race([
+      releasePromise,
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error('release timed out')), 50)
+        releasePromise.then(() => clearTimeout(timer), () => clearTimeout(timer))
+      })
+    ])
+
+    assert.ok(sequence.includes('released'))
+    assert.ok(!telemetry.some((event) => event.type === 'lock:readonly-entered'))
+  }
+)
 
 scenario(
   'AS-I-03: Web Lock collision falls back to file lock and records telemetry',
