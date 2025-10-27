@@ -96,6 +96,8 @@ const expectedQualitySuites = [
   'telemetry',
 ];
 
+const expectedRunSuiteStepIds = ['run_suite_autosave', 'run_suite_default'] as const;
+
 const expectedCoverageCommand = 'pnpm -s test:coverage';
 const expectedCoverageCleanup = 'rm -rf coverage';
 const expectedJunitCommand =
@@ -332,13 +334,18 @@ describe('ci workflow build job', () => {
     const steps = quality.steps;
     assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
 
-    const autosaveRunStep = assertStepWithNameAndId(steps, 'Run ${{ matrix.suite }} suite', 'run_suite_autosave', 'quality job must include autosave run suite step');
+    const runSuiteSteps = assertRunSuiteStepCollection(
+      steps,
+      'quality job must include "Run ${{ matrix.suite }} suite" steps',
+    );
 
-    const defaultRunStep = assertStepWithNameAndId(steps, 'Run ${{ matrix.suite }} suite', 'run_suite_default', 'quality job must include default run suite step');
+    const runSuiteStepList = expectedRunSuiteStepIds.map((id) => runSuiteSteps[id]);
 
-    assertStepIdEquals(autosaveRunStep, 'run_suite_autosave', 'autosave run suite step must expose id "run_suite_autosave" for downstream conditionals');
-
-    assertStepIdEquals(defaultRunStep, 'run_suite_default', 'default run suite step must expose id "run_suite_default" for downstream conditionals');
+    assertStepIdEquals(
+      runSuiteStepList,
+      [...expectedRunSuiteStepIds],
+      'run suite steps must expose deterministic ids for downstream conditionals',
+    );
   });
 
   test('quality job run steps configure logging, command execution, and continue-on-error', async () => {
@@ -351,15 +358,32 @@ describe('ci workflow build job', () => {
     const steps = quality.steps;
     assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
 
-    const autosaveRunStep = assertStepWithNameAndId(steps, 'Run ${{ matrix.suite }} suite', 'run_suite_autosave', 'quality job must include autosave run suite step');
+    const runSuiteSteps = assertRunSuiteStepCollection(
+      steps,
+      'quality job must include "Run ${{ matrix.suite }} suite" steps',
+    );
 
-    const defaultRunStep = assertStepWithNameAndId(steps, 'Run ${{ matrix.suite }} suite', 'run_suite_default', 'quality job must include default run suite step');
-
-    for (const runSuiteStep of [autosaveRunStep, defaultRunStep]) {
-      assertStepContinueOnError(runSuiteStep, 'run suite steps must enable continue-on-error');
-      assertStepRunIncludesLine(runSuiteStep, 'mkdir -p logs', 'run suite steps must create logs directory');
-      assertStepRunIncludesLine(runSuiteStep, 'tee "logs/${{ matrix.suite }}.log"', 'run suite steps must tee suite output into logs/${{ matrix.suite }}.log');
-      assertStepRunIncludesLine(runSuiteStep, '${{ matrix.command }}', 'run suite steps must execute ${{ matrix.command }}');
+    for (const expectedId of expectedRunSuiteStepIds) {
+      const runSuiteStep = runSuiteSteps[expectedId];
+      assertStepContinueOnError(
+        runSuiteStep,
+        `run suite ${expectedId} step must enable continue-on-error`,
+      );
+      assertStepRunIncludesLine(
+        runSuiteStep,
+        'mkdir -p logs',
+        `run suite ${expectedId} step must create logs directory`,
+      );
+      assertStepRunIncludesLine(
+        runSuiteStep,
+        'tee "logs/${{ matrix.suite }}.log"',
+        `run suite ${expectedId} step must tee suite output into logs/\${{ matrix.suite }}.log`,
+      );
+      assertStepRunIncludesLine(
+        runSuiteStep,
+        '${{ matrix.command }}',
+        `run suite ${expectedId} step must execute \${{ matrix.command }}`,
+      );
     }
   });
 
@@ -734,36 +758,80 @@ function assertStepWithNameAndId(
   return match;
 }
 
+type RunSuiteStepId = (typeof expectedRunSuiteStepIds)[number];
+
+type RunSuiteStepCollection = Record<RunSuiteStepId, StepConfig>;
+
 type RunSuiteSteps = {
   autosave: StepConfig;
   default: StepConfig;
 };
 
 function assertRunSuiteSteps(steps: StepConfig[], message: string): RunSuiteSteps {
+  const collection = assertRunSuiteStepCollection(steps, message);
+
+  return {
+    autosave: collection.run_suite_autosave,
+    default: collection.run_suite_default,
+  };
+}
+
+function assertRunSuiteStepCollection(
+  steps: StepConfig[],
+  message: string,
+): RunSuiteStepCollection {
   const matches = steps.filter(
     (step) => typeof step.name === 'string' && step.name.trim() === 'Run ${{ matrix.suite }} suite',
   );
 
-  if (matches.length !== 2) {
-    assert.fail(`${message}; expected exactly 2 steps but found ${matches.length}`);
+  if (matches.length !== expectedRunSuiteStepIds.length) {
+    assert.fail(`${message}; expected exactly ${expectedRunSuiteStepIds.length} steps but found ${matches.length}`);
   }
 
-  const autosaveStep = matches.find((step) => typeof step.id === 'string' && step.id.trim() === 'run_suite_autosave');
-  if (!autosaveStep) {
-    assert.fail(`${message}; missing step with id "run_suite_autosave"`);
+  const collection: Partial<RunSuiteStepCollection> = {};
+
+  for (const expectedId of expectedRunSuiteStepIds) {
+    const match = matches.find((step) => typeof step.id === 'string' && step.id.trim() === expectedId);
+
+    if (!match) {
+      assert.fail(`${message}; missing step with id "${expectedId}"`);
+    }
+
+    collection[expectedId] = match;
   }
 
-  const defaultStep = matches.find((step) => typeof step.id === 'string' && step.id.trim() === 'run_suite_default');
-  if (!defaultStep) {
-    assert.fail(`${message}; missing step with id "run_suite_default"`);
-  }
-
-  return { autosave: autosaveStep, default: defaultStep };
+  return collection as RunSuiteStepCollection;
 }
 
-function assertStepIdEquals(step: StepConfig, expected: string, message: string): void {
+function assertStepIdEquals(
+  step: StepConfig | StepConfig[],
+  expected: string | string[],
+  message: string,
+): void {
+  if (Array.isArray(step)) {
+    if (!Array.isArray(expected)) {
+      assert.fail(`${message}; expected ids must be provided as an array`);
+    }
+
+    assert.strictEqual(
+      step.length,
+      expected.length,
+      `${message}; number of steps must match number of expected ids`,
+    );
+
+    step.forEach((entry, index) => {
+      assertStepIdEquals(entry, expected[index], message);
+    });
+
+    return;
+  }
+
   if (typeof step.id !== 'string') {
     assert.fail(`${message}; step.id must be configured as a string`);
+  }
+
+  if (Array.isArray(expected)) {
+    assert.fail(`${message}; expected ids must be provided as a string`);
   }
 
   assert.strictEqual(step.id.trim(), expected, message);
