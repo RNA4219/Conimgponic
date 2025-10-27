@@ -8,7 +8,9 @@ import {
   createDiffMergeController,
   planDiffMergeView,
   resolveDiffMergeStoredTab,
+  createDiffMergeNavigationKeyHandler,
   type DiffMergeQueueCommandPayload,
+  type DiffMergeSubTabKey,
   type DiffMergeTabStorage,
   type MergeHunk,
 } from '../../src/components/DiffMergeView.tsx'
@@ -32,7 +34,15 @@ const render = (precision: 'legacy' | 'beta' | 'stable') =>
     <DiffMergeView
       precision={precision}
       hunks={sampleHunks}
-      queueMergeCommand={async () => ({ status: 'success', hunkIds: [], telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: false } })}
+      queueMergeCommand={async () => ({
+        status: 'success' as const,
+        hunkIds: [],
+        telemetry: {
+          collectorSurface: 'diff-merge.hunk-list' as const,
+          analyzerSurface: 'diff-merge.queue' as const,
+          retryable: false,
+        },
+      })}
     />,
   )
 
@@ -63,6 +73,66 @@ test('beta precision renders uniform layout sections', () => {
   assert.match(html, /data-block="hunk-list"/)
   assert.match(html, /data-block="operation-pane"/)
   assert.doesNotMatch(html, /data-block="edit-modal"/)
+})
+
+test('stable precision navigation cycles tabs with arrow keys', () => {
+  // Guardrails: HUB.codex.md と TASKS.md の TDD 要求を引用し、ArrowLeft/Right の
+  // キー操作シミュレーションで DiffMergeSubTabKey が循環することを赤テストで
+  // 先に固定する。
+  const plan = planDiffMergeView('stable')
+  const tabs = plan.tabs.map((tab) => tab.key)
+  let active: DiffMergeSubTabKey = plan.initialTab
+  const selected: DiffMergeSubTabKey[] = []
+  const handler = createDiffMergeNavigationKeyHandler({
+    tabs,
+    resolveActive: () => active,
+    onSelect: (key) => {
+      selected.push(key)
+      active = key
+    },
+  })
+
+  const simulate = (key: 'ArrowLeft' | 'ArrowRight') => {
+    let prevented = false
+    handler({
+      key,
+      preventDefault: () => {
+        prevented = true
+      },
+    } as unknown as React.KeyboardEvent<HTMLDivElement>)
+    return prevented
+  }
+
+  assert.equal(active, 'diff')
+  assert.equal(simulate('ArrowRight'), true)
+  assert.deepEqual(selected, ['merged'])
+  assert.equal(active, 'merged')
+
+  assert.equal(simulate('ArrowRight'), true)
+  assert.deepEqual(selected, ['merged', 'review'])
+  assert.equal(active, 'review')
+
+  assert.equal(simulate('ArrowRight'), true)
+  assert.deepEqual(selected, ['merged', 'review', 'diff'])
+  assert.equal(active, 'diff')
+
+  assert.equal(simulate('ArrowLeft'), true)
+  assert.deepEqual(selected, ['merged', 'review', 'diff', 'review'])
+  assert.equal(active, 'review')
+
+  assert.equal(simulate('ArrowLeft'), true)
+  assert.deepEqual(selected, ['merged', 'review', 'diff', 'review', 'merged'])
+  assert.equal(active, 'merged')
+
+  const prevented = handler({
+    key: 'Enter',
+    preventDefault: () => {
+      throw new Error('should not prevent default for Enter key')
+    },
+  } as unknown as React.KeyboardEvent<HTMLDivElement>)
+  assert.equal(prevented, undefined)
+  assert.deepEqual(selected, ['merged', 'review', 'diff', 'review', 'merged'])
+  assert.equal(active, 'merged')
 })
 
 const storageKeyFor = (precision: 'legacy' | 'beta' | 'stable') => `diff-merge.lastTab.${precision}`
@@ -123,7 +193,7 @@ test('DiffMergeView queue telemetry captures the active tab selection', async ()
   }
 
   const successEvent = {
-    status: 'success',
+    status: 'success' as const,
     hunkIds: [],
     telemetry: {
       collectorSurface: 'diff-merge.hunk-list' as const,

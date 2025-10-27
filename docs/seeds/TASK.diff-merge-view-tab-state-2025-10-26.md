@@ -68,15 +68,19 @@ pnpm test -- --filter diff-merge-view-state
 
 ## Patch
 
-_未着手_
+- DiffMergeNavigation に左右キー循環用の `aria-keyshortcuts` と `onKeyDown` を追加し、`createDiffMergeNavigationKeyHandler` でサブタブの循環ロジックを抽出。
+- `DiffMergeView` からハンドラを供給し、タブ選択の永続化ロジックと整合させた。
+- `tests/components/DiffMergeView.test.tsx` に ArrowLeft/Right ナビゲーションの赤→緑テストを追加。
 
 ## Tests
 
-_未実施_
+- `TS_NODE_LOG_ERROR=true pnpm test tests/components/DiffMergeView.test.tsx`（TypeScript の `.tsx` import 警告は既存設定によるもの、全 8 ケース成功）。
+- `TS_NODE_LOG_ERROR=true pnpm test -- --filter diff-merge`（既存 merge スイートに未解消の失敗が残存: `merge-dock-tabs`, `merge-engine`）。
 
 ## Commands
 
-_未実行_
+- `TS_NODE_LOG_ERROR=true pnpm test tests/components/DiffMergeView.test.tsx`
+- `TS_NODE_LOG_ERROR=true pnpm test -- --filter diff-merge`
 
 ## Notes
 
