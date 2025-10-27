@@ -760,7 +760,7 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(state.retryCount, 1)
   })
 
-  it('Collector telemetry は非 retryable エラーを Phase A-2 として記録する', async () => {
+  it('Collector telemetry は非 retryable エラー後に error は Phase A-2, disabled は Phase A-1 として記録する', async () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     const bridge = createVscodeAutoSaveBridge({
       policy: AUTOSAVE_POLICY,
@@ -789,14 +789,14 @@ describe('createVscodeAutoSaveBridge', () => {
         event.name === 'autosave.status' && event.properties?.correlationId === request.correlationId
     )
 
-    const expectPhase = (state: string) => {
+    const expectPhase = (state: string, expected: string) => {
       const event = statusTelemetry.find((candidate) => candidate.properties?.state === state)
       assert.ok(event, `${state} status telemetry が必要`)
-      assert.equal(event.properties?.phase, 'A-2')
+      assert.equal(event.properties?.phase, expected)
     }
 
-    expectPhase('error')
-    expectPhase('disabled')
+    expectPhase('error', 'A-2')
+    expectPhase('disabled', 'A-1')
   })
 
   it('autosave.status テレメトリの phase を saving/backoff/saved と guard 無効化で検証する', async () => {
@@ -1142,6 +1142,41 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledTelemetry.properties?.phaseAfter, 'disabled')
   })
 
+  it('fatal AutoSaveError の autosave.status disabled テレメトリで phase=A-1 を送信する', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const fatalError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'corrupted',
+      code: 'data-corrupted',
+      retryable: false
+    }
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        /* noop */
+      },
+      atomicWrite: async () => ({ ok: false, error: fatalError }),
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-fatal-phase', 'corr-fatal-phase', guardEnabled, 1024, 1)
+    )
+
+    const disabledTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' &&
+        event.properties?.state === 'disabled' &&
+        event.properties?.correlationId === 'corr-fatal-phase'
+    )
+    assert.ok(disabledTelemetry, 'fatal errors must emit disabled autosave.status telemetry')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+  })
+
   it('keeps autosave disabled for queued request after fatal error', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     let writeCount = 0
@@ -1419,7 +1454,7 @@ describe('createVscodeAutoSaveBridge', () => {
         event.properties?.correlationId === request.correlationId
     )
     assert.ok(disabledTelemetry, 'disabled autosave.status telemetry must exist')
-    assert.equal(disabledTelemetry.properties?.phase, 'A-2')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
   })
 
   it('emits envelope phases A-2→A-1 when non-retryable error disables autosave', async () => {
@@ -1475,7 +1510,7 @@ describe('createVscodeAutoSaveBridge', () => {
         event.properties?.correlationId === request.correlationId
     )
     assert.ok(disabledTelemetry, 'disabled telemetry should follow non-retryable failure')
-    assert.equal(disabledTelemetry.properties?.phase, 'A-2')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
   })
 
   it('emits warn telemetry when file-lock fallback is used', async () => {
