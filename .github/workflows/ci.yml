@@ -93,7 +93,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run pnpm audit
-        run: pnpm audit --audit-level=moderate --json > audit-report.json
+        id: pnpm_audit
+        run: |
+          set -euo pipefail
+          set +e
+          pnpm audit --audit-level=moderate --json > audit-report.json
+          status=$?
+          set -e
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
 
       - name: Install osv-scanner
         run: |
@@ -121,6 +128,10 @@ jobs:
           name: osv-report
           path: osv-report.json
           if-no-files-found: warn
+
+      - name: Fail when pnpm audit reports vulnerabilities
+        if: steps.pnpm_audit.outputs.exit_code != '0'
+        run: exit 1
 
   license:
     needs:
