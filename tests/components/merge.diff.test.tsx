@@ -4,6 +4,7 @@ import test from 'node:test'
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
 import {
   resolveMergeDockPhasePlan,
+  planMergeDockTabs,
   resolveMergeThresholdPlan,
   resolveMergeThresholdSnapshot,
   type MergeDockPhasePlan,
@@ -201,6 +202,21 @@ test('stable precision sourced from workspace threshold stays opt-in without rev
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'default')
   assert.equal(plan.guard.phaseBRequired, false)
+})
+
+test('stable precision restores last selected non-diff tab when merge.lastTab is set', () => {
+  const tabPlan = planMergeDockTabs('stable', 'compiled')
+
+  assert.equal(tabPlan.initialTab, 'compiled')
+
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.88,
+    lastTab: 'compiled',
+  })
+
+  assert.equal(phasePlan.tabs.initialTab, 'compiled')
+  assert.equal(phasePlan.diff.initialTab, 'compiled')
 })
 
 test('beta precision threshold never drops below 0.75', () => {
