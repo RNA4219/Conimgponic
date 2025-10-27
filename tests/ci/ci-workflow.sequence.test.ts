@@ -235,6 +235,7 @@ describe('ci workflow build job', () => {
       [
         'src/**/autosave/**',
         'tests/**/autosave.*.test.ts',
+        'tests/**/*.autosave.*.test.ts',
         'tests/**/autosave/**',
         '.github/workflows/autosave*',
         'tests/**/*autosave*.test.ts',
@@ -267,6 +268,33 @@ describe('ci workflow build job', () => {
     assert(
       globs.includes('tests/**/*autosave*.test.ts'),
       '"Detect autosave changes" filters.autosave must monitor suffix-based autosave tests',
+    );
+  });
+
+  test('autosave paths filter monitors dotted autosave tests', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const detectAutosaveChanges = assertDetectAutosaveChangesStep(
+      steps,
+      'quality job must include "Detect autosave changes" step for autosave suite',
+    );
+
+    const globs = getPathsFilterGlobs(
+      detectAutosaveChanges,
+      'autosave',
+      '"Detect autosave changes" step must configure autosave filters',
+    );
+
+    assert(
+      globs.includes('tests/**/*.autosave.*.test.ts'),
+      '"Detect autosave changes" filters.autosave must monitor dotted autosave tests',
     );
   });
 
