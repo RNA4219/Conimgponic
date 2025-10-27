@@ -550,13 +550,13 @@ export const resolveMergeDockPhasePlan = ({
           : hasReviewSignals || hasConflictSignals
         : false
   const diffVisible = !!rawPlan.diff && precision !== 'legacy'
-  const diffEnabled = diffVisible && phaseBRequired
+  let diffEnabled = diffVisible && phaseBRequired
   const effectiveTabs = diffVisible ? rawPlan.tabs : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
   const effectiveInitial =
     rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
       ? rawPlan.initialTab
       : effectiveTabs[0]?.id ?? rawPlan.initialTab
-  const diffExposure = rawPlan.diff?.exposure ?? 'hidden'
+  let diffExposure: 'hidden' | 'opt-in' | 'default' = rawPlan.diff?.exposure ?? 'hidden'
   const diffTabsPlan = rawPlan.diff
     ? {
         exposure: rawPlan.diff.exposure,
@@ -565,6 +565,11 @@ export const resolveMergeDockPhasePlan = ({
     : undefined
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
+
+  if (meetsTarget === false) {
+    diffExposure = 'opt-in'
+    diffEnabled = false
+  }
 
   return {
     precision,
