@@ -258,7 +258,7 @@ export const FALLBACK_LOCK_LEASE_SCHEMA = {
     ownerId: { type: 'string', minLength: 1 },
     acquiredAt: { type: 'integer', minimum: 0 },
     expiresAt: { type: 'integer', minimum: 0 },
-    ttlSeconds: { type: 'integer', const: 30 },
+    ttlSeconds: { type: 'number', minimum: 1 },
     mtime: { type: 'integer', minimum: 0 },
   },
 } as const;
@@ -299,8 +299,6 @@ type WebLockHandleEntry = {
 };
 
 const webLockHandles = new Map<string, WebLockHandleEntry>();
-const fallbackTtlSeconds = Math.round(FALLBACK_LOCK_TTL_MS / 1000);
-
 type AcquireContext = {
   readonly leaseId: string;
   readonly ownerId: string;
@@ -591,6 +589,7 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
     }
 
     const ttl = ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS;
+    const ttlSeconds = ttl / 1000; // ← codex側の追加ロジックを統合
     const isReentrantActiveLease =
       record !== null && record.leaseId === ctx.leaseId && record.expiresAt > now;
     const acquiredAt = isReentrantActiveLease ? record.acquiredAt : now;
@@ -599,16 +598,19 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
       ownerId: ctx.ownerId,
       acquiredAt,
       expiresAt: now + ttl,
-      ttlSeconds: fallbackTtlSeconds,
+      ttlSeconds, // ← ttlSecondsを正しく記録
       mtime: now,
     };
+
     throwIfAborted();
     await saveJSON(FALLBACK_LOCK_PATH, next);
     throwIfAborted();
+
     return buildLease('file-lock', FALLBACK_LOCK_PATH, ttl, ctx.heartbeatMs, ctx, acquiredAt);
   } finally {
     signal?.removeEventListener('abort', onAbort);
   }
+
 };
 
 const removeFallbackFile=async():Promise<void>=>{try{const root=await getRoot();const segments=FALLBACK_LOCK_PATH.split('/').filter(Boolean);const file=segments.pop();if(!file)return;let dir:FileSystemDirectoryHandle=root;for(const segment of segments)dir=await dir.getDirectoryHandle(segment,{create:false});await dir.removeEntry(file);}catch(error){if((error as DOMException)?.name!=='NotFoundError')throw error;}};
@@ -717,7 +719,12 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
       const record = (await loadJSON(FALLBACK_LOCK_PATH)) as FallbackLockLeaseRecord | null;
       if (!record || record.leaseId !== lease.leaseId)
         throw makeError('lease-stale', 'Fallback lease missing for renew', 'renew', false);
-      await saveJSON(FALLBACK_LOCK_PATH, { ...record, expiresAt: now + lease.ttlMillis, mtime: now });
+      await saveJSON(FALLBACK_LOCK_PATH, {
+        ...record,
+        expiresAt: now + lease.ttlMillis,
+        ttlSeconds: lease.ttlMillis / 1000,
+        mtime: now,
+      });
     }
 
     const nextExpires = Math.max(lease.expiresAt + 1, now + lease.ttlMillis);
