@@ -135,26 +135,50 @@ function readWorkspaceValue(
     return undefined
   }
 
+  const candidates = [key]
+  const prefix = 'conimg.'
+  if (key.startsWith(prefix)) {
+    const trimmed = key.slice(prefix.length)
+    if (trimmed) {
+      candidates.push(trimmed)
+    }
+  }
+
   const withGetter = workspace as {
-    readonly get?: <T = unknown>(key: string) => T | undefined
+    readonly get?: <T = unknown>(candidate: string) => T | undefined
   }
   if (typeof withGetter.get === 'function') {
-    return withGetter.get(key)
+    for (const candidate of candidates) {
+      const value = withGetter.get(candidate)
+      if (value !== undefined) {
+        return value
+      }
+    }
   }
 
-  if (Object.prototype.hasOwnProperty.call(workspace, key)) {
-    return (workspace as Record<string, unknown>)[key]
+  const recordWorkspace = workspace as Record<string, unknown>
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(recordWorkspace, candidate)) {
+      return recordWorkspace[candidate]
+    }
   }
 
-  return key.split('.').reduce<unknown>(
-    (current, segment) =>
-      current &&
-      typeof current === 'object' &&
-      segment in (current as Record<string, unknown>)
-        ? (current as Record<string, unknown>)[segment]
-        : undefined,
-    workspace
-  )
+  for (const candidate of candidates) {
+    const resolved = candidate.split('.').reduce<unknown>(
+      (current, segment) =>
+        current &&
+        typeof current === 'object' &&
+        segment in (current as Record<string, unknown>)
+          ? (current as Record<string, unknown>)[segment]
+          : undefined,
+      workspace
+    )
+    if (resolved !== undefined) {
+      return resolved
+    }
+  }
+
+  return undefined
 }
 
 function coerceValue<T>(

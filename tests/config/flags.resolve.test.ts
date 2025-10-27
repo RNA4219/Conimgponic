@@ -8,11 +8,23 @@ import {
   FlagResolutionError,
   FlagSnapshot,
   FlagSource,
+  type WorkspaceConfiguration,
   coerceMergeThresholdValue,
   resolveFlags
 } from '../../src/config/flags'
 
 type WorkspaceRecord = Record<string, unknown>
+
+const createWorkspace = (
+  values: WorkspaceRecord
+): WorkspaceConfiguration => ({
+  get(key) {
+    if (Object.prototype.hasOwnProperty.call(values, key)) {
+      return values[key]
+    }
+    return undefined
+  }
+})
 
 type StorageStub = Pick<Storage, 'getItem'>
 
@@ -31,10 +43,10 @@ test('env overrides workspace and localStorage for autosave and merge precision'
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'true',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'STABLE'
   }
-  const workspace: WorkspaceRecord = {
-    'conimg.autosave.enabled': false,
-    'conimg.merge.threshold': 0.75
-  }
+  const workspace = createWorkspace({
+    'autosave.enabled': false,
+    'merge.threshold': 0.75
+  })
   const storage = createStorage({
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: '0',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'legacy'
@@ -50,10 +62,10 @@ test('env overrides workspace and localStorage for autosave and merge precision'
 })
 
 test('workspace settings provide values when env is absent', () => {
-  const workspace: WorkspaceRecord = {
-    'conimg.autosave.enabled': '1',
-    'conimg.merge.threshold': 0.83
-  }
+  const workspace = createWorkspace({
+    'autosave.enabled': '1',
+    'merge.threshold': 0.83
+  })
 
   const snapshot = resolveFlags({ workspace, clock: () => new Date('2024-02-03T04:05:06.789Z') })
 
@@ -68,10 +80,10 @@ test('localStorage is used when env and workspace are invalid', () => {
   const env = {
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'INVALID'
   }
-  const workspace: WorkspaceRecord = {
-    'conimg.autosave.enabled': null,
-    'conimg.merge.threshold': 'NaN'
-  }
+  const workspace = createWorkspace({
+    'autosave.enabled': null,
+    'merge.threshold': 'NaN'
+  })
   const storage = createStorage({
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: 'true',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'beta'
@@ -125,10 +137,10 @@ test('invalid values aggregate errors and fall back to defaults', () => {
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'MAYBE',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'invalid'
   }
-  const workspace: WorkspaceRecord = {
-    'conimg.autosave.enabled': 'not-boolean',
-    'conimg.merge.threshold': 1.5
-  }
+  const workspace = createWorkspace({
+    'autosave.enabled': 'not-boolean',
+    'merge.threshold': 1.5
+  })
   const storage = createStorage({
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: 'truthy?',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'gamma'
@@ -169,9 +181,9 @@ test('threshold resolves to default when env/workspace/storage provide invalid n
   const env = {
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: '1.25'
   }
-  const workspace: WorkspaceRecord = {
-    'conimg.merge.threshold': 'NaN'
-  }
+  const workspace = createWorkspace({
+    'merge.threshold': 'NaN'
+  })
   const storage = createStorage({
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: '-0.2'
   })
