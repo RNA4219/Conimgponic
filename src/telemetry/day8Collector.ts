@@ -107,13 +107,19 @@ type TelemetryEnvelopeOverrides = {
   readonly ts?: string
 }
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const isUuid = (candidate: unknown): candidate is string =>
+  typeof candidate === 'string' && UUID_REGEX.test(candidate)
+
 const createCollectorTelemetryEnvelopeSeed = (
   phase: string,
   overrides?: TelemetryEnvelopeOverrides
 ): CollectorTelemetryEnvelopeSeed => {
   const retryPolicy = COLLECT_METRICS_CONTRACT.telemetry.retryPolicy
-  const reqId = overrides?.reqId ?? createTelemetryId()
-  const correlationId = overrides?.correlationId ?? reqId
+  const reqId = isUuid(overrides?.reqId) ? overrides.reqId : createTelemetryId()
+  const correlationId = isUuid(overrides?.correlationId) ? overrides.correlationId : reqId
   const maxAttempts = overrides?.maxAttempts ?? retryPolicy.maxAttempts
   const attempt = Math.min(Math.max(1, overrides?.attempt ?? 1), maxAttempts)
   const backoffMs = overrides?.backoffMs ?? retryPolicy.backoffMs
@@ -138,20 +144,38 @@ const applyPhaseToEnvelope = (
   phase
 })
 
-const UUID_TEMPLATE = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
-
 const createTelemetryId = (): string => {
-  const scope = globalThis as { crypto?: { randomUUID?: () => string } }
+  const scope = globalThis as {
+    crypto?: {
+      randomUUID?: () => string
+      getRandomValues?: <T extends ArrayBufferView>(array: T) => T
+    }
+  }
   const randomUuid = scope.crypto?.randomUUID?.()
-  if (randomUuid && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(randomUuid)) {
+  if (randomUuid && UUID_REGEX.test(randomUuid)) {
     return randomUuid
   }
 
-  return UUID_TEMPLATE.replace(/[xy]/g, (char) => {
-    const rand = Math.floor(Math.random() * 16)
-    const value = char === 'x' ? rand : (rand & 0x3) | 0x8
-    return value.toString(16)
-  })
+  const bytes = new Uint8Array(16)
+  if (scope.crypto?.getRandomValues) {
+    scope.crypto.getRandomValues(bytes)
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256)
+    }
+  }
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+
+  const toHex = (value: number) => value.toString(16).padStart(2, '0')
+  return (
+    `${toHex(bytes[0])}${toHex(bytes[1])}${toHex(bytes[2])}${toHex(bytes[3])}-` +
+    `${toHex(bytes[4])}${toHex(bytes[5])}-` +
+    `${toHex(bytes[6])}${toHex(bytes[7])}-` +
+    `${toHex(bytes[8])}${toHex(bytes[9])}-` +
+    `${toHex(bytes[10])}${toHex(bytes[11])}${toHex(bytes[12])}${toHex(bytes[13])}${toHex(bytes[14])}${toHex(bytes[15])}`
+  )
 }
 
 export const publishFlagResolution = (
