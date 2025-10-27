@@ -1,4 +1,5 @@
 import type {
+  DiffMergeQueueCommandPayload,
   DiffMergeSubTabKey,
   MergeDecisionEvent,
   MergeHunk,
@@ -158,10 +159,10 @@ const toQueuePayload = ({
   origin: 'operation-pane.queue' as const,
   hunkIds,
   telemetryContext: {
-    collectorSurface: 'diff-merge.operation-pane' as const,
-    analyzerSurface: 'diff-merge.queue' as const,
+    collectorSurface: 'diff-merge.operation-pane',
+    analyzerSurface: 'diff-merge.queue',
     lastTab: lastTab ?? lastTabForPrecision[precision],
-  },
+  } satisfies DiffMergeQueueCommandPayload['telemetryContext'],
   metadata: { autoSaveRequested: resolveAutoSaveRequested(precision, autoApplied) },
 })
 

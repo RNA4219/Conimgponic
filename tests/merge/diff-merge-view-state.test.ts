@@ -342,6 +342,25 @@ test('queueMerge telemetry payload reflects current tab selection', async () => 
   assert.equal(telemetryLastTab, 'merged')
 })
 
+test('queueMerge telemetry payload identifies operation pane collector surface', async () => {
+  let collectorSurface: DiffMergeQueueCommandPayload['telemetryContext']['collectorSurface'] | undefined
+  let state: DiffMergeState = createInitialDiffMergeState([createMergeHunk('h1')])
+  const dispatch: Dispatch = (action) => {
+    state = diffMergeReducer(state, action)
+  }
+  const controller = createDiffMergeController({
+    precision: 'stable',
+    dispatch,
+    queueMergeCommand: async (payload) => {
+      collectorSurface = payload.telemetryContext.collectorSurface
+      return successEvent
+    },
+    getCurrentHunkIds: () => ['h1'],
+  })
+  await controller.queueMerge(['h1'])
+  assert.equal(collectorSurface, 'diff-merge.operation-pane')
+})
+
 test('DiffMergeView queueMerge metadata disables auto save when autoApplied target is not met', async () => {
   type DiffMergeController = ReturnType<typeof createDiffMergeController>
   let capturedAutoSave: boolean | undefined
