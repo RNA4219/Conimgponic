@@ -486,7 +486,7 @@ export const planMergeDockTabs = (precision: MergePrecision, lastTab?: MergeDock
   const sanitized = requested && plan.tabs.some((entry) => entry.id === requested) ? requested : undefined
   const diffConfig = plan.diff ? { diff: plan.diff } : {}
   if (precision === 'stable') {
-    const initialTab = sanitized ?? plan.initialTab
+    const initialTab = sanitized === 'diff' ? 'diff' : plan.initialTab
     return { tabs: plan.tabs, initialTab, ...diffConfig }
   }
   if (precision === 'legacy') {

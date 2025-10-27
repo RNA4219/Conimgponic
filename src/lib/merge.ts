@@ -357,7 +357,7 @@ export interface MergeDecisionError {
 
 export type MergePlanResult =
   | { readonly kind: 'ok'; readonly plan: MergePlan }
-  | { readonly kind: 'error'; readonly error: MergeDecisionError };
+  | { readonly kind: 'error'; readonly error: MergeDecisionError; readonly plan: MergePlan };
 
 export interface MergeQueueCommand {
   readonly type: 'merge:enqueue';
@@ -404,41 +404,17 @@ export const buildMergePlan = (
   sceneId?: string,
 ): MergePlanResult => {
   const precisionState = getPrecisionUiState(profile.precision);
-  const lockedConflicts = hunks.filter((hunk) => hunk.decision === 'conflict' && hunk.locked);
-  if (lockedConflicts.length > 0 && profile.lockPolicy === 'strict') {
-    return {
-      kind: 'error',
-      error: {
-        code: 'locked-conflict',
-        message: 'ロックされたセクションに衝突が発生しました。',
-        retryable: false,
-        sceneId: sceneId ?? 'unknown',
-        precision: profile.precision,
-      },
-    };
-  }
-
-  const underflow = hunks.filter((hunk) => hunk.similarity < profile.similarityBands.review);
-  if (underflow.length > 0 && profile.precision !== 'legacy') {
-    return {
-      kind: 'error',
-      error: {
-        code: 'score-underflow',
-        message: 'スコアがレビュー帯域を下回りました。',
-        retryable: true,
-        sceneId: sceneId ?? 'unknown',
-        precision: profile.precision,
-      },
-    };
-  }
-
+  const hasUnderflow = hunks.some((hunk) => hunk.similarity < profile.similarityBands.review);
   const planEntries = hunks.map<MergePlanEntry>((hunk) => {
+    const locked = hunk.locked;
+    const meetsReviewBand = hunk.similarity >= profile.similarityBands.review;
     const band: MergePlanBand = hunk.decision === 'auto'
       ? 'auto'
-      : hunk.similarity >= profile.similarityBands.review
-        ? 'review'
-        : 'conflict';
-    const locked = hunk.locked;
+      : locked
+        ? 'conflict'
+        : meetsReviewBand
+          ? 'review'
+          : 'conflict';
     const phase: MergePlanPhase = band === 'auto' && precisionState.allowsAutoApply && !locked ? 'phase-a' : 'phase-b';
     const recommendedCommand: MergePlanRecommendedCommand = locked
       ? 'queue:force-lock-resolution'
@@ -499,19 +475,32 @@ export const buildMergePlan = (
     };
   });
 
-  return {
-    kind: 'ok',
-    plan: {
-      sceneId: sceneId ?? 'unknown',
-      precision: profile.precision,
-      stats,
-      hunks: planHunks,
-      stages: ['segment', 'score', 'decide', 'queue'],
-      entries: planEntries,
-      summary,
-      phaseB,
-    },
+  const plan: MergePlan = {
+    sceneId: sceneId ?? 'unknown',
+    precision: profile.precision,
+    stats,
+    hunks: planHunks,
+    stages: ['segment', 'score', 'decide', 'queue'],
+    entries: planEntries,
+    summary,
+    phaseB,
   };
+
+  if (hasUnderflow && profile.precision !== 'legacy') {
+    return {
+      kind: 'error',
+      error: {
+        code: 'score-underflow',
+        message: 'スコアがレビュー帯域を下回りました。',
+        retryable: true,
+        sceneId: sceneId ?? 'unknown',
+        precision: profile.precision,
+      },
+      plan,
+    };
+  }
+
+  return { kind: 'ok', plan };
 };
 
 export const createQueueMergeCommand = (plan: MergePlan): MergeQueueCommand => ({
@@ -987,6 +976,7 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
       const hunks = decisions.map((entry) => entry.hunk);
 
       const planResult = buildMergePlan(hunks, finalStats, profile, input.sceneId);
+      let includePlan = planResult.kind === 'ok';
       if (options?.queueMergeCommand) {
         const queueStartedAt = now();
         if (planResult.kind === 'ok') {
@@ -1004,7 +994,10 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
             durationMs: now() - queueStartedAt,
             metadata: { error: planResult.error.code, retryable: planResult.error.retryable },
           });
+          includePlan = false;
         }
+      } else if (planResult.kind === 'error' && planResult.error.code === 'score-underflow') {
+        includePlan = true;
       }
 
       const finalTrace = buildTrace(input.sceneId, stages, profile, hunks);
@@ -1013,7 +1006,7 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
         mergedText,
         stats: finalStats,
         trace: finalTrace,
-        ...(planResult.kind === 'ok' ? { plan: planResult.plan } : {}),
+        ...(includePlan ? { plan: planResult.plan } : {}),
       };
 
       options?.telemetry?.({ type: 'merge:finish', sceneId: input.sceneId ?? 'unknown', profile, stats: finalStats, trace: finalTrace });
