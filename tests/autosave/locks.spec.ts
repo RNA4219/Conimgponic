@@ -368,6 +368,45 @@ scenario(
 )
 
 scenario(
+  'AS-I-03: TTL override persists ttlSeconds metadata in fallback lock',
+  {
+    locks: {
+      async request() {
+        throw new DOMException('Lock already held', 'AbortError')
+      }
+    }
+  },
+  async (t, { opfs }) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 180_000 })
+
+    const uuids = ['override-lease', 'override-owner']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const overrideTtlMs = 45_000
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock', ttlMs: overrideTtlMs })
+
+    assert.equal(lease.strategy, 'file-lock')
+    assert.equal(lease.ttlMillis, overrideTtlMs, 'lease ttlMillis must reflect override value')
+
+    const fallbackRecordRaw = opfs.files.get('project/.lock')
+    assert.ok(fallbackRecordRaw, 'fallback record must be written after acquisition')
+    const fallbackRecord = JSON.parse(fallbackRecordRaw)
+
+    assert.equal(
+      fallbackRecord.ttlSeconds,
+      overrideTtlMs / 1000,
+      'ttlSeconds metadata must be stored in seconds using the overridden ttlMs'
+    )
+
+    await projectLockApi.release(lease)
+  }
+)
+
+scenario(
   'AS-I-03: Non-retryable Web Lock failure stops acquisition with telemetry',
   {
     locks: {
