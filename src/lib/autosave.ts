@@ -580,6 +580,10 @@ export const AUTOSAVE_RUNNER_EVENT_SPECS: readonly AutoSaveRunnerEventSpec[] = O
   }
 ])
 
+const AUTOSAVE_RUNNER_EVENT_SPEC_INDEX = new Map<AutoSaveRunnerEventType, AutoSaveRunnerEventSpec>(
+  AUTOSAVE_RUNNER_EVENT_SPECS.map((spec) => [spec.type, spec] as const)
+)
+
 export interface AutoSaveQueueEntry {
   readonly ts: string
   readonly reason: 'change' | 'flushNow'
@@ -1024,6 +1028,43 @@ export function initAutoSave(
     context?: Record<string, unknown>
   ): AutoSaveError => createAutoSaveError(code, message, retryable, cause, context)
   const disabledError = () => makeError('disabled', 'AutoSave is disabled', false)
+  const output = {
+    telemetry: (event: AutoSaveTelemetryEvent & { readonly slo: 'p99-success' | 'p95-latency' }) => {
+      const collector = resolveDay8Collector()
+      if (!collector) {
+        return
+      }
+      collector.publish({
+        feature: event.feature,
+        event: 'autosave.runner',
+        phase: event.phase,
+        detail: event.detail,
+        slo: event.slo,
+        ts: event.at
+      })
+    }
+  }
+  const publishRunnerTelemetry = (
+    type: AutoSaveRunnerEventType,
+    phase: AutoSavePhase,
+    detail?: Record<string, unknown>,
+    error?: AutoSaveError
+  ): void => {
+    const at = new Date().toISOString()
+    const spec = AUTOSAVE_RUNNER_EVENT_SPEC_INDEX.get(type)
+    const telemetryDetail: Record<string, unknown> = { event: type, ...(detail ?? {}) }
+    if (error) {
+      telemetryDetail.code = error.code
+      telemetryDetail.retryable = error.retryable
+    }
+    output.telemetry({
+      feature: 'autosave',
+      phase,
+      at,
+      detail: telemetryDetail,
+      slo: spec?.telemetrySlo ?? 'p95-latency'
+    })
+  }
   const removeFile = async (path: string) => {
     const segs = path.split('/').filter(Boolean)
     const name = segs.pop()
@@ -1231,10 +1272,12 @@ export function initAutoSave(
     }
     const payload = JSON.stringify(storyboard, null, 2)
     pendingBytes = encoder.encode(payload).length; phase = 'awaiting-lock'
+    const bytesWritten = pendingBytes
     try {
       await projectLockApi.withProjectLock(async () => {
         if (disposed) throw disabledError()
         phase = 'writing-current'; await saveText('project/autosave/current.json.tmp', payload); await renameFile('project/autosave/current.json.tmp', 'project/autosave/current.json')
+        publishRunnerTelemetry('write-succeeded', 'writing-current', { source, bytes: bytesWritten, generation })
         phase = 'updating-index'; const ts = new Date().toISOString(); await updateIndex(ts, pendingBytes, payload, generation)
         phase = 'gc';
         lastSuccessAt = ts;
@@ -1250,6 +1293,15 @@ export function initAutoSave(
         pendingBytes = lastPending ? lastPending.estimatedBytes : 0
         retryCount = 0;
         lastError = undefined;
+        publishRunnerTelemetry('gc-completed', 'gc', {
+          source,
+          generation,
+          lastSuccessAt: ts,
+          backlog,
+          queuedGeneration,
+          nextGeneration,
+          pendingBytes
+        })
         if (disposed) {
           pendingBytes = 0;
           phase = 'disabled';
@@ -1306,6 +1358,12 @@ export function initAutoSave(
             retryTimer = setTimeout(settle, delay)
           })
           inFlightBackoff = wait
+          publishRunnerTelemetry('retry-scheduled', 'backoff', {
+            source,
+            attempt: nextAttempt,
+            delayMs: delay,
+            stage
+          }, autoError)
           void wait
             .then(() => {
               if (inFlightBackoff === wait) {
@@ -1326,6 +1384,17 @@ export function initAutoSave(
             return
           }
         } else {
+          publishRunnerTelemetry(
+            'retry-exhausted',
+            stage,
+            {
+              source,
+              attempt: nextAttempt,
+              maxAttempts: AUTOSAVE_RETRY_POLICY.maxAttempts,
+              stage
+            },
+            autoError
+          )
           phase = 'error'
           pendingBytes = 0
           pendingQueue.length = 0

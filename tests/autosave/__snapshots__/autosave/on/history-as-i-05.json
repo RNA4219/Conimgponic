@@ -93,5 +93,36 @@
       }
     }
   ],
-  "telemetry": []
+  "telemetry": [
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "manual",
+        "bytes": 507,
+        "generation": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T12:00:00.000Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "manual",
+        "generation": 0,
+        "lastSuccessAt": "2024-01-01T12:00:00.000Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 1,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T12:00:00.000Z"
+    }
+  ]
 }

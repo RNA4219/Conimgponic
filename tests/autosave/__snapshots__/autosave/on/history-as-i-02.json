@@ -641,5 +641,636 @@
       }
     }
   ],
-  "telemetry": []
+  "telemetry": [
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:02.800Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 0,
+        "lastSuccessAt": "2024-01-01T00:00:02.800Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 1,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:03.320Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 1
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:06.060Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 1,
+        "lastSuccessAt": "2024-01-01T00:00:06.060Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 2,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:06.590Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 2
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:09.330Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 2,
+        "lastSuccessAt": "2024-01-01T00:00:09.330Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 3,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:09.860Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 3
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:12.600Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 3,
+        "lastSuccessAt": "2024-01-01T00:00:12.600Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 4,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:13.130Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 4
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:15.870Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 4,
+        "lastSuccessAt": "2024-01-01T00:00:15.870Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 5,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:16.400Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 5
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:19.140Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 5,
+        "lastSuccessAt": "2024-01-01T00:00:19.140Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 6,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:19.670Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 6
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:22.410Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 6,
+        "lastSuccessAt": "2024-01-01T00:00:22.410Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 7,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:22.940Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 7
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:25.680Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 7,
+        "lastSuccessAt": "2024-01-01T00:00:25.680Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 8,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:26.210Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 8
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:28.950Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 8,
+        "lastSuccessAt": "2024-01-01T00:00:28.950Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 9,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:29.480Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 9
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:32.220Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 9,
+        "lastSuccessAt": "2024-01-01T00:00:32.220Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 10,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:32.750Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 10
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:35.490Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 10,
+        "lastSuccessAt": "2024-01-01T00:00:35.490Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 11,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:36.020Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 11
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:38.760Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 11,
+        "lastSuccessAt": "2024-01-01T00:00:38.760Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 12,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:39.290Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 12
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:42.030Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 12,
+        "lastSuccessAt": "2024-01-01T00:00:42.030Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 13,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:42.560Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 13
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:45.300Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 13,
+        "lastSuccessAt": "2024-01-01T00:00:45.300Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 14,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:45.830Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 14
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:48.570Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 14,
+        "lastSuccessAt": "2024-01-01T00:00:48.570Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 15,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:49.100Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 15
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:51.840Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 15,
+        "lastSuccessAt": "2024-01-01T00:00:51.840Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 16,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:52.370Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 16
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:55.110Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 16,
+        "lastSuccessAt": "2024-01-01T00:00:55.110Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 17,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:55.640Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 17
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:58.380Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 17,
+        "lastSuccessAt": "2024-01-01T00:00:58.380Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 18,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:00:58.910Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 18
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:01:01.650Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 18,
+        "lastSuccessAt": "2024-01-01T00:01:01.650Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 19,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:01:02.180Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 19
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:01:04.920Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 19,
+        "lastSuccessAt": "2024-01-01T00:01:04.920Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 20,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:01:05.450Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "writing-current",
+      "detail": {
+        "event": "write-succeeded",
+        "source": "auto",
+        "bytes": 507,
+        "generation": 20
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:01:08.190Z"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.runner",
+      "phase": "gc",
+      "detail": {
+        "event": "gc-completed",
+        "source": "auto",
+        "generation": 20,
+        "lastSuccessAt": "2024-01-01T00:01:08.190Z",
+        "backlog": 0,
+        "queuedGeneration": 0,
+        "nextGeneration": 21,
+        "pendingBytes": 0
+      },
+      "slo": "p99-success",
+      "ts": "2024-01-01T00:01:08.770Z"
+    }
+  ]
 }

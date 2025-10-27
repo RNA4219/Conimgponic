@@ -1,8 +1,1 @@
-{
-  "lockSequence": [
-    "attempt:web-lock",
-    "acquired:web-lock",
-    "released"
-  ],
-  "telemetry": []
-}
+

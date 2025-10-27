@@ -45,12 +45,7 @@ const makeCollector = () => {
   Object.defineProperty(globalThis, 'Day8Collector', {
     value: {
       publish(event: Record<string, unknown>) {
-        const { feature, event: name, phase, reason, code, retryable } = event
-        telemetry.push(
-          Object.fromEntries(
-            Object.entries({ feature, event: name, phase, reason, code, retryable }).filter(([, value]) => value !== undefined)
-          )
-        )
+        telemetry.push(JSON.parse(JSON.stringify(event)))
       }
     },
     configurable: true
@@ -143,7 +138,7 @@ scenario(
           typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback ?? (() => Promise.resolve())
         await new Promise<void>((resolve) => {
           resumeLock = async () => {
-            await callback({ async release() {} })
+            await callback({ async release() {}, released: Promise.resolve() })
             resumeLock = null
             resolve()
           }

@@ -15,5 +15,6 @@
       "retryable": true,
       "operation": "acquire"
     }
-  ]
+  ],
+  "collector": []
 }

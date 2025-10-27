@@ -15,5 +15,6 @@
       "reason": "acquire-failed",
       "retryable": false
     }
-  ]
+  ],
+  "collector": []
 }

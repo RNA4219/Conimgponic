@@ -89,7 +89,7 @@ scenario(
       }
     }
   },
-  async (t) => {
+  async (t, ctx) => {
     t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
     const uuids = ['lease-a', 'owner-a', 'lease-b', 'owner-b']
     t.mock.method(crypto, 'randomUUID', () => {
@@ -105,7 +105,9 @@ scenario(
     const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock' })
     await projectLockApi.release(lease)
 
-    await assertSnapshot('locks-as-i-03', { lockSequence: sequence, telemetry })
+    const collector = ctx.collectorEvents.map((event) => JSON.parse(JSON.stringify(event)))
+
+    await assertSnapshot('locks-as-i-03', { lockSequence: sequence, telemetry, collector })
   }
 )
 
@@ -118,7 +120,8 @@ scenario(
       }
     }
   },
-  async (t, { opfs }) => {
+  async (t, ctx) => {
+    const { opfs } = ctx
     t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
     const uuids = ['lease-fallback', 'owner-fallback']
     t.mock.method(crypto, 'randomUUID', () => {
@@ -162,7 +165,9 @@ scenario(
       return true
     })
 
-    await assertSnapshot('locks-as-i-03-fallback-error', { lockSequence: sequence, telemetry })
+    const collector = ctx.collectorEvents.map((event) => JSON.parse(JSON.stringify(event)))
+
+    await assertSnapshot('locks-as-i-03-fallback-error', { lockSequence: sequence, telemetry, collector })
   }
 )
 
@@ -176,7 +181,7 @@ scenario(
       }
     }
   },
-  async (t) => {
+  async (t, ctx) => {
     t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
     const uuids = ['lease-c', 'owner-c']
     t.mock.method(crypto, 'randomUUID', () => {
@@ -195,7 +200,9 @@ scenario(
       return true
     })
 
-    await assertSnapshot('locks-non-retryable', { lockSequence: sequence, telemetry })
+    const collector = ctx.collectorEvents.map((event) => JSON.parse(JSON.stringify(event)))
+
+    await assertSnapshot('locks-non-retryable', { lockSequence: sequence, telemetry, collector })
   }
 )
 
@@ -223,7 +230,7 @@ scenario(
       }
     }
   },
-  async (t) => {
+  async (t, ctx) => {
     t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
     const uuids = ['lease-h', 'owner-h']
     t.mock.method(crypto, 'randomUUID', () => {
@@ -239,7 +246,9 @@ scenario(
     const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock' })
     await projectLockApi.release(lease)
 
-    await assertSnapshot('locks-handle-without-release', { lockSequence: sequence, telemetry })
+    const collector = ctx.collectorEvents.map((event) => JSON.parse(JSON.stringify(event)))
+
+    await assertSnapshot('locks-handle-without-release', { lockSequence: sequence, telemetry, collector })
   }
 )
 
