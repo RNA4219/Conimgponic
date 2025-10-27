@@ -436,6 +436,63 @@ scenario(
 )
 
 scenario(
+  'AS-LK-08b: releaseProjectLock retries rethrow lock.released rejection without lock:released',
+  {
+    locks: {
+      async request(_key, optionsOrCallback, callback) {
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+
+        const releaseCalled = createDeferred<void>()
+        const handle: LockHandleLike & { released: Promise<void> } = {
+          async release() {
+            releaseCalled.resolve()
+          },
+          released: releaseCalled.promise.then(() => {
+            throw new Error('lock.released rejected')
+          })
+        }
+
+        await handler(handle)
+        await releaseCalled.promise
+      }
+    }
+  },
+  async (t) => {
+    const uuids = ['lease-release-released-reject', 'owner-release-released-reject']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const lease = await acquireProjectLock({ preferredStrategy: 'web-lock', retry: false })
+
+    const firstError = await assert.rejects(async () => releaseProjectLock(lease))
+    assert.ok(firstError instanceof ProjectLockError)
+    assert.equal(firstError.code, 'release-failed')
+
+    const secondError = await assert.rejects(async () => releaseProjectLock(lease))
+    assert.strictEqual(secondError, firstError)
+
+    const releasedEvents = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:released' }> => event.type === 'lock:released'
+    )
+    assert.equal(
+      releasedEvents.length,
+      0,
+      'lock:released must not emit when releaseProjectLock is retried after lock.released rejection'
+    )
+  }
+)
+
+scenario(
   'AS-LK-09: Web Lock release rejection demotes to readonly without lock:released',
   {
     locks: {
