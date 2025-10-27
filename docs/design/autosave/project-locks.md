@@ -87,4 +87,8 @@ stateDiagram-v2
 
 ---
 
+## レビュー用チェックリスト
+
+- [ ] **解除仕様整合**: `docs/locks/test-spec.md` の解除シナリオが本仕様のリリース要件（§1.2, §2）と一致し、Web Lock ラッパーの `release` 有無に関わらず `lock:release-requested` → `lock:released` の順序と `lock.released` 待機が保持されている。
+
 このドキュメントをロック API 実装・テスト・運用レビューの共通参照点として扱い、差分が発生した場合は Implementation Plan §1 / AutoSave 詳細設計 §3.2 と同時更新する。
