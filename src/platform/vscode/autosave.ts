@@ -19,6 +19,13 @@ const toIso = (input: Date): string => input.toISOString()
 
 const isGuardEnabled = (guard: AutoSavePhaseGuardSnapshot): boolean => guard.featureFlag.value && !guard.optionsDisabled
 
+const mergeGuard = (
+  _previous: AutoSavePhaseGuardSnapshot,
+  incoming: AutoSavePhaseGuardSnapshot,
+  forceDisabled: boolean
+): AutoSavePhaseGuardSnapshot =>
+  forceDisabled ? { featureFlag: incoming.featureFlag, optionsDisabled: true } : incoming
+
 const createDisabledError = (): AutoSaveError => ({
   name: 'AutoSaveError',
   message: 'AutoSave is disabled by phase guard',
@@ -200,6 +207,7 @@ interface InternalState {
   correlationCounter: number
   history: HistoryEntry[]
   retainedBytes: number
+  forceDisabled: boolean
 }
 
 interface AutoSaveTelemetryContext {
@@ -417,6 +425,7 @@ const handleNonRetryableError = (
     { before: statusBeforeDisable, after: state.status, guard: state.guard }
   )
   state.retryCount = 0
+  state.forceDisabled = true
 }
 
 export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): AutoSaveHostBridge => {
@@ -428,7 +437,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     reqCounter: 0,
     correlationCounter: 0,
     history: [],
-    retainedBytes: 0
+    retainedBytes: 0,
+    forceDisabled: false
   }
 
   const bootstrapFlags =
@@ -449,10 +459,10 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
 
   const reportDirty = (pendingBytes: number, guard: AutoSavePhaseGuardSnapshot): void => {
     const previousStatus = state.status
-    state.guard = guard
+    state.guard = mergeGuard(state.guard, guard, state.forceDisabled)
     const ts = toIso(options.now())
     const correlationId = nextCorrelationId(state)
-    if (!isGuardEnabled(guard)) {
+    if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
       options.sendMessage(
@@ -462,7 +472,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           ts,
           PHASE_STATUS,
           'disabled',
-          guard,
+          state.guard,
           state.retryCount,
           state.lastSuccessAt
         )
@@ -473,7 +483,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           name: 'autosave.status',
           properties: { state: 'disabled', source: 'phase-guard', correlationId, retryCount: state.retryCount }
         },
-        { before: previousStatus, after: state.status, guard }
+        { before: previousStatus, after: state.status, guard: state.guard }
       )
       return
     }
@@ -486,7 +496,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         ts,
         PHASE_STATUS,
         'dirty',
-        guard,
+        state.guard,
         state.retryCount,
         state.lastSuccessAt,
         pendingBytes
@@ -498,16 +508,14 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           name: 'autosave.status',
           properties: { state: 'dirty', pendingBytes, correlationId, retryCount: state.retryCount }
         },
-        { before: previousStatus, after: state.status, guard }
+        { before: previousStatus, after: state.status, guard: state.guard }
       )
     }
 
   const handleSnapshotRequest = async (request: AutoSaveSnapshotRequestMessage): Promise<void> => {
     const statusBeforeRequest = state.status
     const incomingGuard = request.payload.guard
-    state.guard = state.guard.optionsDisabled
-      ? { featureFlag: incomingGuard.featureFlag, optionsDisabled: true }
-      : incomingGuard
+    state.guard = mergeGuard(state.guard, incomingGuard, state.forceDisabled)
     const ts = toIso(options.now())
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
