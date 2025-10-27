@@ -250,6 +250,50 @@ test('DiffMergeView propagates active tab selection to queueMerge telemetry payl
   }
 })
 
+test('DiffMergeView OperationPane queue emits operation pane collector telemetry surface', async () => {
+  type DiffMergeController = ReturnType<typeof createDiffMergeController>
+  const payloads: DiffMergeQueueCommandPayload[] = []
+  let capturedController: DiffMergeController | undefined
+  const previousHook = (globalThis as {
+    __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+  }).__diffMergeViewOnControllerReady
+  ;(globalThis as {
+    __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+  }).__diffMergeViewOnControllerReady = (controller) => {
+    capturedController = controller
+  }
+
+  try {
+    renderToStaticMarkup(
+      createElement(DiffMergeView, {
+        precision: 'stable',
+        hunks: sampleHunks,
+        queueMergeCommand: async (payload) => {
+          payloads.push(payload)
+          return successEvent
+        },
+      }),
+    )
+
+    assert.ok(capturedController)
+
+    await capturedController?.queueMerge(['h1'])
+
+    assert.equal(payloads.length, 1)
+    assert.equal(payloads[0]?.telemetryContext.collectorSurface, 'diff-merge.operation-pane')
+  } finally {
+    if (previousHook) {
+      ;(globalThis as {
+        __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+      }).__diffMergeViewOnControllerReady = previousHook
+    } else {
+      delete (globalThis as {
+        __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+      }).__diffMergeViewOnControllerReady
+    }
+  }
+})
+
 class MemoryStorage implements DiffMergeTabStorage {
   #map = new Map<string, string>()
 

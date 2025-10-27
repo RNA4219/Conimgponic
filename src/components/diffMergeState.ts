@@ -158,7 +158,7 @@ const toQueuePayload = ({
   origin: 'operation-pane.queue' as const,
   hunkIds,
   telemetryContext: {
-    collectorSurface: 'diff-merge.hunk-list' as const,
+    collectorSurface: 'diff-merge.operation-pane' as const,
     analyzerSurface: 'diff-merge.queue' as const,
     lastTab: lastTab ?? lastTabForPrecision[precision],
   },
