@@ -382,11 +382,25 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
 
   const ready = createDeferred();
   const releaseDeferred = createDeferred();
+  const completionDeferred = createDeferred();
   let releaseInvoked = false;
   let releaseError: ProjectLockError | undefined;
   let releasedPromise: Promise<unknown> | undefined;
-  releaseDeferred.promise.then(() => awaitReleased(releasedPromise));
-  let requestSettled: Promise<void> = Promise.resolve();
+  const captureCompletionError = (error: unknown) => {
+    if (releaseError) return;
+    releaseError =
+      error instanceof ProjectLockError
+        ? error.operation === 'release'
+          ? error
+          : makeError(
+              'release-failed',
+              'Web Lock request completion rejected',
+              'release',
+              error.retryable,
+              error,
+            )
+        : makeError('release-failed', 'Web Lock request completion rejected', 'release', true, error);
+  };
 
   const awaitReleased = async (released: Promise<unknown> | undefined) => {
     if (!released) return;
@@ -403,6 +417,15 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
       }
     }
   };
+
+  const releaseMonitor = releaseDeferred.promise.then(async () => {
+    await awaitReleased(releasedPromise);
+    try {
+      await completionDeferred.promise;
+    } catch (error) {
+      captureCompletionError(error);
+    }
+  });
 
   const toReleaseProjectError = (error: unknown): ProjectLockError =>
     error instanceof ProjectLockError && error.operation === 'release' && error.retryable
@@ -425,10 +448,10 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
           };
           const handle = lock as WebLockHandle;
           const released = handle.released;
-          if (!released || typeof (released as Promise<unknown>).then !== 'function') {
-            throw makeError('acquire-denied', 'Web Lock handle missing released promise', 'acquire', false);
-          }
-          releasedPromise = released as Promise<unknown>;
+          releasedPromise =
+            released && typeof (released as Promise<unknown>).then === 'function'
+              ? (released as Promise<unknown>)
+              : Promise.resolve();
           type ReleaseMethod = () => Promise<void> | void;
           const releaseMethod: ReleaseMethod | undefined =
             typeof handle.release === 'function'
@@ -449,15 +472,27 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
                 }
               }
               releaseDeferred.resolve();
-              await releaseMonitor;
-              await requestSettled;
+              try {
+                await releaseMonitor;
+              } catch (error) {
+                captureCompletionError(error);
+              }
+              try {
+                await completionDeferred.promise;
+              } catch (error) {
+                captureCompletionError(error);
+              }
               const errorToThrow = releaseFailure ?? releaseError;
               if (errorToThrow) throw errorToThrow;
             },
           });
 
           ready.resolve();
-          await releaseDeferred.promise;
+          try {
+            await releaseDeferred.promise;
+          } finally {
+            if (!completionDeferred.isSettled()) completionDeferred.resolve();
+          }
         }
       )
       .catch((error) => {
@@ -476,24 +511,28 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
             projectError,
           );
         }
+        if (!completionDeferred.isSettled()) completionDeferred.reject(projectError);
         throw projectError;
       });
-    requestSettled = requestOutcome.then(
-      () => undefined,
-      () => undefined,
-    );
+    requestOutcome.catch(() => undefined);
   } catch (cause) {
-    throw cause instanceof ProjectLockError
-      ? cause
-      : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, cause);
+    const projectError =
+      cause instanceof ProjectLockError
+        ? cause
+        : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, cause);
+    if (!completionDeferred.isSettled()) completionDeferred.reject(projectError);
+    throw projectError;
   }
 
   try {
     await ready.promise;
   } catch (cause) {
-    throw cause instanceof ProjectLockError
-      ? cause
-      : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, cause);
+    const projectError =
+      cause instanceof ProjectLockError
+        ? cause
+        : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, cause);
+    if (!completionDeferred.isSettled()) completionDeferred.reject(projectError);
+    throw projectError;
   }
 
   return buildLease('web-lock', WEB_LOCK_KEY, ctx.ttlMs ?? WEB_LOCK_TTL_MS, ctx.heartbeatMs, ctx);
