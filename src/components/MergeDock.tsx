@@ -363,9 +363,20 @@ export const resolveMergeThresholdSnapshot = (
     options.flags ?? resolveFlags({ workspace, storage })
   const envPrecision = parseMergePrecision(
     (() => {
-      const meta = (import.meta as ImportMeta & { env?: Record<string, unknown> })
-      const candidate = meta.env?.VITE_MERGE_PRECISION
-      return typeof candidate === 'string' ? candidate : undefined
+      const metaCandidate = (() => {
+        const meta = import.meta as ImportMeta & { env?: Record<string, unknown> }
+        const raw = meta.env?.VITE_MERGE_PRECISION
+        return typeof raw === 'string' ? raw : undefined
+      })()
+      if (metaCandidate) {
+        return metaCandidate
+      }
+      const nodeProcess =
+        typeof globalThis === 'object'
+          ? ((globalThis as { process?: { env?: Record<string, unknown> } }).process ?? null)
+          : null
+      const processCandidate = nodeProcess?.env?.VITE_MERGE_PRECISION
+      return typeof processCandidate === 'string' ? processCandidate : undefined
     })(),
   )
   const precision =
@@ -385,11 +396,15 @@ export const resolveMergeThresholdSnapshot = (
     return finalize(overrideThreshold)
   }
 
+  const flagThreshold = parseMergeThreshold(snapshot.merge.threshold)
+
   if (envOverrides) {
+    if (flagThreshold !== undefined) {
+      return finalize(flagThreshold)
+    }
     return finalize(DEFAULT_THRESHOLD)
   }
 
-  const flagThreshold = parseMergeThreshold(snapshot.merge.threshold)
   if (flagThreshold !== undefined) {
     return finalize(flagThreshold)
   }
