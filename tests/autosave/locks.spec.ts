@@ -199,6 +199,50 @@ scenario(
   }
 )
 
+scenario(
+  'AS-I-03: Web Lock handle without release resolves via released promise',
+  {
+    locks: {
+      async request(_key, optionsOrCallback, callback) {
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+
+        let resolveReleased: (() => void) | undefined
+        let releasedResolved = false
+        const released = new Promise<void>((resolve) => {
+          resolveReleased = () => {
+            if (releasedResolved) return
+            releasedResolved = true
+            resolve()
+          }
+        })
+
+        const result = await handler({ released } as { released: Promise<void> })
+        resolveReleased?.()
+        return result
+      }
+    }
+  },
+  async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+    const uuids = ['lease-h', 'owner-h']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock' })
+    await projectLockApi.release(lease)
+
+    await assertSnapshot('locks-handle-without-release', { lockSequence: sequence, telemetry })
+  }
+)
+
 test('AS-LK-03: Web Lock は release() まで request が解決せず、lock.released 完了まで待機する', async (t) => {
   const events: ProjectLockEvent[] = []
   const unsubscribe = projectLockEvents.subscribe((event) => {

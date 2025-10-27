@@ -383,56 +383,59 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   const ready = createDeferred();
   const releaseDeferred = createDeferred();
   const completionDeferred = createDeferred();
-  let released = false;
-  let requestOutcome!: Promise<unknown>;
+  let releaseInvoked = false;
+  let releaseError: ProjectLockError | undefined;
   let requestSettled!: Promise<void>;
 
+  const awaitReleased = async (released: Promise<unknown> | undefined) => {
+    if (!released) return;
+    try {
+      await released;
+    } catch (error) {
+      if (!releaseError) {
+        releaseError =
+          error instanceof ProjectLockError
+            ? error.operation === 'release'
+              ? error
+              : makeError('release-failed', 'Web Lock released promise rejected', 'release', error.retryable, error)
+            : makeError('release-failed', 'Web Lock released promise rejected', 'release', true, error);
+      }
+    }
+  };
+
   try {
-    requestOutcome = locks
+    const requestOutcome = locks
       .request(
         WEB_LOCK_KEY,
         { mode: 'exclusive', signal: ctx.signal },
         async (lock) => {
-          if (!lock || typeof lock !== 'object' || typeof lock.release !== 'function') {
-            throw makeError('acquire-denied', 'Web Lock handle missing release', 'acquire', false);
+          if (!lock || typeof lock !== 'object') {
+            throw makeError('acquire-denied', 'Web Lock handle missing', 'acquire', false);
           }
 
-          const releasedPromise = (lock as { released?: unknown }).released;
+          const released = (lock as { released?: unknown }).released;
+          if (!released || typeof (released as Promise<unknown>).then !== 'function') {
+            throw makeError('acquire-denied', 'Web Lock handle missing released promise', 'acquire', false);
+          }
 
           webLockHandles.set(ctx.leaseId, {
             release: async () => {
-              if (released) return;
-              released = true;
+              if (releaseInvoked) return;
+              releaseInvoked = true;
               releaseDeferred.resolve();
-
-              let failure: unknown;
-              try {
-                await lock.release();
-              } catch (error) {
-                failure = error;
-              }
-
-              try {
-                if (releasedPromise && typeof (releasedPromise as Promise<unknown>).then === 'function') {
-                  await releasedPromise;
-                }
-              } catch (error) {
-                if (failure === undefined) failure = error;
-              } finally {
-                completionDeferred.resolve();
-              }
-
+              await completionDeferred.promise;
               await requestSettled;
-
-              if (failure !== undefined) {
-                throw failure;
-              }
+              if (releaseError) throw releaseError;
             },
           });
 
           ready.resolve();
-          await releaseDeferred.promise;
-          await completionDeferred.promise;
+          try {
+            await releaseDeferred.promise;
+          } finally {
+            await awaitReleased(released);
+            completionDeferred.resolve();
+          }
         }
       )
       .catch((error) => {
@@ -440,7 +443,17 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
           error instanceof ProjectLockError
             ? error
             : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, error);
-        if (!ready.isSettled()) ready.reject(projectError);
+        if (!ready.isSettled()) {
+          ready.reject(projectError);
+        } else if (!releaseError) {
+          releaseError = makeError(
+            'release-failed',
+            'Web Lock request failed during release',
+            'release',
+            projectError.retryable,
+            projectError,
+          );
+        }
         throw projectError;
       });
     requestSettled = requestOutcome.then(
