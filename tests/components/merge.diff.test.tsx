@@ -217,6 +217,19 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   assert.equal(plan.autoApplied.meetsTarget, false)
 })
 
+test('diff exposure falls back to opt-in when auto applied underperforms', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+    autoAppliedRate: 0.84,
+  })
+
+  assert.ok(plan.threshold.autoTarget > plan.autoApplied.rate)
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+})
+
 test('beta precision diff plan triggers backup CTA when diff is enabled', () => {
   const phasePlan = resolveMergeDockPhasePlan({
     precision: 'beta',
