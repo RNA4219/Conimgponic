@@ -296,6 +296,7 @@ jobs:
           filters: |
             autosave:
               - 'src/**/autosave/**'
+              # Ensure autosave-suffixed modules trigger the autosave matrix
               - 'src/**/*autosave*.ts'
               - 'src/**/*autosave*.tsx'
               - 'tests/**/autosave.*.test.ts'

@@ -84,6 +84,8 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
 const require = createRequire(import.meta.url);
+const autosaveSuffixModuleGlobs = ['src/**/*autosave*.ts', 'src/**/*autosave*.tsx'] as const;
+
 const expectedQualitySequence = [
   'pnpm -s lint',
   'pnpm -s typecheck',
@@ -234,8 +236,7 @@ describe('ci workflow build job', () => {
       'autosave',
       [
         'src/**/autosave/**',
-        'src/**/*autosave*.ts',
-        'src/**/*autosave*.tsx',
+        ...autosaveSuffixModuleGlobs,
         'tests/**/autosave.*.test.ts',
         'tests/**/autosave/**',
         '.github/workflows/autosave*',
@@ -266,14 +267,43 @@ describe('ci workflow build job', () => {
       '"Detect autosave changes" step must configure autosave filters',
     );
 
-    assert(
-      globs.includes('src/**/*autosave*.ts'),
-      '"Detect autosave changes" filters.autosave must monitor autosave-suffixed TypeScript modules',
+    for (const glob of autosaveSuffixModuleGlobs) {
+      assert(
+        globs.includes(glob),
+        `"Detect autosave changes" filters.autosave must monitor autosave-suffixed modules via glob "${glob}"`,
+      );
+    }
+  });
+
+  test('autosave paths filter includes autosave suffix module globs exactly once', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const detectAutosaveChanges = assertDetectAutosaveChangesStep(
+      steps,
+      'quality job must include "Detect autosave changes" step for autosave suite',
     );
-    assert(
-      globs.includes('src/**/*autosave*.tsx'),
-      '"Detect autosave changes" filters.autosave must monitor autosave-suffixed TSX modules',
+
+    const globs = getPathsFilterGlobs(
+      detectAutosaveChanges,
+      'autosave',
+      '"Detect autosave changes" step must configure autosave filters',
     );
+
+    for (const glob of autosaveSuffixModuleGlobs) {
+      const occurrences = globs.filter((entry) => entry === glob).length;
+      assert.strictEqual(
+        occurrences,
+        1,
+        `"Detect autosave changes" filters.autosave must include glob "${glob}" exactly once`,
+      );
+    }
   });
 
   test('autosave paths filter monitors suffix-based autosave tests', async () => {
