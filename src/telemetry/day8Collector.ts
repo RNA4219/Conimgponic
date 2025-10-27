@@ -5,16 +5,17 @@ import type {
   FlagSource,
   FlagValidationError
 } from '../config/flags.js'
+import type { RolloutPhase } from '../../scripts/monitor/collect-metrics.js'
 
-type RolloutPhaseContract = 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1'
+type FlagPhaseToContractPhase = { readonly [Phase in FlagRolloutPhase]: RolloutPhase }
 
-const FLAG_PHASE_TO_CONTRACT_PHASE: Record<FlagRolloutPhase, RolloutPhaseContract> = {
+const FLAG_PHASE_TO_CONTRACT_PHASE = {
   'phase-a0': 'A-0',
   'phase-a1': 'A-1',
   'phase-a2': 'A-2',
   'phase-b0': 'B-0',
   'phase-b1': 'B-1'
-} as const
+} as const satisfies FlagPhaseToContractPhase
 
 export type Day8CollectorAutoSaveGuardReason =
   | 'phase-a0-failsafe'
@@ -46,7 +47,7 @@ export type FlagResolutionContractPayload = {
   readonly flag: FeatureFlagName
   readonly variant: string
   readonly source: FlagSource
-  readonly phase: RolloutPhaseContract
+  readonly phase: RolloutPhase
   readonly evaluation_ms: number
   readonly errors: readonly FlagValidationError[]
   readonly threshold: number | null
