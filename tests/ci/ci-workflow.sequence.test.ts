@@ -38,6 +38,7 @@ type QualityJobStrategyConfig = {
 };
 
 type QualityJobConfig = {
+  needs?: JobNeedsConfig;
   strategy?: QualityJobStrategyConfig;
   steps?: StepConfig[];
 };
@@ -151,6 +152,16 @@ describe('ci workflow build job', () => {
       'quality job matrix.include suites',
       { exact: true },
     );
+  });
+
+  test('quality job depends on sbom job', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    assertJobNeedsIncludeAll(quality.needs, ['sbom'], 'quality job must depend on sbom job');
   });
 
   test('quality job configures collect_failures per suite', async () => {
@@ -1472,7 +1483,7 @@ function assertJobNeedsIncludeAll(
   expected: string[],
   message: string,
 ): void {
-  const needs = normalizeJobNeeds(value);
+  const needs = normalizeJobNeeds(value, message);
 
   for (const dependency of expected) {
     const hasMatch = needs.includes(dependency);
@@ -1480,7 +1491,7 @@ function assertJobNeedsIncludeAll(
   }
 }
 
-function normalizeJobNeeds(value: JobNeedsConfig): string[] {
+function normalizeJobNeeds(value: JobNeedsConfig, message: string): string[] {
   if (typeof value === 'string') {
     return [value];
   }
@@ -1489,7 +1500,7 @@ function normalizeJobNeeds(value: JobNeedsConfig): string[] {
     return value;
   }
 
-  assert.fail('build job must configure needs as a string or array of strings');
+  assert.fail(`${message}; needs must be configured as a string or array of strings`);
 }
 
 function assertLineIncludes(lines: string[], expected: string, message: string): void {
