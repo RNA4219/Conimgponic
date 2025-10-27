@@ -197,8 +197,7 @@ export const sanitizePreference = (
   diffEnabled: boolean,
 ): MergeDockPreference => {
   if (precision === 'stable') {
-    if (preference === 'diff-merge') return 'diff-merge'
-    return preference
+    return 'diff-merge'
   }
   if (diffEnabled) return preference
   return preference === 'diff-merge' ? 'manual-first' : preference
@@ -684,7 +683,11 @@ export function MergeDock(props?: MergeDockProps){
   )
   const plan = phasePlan.tabs
   const diffPlan = phasePlan.diff
-  const defaultPreference = getDefaultPreference(precision, phasePlan.diff.enabled)
+  const defaultPreference = sanitizePreference(
+    getDefaultPreference(precision, phasePlan.diff.enabled),
+    precision,
+    phasePlan.diff.enabled,
+  )
   const storeRef = useRef<MergeDockViewStore>()
   if (!storeRef.current) {
     storeRef.current = createMergeDockViewStore(plan.initialTab, defaultPreference)
