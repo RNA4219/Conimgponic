@@ -95,7 +95,10 @@
                 "type": "string",
                 "enum": ["env", "workspace", "localStorage", "default"]
               },
-              "phase": { "$ref": "#/definitions/rolloutPhase" },
+              "phase": {
+                "$ref": "#/definitions/rolloutPhase",
+                "enum": ["A-0", "A-1", "A-2", "B-0", "B-1"]
+              },
               "evaluation_ms": { "type": "number", "minimum": 0 },
               "threshold": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
             },
@@ -158,6 +161,65 @@
     {
       "if": {
         "properties": {
+          "event": { "const": "export.failed" }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runId": { "type": "string", "minLength": 1 },
+              "matchRate": { "type": "number" },
+              "formats": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "error": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "code": { "type": "string", "minLength": 1 },
+                  "message": { "type": "string", "minLength": 1 },
+                  "retryable": { "type": "boolean" }
+                },
+                "required": ["code", "message", "retryable"]
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "format": { "type": "string", "minLength": 1 },
+                    "name": { "type": ["string", "null"], "minLength": 1 },
+                    "status": {
+                      "type": "string",
+                      "enum": ["matched", "diff"]
+                    },
+                    "diff": { "type": ["string", "null"], "minLength": 1 }
+                  },
+                  "required": ["format", "status"]
+                }
+              },
+              "next_backoff_ms": { "type": "number", "minimum": 0 }
+            },
+            "required": [
+              "runId",
+              "matchRate",
+              "formats",
+              "error",
+              "entries",
+              "next_backoff_ms"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "event": { "enum": [
             "plugins.invoked",
             "plugins.completed",
@@ -175,7 +237,8 @@
               "action": { "type": "string", "minLength": 1 },
               "result": { "type": "string", "enum": ["success", "failure"] },
               "duration_ms": { "type": "number", "minimum": 0 },
-              "sandboxViolation": { "type": "boolean", "const": true }
+              "sandboxViolation": { "type": "boolean", "const": true },
+              "next_backoff_ms": { "type": "number", "minimum": 0 }
             },
             "required": [
               "pluginId",
@@ -196,12 +259,17 @@
       "then": {
         "properties": {
           "payload": {
+            "properties": {
+              "sandboxViolation": { "type": "boolean", "const": true },
+              "next_backoff_ms": { "type": "number", "minimum": 0 }
+            },
             "required": [
               "pluginId",
               "action",
               "result",
               "duration_ms",
-              "sandboxViolation"
+              "sandboxViolation",
+              "next_backoff_ms"
             ]
           }
         }
