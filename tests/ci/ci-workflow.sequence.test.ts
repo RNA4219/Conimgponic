@@ -85,6 +85,7 @@ const repoRoot = resolve(currentDir, '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
 const require = createRequire(import.meta.url);
 const autosaveSuffixModuleGlobs = ['src/**/*autosave*.ts', 'src/**/*autosave*.tsx'] as const;
+const vscodeFlagsHandshakeSpecPath = 'tests/extensions/vscode/flags-handshake.spec.ts';
 
 const expectedQualitySequence = [
   'pnpm -s lint',
@@ -242,6 +243,7 @@ describe('ci workflow build job', () => {
         '.github/workflows/autosave*',
         'tests/**/*autosave*.test.ts',
         'tests/**/*autosave*.spec.ts',
+        vscodeFlagsHandshakeSpecPath,
       ],
       '"Detect autosave changes" step must monitor required autosave paths',
     );
@@ -335,6 +337,33 @@ describe('ci workflow build job', () => {
     assert(
       globs.includes('tests/**/*autosave*.spec.ts'),
       '"Detect autosave changes" filters.autosave must monitor suffix-based autosave specs',
+    );
+  });
+
+  test('autosave paths filter monitors VS Code handshake spec', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const detectAutosaveChanges = assertDetectAutosaveChangesStep(
+      steps,
+      'quality job must include "Detect autosave changes" step for autosave suite',
+    );
+
+    const globs = getPathsFilterGlobs(
+      detectAutosaveChanges,
+      'autosave',
+      '"Detect autosave changes" step must configure autosave filters',
+    );
+
+    assert(
+      globs.includes(vscodeFlagsHandshakeSpecPath),
+      '"Detect autosave changes" filters.autosave must monitor VS Code handshake spec',
     );
   });
 
