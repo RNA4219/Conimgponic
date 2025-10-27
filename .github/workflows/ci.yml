@@ -294,12 +294,14 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
-          autosave:
-            - 'src/**/autosave/**'
-            - 'tests/**/autosave.*.test.ts'
-            - 'tests/**/autosave/**'
-            - '.github/workflows/autosave*'
-            - 'tests/**/*autosave*.test.ts'
+            autosave:
+              - 'src/**/autosave/**'
+              - 'src/**/*autosave*.ts'
+              - 'src/**/*autosave*.tsx'
+              - 'tests/**/autosave.*.test.ts'
+              - 'tests/**/autosave/**'
+              - '.github/workflows/autosave*'
+              - 'tests/**/*autosave*.test.ts'
 
       - name: Determine autosave execution
         if: matrix.suite == 'autosave'
