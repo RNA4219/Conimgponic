@@ -60,6 +60,34 @@ test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
   assert.equal(snapshot.precision, 'legacy')
 })
 
+test('resolveMergeThresholdSnapshot prioritizes stable flag threshold when env precision override is set', () => {
+  const nodeProcess = (globalThis as {
+    process?: { env?: Record<string, string | undefined> }
+  }).process
+
+  if (!nodeProcess || !nodeProcess.env) {
+    throw new Error('process.env is unavailable')
+  }
+
+  const env = nodeProcess.env
+  const previousPrecision = env.VITE_MERGE_PRECISION
+
+  try {
+    env.VITE_MERGE_PRECISION = 'stable'
+
+    const snapshot = resolveMergeThresholdSnapshot({ workspace: null, storage: null })
+
+    assert.equal(snapshot.precision, 'stable')
+    assert.equal(snapshot.threshold, 0.82)
+  } finally {
+    if (previousPrecision === undefined) {
+      delete env.VITE_MERGE_PRECISION
+    } else {
+      env.VITE_MERGE_PRECISION = previousPrecision
+    }
+  }
+})
+
 test('resolveMergeThresholdSnapshot reads conimg-prefixed workspace getter key', () => {
   const workspace = {
     get(key: string) {
