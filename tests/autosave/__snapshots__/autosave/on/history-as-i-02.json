@@ -641,5 +641,111 @@
       }
     }
   ],
-  "telemetry": []
+  "telemetry": [
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    },
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1"
+    }
+  ]
 }
