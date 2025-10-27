@@ -80,6 +80,29 @@ test('workspace settings provide values when env is absent', () => {
   assert.equal(snapshot.updatedAt, '2024-02-03T04:05:06.789Z')
 })
 
+test('workspace getter handles conimg-prefixed keys for autosave and merge flags', () => {
+  const workspace = {
+    get(key: string) {
+      switch (key) {
+        case 'conimg.autosave.enabled':
+          return 'true'
+        case 'conimg.merge.threshold':
+          return 0.84
+        default:
+          return undefined
+      }
+    }
+  } satisfies WorkspaceConfiguration
+
+  const snapshot = resolveFlags({ workspace })
+
+  assert.equal(snapshot.autosave.enabled, true)
+  assert.equal(snapshot.autosave.source, 'workspace')
+  assert.equal(snapshot.merge.precision, 'stable')
+  assert.equal(snapshot.merge.source, 'workspace')
+  assert.equal(snapshot.merge.threshold, 0.84)
+})
+
 test('localStorage is used when env and workspace are invalid', () => {
   const env = {
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'INVALID'

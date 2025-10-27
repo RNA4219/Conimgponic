@@ -60,6 +60,22 @@ test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
   assert.equal(snapshot.precision, 'legacy')
 })
 
+test('resolveMergeThresholdSnapshot reads conimg-prefixed workspace getter key', () => {
+  const workspace = {
+    get(key: string) {
+      if (key === 'conimg.merge.threshold') {
+        return '0.88'
+      }
+      return undefined
+    }
+  }
+
+  const snapshot = resolveMergeThresholdSnapshot({ workspace })
+
+  assert.equal(snapshot.threshold, 0.88)
+  assert.equal(snapshot.precision, 'stable')
+})
+
 test('legacy precision clamps threshold and hides diff tab', () => {
   const plan = resolveMergeDockPhasePlan({ precision: 'legacy', threshold: 0.6 })
 
