@@ -10,6 +10,8 @@ import {
   type RolloutPhase
 } from '../../scripts/monitor/collect-metrics.js'
 
+export type { RolloutPhase } from '../../scripts/monitor/collect-metrics.js'
+
 type FlagPhaseToContractPhase = { readonly [Phase in FlagRolloutPhase]: RolloutPhase }
 
 const FLAG_PHASE_TO_CONTRACT_PHASE = {
@@ -107,7 +109,7 @@ const createTelemetryId = (prefix: string, context: string): string => {
 
 export const publishFlagResolution = (
   source: string,
-  phase: string,
+  phase: RolloutPhase,
   payloads: readonly FlagResolutionEventPayload[],
   evaluationMs: number,
   overrides?: TelemetryEnvelopeOverrides
@@ -122,7 +124,7 @@ export const publishFlagResolution = (
   const maxAttempts = overrides?.maxAttempts ?? retryPolicy.maxAttempts
   const attempt = Math.min(Math.max(1, overrides?.attempt ?? 1), maxAttempts)
   const backoffMs = overrides?.backoffMs ?? retryPolicy.backoffMs
-  const createEnvelope = (contractPhase: RolloutPhase): Pick<
+  const createEnvelope = (): Pick<
     Day8CollectorFlagResolutionEvent,
     'type' | 'apiVersion' | 'reqId' | 'ts' | 'correlationId' | 'phase' | 'attempt' | 'maxAttempts' | 'backoffMs'
   > => ({
@@ -131,7 +133,7 @@ export const publishFlagResolution = (
     reqId,
     ts: overrides?.ts ?? new Date().toISOString(),
     correlationId,
-    phase: contractPhase,
+    phase,
     attempt,
     maxAttempts,
     backoffMs
@@ -149,7 +151,7 @@ export const publishFlagResolution = (
       detail: payload.detail
     }
     collector.publish({
-      ...createEnvelope(contractPayload.phase),
+      ...createEnvelope(),
       schema: 'vscode.telemetry.v1',
       feature: 'config.flags',
       event: 'flag_resolution',

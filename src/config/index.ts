@@ -3,10 +3,12 @@ import type { AutoSavePhaseGuardSnapshot, AutoSavePolicy } from '../lib/autosave
 
 import {
   publishFlagResolution,
-  type FlagResolutionEventPayload
+  type FlagResolutionEventPayload,
+  type RolloutPhase
 } from '../telemetry/day8Collector.js'
 import type {
   FeatureFlagName,
+  FlagRolloutPhase,
   FlagSnapshot,
   FlagSource,
   FlagValidationError,
@@ -143,7 +145,13 @@ export const collectFlagResolutionPayloads = (
   ]
 }
 
-type FlagRolloutPhase = (typeof FLAG_MIGRATION_PLAN)[number]['phase']
+const FLAG_PHASE_TO_ROLLOUT_PHASE: Record<FlagRolloutPhase, RolloutPhase> = {
+  'phase-a0': 'A-0',
+  'phase-a1': 'A-1',
+  'phase-a2': 'A-2',
+  'phase-b0': 'B-0',
+  'phase-b1': 'B-1'
+}
 
 export interface AutoSaveBootstrapPlan {
   readonly snapshot: FlagSnapshot
@@ -178,7 +186,9 @@ export function resolveAutoSaveBootstrapPlan(
   const planErrors = errors satisfies readonly FlagValidationError[]
 
   const payloads = collectFlagResolutionPayloads(snapshot, planErrors, evaluationMs)
-  publishFlagResolution('app.autosave', 'bootstrap', payloads, evaluationMs)
+  const envelopePhase =
+    FLAG_PHASE_TO_ROLLOUT_PHASE[FEATURE_FLAG_DEFINITIONS['autosave.enabled'].phase]
+  publishFlagResolution('app.autosave', envelopePhase, payloads, evaluationMs)
   const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
 
   const workspaceInput: WorkspaceConfiguration | null | undefined = options?.workspace
@@ -208,7 +218,9 @@ export function resolvePluginBridgeBootstrapPlan(
   const evaluationMs = Math.max(0, Math.round(readClock() - startedAt))
 
   const payloads = collectFlagResolutionPayloads(snapshot, errors, evaluationMs)
-  publishFlagResolution('vscode.plugins', 'bootstrap', payloads, evaluationMs)
+  const envelopePhase =
+    FLAG_PHASE_TO_ROLLOUT_PHASE[FEATURE_FLAG_DEFINITIONS['plugins.enable'].phase]
+  publishFlagResolution('vscode.plugins', envelopePhase, payloads, evaluationMs)
   return {
     snapshot,
     enableFlag: snapshot.plugins.enabled,

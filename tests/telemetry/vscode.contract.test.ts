@@ -4,7 +4,8 @@ import { describe, test } from 'node:test'
 
 import {
   COLLECT_METRICS_CONTRACT,
-  FLAG_RESOLUTION_SOURCE_VARIANTS
+  FLAG_RESOLUTION_SOURCE_VARIANTS,
+  type RolloutPhase
 } from '../../scripts/monitor/collect-metrics.js'
 import {
   collectFlagResolutionPayloads,
@@ -270,6 +271,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     } as Day8Collector
 
     try {
+      const envelopePhase: RolloutPhase = 'A-0'
       const payload: FlagResolutionEventPayload = {
         flag: 'autosave.enabled',
         variant: 'true',
@@ -281,7 +283,7 @@ describe('vscode extension telemetry contract (RED)', () => {
         status: 'success',
         detail: { retryable: false, default_used: false }
       }
-      publishFlagResolution('app.autosave', 'bootstrap', [payload], 42)
+      publishFlagResolution('app.autosave', envelopePhase, [payload], 42)
     } finally {
       scope.Day8Collector = previousCollector
     }
@@ -289,6 +291,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(captured.length > 0, 'flag_resolution telemetry must be published')
     const [event] = captured
     assertOk(event, 'flag_resolution event must be captured')
+    deepStrictEqual(event.phase, 'A-0')
     assertOk(
       Array.isArray(event.payload.errors),
       'flag_resolution payload must include errors array'
@@ -317,6 +320,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     } as Day8Collector
 
     try {
+      const envelopePhase: RolloutPhase = 'A-2'
       const phaseA2Payload: FlagResolutionEventPayload = {
         flag: 'autosave.enabled',
         variant: 'true',
@@ -339,7 +343,12 @@ describe('vscode extension telemetry contract (RED)', () => {
         status: 'success',
         detail: { retryable: false, default_used: false }
       }
-      publishFlagResolution('app.flags', 'bootstrap', [phaseA2Payload, phaseB1Payload], 11)
+      publishFlagResolution(
+        'app.flags',
+        envelopePhase,
+        [phaseA2Payload, phaseB1Payload],
+        11
+      )
     } finally {
       scope.Day8Collector = previousCollector
     }
@@ -347,10 +356,12 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(captured.length >= 2, 'flag_resolution telemetry must capture all payloads')
     const [phaseA2Event, phaseB1Event] = captured
     assertOk(phaseA2Event, 'phase-a2 telemetry must be captured')
+    deepStrictEqual(phaseA2Event.phase, 'A-2')
     deepStrictEqual(phaseA2Event.payload.flag, 'autosave.enabled')
     deepStrictEqual(phaseA2Event.payload.phase, 'A-2')
 
     assertOk(phaseB1Event, 'phase-b1 telemetry must be captured')
+    deepStrictEqual(phaseB1Event.phase, 'A-2')
     deepStrictEqual(phaseB1Event.payload.flag, 'plugins.enable')
     deepStrictEqual(phaseB1Event.payload.phase, 'B-1')
   })
@@ -422,6 +433,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     ]
 
     try {
+      const envelopePhase: RolloutPhase = 'A-0'
       const payload: FlagResolutionEventPayload = {
         flag: 'autosave.enabled',
         variant: 'false',
@@ -433,7 +445,7 @@ describe('vscode extension telemetry contract (RED)', () => {
         status: 'failure',
         detail: { retryable: false, default_used: true }
       }
-      publishFlagResolution('app.autosave', 'bootstrap', [payload], 13)
+      publishFlagResolution('app.autosave', envelopePhase, [payload], 13)
     } finally {
       scope.Day8Collector = previousCollector
     }
@@ -441,6 +453,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(captured.length > 0, 'flag_resolution telemetry must be published')
     const [event] = captured
     assertOk(event, 'flag_resolution event must be captured')
+    deepStrictEqual(event.phase, 'A-0')
     deepStrictEqual(event.payload.errors, errors)
     deepStrictEqual(event.payload.threshold, 0.75)
     deepStrictEqual(event.payload.status, 'failure')
@@ -558,7 +571,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       } as Day8Collector
 
       try {
-        publishFlagResolution('app.flags', 'snapshot', payloads, 3)
+        const envelopePhase: RolloutPhase = 'A-2'
+        publishFlagResolution('app.flags', envelopePhase, payloads, 3)
       } finally {
         scope.Day8Collector = previousCollector
       }
