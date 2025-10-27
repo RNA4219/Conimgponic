@@ -437,7 +437,7 @@ const handleNonRetryableError = (
         state: 'disabled',
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
-        phase: request.phase ?? PHASE_SNAPSHOT,
+        phase: disabledEnvelopePhase,
         performance: { flush_latency_ms: flushLatencyMs }
       }
     },
