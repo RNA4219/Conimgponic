@@ -295,6 +295,21 @@ test('stable precision without phase stats keeps diff visible and gated', () => 
   assert.equal(plan.tabs.initialTab, 'diff')
 })
 
+test('stable precision keeps diff opt-in until auto apply meets target', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.88,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.threshold.autoTarget, 0.89)
+  assert.equal(plan.autoApplied.rate, 0.88)
+  assert.equal(plan.autoApplied.meetsTarget, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.diff.enabled, false)
+})
+
 test('stable precision keeps diff merge preference locked while guarded', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
