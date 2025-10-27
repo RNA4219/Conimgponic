@@ -74,6 +74,43 @@ const createRequest = (
 })
 
 describe('createVscodeAutoSaveBridge', () => {
+  it('workspace.get で conimg プレフィックス無しのキーを評価する', () => {
+    const workspace = {
+      get: (key: string): unknown => {
+        if (key === 'autosave.enabled') {
+          return 'true'
+        }
+        return undefined
+      }
+    }
+    const sent: AutoSaveBridgeMessage[] = []
+    const now = () => new Date('2024-01-04T00:00:00.000Z')
+    const flags = resolveFlags({ workspace, storage: null, clock: now })
+    const expectedGuard: AutoSavePhaseGuardSnapshot = {
+      featureFlag: { value: flags.autosave.value, source: flags.autosave.source },
+      optionsDisabled: !flags.autosave.value
+    }
+
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: expectedGuard,
+      workspace,
+      now,
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => {
+        throw new Error('bootstrap で atomicWrite を呼ばない')
+      }
+    })
+
+    assert.equal(sent.length, 1)
+    const bootstrap = sent[0]
+    assert.ok(bootstrap && isBootstrapMessage(bootstrap))
+    assert.equal(bootstrap.payload.flags.autosave.source, 'workspace')
+    assert.equal(bootstrap.payload.guard.featureFlag.value, true)
+    assert.strictEqual(bootstrap.payload.guard, expectedGuard)
+    assert.equal(bridge.inspectState().guard.featureFlag.value, true)
+  })
+
   it('bootstrap で workspace 由来の FlagSnapshot を伝搬する', () => {
     const workspace = {
       get: (key: string): unknown => {

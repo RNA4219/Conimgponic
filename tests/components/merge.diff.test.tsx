@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
+import {
+  DEFAULT_FLAGS,
+  STABLE_THRESHOLD_DEFAULT,
+  type FlagSnapshot,
+} from '../../src/config'
 import {
   resolveMergeDockPhasePlan,
   resolveMergeThresholdPlan,
@@ -286,6 +290,31 @@ test('workspace threshold from resolveFlags updates diff exposure and clamp', ()
   assert.equal(plan.diff.enabled, true)
   assert.equal(plan.diff.exposure, 'default')
   assert.equal(plan.autoApplied.target, 0.95)
+})
+
+test('workspace getter without prefix sets stable precision for merge flags', () => {
+  const workspace = {
+    get: (key: string): unknown => {
+      if (key === 'merge.threshold') {
+        return 'stable'
+      }
+      return undefined
+    },
+  }
+
+  const snapshot = resolveMergeThresholdSnapshot({ workspace, storage: null })
+  assert.equal(snapshot.precision, 'stable')
+  assert.equal(snapshot.threshold, STABLE_THRESHOLD_DEFAULT)
+
+  const plan = resolveMergeDockPhasePlan({
+    precision: snapshot.precision,
+    threshold: snapshot.threshold,
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.diff.enabled, true)
+  assert.equal(plan.diff.exposure, 'default')
+  assert.equal(plan.guard.phaseBRequired, true)
 })
 
 test('env precision threshold from flags overrides workspace and storage settings', () => {

@@ -127,6 +127,8 @@ const defaultEnv = (() => {
 const defaultStorage: Pick<Storage, 'getItem'> | null =
   typeof localStorage !== 'undefined' ? localStorage : null
 
+const WORKSPACE_FLAG_SCOPE_PREFIX = 'conimg.'
+
 function readWorkspaceValue(
   workspace: WorkspaceConfiguration | null | undefined,
   key: string
@@ -135,26 +137,52 @@ function readWorkspaceValue(
     return undefined
   }
 
+  const candidates: readonly string[] =
+    key.startsWith(WORKSPACE_FLAG_SCOPE_PREFIX) &&
+    key.length > WORKSPACE_FLAG_SCOPE_PREFIX.length
+      ? [key, key.slice(WORKSPACE_FLAG_SCOPE_PREFIX.length)]
+      : [key]
+
   const withGetter = workspace as {
-    readonly get?: <T = unknown>(key: string) => T | undefined
+    readonly get?: <T = unknown>(target: string) => T | undefined
   }
-  if (typeof withGetter.get === 'function') {
-    return withGetter.get(key)
+  const record =
+    typeof workspace === 'object' && workspace
+      ? (workspace as Record<string, unknown>)
+      : null
+
+  for (const candidate of candidates) {
+    if (typeof withGetter.get === 'function') {
+      const value = withGetter.get(candidate)
+      if (value !== undefined) {
+        return value
+      }
+    }
+
+    if (!record) {
+      continue
+    }
+
+    if (Object.prototype.hasOwnProperty.call(record, candidate)) {
+      return record[candidate]
+    }
+
+    const nested = candidate.split('.').reduce<unknown>((current, segment) => {
+      if (!current || typeof current !== 'object') {
+        return undefined
+      }
+      if (!(segment in (current as Record<string, unknown>))) {
+        return undefined
+      }
+      return (current as Record<string, unknown>)[segment]
+    }, record)
+
+    if (nested !== undefined) {
+      return nested
+    }
   }
 
-  if (Object.prototype.hasOwnProperty.call(workspace, key)) {
-    return (workspace as Record<string, unknown>)[key]
-  }
-
-  return key.split('.').reduce<unknown>(
-    (current, segment) =>
-      current &&
-      typeof current === 'object' &&
-      segment in (current as Record<string, unknown>)
-        ? (current as Record<string, unknown>)[segment]
-        : undefined,
-    workspace
-  )
+  return undefined
 }
 
 function coerceValue<T>(

@@ -8,6 +8,7 @@ import {
   FlagResolutionError,
   FlagSnapshot,
   FlagSource,
+  STABLE_THRESHOLD_DEFAULT,
   coerceMergeThresholdValue,
   resolveFlags
 } from '../../src/config/flags'
@@ -62,6 +63,32 @@ test('workspace settings provide values when env is absent', () => {
   assert.equal(snapshot.merge.precision, 'stable')
   assert.equal(snapshot.merge.source, 'workspace')
   assert.equal(snapshot.updatedAt, '2024-02-03T04:05:06.789Z')
+})
+
+test('workspace getter without prefix resolves autosave and merge threshold', () => {
+  const workspace = {
+    get: (key: string): unknown => {
+      if (key === 'autosave.enabled') {
+        return 'true'
+      }
+      if (key === 'merge.threshold') {
+        return 'stable'
+      }
+      return undefined
+    }
+  }
+
+  const snapshot = resolveFlags({
+    workspace,
+    clock: () => new Date('2024-06-01T01:02:03.004Z')
+  })
+
+  assert.equal(snapshot.autosave.enabled, true)
+  assert.equal(snapshot.autosave.source, 'workspace')
+  assert.equal(snapshot.merge.precision, 'stable')
+  assert.equal(snapshot.merge.threshold, STABLE_THRESHOLD_DEFAULT)
+  assert.equal(snapshot.merge.source, 'workspace')
+  assert.equal(snapshot.updatedAt, '2024-06-01T01:02:03.004Z')
 })
 
 test('localStorage is used when env and workspace are invalid', () => {
