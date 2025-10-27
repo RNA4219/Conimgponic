@@ -610,7 +610,14 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       options,
       {
         name: 'autosave.status',
-        properties: { state: 'saving', reqId: request.reqId, correlationId: request.correlationId, retryCount: state.retryCount, performance: { flush_latency_ms: 0 } }
+        properties: {
+          state: 'saving',
+          reqId: request.reqId,
+          correlationId: request.correlationId,
+          retryCount: state.retryCount,
+          phase: request.phase ?? PHASE_SNAPSHOT,
+          performance: { flush_latency_ms: 0 }
+        }
       },
       { before: statusBeforeSaving, after: state.status, guard: state.guard }
     )
@@ -652,7 +659,13 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           options,
           {
             name: 'autosave.status',
-            properties: { state: 'backoff', correlationId: request.correlationId, retryCount: state.retryCount, performance: { flush_latency_ms: retryLatency } }
+            properties: {
+              state: 'backoff',
+              correlationId: request.correlationId,
+              retryCount: state.retryCount,
+              phase: request.phase ?? PHASE_SNAPSHOT,
+              performance: { flush_latency_ms: retryLatency }
+            }
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
         )
@@ -725,7 +738,14 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       options,
       {
         name: 'autosave.status',
-        properties: { state: 'saved', reqId: request.reqId, correlationId: request.correlationId, retryCount: state.retryCount, performance: { flush_latency_ms: successLatency } }
+        properties: {
+          state: 'saved',
+          reqId: request.reqId,
+          correlationId: request.correlationId,
+          retryCount: state.retryCount,
+          phase: request.phase ?? PHASE_SNAPSHOT,
+          performance: { flush_latency_ms: successLatency }
+        }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }
     )
