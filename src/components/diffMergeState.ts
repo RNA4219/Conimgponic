@@ -261,12 +261,13 @@ export const createDiffMergeController = ({
       dispatch({ type: 'queueResult', hunkIds: ids, result: result.status })
       if (result.status === 'error') onError?.(result)
     } catch {
-      dispatch({ type: 'queueResult', hunkIds: ids, result: 'error' })
-      onError?.({
+      const fallback: MergeDecisionEvent = {
         status: 'error',
         hunkIds: ids,
         telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: true },
-      })
+      }
+      dispatch({ type: 'queueResult', hunkIds: ids, result: 'error' })
+      onError?.(fallback)
     }
   },
   openEditor: (hunkId: string) => dispatch({ type: 'openEditor', hunkId }),

@@ -94,9 +94,10 @@ test('queueMerge success', async () => {
 })
 
 test('queueMerge resolves even when queueMergeCommand throws', async () => {
-  // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の TDD・最小差分方針と
-  // Day8/docs/day8/guides/07_contributing.md の「1タスク=1PR」を引用し、
-  // 例外発生時も queueMerge が reject せずに error 通知で完結することを赤テストで確認する。
+  // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の TDD・最小差分指針と
+  // Day8/docs/day8/guides/07_contributing.md の「1タスク=1PR」原則を引用し、
+  // queueMergeCommand が throw しても未処理拒否 (unhandled rejection) が発生せず
+  // error 通知と queueResult dispatch だけで完結することを赤テストで先に担保する。
   let hunks = [createMergeHunk('h1')]
   let state: DiffMergeState = createInitialDiffMergeState(hunks)
   const dispatched: DiffMergeAction[] = []
@@ -118,7 +119,16 @@ test('queueMerge resolves even when queueMergeCommand throws', async () => {
     },
   })
 
-  await assert.doesNotReject(async () => controller.queueMerge(['h1']))
+  const unhandled: unknown[] = []
+  const handleUnhandledRejection = (reason: unknown) => {
+    unhandled.push(reason)
+  }
+  process.on('unhandledRejection', handleUnhandledRejection)
+  try {
+    await assert.doesNotReject(async () => controller.queueMerge(['h1']))
+  } finally {
+    process.off('unhandledRejection', handleUnhandledRejection)
+  }
 
   assert.equal(state.hunkStates.h1, 'Selected')
   assert.deepEqual(
@@ -129,6 +139,7 @@ test('queueMerge resolves even when queueMergeCommand throws', async () => {
   assert.equal(events[0]?.status, 'error')
   assert.deepEqual(events[0]?.hunkIds, ['h1'])
   assert.equal(events[0]?.telemetry.retryable, true)
+  assert.deepEqual(unhandled, [])
 })
 
 test('queueMerge ignores removed hunks after sync', async () => {

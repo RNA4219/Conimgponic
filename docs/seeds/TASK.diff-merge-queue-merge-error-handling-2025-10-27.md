@@ -58,7 +58,7 @@ pnpm test -- --filter diff-merge-view-state
 
 ### Steps
 
-1) `tests/merge/diff-merge-view-state.test.ts` に `queueMergeCommand` が throw したケースを赤テストとして追加し、Promise が reject しないことと `onError` が呼び出されることを明文化する。
+1) Day8/workflow-cookbook/GUARDRAILS.md の TDD/最小差分ガイドと Day8/docs/day8/guides/07_contributing.md の 1PR 原則を引用しながら、`tests/merge/diff-merge-view-state.test.ts` に `queueMergeCommand` が throw しても未処理拒否にならないことを検証する赤テストを追加する。
 2) 赤テストを実行して失敗ログを取得し、`queueMerge` の catch 節で再スローを排除する最小差分を `src/components/diffMergeState.ts` に適用する。
 3) 修正後に `pnpm test -- --filter diff-merge-view-state` を実行し、未処理拒否が発生しないことを確認して Tests/Commands に記録する。
 
@@ -69,10 +69,12 @@ pnpm test -- --filter diff-merge-view-state
 ## Tests
 
 - 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（緑、Promise 未処理拒否なし）
+- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（緑、未処理拒否のイベント発生なし）
 
 ## Commands
 
 - 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`
+- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`
 
 ## Notes
 
