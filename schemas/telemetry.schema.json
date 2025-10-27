@@ -396,6 +396,10 @@
     "telemetrySource": {
       "type": "string",
       "enum": ["app.autosave", "app.flags", "vscode.plugins"]
+    },
+    "telemetryEnvelopeMetadataField": {
+      "type": "string",
+      "enum": ["feature", "component", "kind", "source", "evaluation_ms"]
     }
   }
 }

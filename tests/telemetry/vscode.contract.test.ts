@@ -4,7 +4,8 @@ import { describe, test } from 'node:test'
 
 import {
   COLLECT_METRICS_CONTRACT,
-  FLAG_RESOLUTION_SOURCE_VARIANTS
+  FLAG_RESOLUTION_SOURCE_VARIANTS,
+  TELEMETRY_ENVELOPE_METADATA_FIELDS
 } from '../../scripts/monitor/collect-metrics.js'
 import {
   collectFlagResolutionPayloads,
@@ -145,7 +146,7 @@ const findTelemetrySpec = (event: string) =>
 // RED: VS Code 拡張メッセージ/テレメトリ JSONL 契約と再試行条件を固定する。
 describe('vscode extension telemetry contract (RED)', () => {
   test('message envelope は type/apiVersion/reqId/ts を含む Day8 Collector 順序を固定する', () => {
-    deepStrictEqual(COLLECT_METRICS_CONTRACT.telemetry.envelope, [
+    const expectedEnvelopeOrder = [
       'type',
       'apiVersion',
       'reqId',
@@ -154,15 +155,16 @@ describe('vscode extension telemetry contract (RED)', () => {
       'phase',
       'schema',
       'event',
-      'feature',
-      'component',
-      'kind',
-      'source',
-      'evaluation_ms',
+      ...TELEMETRY_ENVELOPE_METADATA_FIELDS,
       'attempt',
       'maxAttempts',
       'backoffMs',
-    ])
+    ] as const
+
+    deepStrictEqual(
+      COLLECT_METRICS_CONTRACT.telemetry.envelope,
+      Array.from(expectedEnvelopeOrder)
+    )
 
     assertOk(
       telemetrySchema.required,
@@ -204,6 +206,22 @@ describe('vscode extension telemetry contract (RED)', () => {
     const kind = properties.kind
     const source = properties.source
     const evaluationMs = properties.evaluation_ms
+
+    deepStrictEqual(
+      TELEMETRY_ENVELOPE_METADATA_FIELDS,
+      ['feature', 'component', 'kind', 'source', 'evaluation_ms']
+    )
+
+    const metadataDefinition =
+      telemetrySchema.definitions?.telemetryEnvelopeMetadataField
+    assertOk(
+      metadataDefinition?.enum,
+      'telemetry schema must enumerate metadata fields'
+    )
+    deepStrictEqual(
+      metadataDefinition.enum,
+      Array.from(TELEMETRY_ENVELOPE_METADATA_FIELDS)
+    )
 
     assertOk(feature, 'feature property must be defined')
     const featureSchema = resolveSchemaRef(feature)
@@ -374,6 +392,11 @@ describe('vscode extension telemetry contract (RED)', () => {
       'flag_resolution payload must include errors array'
     )
     deepStrictEqual(event.payload.errors, [])
+    deepStrictEqual(event.feature, 'config.flags')
+    deepStrictEqual(event.component, 'flags')
+    deepStrictEqual(event.kind, 'flag_resolution')
+    strictEqual(event.source, 'app.autosave')
+    strictEqual(event.evaluation_ms, 42)
     const allowedPhases = new Set(allowedPhaseEnum)
     assertOk(
       allowedPhases.has(event.payload.phase),
