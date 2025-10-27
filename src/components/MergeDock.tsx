@@ -186,11 +186,17 @@ const parseMergePrecision = (value: unknown): MergePrecision | undefined => {
   return undefined
 }
 
-export const getDefaultPreference = (precision: MergePrecision, diffEnabled: boolean): MergeDockPreference => {
+export const getDefaultPreference = (
+  precision: MergePrecision,
+  diffEnabled: boolean,
+): MergeDockPreference => {
   if (precision === 'stable') {
     return 'diff-merge'
   }
-  return precision !== 'legacy' && diffEnabled ? 'diff-merge' : 'manual-first'
+  if (!diffEnabled) {
+    return 'manual-first'
+  }
+  return precision === 'legacy' ? 'manual-first' : 'diff-merge'
 }
 
 export const sanitizePreference = (
@@ -235,12 +241,6 @@ export const resolvePreferenceSelection = (input: {
     return sanitizedDefault
   }
   if (diffUnlocked) {
-    if (precision === 'stable') {
-      if (sanitizedPreference === 'diff-merge' && sanitizedDefault !== 'diff-merge') {
-        return sanitizedDefault
-      }
-      return sanitizedPreference
-    }
     return sanitizedDefault
   }
   return sanitizedPreference
@@ -486,7 +486,7 @@ export const planMergeDockTabs = (precision: MergePrecision, lastTab?: MergeDock
   const sanitized = requested && plan.tabs.some((entry) => entry.id === requested) ? requested : undefined
   const diffConfig = plan.diff ? { diff: plan.diff } : {}
   if (precision === 'stable') {
-    const initialTab = sanitized ?? plan.initialTab
+    const initialTab = sanitized === 'diff' ? 'diff' : plan.initialTab
     return { tabs: plan.tabs, initialTab, ...diffConfig }
   }
   if (precision === 'legacy') {
@@ -557,13 +557,8 @@ export const resolveMergeDockPhasePlan = ({
           ? hasReviewSignals
           : hasReviewSignals || hasConflictSignals
         : false
-  const diffVisible = !!rawPlan.diff && precision !== 'legacy'
-  let diffEnabled = diffVisible && phaseBRequired
-  const effectiveTabs = diffVisible ? rawPlan.tabs : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
-  const effectiveInitial =
-    rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
-      ? rawPlan.initialTab
-      : effectiveTabs[0]?.id ?? rawPlan.initialTab
+  const diffConfigured = !!rawPlan.diff && precision !== 'legacy'
+  let diffVisible = diffConfigured
   let diffExposure: 'hidden' | 'opt-in' | 'default' = rawPlan.diff?.exposure ?? 'hidden'
   let diffTabsPlan = rawPlan.diff
     ? {
@@ -573,14 +568,23 @@ export const resolveMergeDockPhasePlan = ({
     : undefined
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
+  const shouldDemoteDiff = diffConfigured && (!phaseBRequired || meetsTarget === false)
 
-  if (meetsTarget === false) {
+  if (shouldDemoteDiff) {
+    diffVisible = false
     diffExposure = 'opt-in'
-    diffEnabled = false
     if (diffTabsPlan) {
       diffTabsPlan = { ...diffTabsPlan, exposure: 'opt-in' }
     }
   }
+
+  const diffEnabled = diffVisible && phaseBRequired
+
+  const effectiveTabs = diffVisible ? rawPlan.tabs : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
+  const effectiveInitial =
+    rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
+      ? rawPlan.initialTab
+      : effectiveTabs[0]?.id ?? rawPlan.initialTab
 
   return {
     precision,

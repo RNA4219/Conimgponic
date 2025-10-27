@@ -152,6 +152,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'reqId',
       'ts',
       'correlationId',
+      'workspace_id',
       'phase',
       'schema',
       'event',
@@ -176,6 +177,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'reqId',
       'ts',
       'correlationId',
+      'workspace_id',
       'phase',
       'schema',
       'event',
@@ -194,9 +196,15 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(properties, 'telemetry schema must define properties')
     const reqId = properties.reqId
     const correlationId = properties.correlationId
-    assertOk(reqId && correlationId, 'telemetry schema must define reqId/correlationId')
+    const workspaceId = properties.workspace_id
+    assertOk(reqId && correlationId && workspaceId, 'telemetry schema must define reqId/correlationId/workspace_id')
     strictEqual(reqId.format, 'uuid', 'telemetry reqId must enforce uuid format')
     strictEqual(correlationId.format, 'uuid', 'telemetry correlationId must enforce uuid format')
+    strictEqual(
+      workspaceId.format,
+      'uuid',
+      'telemetry workspace_id must enforce uuid format'
+    )
   })
   test('telemetry schema は feature/component/kind/source/evaluation_ms を enumerated として公開する', () => {
     assertOk(telemetrySchema.properties, 'telemetry schema must expose properties')
@@ -270,7 +278,9 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.attempt',
       'payload.phase_step',
       'payload.guard.current',
-      'payload.guard.rollbackTo'
+      'payload.guard.rollbackTo',
+      'payload.detail.retry_count',
+      'payload.performance.flush_latency_ms'
     ]
 
     for (const field of requiredFields) {
@@ -382,6 +392,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(event, 'flag_resolution event must be captured')
     assertOk(UUID_REGEX.test(event.reqId), 'flag_resolution reqId must be uuid')
     assertOk(UUID_REGEX.test(event.correlationId), 'flag_resolution correlationId must be uuid')
+    assertOk(UUID_REGEX.test(event.workspace_id), 'flag_resolution workspace_id must be uuid')
     strictEqual(
       event.correlationId,
       event.reqId,
@@ -444,6 +455,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(event, 'flag_resolution event must be captured when overrides provided')
     assertOk(UUID_REGEX.test(event.reqId), 'flag_resolution reqId overrides must be normalized to uuid')
     assertOk(UUID_REGEX.test(event.correlationId), 'flag_resolution correlationId overrides must be normalized to uuid')
+    assertOk(UUID_REGEX.test(event.workspace_id), 'flag_resolution workspace_id overrides must be normalized to uuid')
     strictEqual(event.correlationId, event.reqId, 'flag_resolution correlationId overrides must match reqId when normalized')
     strictEqual(
       event.reqId === 'not-a-uuid',
@@ -637,6 +649,8 @@ describe('vscode extension telemetry contract (RED)', () => {
     strictEqual(event.apiVersion, 1)
     assertOk(event.reqId.length > 0)
     assertOk(event.correlationId.length > 0)
+    assertOk(event.workspace_id.length > 0)
+    assertOk(UUID_REGEX.test(event.workspace_id))
     assertOk(!Number.isNaN(Date.parse(event.ts)))
     strictEqual(event.phase, 'A-0')
     strictEqual(event.feature, 'config.flags')
@@ -788,7 +802,9 @@ describe('vscode extension telemetry contract (RED)', () => {
       'latency_ms',
       'attempt',
       'phase_step',
-      'guard'
+      'guard',
+      'detail',
+      'performance'
     ])
 
     assertOk(payloadSchema.properties, 'status.autosave payload schema must define properties')
@@ -796,6 +812,59 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(guardSchema, 'status.autosave payload schema must define guard')
     assertOk(guardSchema.required, 'status.autosave guard must define required fields')
     deepStrictEqual(guardSchema.required, ['current', 'rollbackTo'])
+
+    const detailSchema = payloadSchema.properties.detail
+    assertOk(detailSchema, 'status.autosave payload schema must define detail')
+    const resolvedDetail = resolveSchemaRef(detailSchema)
+    assertOk(resolvedDetail, 'status.autosave payload detail schema must resolve')
+    assertOk(resolvedDetail.type === 'object', 'status.autosave payload detail must be object')
+    assertOk(
+      resolvedDetail.additionalProperties === false,
+      'status.autosave payload detail must forbid additional properties'
+    )
+    assertOk(resolvedDetail.required, 'status.autosave payload detail must define required fields')
+    deepStrictEqual(resolvedDetail.required, ['retry_count'])
+    assertOk(resolvedDetail.properties, 'status.autosave payload detail must define retry_count property')
+    const retryCountSchema = resolveSchemaRef(resolvedDetail.properties.retry_count)
+    assertOk(
+      retryCountSchema && retryCountSchema.type === 'integer',
+      'status.autosave payload detail.retry_count must be integer'
+    )
+    assertOk(
+      'minimum' in retryCountSchema && retryCountSchema.minimum === 0,
+      'status.autosave payload detail.retry_count must enforce non-negative values'
+    )
+
+    const performanceSchema = payloadSchema.properties.performance
+    assertOk(performanceSchema, 'status.autosave payload schema must define performance')
+    const resolvedPerformance = resolveSchemaRef(performanceSchema)
+    assertOk(resolvedPerformance, 'status.autosave payload performance schema must resolve')
+    assertOk(
+      resolvedPerformance.type === 'object',
+      'status.autosave payload performance must be object'
+    )
+    assertOk(
+      resolvedPerformance.additionalProperties === false,
+      'status.autosave payload performance must forbid additional properties'
+    )
+    assertOk(
+      resolvedPerformance.required,
+      'status.autosave payload performance must define required fields'
+    )
+    deepStrictEqual(resolvedPerformance.required, ['flush_latency_ms'])
+    assertOk(
+      resolvedPerformance.properties,
+      'status.autosave payload performance must define flush_latency_ms'
+    )
+    const flushLatencySchema = resolveSchemaRef(resolvedPerformance.properties.flush_latency_ms)
+    assertOk(
+      flushLatencySchema && flushLatencySchema.type === 'number',
+      'status.autosave payload performance.flush_latency_ms must be number'
+    )
+    assertOk(
+      'minimum' in flushLatencySchema && flushLatencySchema.minimum === 0,
+      'status.autosave payload performance.flush_latency_ms must enforce non-negative values'
+    )
   })
 
   test('telemetry schema の merge.trace payload が Collector 要件を固定する', () => {

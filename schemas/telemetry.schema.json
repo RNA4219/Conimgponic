@@ -19,6 +19,12 @@
       "format": "uuid",
       "description": "RFC4122 UUID that matches reqId. Invalid overrides are normalized by the Collector."
     },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uuid",
+      "description": "RFC4122 UUID identifying the VS Code workspace for aggregation."
+    },
     "phase": { "$ref": "#/definitions/rolloutPhase" },
     "schema": { "type": "string", "const": "vscode.telemetry.v1" },
     "event": { "$ref": "#/definitions/telemetryEventName" },
@@ -41,6 +47,7 @@
     "reqId",
     "ts",
     "correlationId",
+    "workspace_id",
     "phase",
     "schema",
     "event",
@@ -83,6 +90,22 @@
                   "rollbackTo": { "$ref": "#/definitions/rolloutPhase" }
                 },
                 "required": ["current", "rollbackTo"]
+              },
+              "detail": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "retry_count": { "type": "integer", "minimum": 0 }
+                },
+                "required": ["retry_count"]
+              },
+              "performance": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "flush_latency_ms": { "type": "number", "minimum": 0 }
+                },
+                "required": ["flush_latency_ms"]
               }
             },
             "required": [
@@ -91,7 +114,9 @@
               "latency_ms",
               "attempt",
               "phase_step",
-              "guard"
+              "guard",
+              "detail",
+              "performance"
             ]
           }
         }

@@ -68,3 +68,20 @@ scenario('AS-I-04: flushNow and timers drive expected phase transitions', async 
 
   await runner.dispose()
 })
+
+scenario('AS-TEL-01: change-queued telemetry exposes pending bytes during debouncing', async (t, ctx) => {
+  const { initAutoSave, runnerTelemetry } = ctx
+
+  const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
+  t.after(() => runner.dispose())
+
+  runner.markDirty({ pendingBytes: 2048 })
+
+  const telemetry = runnerTelemetry.filter((event) => event.detail?.event === 'change-queued')
+  assert.ok(telemetry.length > 0, 'expected change-queued telemetry event')
+
+  const last = telemetry.at(-1)!
+  assert.equal(last.phase, 'debouncing')
+  assert.equal(last.detail?.pendingBytes, 2048)
+  assert.equal(last.detail?.backlog, 1)
+})

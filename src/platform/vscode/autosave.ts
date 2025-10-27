@@ -122,6 +122,7 @@ export interface AutoSaveTelemetryEventProperties {
   readonly flagSource?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
   readonly lockStrategy?: AutoSaveTelemetryLockStrategy | 'none'
   readonly performance?: { readonly flush_latency_ms: number }
+  readonly detail?: { readonly retry_count: number }
   readonly [key: string]: unknown
 }
 
@@ -328,8 +329,31 @@ const emitTelemetry = (
 ): void => {
   const phaseBefore = statusPhaseForState(context.before)
   const phaseAfter = statusPhaseForState(context.after)
+  const rawProperties = event.properties ?? {}
+  const providedRetryCount =
+    typeof (rawProperties as { retryCount?: unknown }).retryCount === 'number'
+      ? (rawProperties as { retryCount: number }).retryCount
+      : undefined
+  const providedDetail = rawProperties.detail
+  const detailRetry =
+    typeof providedDetail === 'object' && providedDetail !== null
+      ? (providedDetail as { retry_count?: unknown }).retry_count
+      : undefined
+  const normalizedDetail: AutoSaveTelemetryEventProperties['detail'] | undefined = (() => {
+    const candidate =
+      typeof detailRetry === 'number'
+        ? detailRetry
+        : typeof providedRetryCount === 'number'
+          ? providedRetryCount
+          : undefined
+    if (typeof candidate !== 'number' || Number.isNaN(candidate)) {
+      return undefined
+    }
+    return { retry_count: Math.max(0, Math.trunc(candidate)) }
+  })()
   const properties: AutoSaveTelemetryEventProperties = {
-    ...(event.properties ?? {}),
+    ...rawProperties,
+    ...(normalizedDetail ? { detail: normalizedDetail } : {}),
     phaseBefore,
     phaseAfter,
     flagSource: context.guard.featureFlag.source,
@@ -437,7 +461,7 @@ const handleNonRetryableError = (
         state: 'disabled',
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
-        phase: request.phase ?? PHASE_SNAPSHOT,
+        phase: disabledEnvelopePhase,
         performance: { flush_latency_ms: flushLatencyMs }
       }
     },
@@ -483,6 +507,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     state.guard = mergeGuard(state.guard, guard, shouldForceDisable)
     const ts = toIso(options.now())
     const correlationId = nextCorrelationId(state)
+    const envelopePhase = PHASE_STATUS
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
@@ -492,7 +517,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           nextReqId(state),
           correlationId,
           ts,
-          PHASE_STATUS,
+          envelopePhase,
           'disabled',
           state.guard,
           state.retryCount,
@@ -508,7 +533,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             source: 'phase-guard',
             correlationId,
             retryCount: state.retryCount,
-            phase: PHASE_STATUS
+            phase: envelopePhase
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
@@ -522,7 +547,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         reqId,
         correlationId,
         ts,
-        PHASE_STATUS,
+        envelopePhase,
         'dirty',
         state.guard,
         state.retryCount,
@@ -539,7 +564,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             pendingBytes,
             correlationId,
             retryCount: state.retryCount,
-            phase: PHASE_STATUS
+            phase: envelopePhase
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
@@ -554,6 +579,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const requestStartedAtMs = requestStartedAt.getTime()
     state.guard = mergeGuard(state.guard, incomingGuard, shouldForceDisable)
     const ts = toIso(requestStartedAt)
+    const requestEnvelopePhase = request.phase ?? PHASE_SNAPSHOT
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
@@ -610,7 +636,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         request.reqId,
         request.correlationId,
         ts,
-        request.phase ?? PHASE_SNAPSHOT,
+        requestEnvelopePhase,
         'saving',
         state.guard,
         state.retryCount,
@@ -627,7 +653,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           reqId: request.reqId,
           correlationId: request.correlationId,
           retryCount: state.retryCount,
-          phase: request.phase ?? PHASE_SNAPSHOT,
+          phase: requestEnvelopePhase,
           performance: { flush_latency_ms: 0 }
         }
       },
@@ -660,7 +686,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             request.reqId,
             request.correlationId,
             retryTs,
-            request.phase ?? PHASE_SNAPSHOT,
+            requestEnvelopePhase,
             'backoff',
             state.guard,
             state.retryCount,
@@ -675,7 +701,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
               state: 'backoff',
               correlationId: request.correlationId,
               retryCount: state.retryCount,
-              phase: request.phase ?? PHASE_SNAPSHOT,
+              phase: requestEnvelopePhase,
               performance: { flush_latency_ms: retryLatency }
             }
           },
@@ -739,7 +765,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         request.reqId,
         request.correlationId,
         successTs,
-        request.phase ?? PHASE_SNAPSHOT,
+        requestEnvelopePhase,
         'saved',
         state.guard,
         state.retryCount,
@@ -755,7 +781,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           reqId: request.reqId,
           correlationId: request.correlationId,
           retryCount: state.retryCount,
-          phase: request.phase ?? PHASE_SNAPSHOT,
+          phase: requestEnvelopePhase,
           performance: { flush_latency_ms: successLatency }
         }
       },

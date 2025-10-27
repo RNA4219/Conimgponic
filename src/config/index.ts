@@ -18,7 +18,8 @@ import {
   DEFAULT_FLAGS,
   FLAG_MIGRATION_PLAN,
   FEATURE_FLAG_DEFINITIONS,
-  resolveFlags
+  resolveFlags,
+  workspaceKeyCandidates
 } from './flags.js'
 
 export {
@@ -73,6 +74,52 @@ const mergeErrors = (
     }
   }
   return [...unique.values()]
+}
+
+const readWorkspaceTelemetryId = (
+  workspace: WorkspaceConfiguration | null | undefined
+): string | undefined => {
+  if (!workspace) {
+    return undefined
+  }
+
+  const candidates = workspaceKeyCandidates('workspace_id')
+  const withGetter = workspace as {
+    readonly get?: <T = unknown>(candidate: string) => T | undefined
+  }
+
+  if (typeof withGetter.get === 'function') {
+    for (const candidate of candidates) {
+      try {
+        const value = withGetter.get(candidate)
+        if (typeof value === 'string') {
+          const normalized = value.trim()
+          if (normalized) {
+            return normalized
+          }
+        }
+      } catch (error) {
+        if (!candidate.startsWith('conimg.')) {
+          throw error
+        }
+      }
+    }
+  }
+
+  const record = workspace as Record<string, unknown>
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(record, candidate)) {
+      const value = record[candidate]
+      if (typeof value === 'string') {
+        const normalized = value.trim()
+        if (normalized) {
+          return normalized
+        }
+      }
+    }
+  }
+
+  return undefined
 }
 
 const toFlagPayload = (
@@ -178,7 +225,17 @@ export function resolveAutoSaveBootstrapPlan(
   const planErrors = errors satisfies readonly FlagValidationError[]
 
   const payloads = collectFlagResolutionPayloads(snapshot, planErrors, evaluationMs)
-  publishFlagResolution('app.autosave', 'bootstrap', payloads, evaluationMs)
+  const workspaceTelemetryId = readWorkspaceTelemetryId(options?.workspace)
+  const envelopeOverrides = workspaceTelemetryId
+    ? { workspace_id: workspaceTelemetryId }
+    : undefined
+  publishFlagResolution(
+    'app.autosave',
+    'bootstrap',
+    payloads,
+    evaluationMs,
+    envelopeOverrides
+  )
   const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
 
   const workspaceInput: WorkspaceConfiguration | null | undefined = options?.workspace
@@ -208,7 +265,17 @@ export function resolvePluginBridgeBootstrapPlan(
   const evaluationMs = Math.max(0, Math.round(readClock() - startedAt))
 
   const payloads = collectFlagResolutionPayloads(snapshot, errors, evaluationMs)
-  publishFlagResolution('vscode.plugins', 'bootstrap', payloads, evaluationMs)
+  const workspaceTelemetryId = readWorkspaceTelemetryId(options?.workspace)
+  const envelopeOverrides = workspaceTelemetryId
+    ? { workspace_id: workspaceTelemetryId }
+    : undefined
+  publishFlagResolution(
+    'vscode.plugins',
+    'bootstrap',
+    payloads,
+    evaluationMs,
+    envelopeOverrides
+  )
   return {
     snapshot,
     enableFlag: snapshot.plugins.enabled,

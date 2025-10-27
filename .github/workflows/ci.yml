@@ -303,7 +303,9 @@ jobs:
               - 'tests/**/autosave/**'
               - '.github/workflows/autosave*'
               - 'tests/**/*autosave*.test.ts'
+              # Ensure autosave bridge specs trigger the autosave suite
               - 'tests/**/*autosave*.spec.ts'
+              - 'tests/extensions/vscode/flags-handshake.spec.ts'
 
       - name: Determine autosave execution
         if: matrix.suite == 'autosave'
