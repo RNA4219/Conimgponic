@@ -52,6 +52,14 @@ const buildHunkStateMap = (hunks: readonly MergeHunk[]): Record<string, DiffMerg
 const hasHunkState = (state: DiffMergeState, id: string): boolean =>
   Object.prototype.hasOwnProperty.call(state.hunkStates, id)
 
+const resolveEditingHunkIdAfterTargeting = (
+  state: DiffMergeState,
+  targeted: ReadonlySet<string>,
+): string | null => {
+  if (state.editingHunkId === null) return null
+  return targeted.has(state.editingHunkId) ? null : state.editingHunkId
+}
+
 export const createInitialDiffMergeState = (hunks: readonly MergeHunk[]): DiffMergeState => ({
   hunkStates: buildHunkStateMap(hunks),
   editingHunkId: null,
@@ -112,9 +120,10 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
     const updates: Record<string, DiffMergeHunkStatus> = {}
     for (const id of ids) updates[id] = 'Queued'
     const targeted = new Set(ids)
-    const editingHunkId =
-      state.editingHunkId !== null && targeted.has(state.editingHunkId) ? null : state.editingHunkId
-    // Guardrail: 「型安全・最小差分・TDD」―編集解除を最小差分で保証
+    const editingHunkId = resolveEditingHunkIdAfterTargeting(state, targeted)
+    // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md（型安全・最小差分・TDD）に沿って
+    // 編集対象をキュー後に閉じる。Day8/docs/day8/guides/07_contributing.md の
+    // 「1タスク=1PR」原則に合わせ、最小差分で整える。
     return { ...state, hunkStates: { ...state.hunkStates, ...updates }, editingHunkId }
   }
   if (action.type === 'queueResult') {
@@ -125,9 +134,10 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
     const status: DiffMergeHunkStatus = action.result === 'success' ? 'Merged' : action.result === 'conflict' ? 'Conflict' : 'Selected'
     for (const id of ids) updates[id] = status
     const targeted = new Set(ids)
-    const editingHunkId =
-      state.editingHunkId !== null && targeted.has(state.editingHunkId) ? null : state.editingHunkId
-    // Guardrail: 「型安全・最小差分・TDD」―結果反映時も編集状態をクリア
+    const editingHunkId = resolveEditingHunkIdAfterTargeting(state, targeted)
+    // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md（型安全・最小差分・TDD）と
+    // Day8/docs/day8/guides/07_contributing.md（1タスク=1PR）を踏まえ、対象ハンクの
+    // 解決後に編集モーダルを閉じる。
     return { ...state, hunkStates: { ...state.hunkStates, ...updates }, editingHunkId }
   }
   if (action.type === 'override') {

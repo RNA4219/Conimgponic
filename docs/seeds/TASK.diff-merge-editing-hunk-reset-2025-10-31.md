@@ -60,15 +60,19 @@ pnpm test -- --filter diff-merge-view-state
 
 ## Patch
 
-_未着手_
+- 2025-10-31: `queueMerge` / `queueResult` で対象ハンクを追跡するヘルパーを追加し、編集モーダルが閉じることを検証する回帰テストを追加。
 
 ## Tests
 
-_未実施_
+- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（緑）
+- 2025-10-31: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`（緑）
+- 2025-10-31: `pnpm test -- --filter diff-merge-view-state`（`ts-node/esm` が `.tsx` を解決できず失敗）
 
 ## Commands
 
-_未実行_
+- 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`
+- 2025-10-31: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`
+- 2025-10-31: `pnpm test -- --filter diff-merge-view-state`
 
 ## Notes
 

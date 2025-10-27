@@ -177,6 +177,29 @@ test('queueResult clears editing hunk when included', () => {
   assert.equal(h.state().hunkStates.h1, 'Conflict')
 })
 
+test('queueMerge/queueResult close the editing modal for targeted hunks', async () => {
+  // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md（型安全・最小差分・TDD）と
+  // Day8/docs/day8/guides/07_contributing.md（1タスク=1PR）に従い、編集モーダルが
+  // 対象ハンクのキュー/解決後に閉じることを検証する。
+  const h = harness()
+
+  h.controller.openEditor('h1')
+  assert.equal(h.state().editingHunkId, 'h1')
+
+  await h.controller.queueMerge(['h1'])
+
+  assert.equal(h.state().editingHunkId, null)
+  assert.equal(h.state().hunkStates.h1, 'Merged')
+
+  h.controller.openEditor('h1')
+  assert.equal(h.state().editingHunkId, 'h1')
+
+  h.dispatch({ type: 'queueResult', hunkIds: ['h1'], result: 'conflict' })
+
+  assert.equal(h.state().editingHunkId, null)
+  assert.equal(h.state().hunkStates.h1, 'Conflict')
+})
+
 test('planDiffMergeView legacy restricts panes to review hunk list', () => {
   const plan = planDiffMergeView('legacy')
   assert.deepEqual(
