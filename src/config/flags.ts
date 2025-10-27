@@ -222,7 +222,8 @@ export function resolveFlag<T>(
   options: ResolveOptions = {}
 ): FlagResolution<T> {
   const env = options.env ?? defaultEnv
-  const storage = options.storage ?? defaultStorage
+  const storageOption = options.storage
+  const storage = storageOption === undefined ? defaultStorage : storageOption
   const workspace = options.workspace ?? null
   const errors: FlagValidationError[] = []
 
@@ -409,7 +410,8 @@ function resolveMergeThreshold(
   errors: FlagValidationError[]
 ): number {
   const env = options?.env ?? defaultEnv
-  const storage = options?.storage ?? defaultStorage
+  const storageOption = options?.storage
+  const storage = storageOption === undefined ? defaultStorage : storageOption
   const workspace = options?.workspace ?? null
   const definition = FEATURE_FLAG_DEFINITIONS['merge.precision']
 
