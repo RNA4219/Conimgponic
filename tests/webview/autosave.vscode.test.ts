@@ -1132,6 +1132,51 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(statusEvents.find((event) => event.properties?.state === 'disabled'))
   })
 
+  it('emits status.autosave disabled with A-1 phase after non-retryable error', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => ({
+        ok: false,
+        error: {
+          name: 'AutoSaveError',
+          message: 'fatal',
+          code: 'data-corrupted',
+          retryable: false
+        }
+      }),
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    const request = createRequest('req-phase', 'corr-phase', guardEnabled, 1024, 1)
+    await bridge.handleSnapshotRequest(request)
+
+    const statuses = sent.filter(
+      (msg): msg is AutoSaveStatusMessage =>
+        msg.type === 'status.autosave' && msg.correlationId === request.correlationId
+    )
+    const disabledStatus = statuses.find((msg) => msg.payload.state === 'disabled')
+    assert.ok(disabledStatus, 'non-retryable error should downgrade to disabled state')
+    assert.equal(disabledStatus.phase, 'A-1')
+    assert.equal(disabledStatus.reqId, request.reqId)
+    assert.equal(disabledStatus.correlationId, request.correlationId)
+
+    const disabledTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' &&
+        event.properties?.state === 'disabled' &&
+        event.properties?.correlationId === request.correlationId
+    )
+    assert.ok(disabledTelemetry, 'disabled autosave.status telemetry must exist')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+  })
+
   it('emits warn telemetry when file-lock fallback is used', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const warns: AutoSaveWarnEvent[] = []
