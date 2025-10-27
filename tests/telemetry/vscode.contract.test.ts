@@ -33,6 +33,8 @@ type JsonSchemaObject = {
   }
   readonly required?: readonly string[]
   readonly additionalProperties?: boolean | JsonSchemaObject
+  readonly minLength?: number
+  readonly items?: JsonSchemaObject
 }
 
 type TelemetrySchema = {
@@ -148,6 +150,11 @@ describe('vscode extension telemetry contract (RED)', () => {
       'phase',
       'schema',
       'event',
+      'feature',
+      'component',
+      'kind',
+      'source',
+      'evaluation_ms',
       'attempt',
       'maxAttempts',
       'backoffMs',
@@ -166,11 +173,60 @@ describe('vscode extension telemetry contract (RED)', () => {
       'phase',
       'schema',
       'event',
+      'feature',
+      'component',
+      'kind',
+      'source',
+      'evaluation_ms',
       'attempt',
       'maxAttempts',
       'backoffMs',
       'payload',
     ])
+  })
+  test('telemetry schema は feature/component/kind/source/evaluation_ms を enumerated として公開する', () => {
+    assertOk(telemetrySchema.properties, 'telemetry schema must expose properties')
+    const properties = telemetrySchema.properties
+    const feature = properties.feature
+    const component = properties.component
+    const kind = properties.kind
+    const source = properties.source
+    const evaluationMs = properties.evaluation_ms
+
+    assertOk(feature, 'feature property must be defined')
+    const featureSchema = resolveSchemaRef(feature)
+    assertOk(featureSchema?.enum, 'feature schema must enumerate allowed values')
+    deepStrictEqual(featureSchema.enum, ['autosave-diff-merge', 'config.flags'])
+
+    assertOk(component, 'component property must be defined')
+    const componentSchema = resolveSchemaRef(component)
+    assertOk(componentSchema?.enum, 'component schema must enumerate allowed values')
+    deepStrictEqual(componentSchema.enum, ['autosave', 'merge', 'flags', 'export'])
+
+    assertOk(kind, 'kind property must be defined')
+    const kindSchema = resolveSchemaRef(kind)
+    assertOk(kindSchema?.enum, 'kind schema must enumerate allowed values')
+    deepStrictEqual(kindSchema.enum, [
+      'save',
+      'ui',
+      'merge',
+      'flag_resolution',
+      'export',
+      'error'
+    ])
+
+    assertOk(source, 'source property must be defined')
+    const sourceSchema = resolveSchemaRef(source)
+    assertOk(sourceSchema?.enum, 'source schema must enumerate allowed values')
+    deepStrictEqual(sourceSchema.enum, ['app.autosave', 'app.flags', 'vscode.plugins'])
+
+    assertOk(evaluationMs, 'evaluation_ms property must be defined')
+    const evaluationSchema = resolveSchemaRef(evaluationMs)
+    assertOk(evaluationSchema?.type === 'number', 'evaluation_ms must be a number')
+    assertOk(
+      'minimum' in evaluationSchema && evaluationSchema.minimum === 0,
+      'evaluation_ms must enforce non-negative values'
+    )
   })
   test('status.autosave telemetry は phase 情報と guard スナップショットを記録する', () => {
     const spec = findTelemetrySpec('status.autosave')
@@ -201,6 +257,11 @@ describe('vscode extension telemetry contract (RED)', () => {
     const telemetrySpec = spec
 
     const requiredFields = [
+      'feature',
+      'component',
+      'kind',
+      'source',
+      'evaluation_ms',
       'payload.flag',
       'payload.variant',
       'payload.source',
@@ -453,8 +514,8 @@ describe('vscode extension telemetry contract (RED)', () => {
   test('publishFlagResolution は Collector 封筒フィールドを契約既定値で埋める', () => {
     const retryPolicy = COLLECT_METRICS_CONTRACT.telemetry.retryPolicy
     const payload: FlagResolutionEventPayload = {
-      flag: 'autosave',
-      variant: 'enabled',
+      flag: 'autosave.enabled',
+      variant: 'true',
       source: 'env',
       phase: 'phase-a0',
       evaluation_ms: 5,
@@ -488,6 +549,11 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(event.correlationId.length > 0)
     assertOk(!Number.isNaN(Date.parse(event.ts)))
     strictEqual(event.phase, 'A-0')
+    strictEqual(event.feature, 'config.flags')
+    strictEqual(event.component, 'flags')
+    strictEqual(event.kind, 'flag_resolution')
+    strictEqual(event.source, 'app.autosave')
+    strictEqual(event.evaluation_ms, 7)
     strictEqual(event.attempt, 1)
     strictEqual(event.maxAttempts, retryPolicy.maxAttempts)
     deepStrictEqual(event.backoffMs, retryPolicy.backoffMs)
