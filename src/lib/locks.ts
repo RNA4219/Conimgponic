@@ -382,26 +382,9 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
 
   const ready = createDeferred();
   const releaseDeferred = createDeferred();
-  const completionDeferred = createDeferred();
   let releaseInvoked = false;
   let releaseError: ProjectLockError | undefined;
-  let requestSettled!: Promise<void>;
-
-  const awaitReleased = async (released: Promise<unknown> | undefined) => {
-    if (!released) return;
-    try {
-      await released;
-    } catch (error) {
-      if (!releaseError) {
-        releaseError =
-          error instanceof ProjectLockError
-            ? error.operation === 'release'
-              ? error
-              : makeError('release-failed', 'Web Lock released promise rejected', 'release', error.retryable, error)
-            : makeError('release-failed', 'Web Lock released promise rejected', 'release', true, error);
-      }
-    }
-  };
+  let releaseMonitor: Promise<void> | undefined;
 
   try {
     const requestOutcome: Promise<unknown> = locks
@@ -418,25 +401,83 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
             throw makeError('acquire-denied', 'Web Lock handle missing released promise', 'acquire', false);
           }
           const releasedPromise = released as Promise<unknown>;
+          const releaseFn =
+            typeof (lock as { release?: unknown }).release === 'function'
+              ? (lock as { release: () => Promise<unknown> | unknown }).release.bind(lock)
+              : undefined;
+
+          releaseMonitor = (async () => {
+            try {
+              await releasedPromise;
+            } catch (error) {
+              if (!releaseError) {
+                releaseError =
+                  error instanceof ProjectLockError
+                    ? error.operation === 'release'
+                      ? error
+                      : makeError(
+                          'release-failed',
+                          'Web Lock released promise rejected',
+                          'release',
+                          error.retryable,
+                          error,
+                        )
+                    : makeError('release-failed', 'Web Lock released promise rejected', 'release', true, error);
+              }
+            }
+          })();
 
           webLockHandles.set(ctx.leaseId, {
             release: async () => {
               if (releaseInvoked) return;
               releaseInvoked = true;
               releaseDeferred.resolve();
-              await completionDeferred.promise;
-              await requestSettled;
+              await releaseDeferred.promise;
+              if (releaseFn) {
+                try {
+                  await releaseFn();
+                } catch (error) {
+                  if (!releaseError) {
+                    releaseError =
+                      error instanceof ProjectLockError
+                        ? error.operation === 'release'
+                          ? error
+                          : makeError(
+                              'release-failed',
+                              'Web Lock release() call failed',
+                              'release',
+                              error.retryable,
+                              error,
+                            )
+                        : makeError('release-failed', 'Web Lock release() call failed', 'release', true, error);
+                  }
+                }
+              }
+              try {
+                await requestOutcome;
+              } catch (error) {
+                if (!releaseError) {
+                  releaseError =
+                    error instanceof ProjectLockError
+                      ? error.operation === 'release'
+                        ? error
+                        : makeError(
+                            'release-failed',
+                            'Web Lock request failed during release',
+                            'release',
+                            error.retryable,
+                            error,
+                          )
+                      : makeError('release-failed', 'Web Lock request failed during release', 'release', true, error);
+                }
+              }
+              if (releaseMonitor) await releaseMonitor;
               if (releaseError) throw releaseError;
             },
           });
 
           ready.resolve();
-          try {
-            await releaseDeferred.promise;
-          } finally {
-            await awaitReleased(releasedPromise);
-            completionDeferred.resolve();
-          }
+          await releaseDeferred.promise;
         }
       )
       .catch((error) => {
@@ -457,10 +498,6 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
         }
         throw projectError;
       });
-    requestSettled = requestOutcome.then(
-      () => undefined,
-      () => undefined,
-    );
   } catch (cause) {
     throw cause instanceof ProjectLockError
       ? cause

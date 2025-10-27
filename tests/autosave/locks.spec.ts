@@ -80,6 +80,30 @@ const collectLockSequence = (telemetry: TelemetrySnapshot) => {
   return { sequence, unsubscribe }
 }
 
+const createDeferred = <T>() => {
+  let settled = false
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = (value) => {
+      if (settled) return
+      settled = true
+      res(value)
+    }
+    reject = (reason) => {
+      if (settled) return
+      settled = true
+      rej(reason)
+    }
+  })
+  return {
+    promise,
+    resolve,
+    reject,
+    isSettled: () => settled
+  }
+}
+
 scenario(
   'AS-I-03: Web Lock collision falls back to file lock and records telemetry',
   {
@@ -106,6 +130,63 @@ scenario(
     await projectLockApi.release(lease)
 
     await assertSnapshot('locks-as-i-03', { lockSequence: sequence, telemetry })
+  }
+)
+
+scenario(
+  'AS-I-03: Web Lock release resolves without hanging and emits release event',
+  {
+    locks: {
+      async request(_name, optionsOrCallback, callback) {
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+
+        const released = createDeferred<void>()
+        try {
+          await handler({ released: released.promise } as { released: Promise<void> })
+          released.resolve()
+        } catch (error) {
+          released.reject(error)
+          throw error
+        }
+      }
+    }
+  },
+  async (t) => {
+    const uuids = ['lease-release', 'owner-release']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const lease = await acquireProjectLock({ preferredStrategy: 'web-lock' })
+    assert.equal(lease.strategy, 'web-lock')
+
+    let timeout: NodeJS.Timeout | undefined
+    await assert.doesNotReject(async () => {
+      try {
+        await Promise.race([
+          releaseProjectLock(lease),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('release timeout')), 100)
+          })
+        ])
+      } finally {
+        if (timeout) clearTimeout(timeout)
+      }
+    })
+
+    assert.ok(
+      events.some((event) => event.type === 'lock:released' && event.leaseId === lease.leaseId),
+      'lock:released event should be emitted'
+    )
   }
 )
 
@@ -314,8 +395,8 @@ test('AS-LK-03: Web Lock は release() まで request が解決せず、lock.rel
   ])
   assert.equal(releaseState, 'pending', 'releaseProjectLock must wait for lock.released to settle')
 
-  assert.equal(requestSettled, false, 'navigator.locks.request should remain pending until lock.released resolves')
-  assert.equal(callbackSettled, false, 'Web Lock callback should remain pending until lock.released resolves')
+  assert.equal(requestSettled, true, 'navigator.locks.request should settle before lock.released resolves')
+  assert.equal(callbackSettled, true, 'Web Lock callback should settle before lock.released resolves')
   assert.equal(releaseMock.mock.calls.length, 1, 'lock.release must be called exactly once during release')
 
   resolveLockReleased()
