@@ -1095,7 +1095,27 @@ function assertDetectAutosaveChangesStep(
     `${message}; step must use dorny/paths-filter@v3`,
   );
 
+  assertPathsFilterStepShape(
+    step,
+    `${message}; step.with must be an object when provided`,
+  );
+
   return step;
+}
+
+function assertPathsFilterStepShape(
+  step: StepConfig,
+  message: string,
+): asserts step is PathsFilterStep {
+  const config = step.with;
+
+  if (config === undefined) {
+    return;
+  }
+
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+    assert.fail(message);
+  }
 }
 
 type RunSuiteStepId = (typeof expectedRunSuiteStepIds)[number];
