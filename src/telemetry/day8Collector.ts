@@ -37,7 +37,7 @@ export interface FlagResolutionEventPayload {
   readonly errors: readonly FlagValidationError[]
   readonly threshold: number | null
   readonly status: 'success' | 'failure'
-  readonly detail: { readonly retryable: boolean }
+  readonly detail: { readonly retryable: boolean; readonly default_used: boolean }
 }
 
 export type FlagResolutionContractPayload = {
@@ -49,7 +49,7 @@ export type FlagResolutionContractPayload = {
   readonly errors: readonly FlagValidationError[]
   readonly threshold: number | null
   readonly status: 'success' | 'failure'
-  readonly detail: { readonly retryable: boolean }
+  readonly detail: { readonly retryable: boolean; readonly default_used: boolean }
 }
 
 export type Day8CollectorFlagResolutionEvent = {

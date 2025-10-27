@@ -83,7 +83,10 @@ export interface FlagResolutionPayload {
   readonly evaluation_ms: number;
   readonly threshold: number | null;
   readonly status: 'success' | 'failure';
-  readonly detail: { readonly retryable: boolean };
+  readonly detail: {
+    readonly retryable: boolean;
+    readonly default_used: boolean;
+  };
 }
 
 export type MergeTracePhase = 'queued' | 'applying' | 'completed';
@@ -604,6 +607,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.threshold',
           'payload.status',
           'payload.detail.retryable',
+          'payload.detail.default_used',
         ],
         retryable: true,
         pipelineStage: 'analyzer',
