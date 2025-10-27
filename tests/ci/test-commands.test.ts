@@ -16,15 +16,6 @@ const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
 const ensureCommand =
   "node --input-type=module --eval \"import { mkdirSync } from 'node:fs'; const dir = process.argv.at(-1); if (!dir) throw new Error('missing dir'); mkdirSync(dir, { recursive: true });\"";
 
-const NODE_BASE_ARGS = [
-  '--experimental-vm-modules',
-  '--import',
-  'tsx/esm',
-  '--experimental-specifier-resolution=node',
-  '--test',
-  '--test-timeout=30000',
-] as const;
-
 const resolveScript = (name: string): string => {
   const scripts = packageJson.scripts;
   assert.ok(scripts, 'package.json.scripts is missing');
@@ -64,7 +55,7 @@ test('run-selected respects tests root when autorun is skipped', async () => {
   process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
 
   const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
-  const { collectDefaultTargets, buildNodeArgs } = await import(moduleUrl);
+  const { collectDefaultTargets, buildNodeArgs, getNodeTestBaseArgsForTest } = await import(moduleUrl);
 
   try {
     const defaultTargets = collectDefaultTargets();
@@ -75,7 +66,21 @@ test('run-selected respects tests root when autorun is skipped', async () => {
     );
 
     const nodeArgs = buildNodeArgs([], [], defaultTargets);
-    assert.deepStrictEqual(nodeArgs.slice(0, NODE_BASE_ARGS.length), NODE_BASE_ARGS);
+    const nodeBaseArgs = getNodeTestBaseArgsForTest();
+
+    assert.deepStrictEqual(nodeArgs.slice(0, nodeBaseArgs.length), nodeBaseArgs);
+
+    const loaderFlagIndex = nodeBaseArgs.findIndex((value) => value === '--import' || value === '--loader');
+    assert.ok(loaderFlagIndex >= 0, 'node test base args must include loader flag');
+
+    const loaderFlag = nodeBaseArgs[loaderFlagIndex];
+    const loaderValue = nodeBaseArgs[loaderFlagIndex + 1];
+
+    assert.ok(
+      (loaderFlag === '--import' && loaderValue === 'tsx/esm') ||
+        (loaderFlag === '--loader' && loaderValue === 'ts-node/esm'),
+      `node test loader must be "tsx/esm" (--import) or "ts-node/esm" (--loader); received ${loaderFlag ?? 'undefined'} ${loaderValue ?? 'undefined'}`,
+    );
     assert.ok(
       nodeArgs.includes('tests/ci/test-commands.test.ts'),
       'default targets should be appended to node arguments when none are provided',

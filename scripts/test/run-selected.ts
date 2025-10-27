@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 const DEFAULT_TEST_ROOT = 'tests';
@@ -11,14 +12,43 @@ const DEFAULT_TEST_GLOBS = [
   'tests/**/*.test.tsx',
   'tests/**/*.test.mjs',
 ] as const;
-const NODE_TEST_BASE_ARGS = [
+const moduleLoader = createRequire(import.meta.url);
+
+type LoaderResolution = {
+  flag: '--import' | '--loader';
+  module: string;
+};
+
+const NODE_TEST_LOADER = resolveNodeTestLoader();
+
+const NODE_TEST_BASE_ARGS: readonly string[] = [
   '--experimental-vm-modules',
-  '--import',
-  'tsx/esm',
+  NODE_TEST_LOADER.flag,
+  NODE_TEST_LOADER.module,
   '--experimental-specifier-resolution=node',
   '--test',
   '--test-timeout=30000',
-] as const;
+];
+
+function resolveNodeTestLoader(): LoaderResolution {
+  const candidates: readonly LoaderResolution[] = [
+    { flag: '--import', module: 'tsx/esm' },
+    { flag: '--loader', module: 'ts-node/esm' },
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      moduleLoader.resolve(candidate.module);
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException | undefined)?.code !== 'MODULE_NOT_FOUND') {
+        throw error;
+      }
+    }
+  }
+
+  return { flag: '--loader', module: 'ts-node/esm' };
+}
 const TEST_COVERAGE_FLAG = '--test-coverage';
 const TEST_COVERAGE_MINIMUM_MAJOR_VERSION = 22;
 const FILTER_TARGETS: Record<string, readonly string[]> = {
@@ -137,6 +167,10 @@ export function runSelected(
 
 if (process.env.RUN_SELECTED_SKIP_AUTORUN !== '1' && isMainModule(import.meta.url)) {
   runSelected();
+}
+
+export function getNodeTestBaseArgsForTest(): readonly string[] {
+  return NODE_TEST_BASE_ARGS;
 }
 
 export function collectExplicitTargets(args: readonly string[]): string[] {
