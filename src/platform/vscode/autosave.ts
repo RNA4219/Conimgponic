@@ -37,6 +37,69 @@ const isAutoSaveError = (value: unknown): value is AutoSaveError => {
   return candidate.name === 'AutoSaveError' || candidate.name === 'Error'
 }
 
+const DOM_EXCEPTION_CTOR: typeof DOMException | undefined =
+  typeof DOMException === 'undefined' ? undefined : DOMException
+
+const asDomException = (value: unknown): DOMException | undefined => {
+  if (!DOM_EXCEPTION_CTOR) {
+    return undefined
+  }
+  return value instanceof DOM_EXCEPTION_CTOR ? (value as DOMException) : undefined
+}
+
+const normalizeAtomicWriteError = (rawError: unknown): AutoSaveError => {
+  if (isAutoSaveError(rawError)) {
+    return rawError
+  }
+
+  const domException = asDomException(rawError)
+  if (domException) {
+    const retryable = domException.name !== 'NotAllowedError'
+    const context: Record<string, unknown> = {
+      origin: 'bridge.atomicWrite',
+      kind: 'dom-exception',
+      name: domException.name
+    }
+    if (domException.message) {
+      context.message = domException.message
+    }
+    return {
+      name: 'AutoSaveError',
+      message: domException.message,
+      code: 'write-failed',
+      retryable,
+      cause: domException,
+      context
+    }
+  }
+
+  const cause = rawError instanceof Error ? rawError : undefined
+  const message = cause?.message ?? String(rawError)
+  const context: Record<string, unknown> = {
+    origin: 'bridge.atomicWrite',
+    kind: cause ? 'error' : 'unknown'
+  }
+  if (cause) {
+    context.name = cause.name
+  } else if (rawError !== null && typeof rawError === 'object') {
+    const constructorName = (rawError as { constructor?: { name?: string } }).constructor?.name
+    if (constructorName) {
+      context.constructorName = constructorName
+    }
+  } else {
+    context.value = rawError
+  }
+
+  return {
+    name: 'AutoSaveError',
+    message,
+    code: 'write-failed',
+    retryable: true,
+    ...(cause ? { cause } : {}),
+    context
+  }
+}
+
 type AutoSaveTelemetryLockStrategy = Extract<
   AutoSaveAtomicWriteResult,
   { readonly ok: true }
@@ -507,24 +570,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         historyEntries: state.history.length
       })
     } catch (rawError) {
-      if (isAutoSaveError(rawError)) {
-        writeResult = { ok: false, error: rawError }
-      } else {
-        const domExceptionCtor = typeof DOMException === 'undefined' ? undefined : DOMException
-        const isDomException = domExceptionCtor !== undefined && rawError instanceof domExceptionCtor
-        const isNotAllowedDomException =
-          isDomException && (rawError as DOMException).name === 'NotAllowedError'
-        const cause = rawError instanceof Error ? rawError : undefined
-        const message = cause?.message ?? String(rawError)
-        const error: AutoSaveError = {
-          name: 'AutoSaveError',
-          message,
-          code: 'write-failed',
-          retryable: !isNotAllowedDomException,
-          ...(cause ? { cause } : {})
-        }
-        writeResult = { ok: false, error }
-      }
+      writeResult = { ok: false, error: normalizeAtomicWriteError(rawError) }
     }
 
     if (!writeResult.ok) {

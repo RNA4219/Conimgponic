@@ -656,6 +656,51 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(statusTelemetry.find((event) => event.properties?.state === 'disabled'))
   })
 
+  it('disables autosave and records non-retryable telemetry when atomicWrite throws AutoSaveError', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const thrown: AutoSaveError = Object.assign(new Error('index.json corrupted'), {
+      name: 'AutoSaveError' as const,
+      code: 'data-corrupted' as const,
+      retryable: false
+    })
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (msg) => sent.push(msg),
+      atomicWrite: async () => {
+        throw thrown
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(2048, guardEnabled)
+    await bridge.handleSnapshotRequest(createRequest('req-fatal', 'corr-fatal', guardEnabled, 2048, 1))
+
+    const statuses = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave')
+    assert.deepEqual(
+      statuses.map((msg) => msg.payload.state),
+      ['dirty', 'saving', 'error', 'disabled'],
+      'fatal AutoSaveError should transition to error then disabled'
+    )
+    assert.equal(bridge.inspectState().guard.optionsDisabled, true)
+
+    const snapshotTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.snapshot.result' && event.properties?.correlationId === 'corr-fatal'
+    )
+    assert.ok(snapshotTelemetry, 'snapshot.result telemetry is required for fatal errors')
+    assert.equal(snapshotTelemetry.properties?.retryable, false)
+    assert.equal(snapshotTelemetry.properties?.code, 'data-corrupted')
+
+    const disabledTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'disabled'
+    )
+    assert.ok(disabledTelemetry, 'autosave.status telemetry should include disabled state for fatal errors')
+    assert.equal(disabledTelemetry.properties?.phaseAfter, 'disabled')
+  })
+
   it('downgrades to disabled when non-retryable error occurs', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const telemetry: AutoSaveTelemetryEvent[] = []
