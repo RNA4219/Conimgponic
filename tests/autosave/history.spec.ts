@@ -108,19 +108,20 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
 
   await runner.dispose()
 
-  const writes = collectAutoSaveWrites(ctx.opfs)
-  const expectation = {
-    writes: writes.map(({ bytes: _bytes, ...rest }) => rest),
-    telemetry
-  }
-
-  const historyWrites = writes.filter(({ path }) => path.startsWith('project/autosave/history/'))
+  const historyWrites = collectAutoSaveWrites(ctx.opfs).filter(({ path }) =>
+    path.startsWith('project/autosave/history/')
+  )
   const historyPaths = historyWrites.map(({ path }) => path)
   const historyBytes = historyWrites.reduce((total, entry) => total + entry.bytes, 0)
   assert.ok(historyBytes <= policy.maxBytes)
   assert.ok(historyWrites.length <= policy.maxGenerations)
   assert.ok(firstHistoryPath)
   assert.ok(!historyPaths.includes(firstHistoryPath!), 'oldest history entry should be rotated out')
+
+  const expectation = {
+    history: historyWrites.map(({ bytes: _bytes, ...rest }) => rest),
+    telemetry
+  }
 
   await assertSnapshot('history-as-i-02', expectation)
 })
