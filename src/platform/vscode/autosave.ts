@@ -121,6 +121,7 @@ export interface AutoSaveTelemetryEventProperties {
   readonly phaseAfter?: AutoSavePhase
   readonly flagSource?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
   readonly lockStrategy?: AutoSaveTelemetryLockStrategy | 'none'
+  readonly performance?: { readonly flush_latency_ms: number }
   readonly [key: string]: unknown
 }
 
@@ -348,12 +349,15 @@ const handleNonRetryableError = (
   state: InternalState,
   request: AutoSaveSnapshotRequestMessage,
   error: AutoSaveError,
-  previousStatus: AutoSaveStatusState
+  previousStatus: AutoSaveStatusState,
+  requestStartedAtMs: number
 ): void => {
   const guardForTelemetry = state.guard
   const retryCountBeforeReset = state.retryCount
   state.status = 'error'
-  const ts = toIso(options.now())
+  const errorTimestamp = options.now()
+  const ts = toIso(errorTimestamp)
+  const flushLatencyMs = Math.max(0, errorTimestamp.getTime() - requestStartedAtMs)
   options.sendMessage(
     createSnapshotResultMessage(request, ts, { ok: false, error })
   )
@@ -390,7 +394,8 @@ const handleNonRetryableError = (
         state: 'error',
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
-        phase: request.phase ?? PHASE_SNAPSHOT
+        phase: PHASE_STATUS,
+        performance: { flush_latency_ms: flushLatencyMs }
       }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
@@ -421,7 +426,8 @@ const handleNonRetryableError = (
         state: 'disabled',
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
-        phase: PHASE_STATUS
+        phase: PHASE_STATUS,
+        performance: { flush_latency_ms: flushLatencyMs }
       }
     },
     { before: statusBeforeDisable, after: state.status, guard: state.guard }
@@ -519,8 +525,10 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const statusBeforeRequest = state.status
     const incomingGuard = request.payload.guard
     const shouldForceDisable = state.forceDisabled
+    const requestStartedAt = options.now()
+    const requestStartedAtMs = requestStartedAt.getTime()
     state.guard = mergeGuard(state.guard, incomingGuard, shouldForceDisable)
-    const ts = toIso(options.now())
+    const ts = toIso(requestStartedAt)
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
@@ -551,7 +559,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         options,
         {
           name: 'autosave.status',
-          properties: { state: 'disabled', correlationId: request.correlationId, retryCount: state.retryCount }
+          properties: { state: 'disabled', correlationId: request.correlationId, retryCount: state.retryCount, performance: { flush_latency_ms: 0 } }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
       )
@@ -581,7 +589,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       options,
       {
         name: 'autosave.status',
-        properties: { state: 'saving', reqId: request.reqId, correlationId: request.correlationId, retryCount: state.retryCount }
+        properties: { state: 'saving', reqId: request.reqId, correlationId: request.correlationId, retryCount: state.retryCount, performance: { flush_latency_ms: 0 } }
       },
       { before: statusBeforeSaving, after: state.status, guard: state.guard }
     )
@@ -602,7 +610,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         const statusBeforeBackoff = state.status
         state.status = 'backoff'
         state.retryCount += 1
-        const retryTs = toIso(options.now())
+        const retryTimestamp = options.now()
+        const retryLatency = Math.max(0, retryTimestamp.getTime() - requestStartedAtMs)
+        const retryTs = toIso(retryTimestamp)
         options.sendMessage(createSnapshotResultMessage(request, retryTs, writeResult))
         options.sendMessage(
           createStatusMessage(
@@ -620,7 +630,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           options,
           {
             name: 'autosave.status',
-            properties: { state: 'backoff', correlationId: request.correlationId, retryCount: state.retryCount }
+            properties: { state: 'backoff', correlationId: request.correlationId, retryCount: state.retryCount, performance: { flush_latency_ms: retryLatency } }
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
         )
@@ -634,7 +644,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         )
         return
       }
-      handleNonRetryableError(options, state, request, writeResult.error, state.status)
+      handleNonRetryableError(options, state, request, writeResult.error, state.status, requestStartedAtMs)
       return
     }
 
@@ -652,7 +662,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     state.status = 'saved'
     state.retryCount = 0
 
-    const successTs = toIso(options.now())
+    const successTimestamp = options.now()
+    const successLatency = Math.max(0, successTimestamp.getTime() - requestStartedAtMs)
+    const successTs = toIso(successTimestamp)
     const payload: AutoSaveSnapshotResultPayload = {
       ok: true,
       bytes: writeResult.bytes,
@@ -690,7 +702,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       options,
       {
         name: 'autosave.status',
-        properties: { state: 'saved', reqId: request.reqId, correlationId: request.correlationId, retryCount: state.retryCount }
+        properties: { state: 'saved', reqId: request.reqId, correlationId: request.correlationId, retryCount: state.retryCount, performance: { flush_latency_ms: successLatency } }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }
     )
