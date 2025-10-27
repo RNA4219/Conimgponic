@@ -100,6 +100,10 @@ const expectedCoverageCommand = 'pnpm -s test:coverage';
 const expectedCoverageCleanup = 'rm -rf coverage';
 const expectedJunitCommand =
   'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml';
+const expectedSuiteFailureChecks = [
+  "steps.run_suite_autosave.outcome == 'failure'",
+  "steps.run_suite_default.outcome == 'failure'",
+];
 
 const { load } = await importJsYaml();
 
@@ -178,12 +182,9 @@ describe('ci workflow build job', () => {
         'quality job must include "Report suite failure" step',
       );
 
-      assertStepIfEquals(
+      assertSuiteFailureCondition(
         reportFailureStep,
-        [
-          "steps.run_suite_autosave.outcome == 'failure' ||",
-          "steps.run_suite_default.outcome == 'failure'",
-        ].join('\n'),
+        { failureChecks: expectedSuiteFailureChecks },
         '"Report suite failure" step must run only when any run suite step fails',
       );
 
@@ -427,14 +428,12 @@ describe('ci workflow build job', () => {
       'quality job must include "Extract failed test output" step',
     );
 
-    assertStepIfEquals(
+    assertSuiteFailureCondition(
       extractFailuresStep,
-      [
-        'matrix.collect_failures && (',
-        "steps.run_suite_autosave.outcome == 'failure' ||",
-        "steps.run_suite_default.outcome == 'failure'",
-        ')',
-      ].join('\n'),
+      {
+        prerequisites: ['matrix.collect_failures'],
+        failureChecks: expectedSuiteFailureChecks,
+      },
       '"Extract failed test output" step must run only when suite fails and collection is enabled',
     );
 
@@ -775,6 +774,174 @@ function assertStepUsesEquals(step: StepConfig, expected: string, message: strin
   }
 
   assert.strictEqual(step.uses.trim(), expected, message);
+}
+
+type SuiteFailureConditionExpectation = {
+  prerequisites?: string[];
+  failureChecks: string[];
+};
+
+type SuiteFailureCondition = {
+  prerequisites: string[];
+  failureChecks: string[];
+};
+
+function assertSuiteFailureCondition(
+  step: StepConfig,
+  expected: SuiteFailureConditionExpectation,
+  message: string,
+): void {
+  if (typeof step.if !== 'string') {
+    assert.fail(`${message}; step.if must be configured as a string`);
+  }
+
+  const actual = parseSuiteFailureCondition(step.if);
+  const expectedPrerequisites = expected.prerequisites ?? [];
+
+  assertStringSetEquals(
+    actual.prerequisites,
+    expectedPrerequisites,
+    `${message}; prerequisites must match expected set`,
+  );
+
+  assertStringSetEquals(
+    actual.failureChecks,
+    expected.failureChecks,
+    `${message}; failure checks must match expected set`,
+  );
+}
+
+function parseSuiteFailureCondition(source: string): SuiteFailureCondition {
+  const normalized = normalizeIfConditionSource(source);
+  const parts = splitByOperator(normalized, '&&');
+
+  if (parts.length === 0) {
+    assert.fail('if condition must not be empty');
+  }
+
+  const prerequisites = parts.slice(0, -1);
+  const failureExpression = parts[parts.length - 1];
+  const normalizedFailure = unwrapParentheses(failureExpression);
+  const failureChecks = splitByOperator(normalizedFailure, '||');
+
+  if (failureChecks.length === 0) {
+    assert.fail('if condition must check for run suite failures');
+  }
+
+  return {
+    prerequisites,
+    failureChecks,
+  };
+}
+
+function normalizeIfConditionSource(source: string): string {
+  return source
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join(' ')
+    .replace(/\s+/gu, ' ')
+    .replace(/\s*\(\s*/gu, '(')
+    .replace(/\s*\)\s*/gu, ')')
+    .trim();
+}
+
+function splitByOperator(expression: string, operator: '&&' | '||'): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let index = 0;
+  let start = 0;
+
+  while (index < expression.length) {
+    const char = expression[index];
+
+    if (char === '(') {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+
+    if (char === ')') {
+      depth -= 1;
+      if (depth < 0) {
+        assert.fail('if condition contains unmatched closing parenthesis');
+      }
+
+      index += 1;
+      continue;
+    }
+
+    if (depth === 0 && expression.startsWith(operator, index)) {
+      parts.push(expression.slice(start, index).trim());
+      index += operator.length;
+      start = index;
+      continue;
+    }
+
+    index += 1;
+  }
+
+  if (depth !== 0) {
+    assert.fail('if condition contains unmatched opening parenthesis');
+  }
+
+  parts.push(expression.slice(start).trim());
+
+  return parts.filter((part) => part.length > 0);
+}
+
+function unwrapParentheses(expression: string): string {
+  let result = expression.trim();
+
+  while (result.startsWith('(') && result.endsWith(')')) {
+    const inner = result.slice(1, -1);
+
+    if (!areParenthesesBalanced(inner)) {
+      break;
+    }
+
+    result = inner.trim();
+  }
+
+  return result;
+}
+
+function areParenthesesBalanced(expression: string): boolean {
+  let depth = 0;
+
+  for (const char of expression) {
+    if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth -= 1;
+
+      if (depth < 0) {
+        return false;
+      }
+    }
+  }
+
+  return depth === 0;
+}
+
+function assertStringSetEquals(actual: string[], expected: string[], message: string): void {
+  const actualNormalized = actual.map((value) => value.trim()).filter((value) => value.length > 0);
+  const expectedNormalized = expected.map((value) => value.trim()).filter((value) => value.length > 0);
+  const actualSorted = Array.from(new Set(actualNormalized)).sort();
+  const expectedSorted = Array.from(new Set(expectedNormalized)).sort();
+
+  assert.deepStrictEqual(
+    actualSorted,
+    expectedSorted,
+    [
+      message,
+      '',
+      'expected:',
+      ...expectedSorted.map((entry) => `  - ${entry}`),
+      'actual:',
+      ...actualSorted.map((entry) => `  - ${entry}`),
+    ].join('\n'),
+  );
 }
 
 function assertStepIfEquals(step: StepConfig, expected: string, message: string): void {
