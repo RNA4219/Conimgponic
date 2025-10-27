@@ -385,7 +385,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   let releaseInvoked = false;
   let releaseError: ProjectLockError | undefined;
   let releasedPromise: Promise<unknown> | undefined;
-  const releaseMonitor = releaseDeferred.promise.then(() => awaitReleased(releasedPromise));
+  releaseDeferred.promise.then(() => awaitReleased(releasedPromise));
   let requestSettled: Promise<void> = Promise.resolve();
 
   const awaitReleased = async (released: Promise<unknown> | undefined) => {
@@ -428,7 +428,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
           if (!released || typeof (released as Promise<unknown>).then !== 'function') {
             throw makeError('acquire-denied', 'Web Lock handle missing released promise', 'acquire', false);
           }
-          const releasedPromise = released as Promise<unknown>;
+          releasedPromise = released as Promise<unknown>;
           type ReleaseMethod = () => Promise<void> | void;
           const releaseMethod: ReleaseMethod | undefined =
             typeof handle.release === 'function'
