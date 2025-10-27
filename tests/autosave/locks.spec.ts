@@ -309,6 +309,67 @@ scenario(
   }
 )
 
+scenario(
+  'AS-LK-04: Web Lock release emits lock:released without readonly downgrade',
+  {
+    locks: {
+      async request(_key, optionsOrCallback, callback) {
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+
+        let releasedResolved = false
+        let resolveReleased!: () => void
+        const released = new Promise<void>((resolve) => {
+          resolveReleased = () => {
+            if (releasedResolved) return
+            releasedResolved = true
+            resolve()
+          }
+        })
+
+        const release = async () => {
+          resolveReleased()
+        }
+
+        const result = await handler({ release, released } as unknown as LockHandleLike & { released: Promise<void> })
+        resolveReleased()
+        return result
+      }
+    }
+  },
+  async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+    const uuids = ['lease-release', 'owner-release']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribeEvents = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribeEvents)
+
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    const lease = await acquireProjectLock({ preferredStrategy: 'web-lock', retry: false })
+    await releaseProjectLock(lease)
+
+    const releasedEvents = events.filter((event): event is Extract<ProjectLockEvent, { type: 'lock:released' }> => event.type === 'lock:released')
+    assert.equal(releasedEvents.length, 1)
+    assert.equal(releasedEvents[0].leaseId, lease.leaseId)
+
+    const readonlyEvents = events.filter((event) => event.type === 'lock:readonly-entered')
+    assert.equal(readonlyEvents.length, 0)
+
+    await assertSnapshot('locks-handle-without-release', { lockSequence: sequence, telemetry })
+  }
+)
+
 test('AS-LK-03: Web Lock は release() まで request が解決せず、lock.released 完了まで待機する', async (t) => {
   const events: ProjectLockEvent[] = []
   const unsubscribe = projectLockEvents.subscribe((event) => {
