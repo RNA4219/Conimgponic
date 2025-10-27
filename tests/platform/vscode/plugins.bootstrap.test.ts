@@ -169,6 +169,10 @@ test('bootstrapPluginBridge skips initialization when plugin flag disabled', () 
   };
   const workspace: ResolveOptions['workspace'] = {
     get(key) {
+      assert.ok(
+        !key.startsWith('conimg.'),
+        'workspace.get は AUTOSAVE-DESIGN-IMPL §3.6 と MERGE-DESIGN-IMPL §5.4 の要件通り接頭辞なしキーのみを受け付ける'
+      );
       if (key === 'plugins.enable') {
         return false;
       }

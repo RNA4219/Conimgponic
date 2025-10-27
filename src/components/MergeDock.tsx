@@ -9,6 +9,7 @@ import {
   resolveFlags,
   type FlagSnapshot,
 } from '../config'
+import { workspaceKeyCandidates } from '../config/flags'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
@@ -276,25 +277,42 @@ const readWorkspaceSetting = (
     return undefined
   }
 
+  const candidates = workspaceKeyCandidates(key)
   const accessor = workspace as { readonly get?: <T = unknown>(target: string) => T | undefined }
   if (typeof accessor.get === 'function') {
-    return accessor.get(key)
+    for (const candidate of candidates) {
+      if (candidate.startsWith('conimg.')) {
+        continue
+      }
+      const value = accessor.get(candidate)
+      if (value !== undefined) {
+        return value
+      }
+    }
+    return undefined
   }
 
   if (typeof workspace === 'object' && workspace) {
-    if (Object.prototype.hasOwnProperty.call(workspace, key)) {
-      return (workspace as Record<string, unknown>)[key]
+    for (const candidate of candidates) {
+      if (Object.prototype.hasOwnProperty.call(workspace, candidate)) {
+        return (workspace as Record<string, unknown>)[candidate]
+      }
     }
 
-    return key.split('.').reduce<unknown>((current, segment) => {
-      if (!current || typeof current !== 'object') {
-        return undefined
+    for (const candidate of candidates) {
+      const resolved = candidate.split('.').reduce<unknown>((current, segment) => {
+        if (!current || typeof current !== 'object') {
+          return undefined
+        }
+        if (!(segment in (current as Record<string, unknown>))) {
+          return undefined
+        }
+        return (current as Record<string, unknown>)[segment]
+      }, workspace as Record<string, unknown>)
+      if (resolved !== undefined) {
+        return resolved
       }
-      if (!(segment in (current as Record<string, unknown>))) {
-        return undefined
-      }
-      return (current as Record<string, unknown>)[segment]
-    }, workspace as Record<string, unknown>)
+    }
   }
 
   return undefined

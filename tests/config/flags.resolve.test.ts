@@ -19,6 +19,10 @@ const createWorkspace = (
   values: WorkspaceRecord
 ): WorkspaceConfiguration => ({
   get(key) {
+    assert.ok(
+      !key.startsWith('conimg.'),
+      'workspace.get は AUTOSAVE-DESIGN-IMPL §3.6 と MERGE-DESIGN-IMPL §5.4 の要件通り接頭辞なしキーのみを受け付ける'
+    )
     if (Object.prototype.hasOwnProperty.call(values, key)) {
       return values[key]
     }
