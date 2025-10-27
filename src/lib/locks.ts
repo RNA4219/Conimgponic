@@ -449,7 +449,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
                 }
               }
               releaseDeferred.resolve();
-              await completionDeferred.promise;
+              await releaseMonitor;
               await requestSettled;
               const errorToThrow = releaseFailure ?? releaseError;
               if (errorToThrow) throw errorToThrow;
