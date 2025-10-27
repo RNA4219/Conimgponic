@@ -475,11 +475,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
           });
 
           ready.resolve();
-          try {
-            await releaseDeferred.promise;
-          } finally {
-            if (!completionDeferred.isSettled()) completionDeferred.resolve();
-          }
+          await releaseDeferred.promise;
         }
       )
       .catch((error) => {
