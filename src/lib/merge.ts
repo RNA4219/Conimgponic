@@ -23,6 +23,9 @@
  * - lock: `locks` で強制されたセクションが `decision='conflict'` になることを確認
  */
 
+import type { ProjectLockLease } from './locks';
+import { projectLockEvents } from './locks';
+
 export type MergeTokenizer = 'char' | 'word' | 'morpheme';
 
 export type MergeGranularity = 'section' | 'line';
@@ -173,13 +176,19 @@ export interface MergeTelemetryEvent {
 
 export type MergeTelemetrySink = (event: MergeTelemetryEvent) => void;
 
-export interface MergeDecisionEvent {
-  readonly type: 'merge:auto-applied' | 'merge:conflict-detected';
-  readonly hunk: MergeHunk;
-  readonly sceneId: string;
-  readonly retryable: boolean;
-  readonly trace: MergeTrace;
-}
+export type MergeDecisionEvent =
+  | {
+      readonly type: 'merge:auto-applied' | 'merge:conflict-detected';
+      readonly hunk: MergeHunk;
+      readonly sceneId: string;
+      readonly retryable: boolean;
+      readonly trace: MergeTrace;
+    }
+  | {
+      readonly type: 'merge:autosave:lock';
+      readonly stage: 'acquired' | 'released';
+      readonly lease: ProjectLockLease;
+    };
 
 export type MergeDecisionListener = (event: MergeDecisionEvent) => void;
 
@@ -187,6 +196,64 @@ export interface MergeEventHub {
   readonly publish: (event: MergeDecisionEvent) => void;
   readonly subscribe: (listener: MergeDecisionListener) => () => void;
 }
+
+interface Day8CollectorLike {
+  publish(event: Record<string, unknown>): void;
+}
+
+const resolveDay8Collector = (): Day8CollectorLike | undefined => {
+  const scope = globalThis as { Day8Collector?: unknown };
+  const candidate = scope.Day8Collector as { publish?: unknown } | undefined;
+  return candidate && typeof candidate.publish === 'function'
+    ? (candidate as Day8CollectorLike)
+    : undefined;
+};
+
+const publishAutoSaveLockCollectorEvent = (
+  stage: 'acquired' | 'released',
+  lease: ProjectLockLease,
+): void => {
+  const collector = resolveDay8Collector();
+  if (!collector) return;
+  collector.publish({
+    feature: 'merge.autosave',
+    event: 'autosave.lock',
+    stage,
+    lease: {
+      id: lease.leaseId,
+      owner: lease.ownerId,
+      strategy: lease.strategy,
+      via_fallback: lease.viaFallback,
+      resource: lease.resource,
+    },
+  });
+};
+
+export const attachAutoSaveLockEvents = (events: MergeEventHub): () => void => {
+  const leases = new Map<string, ProjectLockLease>();
+  const publish = (stage: 'acquired' | 'released', lease: ProjectLockLease): void => {
+    events.publish({ type: 'merge:autosave:lock', stage, lease });
+    publishAutoSaveLockCollectorEvent(stage, lease);
+  };
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    if (event.type === 'lock:acquired') {
+      leases.set(event.lease.leaseId, event.lease);
+      publish('acquired', event.lease);
+      return;
+    }
+    if (event.type === 'lock:released') {
+      const lease = leases.get(event.leaseId);
+      if (lease) {
+        leases.delete(event.leaseId);
+        publish('released', lease);
+      }
+    }
+  });
+  return () => {
+    leases.clear();
+    unsubscribe();
+  };
+};
 
 export interface MergeEngineOptions {
   readonly profile?: MergeProfileOverrides;
@@ -844,82 +911,87 @@ export const DEFAULT_SCORING_STRATEGY: MergeScoringStrategy = (input, profile) =
 
 export const DEFAULT_MERGE_ENGINE: MergeEngine = {
   merge3: (input, options) => {
-    const startedAt = now();
-    ensureNotAborted(options?.abortSignal);
-    const profile = resolveProfileInternal(options?.profile);
-    options?.telemetry?.({ type: 'merge:start', sceneId: input.sceneId ?? 'unknown', profile });
-    const stages: MergeTraceEntry[] = [];
-
-    const segmentStart = now();
-    const sections = splitSections(input, profile);
-    stages.push({ stage: 'segment', startedAt: segmentStart, durationMs: now() - segmentStart, metadata: { sections: sections.length } });
-
-    const decisions: SectionDecision[] = [];
-    ensureNotAborted(options?.abortSignal);
-    const scoreStart = now();
-    for (const section of sections) {
+    const detachAutoSaveLock = options?.events ? attachAutoSaveLockEvents(options.events) : undefined;
+    try {
+      const startedAt = now();
       ensureNotAborted(options?.abortSignal);
-      const metrics = scoreSection(section, profile, options?.scoring ?? DEFAULT_SCORING_STRATEGY);
-      const decisionStart = now();
-      const decision = decideSection(section, metrics, profile);
-      decisions.push(decision);
-      stages.push({ stage: 'score', startedAt: decisionStart, durationMs: now() - decisionStart, metadata: { section: section.id, metrics } });
-      const eventType: MergeTelemetryEvent['type'] = 'merge:hunk-decision';
-      options?.telemetry?.({ type: eventType, sceneId: input.sceneId ?? 'unknown', profile, hunk: decision.hunk });
-      if (options?.events) {
-        const event: MergeDecisionEvent = {
-          type: decision.hunk.decision === 'auto' ? 'merge:auto-applied' : 'merge:conflict-detected',
-          hunk: decision.hunk,
-          sceneId: input.sceneId ?? 'unknown',
-          retryable: decision.hunk.decision !== 'auto',
-          trace: buildTrace(input.sceneId, stages, profile, decisions.map((entry) => entry.hunk)),
-        };
-        options.events.publish(event);
+      const profile = resolveProfileInternal(options?.profile);
+      options?.telemetry?.({ type: 'merge:start', sceneId: input.sceneId ?? 'unknown', profile });
+      const stages: MergeTraceEntry[] = [];
+
+      const segmentStart = now();
+      const sections = splitSections(input, profile);
+      stages.push({ stage: 'segment', startedAt: segmentStart, durationMs: now() - segmentStart, metadata: { sections: sections.length } });
+
+      const decisions: SectionDecision[] = [];
+      ensureNotAborted(options?.abortSignal);
+      const scoreStart = now();
+      for (const section of sections) {
+        ensureNotAborted(options?.abortSignal);
+        const metrics = scoreSection(section, profile, options?.scoring ?? DEFAULT_SCORING_STRATEGY);
+        const decisionStart = now();
+        const decision = decideSection(section, metrics, profile);
+        decisions.push(decision);
+        stages.push({ stage: 'score', startedAt: decisionStart, durationMs: now() - decisionStart, metadata: { section: section.id, metrics } });
+        const eventType: MergeTelemetryEvent['type'] = 'merge:hunk-decision';
+        options?.telemetry?.({ type: eventType, sceneId: input.sceneId ?? 'unknown', profile, hunk: decision.hunk });
+        if (options?.events) {
+          const event: MergeDecisionEvent = {
+            type: decision.hunk.decision === 'auto' ? 'merge:auto-applied' : 'merge:conflict-detected',
+            hunk: decision.hunk,
+            sceneId: input.sceneId ?? 'unknown',
+            retryable: decision.hunk.decision !== 'auto',
+            trace: buildTrace(input.sceneId, stages, profile, decisions.map((entry) => entry.hunk)),
+          };
+          options.events.publish(event);
+        }
       }
-    }
-    stages.push({ stage: 'decide', startedAt: scoreStart, durationMs: now() - scoreStart, metadata: { hunks: decisions.length } });
+      stages.push({ stage: 'decide', startedAt: scoreStart, durationMs: now() - scoreStart, metadata: { hunks: decisions.length } });
 
-    const stats = aggregateStats(decisions);
-    const mergedText = assembleMergedText(decisions);
-    const processingMillis = now() - startedAt;
-    const finalStats: MergeStats = { ...stats, processingMillis };
-    const emitStart = now();
-    stages.push({ stage: 'emit', startedAt: emitStart, durationMs: now() - emitStart, metadata: { events: decisions.length } });
-    const hunks = decisions.map((entry) => entry.hunk);
+      const stats = aggregateStats(decisions);
+      const mergedText = assembleMergedText(decisions);
+      const processingMillis = now() - startedAt;
+      const finalStats: MergeStats = { ...stats, processingMillis };
+      const emitStart = now();
+      stages.push({ stage: 'emit', startedAt: emitStart, durationMs: now() - emitStart, metadata: { events: decisions.length } });
+      const hunks = decisions.map((entry) => entry.hunk);
 
-    const planResult = buildMergePlan(hunks, finalStats, profile, input.sceneId);
-    if (options?.queueMergeCommand) {
-      const queueStartedAt = now();
-      if (planResult.kind === 'ok') {
-        options.queueMergeCommand(createQueueMergeCommand(planResult.plan));
-        stages.push({
-          stage: 'queue',
-          startedAt: queueStartedAt,
-          durationMs: now() - queueStartedAt,
-          metadata: { hunks: planResult.plan.hunks.length, precision: planResult.plan.precision },
-        });
-      } else {
-        stages.push({
-          stage: 'queue',
-          startedAt: queueStartedAt,
-          durationMs: now() - queueStartedAt,
-          metadata: { error: planResult.error.code, retryable: planResult.error.retryable },
-        });
+      const planResult = buildMergePlan(hunks, finalStats, profile, input.sceneId);
+      if (options?.queueMergeCommand) {
+        const queueStartedAt = now();
+        if (planResult.kind === 'ok') {
+          options.queueMergeCommand(createQueueMergeCommand(planResult.plan));
+          stages.push({
+            stage: 'queue',
+            startedAt: queueStartedAt,
+            durationMs: now() - queueStartedAt,
+            metadata: { hunks: planResult.plan.hunks.length, precision: planResult.plan.precision },
+          });
+        } else {
+          stages.push({
+            stage: 'queue',
+            startedAt: queueStartedAt,
+            durationMs: now() - queueStartedAt,
+            metadata: { error: planResult.error.code, retryable: planResult.error.retryable },
+          });
+        }
       }
+
+      const finalTrace = buildTrace(input.sceneId, stages, profile, hunks);
+      const mergeResult: MergeResult = {
+        hunks,
+        mergedText,
+        stats: finalStats,
+        trace: finalTrace,
+        ...(planResult.kind === 'ok' ? { plan: planResult.plan } : {}),
+      };
+
+      options?.telemetry?.({ type: 'merge:finish', sceneId: input.sceneId ?? 'unknown', profile, stats: finalStats, trace: finalTrace });
+
+      return mergeResult;
+    } finally {
+      detachAutoSaveLock?.();
     }
-
-    const finalTrace = buildTrace(input.sceneId, stages, profile, hunks);
-    const mergeResult: MergeResult = {
-      hunks,
-      mergedText,
-      stats: finalStats,
-      trace: finalTrace,
-      ...(planResult.kind === 'ok' ? { plan: planResult.plan } : {}),
-    };
-
-    options?.telemetry?.({ type: 'merge:finish', sceneId: input.sceneId ?? 'unknown', profile, stats: finalStats, trace: finalTrace });
-
-    return mergeResult;
   },
   resolveProfile: resolveProfileInternal,
   score: DEFAULT_SCORING_STRATEGY,

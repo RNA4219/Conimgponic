@@ -5,6 +5,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 const { DEFAULT_MERGE_ENGINE } = await import('../../src/lib/merge.ts')
+const { projectLockEvents } = await import('../../src/lib/locks.ts')
 
 function runMerge(input, options) {
   return DEFAULT_MERGE_ENGINE.merge3(input, options)
@@ -219,4 +220,102 @@ test('non-legacy precision halts queue when similarity underflows review band', 
   assert.deepEqual(queueStage?.metadata, { error: 'score-underflow', retryable: true })
 
   process.env.MERGE_PRECISION = originalPrecision
+})
+
+test('stable precision publishes autosave lock integration events (MG-I-02)', () => {
+  const originalPrecision = process.env.MERGE_PRECISION
+  process.env.MERGE_PRECISION = 'stable'
+
+  const scope = globalThis
+  const originalCollector = scope.Day8Collector
+  const collectorEvents = []
+  scope.Day8Collector = {
+    publish(event) {
+      collectorEvents.push(event)
+    },
+  }
+
+  const published = []
+  const listeners = new Set()
+  const eventHub = {
+    publish(event) {
+      published.push(event)
+      listeners.forEach((listener) => listener(event))
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+
+  const lease = {
+    leaseId: 'lease-merge-autosave',
+    ownerId: 'diff-merge',
+    strategy: 'web-lock',
+    viaFallback: false,
+    resource: '/project.lock',
+    acquiredAt: 100,
+    expiresAt: 200,
+    ttlMillis: 5000,
+    nextHeartbeatAt: 150,
+    renewAttempt: 0,
+  }
+
+  try {
+    let emitted = false
+    runMerge(
+      { base: 'Alpha', ours: 'Alpha', theirs: 'Alpha', sceneId: 'scene-autosave-lock' },
+      {
+        events: eventHub,
+        scoring: (input, profile) => {
+          if (!emitted) {
+            emitted = true
+            projectLockEvents.emit({ type: 'lock:acquired', lease })
+            projectLockEvents.emit({ type: 'lock:released', leaseId: lease.leaseId })
+          }
+          return DEFAULT_MERGE_ENGINE.score(input, profile)
+        },
+      },
+    )
+
+    const lockEvents = published.filter((event) => event.type === 'merge:autosave:lock')
+    assert.deepEqual(lockEvents, [
+      { type: 'merge:autosave:lock', stage: 'acquired', lease },
+      { type: 'merge:autosave:lock', stage: 'released', lease },
+    ])
+
+    assert.deepEqual(collectorEvents, [
+      {
+        feature: 'merge.autosave',
+        event: 'autosave.lock',
+        stage: 'acquired',
+        lease: {
+          id: lease.leaseId,
+          owner: lease.ownerId,
+          strategy: lease.strategy,
+          via_fallback: lease.viaFallback,
+          resource: lease.resource,
+        },
+      },
+      {
+        feature: 'merge.autosave',
+        event: 'autosave.lock',
+        stage: 'released',
+        lease: {
+          id: lease.leaseId,
+          owner: lease.ownerId,
+          strategy: lease.strategy,
+          via_fallback: lease.viaFallback,
+          resource: lease.resource,
+        },
+      },
+    ])
+  } finally {
+    process.env.MERGE_PRECISION = originalPrecision
+    if (originalCollector) {
+      scope.Day8Collector = originalCollector
+    } else {
+      delete scope.Day8Collector
+    }
+  }
 })
