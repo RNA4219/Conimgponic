@@ -7,23 +7,65 @@ import argparse
 import json
 import sys
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping, MutableMapping, Sequence
+from typing import Any, Mapping, Sequence
 
-METRIC_KEYS: tuple[str, ...] = ("compress_ratio", "semantic_retention")
+
+@dataclass(frozen=True)
+class MetricDefinition:
+    key: str
+    prometheus_names: tuple[str, ...]
+    log_paths: tuple[tuple[str, ...], ...]
+    scale: float = 1.0
+
+    def from_prometheus(self, values: Mapping[str, float]) -> float | None:
+        for name in self.prometheus_names:
+            value = values.get(name)
+            if isinstance(value, (int, float)):
+                return float(value) * self.scale
+        return None
+
+    def from_log_entry(self, entry: Mapping[str, Any]) -> float | None:
+        for path in self.log_paths:
+            value = _lookup_path(entry, path)
+            if isinstance(value, (int, float)):
+                return float(value) * self.scale
+        return None
+
+
+METRIC_DEFINITIONS: tuple[MetricDefinition, ...] = (
+    MetricDefinition(
+        key="compress_ratio",
+        prometheus_names=("compress_ratio",),
+        log_paths=(("compress_ratio",), ("metrics", "compress_ratio")),
+    ),
+    MetricDefinition(
+        key="semantic_retention",
+        prometheus_names=("semantic_retention",),
+        log_paths=(("semantic_retention",), ("metrics", "semantic_retention")),
+    ),
+)
+
+METRIC_KEYS: tuple[str, ...] = tuple(definition.key for definition in METRIC_DEFINITIONS)
+PROMETHEUS_NAMES: frozenset[str] = frozenset(
+    name for definition in METRIC_DEFINITIONS for name in definition.prometheus_names
+)
 
 
 class MetricsCollectionError(RuntimeError):
     """Raised when metrics could not be collected."""
 
 
-def _capture(source: Mapping[str, object], target: MutableMapping[str, float]) -> None:
-    for key in METRIC_KEYS:
-        if key in target:
-            continue
-        value = source.get(key)
-        if isinstance(value, (int, float)):
-            target[key] = float(value)
+def _lookup_path(entry: Mapping[str, Any], path: tuple[str, ...]) -> Any:
+    current: Any = entry
+    for segment in path:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(segment)
+        if current is None:
+            return None
+    return current
 
 
 def _parse_prometheus(text: str) -> dict[str, float]:
@@ -36,7 +78,7 @@ def _parse_prometheus(text: str) -> dict[str, float]:
         if len(parts) < 2:
             continue
         name, raw_value = parts[0], parts[1]
-        if name in METRIC_KEYS:
+        if name in PROMETHEUS_NAMES:
             try:
                 metrics[name] = float(raw_value)
             except ValueError:
@@ -53,10 +95,10 @@ def _load_prometheus(metrics_url: str) -> Mapping[str, float]:
     return _parse_prometheus(payload.decode("utf-8"))
 
 
-def _load_chainlit_log(path: Path) -> Mapping[str, float]:
+def _load_chainlit_log(path: Path) -> Sequence[Mapping[str, Any]]:
     if not path.exists():
         raise MetricsCollectionError(f"Chainlit log not found: {path}")
-    metrics: dict[str, float] = {}
+    entries: list[Mapping[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
@@ -65,32 +107,41 @@ def _load_chainlit_log(path: Path) -> Mapping[str, float]:
         except json.JSONDecodeError:
             continue
         if isinstance(parsed, Mapping):
-            _capture(parsed, metrics)
-            nested = parsed.get("metrics")
-            if isinstance(nested, Mapping):
-                _capture(nested, metrics)
-    return metrics
+            entries.append(parsed)
+    return entries
 
 
-def _merge(sources: Iterable[Mapping[str, float]]) -> dict[str, float]:
-    combined: dict[str, float] = {}
-    for mapping in sources:
-        _capture(mapping, combined)
-    missing = [key for key in METRIC_KEYS if key not in combined]
+def _resolve_metrics(
+    prometheus_values: Mapping[str, float], log_entries: Sequence[Mapping[str, Any]]
+) -> dict[str, float]:
+    resolved: dict[str, float] = {}
+    missing: list[str] = []
+    for definition in METRIC_DEFINITIONS:
+        value = definition.from_prometheus(prometheus_values)
+        if value is None:
+            for entry in log_entries:
+                value = definition.from_log_entry(entry)
+                if value is not None:
+                    break
+        if value is None:
+            missing.append(definition.key)
+        else:
+            resolved[definition.key] = value
     if missing:
         raise MetricsCollectionError("Missing metrics: " + ", ".join(missing))
-    return {key: combined[key] for key in METRIC_KEYS}
+    return {key: resolved[key] for key in METRIC_KEYS}
 
 
 def collect_metrics(metrics_url: str | None, log_path: Path | None) -> dict[str, float]:
-    sources: list[Mapping[str, float]] = []
+    prometheus_values: Mapping[str, float] = {}
+    log_entries: Sequence[Mapping[str, Any]] = ()
     if metrics_url:
-        sources.append(_load_prometheus(metrics_url))
+        prometheus_values = _load_prometheus(metrics_url)
     if log_path:
-        sources.append(_load_chainlit_log(log_path))
-    if not sources:
+        log_entries = _load_chainlit_log(log_path)
+    if not metrics_url and log_path is None:
         raise MetricsCollectionError("At least one of --metrics-url or --log-path is required")
-    return _merge(sources)
+    return _resolve_metrics(prometheus_values, log_entries)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
