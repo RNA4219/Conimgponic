@@ -93,7 +93,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run pnpm audit
-        run: pnpm audit --audit-level=moderate
+        run: pnpm audit --audit-level=moderate --json > audit-report.json
 
       - name: Install osv-scanner
         run: |
@@ -104,7 +104,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run osv-scanner
-        run: osv-scanner --lockfile=pnpm-lock.yaml --format json --output audit-report.json
+        run: osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
 
       - name: Upload audit report
         if: always()
@@ -113,6 +113,14 @@ jobs:
           name: audit-report
           path: audit-report.json
           if-no-files-found: error
+
+      - name: Upload osv report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osv-report
+          path: osv-report.json
+          if-no-files-found: warn
 
   license:
     needs:

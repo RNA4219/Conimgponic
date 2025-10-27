@@ -107,6 +107,9 @@ const expectedSuiteFailureChecks = [
   "steps.run_suite_autosave.outcome == 'failure'",
   "steps.run_suite_default.outcome == 'failure'",
 ];
+const expectedAuditReportRedirection =
+  'pnpm audit --audit-level=moderate --json > audit-report.json';
+const expectedOsvReportOutputFlag = '--output osv-report.json';
 
 const { load } = await importJsYaml();
 
@@ -314,10 +317,10 @@ describe('ci workflow build job', () => {
       assertStepArray(auditSteps, 'workflow.jobs.audit.steps must be an array');
       const auditRunLines = extractRunLines(auditSteps);
 
-      assertCommandPresence(
+      assertLineIncludes(
         auditRunLines,
-        'pnpm audit --audit-level=moderate',
-        'audit job must run pnpm audit with moderate threshold',
+        expectedAuditReportRedirection,
+        'audit job must run pnpm audit with JSON output redirected to audit-report.json',
       );
 
       assertLineIncludes(
@@ -331,6 +334,11 @@ describe('ci workflow build job', () => {
         'osv-scanner',
         'audit job must run osv-scanner',
       );
+      assertLineIncludes(
+        auditRunLines,
+        expectedOsvReportOutputFlag,
+        'audit job must configure osv-scanner to write report to osv-report.json',
+      );
 
       const auditArtifactSteps = auditSteps.filter(isUploadArtifactStep);
       assertArtifactStep(
@@ -338,6 +346,13 @@ describe('ci workflow build job', () => {
         'audit-report',
         'audit-report.json',
         'error',
+        'always()',
+      );
+      assertArtifactStep(
+        auditArtifactSteps,
+        'osv-report',
+        'osv-report.json',
+        'warn',
         'always()',
       );
 
