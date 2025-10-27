@@ -270,7 +270,9 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.attempt',
       'payload.phase_step',
       'payload.guard.current',
-      'payload.guard.rollbackTo'
+      'payload.guard.rollbackTo',
+      'payload.detail.retry_count',
+      'payload.performance.flush_latency_ms'
     ]
 
     for (const field of requiredFields) {
@@ -788,7 +790,9 @@ describe('vscode extension telemetry contract (RED)', () => {
       'latency_ms',
       'attempt',
       'phase_step',
-      'guard'
+      'guard',
+      'detail',
+      'performance'
     ])
 
     assertOk(payloadSchema.properties, 'status.autosave payload schema must define properties')
@@ -796,6 +800,59 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(guardSchema, 'status.autosave payload schema must define guard')
     assertOk(guardSchema.required, 'status.autosave guard must define required fields')
     deepStrictEqual(guardSchema.required, ['current', 'rollbackTo'])
+
+    const detailSchema = payloadSchema.properties.detail
+    assertOk(detailSchema, 'status.autosave payload schema must define detail')
+    const resolvedDetail = resolveSchemaRef(detailSchema)
+    assertOk(resolvedDetail, 'status.autosave payload detail schema must resolve')
+    assertOk(resolvedDetail.type === 'object', 'status.autosave payload detail must be object')
+    assertOk(
+      resolvedDetail.additionalProperties === false,
+      'status.autosave payload detail must forbid additional properties'
+    )
+    assertOk(resolvedDetail.required, 'status.autosave payload detail must define required fields')
+    deepStrictEqual(resolvedDetail.required, ['retry_count'])
+    assertOk(resolvedDetail.properties, 'status.autosave payload detail must define retry_count property')
+    const retryCountSchema = resolveSchemaRef(resolvedDetail.properties.retry_count)
+    assertOk(
+      retryCountSchema && retryCountSchema.type === 'integer',
+      'status.autosave payload detail.retry_count must be integer'
+    )
+    assertOk(
+      'minimum' in retryCountSchema && retryCountSchema.minimum === 0,
+      'status.autosave payload detail.retry_count must enforce non-negative values'
+    )
+
+    const performanceSchema = payloadSchema.properties.performance
+    assertOk(performanceSchema, 'status.autosave payload schema must define performance')
+    const resolvedPerformance = resolveSchemaRef(performanceSchema)
+    assertOk(resolvedPerformance, 'status.autosave payload performance schema must resolve')
+    assertOk(
+      resolvedPerformance.type === 'object',
+      'status.autosave payload performance must be object'
+    )
+    assertOk(
+      resolvedPerformance.additionalProperties === false,
+      'status.autosave payload performance must forbid additional properties'
+    )
+    assertOk(
+      resolvedPerformance.required,
+      'status.autosave payload performance must define required fields'
+    )
+    deepStrictEqual(resolvedPerformance.required, ['flush_latency_ms'])
+    assertOk(
+      resolvedPerformance.properties,
+      'status.autosave payload performance must define flush_latency_ms'
+    )
+    const flushLatencySchema = resolveSchemaRef(resolvedPerformance.properties.flush_latency_ms)
+    assertOk(
+      flushLatencySchema && flushLatencySchema.type === 'number',
+      'status.autosave payload performance.flush_latency_ms must be number'
+    )
+    assertOk(
+      'minimum' in flushLatencySchema && flushLatencySchema.minimum === 0,
+      'status.autosave payload performance.flush_latency_ms must enforce non-negative values'
+    )
   })
 
   test('telemetry schema の merge.trace payload が Collector 要件を固定する', () => {

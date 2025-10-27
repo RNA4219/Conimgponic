@@ -122,6 +122,7 @@ export interface AutoSaveTelemetryEventProperties {
   readonly flagSource?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
   readonly lockStrategy?: AutoSaveTelemetryLockStrategy | 'none'
   readonly performance?: { readonly flush_latency_ms: number }
+  readonly detail?: { readonly retry_count: number }
   readonly [key: string]: unknown
 }
 
@@ -328,8 +329,31 @@ const emitTelemetry = (
 ): void => {
   const phaseBefore = statusPhaseForState(context.before)
   const phaseAfter = statusPhaseForState(context.after)
+  const rawProperties = event.properties ?? {}
+  const providedRetryCount =
+    typeof (rawProperties as { retryCount?: unknown }).retryCount === 'number'
+      ? (rawProperties as { retryCount: number }).retryCount
+      : undefined
+  const providedDetail = rawProperties.detail
+  const detailRetry =
+    typeof providedDetail === 'object' && providedDetail !== null
+      ? (providedDetail as { retry_count?: unknown }).retry_count
+      : undefined
+  const normalizedDetail: AutoSaveTelemetryEventProperties['detail'] | undefined = (() => {
+    const candidate =
+      typeof detailRetry === 'number'
+        ? detailRetry
+        : typeof providedRetryCount === 'number'
+          ? providedRetryCount
+          : undefined
+    if (typeof candidate !== 'number' || Number.isNaN(candidate)) {
+      return undefined
+    }
+    return { retry_count: Math.max(0, Math.trunc(candidate)) }
+  })()
   const properties: AutoSaveTelemetryEventProperties = {
-    ...(event.properties ?? {}),
+    ...rawProperties,
+    ...(normalizedDetail ? { detail: normalizedDetail } : {}),
     phaseBefore,
     phaseAfter,
     flagSource: context.guard.featureFlag.source,
