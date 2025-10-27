@@ -4,7 +4,9 @@ import { beforeEach } from 'node:test'
 import type { TestContext } from 'node:test'
 
 import { ENABLED_GUARD, scenario } from '../lib/autosave/setup'
-import type { AutoSaveInitResult } from '../../src/lib/autosave'
+import type { AutoSaveInitResult, AutoSaveTelemetryEvent } from '../../src/lib/autosave'
+import { AUTOSAVE_RETRY_POLICY } from '../../src/lib/autosave'
+import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
 import type { Storyboard } from '../../src/types'
 import { collectAutoSaveWrites, reset } from './__mocks__/opfs'
 
@@ -58,6 +60,37 @@ const makeCollector = () => {
   return telemetry
 }
 
+type RunnerTelemetryEvent = AutoSaveTelemetryEvent & { readonly slo: 'p99-success' | 'p95-latency' }
+
+const captureRunnerTelemetry = () => {
+  const events: RunnerTelemetryEvent[] = []
+  const scope = globalThis as {
+    __AUTOSAVE_RUNNER_HOST__?: { telemetry?: (event: RunnerTelemetryEvent) => void; [key: string]: unknown }
+  }
+  const previous = scope.__AUTOSAVE_RUNNER_HOST__
+  scope.__AUTOSAVE_RUNNER_HOST__ = {
+    ...(typeof previous === 'object' && previous !== null ? previous : {}),
+    telemetry(event: RunnerTelemetryEvent) {
+      events.push(event)
+      const legacyTelemetry =
+        previous && typeof previous === 'object' && typeof previous.telemetry === 'function'
+          ? previous.telemetry
+          : null
+      legacyTelemetry?.(event)
+    }
+  }
+  return {
+    events,
+    restore() {
+      if (previous === undefined) {
+        delete scope.__AUTOSAVE_RUNNER_HOST__
+      } else {
+        scope.__AUTOSAVE_RUNNER_HOST__ = previous
+      }
+    }
+  }
+}
+
 const waitForIdle = async (t: TestContext, runner: AutoSaveInitResult): Promise<void> => {
   for (let i = 0; i < 200; i += 1) {
     await Promise.resolve()
@@ -74,8 +107,12 @@ beforeEach(reset)
 
 scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', async (t, ctx) => {
   const telemetry = makeCollector()
+  const runnerTelemetry = captureRunnerTelemetry()
   t.after(() => {
     delete (globalThis as { Day8Collector?: unknown }).Day8Collector
+  })
+  t.after(() => {
+    runnerTelemetry.restore()
   })
 
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 1, 0, 0, 0) })
@@ -118,6 +155,34 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
   assert.ok(firstHistoryPath)
   assert.ok(!historyPaths.includes(firstHistoryPath!), 'oldest history entry should be rotated out')
 
+  const writeSucceededEvents = runnerTelemetry.events.filter(
+    (event) => event.detail && (event.detail as { event?: unknown }).event === 'write-succeeded'
+  )
+  assert.ok(writeSucceededEvents.length > 0, 'write-succeeded telemetry should be recorded')
+  writeSucceededEvents.forEach((event) => {
+    assert.equal(event.phase, 'writing-current')
+    assert.equal(event.slo, 'p99-success')
+    const detail = event.detail as Record<string, unknown>
+    assert.equal(detail.event, 'write-succeeded')
+    assert.equal(typeof detail.bytes, 'number')
+    assert.ok(Number.isFinite(detail.bytes), 'write-succeeded telemetry must include bytes')
+    assert.equal(typeof detail.retryCount, 'number')
+  })
+
+  const gcCompletedEvents = runnerTelemetry.events.filter(
+    (event) => event.detail && (event.detail as { event?: unknown }).event === 'gc-completed'
+  )
+  assert.ok(gcCompletedEvents.length > 0, 'gc-completed telemetry should be recorded')
+  gcCompletedEvents.forEach((event) => {
+    assert.equal(event.phase, 'gc')
+    assert.equal(event.slo, 'p99-success')
+    const detail = event.detail as Record<string, unknown>
+    assert.equal(detail.event, 'gc-completed')
+    assert.equal(typeof detail.bytes, 'number')
+    assert.ok(Number.isFinite(detail.bytes), 'gc-completed telemetry must include bytes')
+    assert.equal(typeof detail.retryCount, 'number')
+  })
+
   assert.ok(telemetry.length > 0, 'autosave saves should publish telemetry events')
   telemetry.forEach((entry, index) => {
     assert.equal(entry.feature, 'autosave', `telemetry[${index}].feature should be autosave`)
@@ -137,6 +202,72 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
   }
 
   await assertSnapshot('history-as-i-02', expectation)
+})
+
+scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, ctx) => {
+  const runnerTelemetry = captureRunnerTelemetry()
+  t.after(() => {
+    runnerTelemetry.restore()
+  })
+
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 2, 0, 0, 0) })
+
+  const failure = new ProjectLockError('acquire-denied', 'Mock failure', {
+    operation: 'acquire',
+    retryable: true
+  })
+  const withProjectLockMock = t.mock.method(projectLockApi, 'withProjectLock', async () => {
+    throw failure
+  })
+  t.after(() => {
+    withProjectLockMock.mock.restore()
+  })
+
+  const runner = ctx.initAutoSave(createStoryboard, { disabled: false }, ENABLED_GUARD)
+  t.after(async () => {
+    await runner.dispose()
+  })
+
+  runner.markDirty({ pendingBytes: 4096 })
+  const policy = ctx.AUTOSAVE_POLICY
+  t.mock.timers.tick(policy.debounceMs)
+  await Promise.resolve()
+  t.mock.timers.tick(policy.idleMs)
+
+  for (let i = 0; i < AUTOSAVE_RETRY_POLICY.maxAttempts; i += 1) {
+    const delay = Math.min(
+      AUTOSAVE_RETRY_POLICY.initialDelayMs * Math.pow(AUTOSAVE_RETRY_POLICY.multiplier, i),
+      AUTOSAVE_RETRY_POLICY.maxDelayMs
+    )
+    t.mock.timers.tick(delay)
+    await Promise.resolve()
+    await Promise.resolve()
+  }
+
+  const retryScheduled = runnerTelemetry.events.filter(
+    (event) => event.detail && (event.detail as { event?: unknown }).event === 'retry-scheduled'
+  )
+  assert.ok(retryScheduled.length >= AUTOSAVE_RETRY_POLICY.maxAttempts - 1)
+  retryScheduled.forEach((event) => {
+    assert.equal(event.phase, 'error')
+    assert.equal(event.slo, 'p95-latency')
+    const detail = event.detail as Record<string, unknown>
+    assert.equal(detail.event, 'retry-scheduled')
+    assert.equal(typeof detail.bytes, 'number')
+    assert.equal(typeof detail.retryCount, 'number')
+    assert.equal(typeof detail.delayMs, 'number')
+  })
+
+  const retryExhausted = runnerTelemetry.events.find(
+    (event) => event.detail && (event.detail as { event?: unknown }).event === 'retry-exhausted'
+  )
+  assert.ok(retryExhausted, 'retry-exhausted telemetry should be recorded')
+  assert.equal(retryExhausted.phase, 'awaiting-lock')
+  assert.equal(retryExhausted.slo, 'p95-latency')
+  const exhaustedDetail = retryExhausted.detail as Record<string, unknown>
+  assert.equal(exhaustedDetail.event, 'retry-exhausted')
+  assert.equal(exhaustedDetail.code, 'lock-unavailable')
+  assert.equal(exhaustedDetail.retryCount, AUTOSAVE_RETRY_POLICY.maxAttempts)
 })
 
 let resumeLock: (() => Promise<void>) | null = null
