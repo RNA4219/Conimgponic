@@ -195,7 +195,15 @@ export const resolveDiffMergeStoredTab = ({
   const resolved = resolvedFallback ?? plan.initialTab
 
   if (storage && resolved !== stored) {
-    storage.setItem(storageKey, resolved)
+    try {
+      storage.setItem(storageKey, resolved)
+    } catch (error) {
+      if (isDevelopmentEnvironment()) {
+        // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md に従い、副作用の失敗はロギングに留めて
+        // 選択状態を維持する。
+        console.warn('DiffMergeView: failed to persist resolved tab selection', error)
+      }
+    }
   }
 
   return resolved
@@ -457,7 +465,15 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, 
       if (!storage || !allowedTabKeys.has(key)) {
         return
       }
-      storage.setItem(storageKey, key)
+      try {
+        storage.setItem(storageKey, key)
+      } catch (error) {
+        if (isDevelopmentEnvironment()) {
+          // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の副作用境界に従い、永続化失敗時も
+          // graceful degradation（ログのみ）でタブ選択を維持する。
+          console.warn('DiffMergeView: failed to persist tab selection', error)
+        }
+      }
     },
     [allowedTabKeys, storage, storageKey],
   )
