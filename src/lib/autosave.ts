@@ -59,6 +59,18 @@ export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze(AUTOSAVE_POLICY_VAL
 
 export const AUTOSAVE_DEFAULTS = AUTOSAVE_POLICY
 
+const WORKSPACE_KEY_PREFIX = 'conimg.' as const
+
+const resolveWorkspaceKeyCandidates = (key: string): readonly string[] => {
+  if (key.startsWith(WORKSPACE_KEY_PREFIX)) {
+    const trimmed = key.slice(WORKSPACE_KEY_PREFIX.length)
+    if (trimmed) {
+      return [trimmed, key]
+    }
+  }
+  return [key]
+}
+
 const readWorkspaceValue = (
   workspace: WorkspaceConfiguration | null | undefined,
   key: string
@@ -66,20 +78,38 @@ const readWorkspaceValue = (
   if (!workspace) {
     return undefined
   }
-  const candidate = workspace as { get?: (name: string) => unknown }
-  if (typeof candidate.get === 'function') {
-    return candidate.get(key)
-  }
-  if (Object.prototype.hasOwnProperty.call(workspace, key)) {
-    return (workspace as Record<string, unknown>)[key]
-  }
-  return key.split('.').reduce<unknown>((current, segment) => {
-    if (!current || typeof current !== 'object') {
-      return undefined
+  const candidates = resolveWorkspaceKeyCandidates(key)
+  const candidateWithGetter = workspace as { get?: (name: string) => unknown }
+  if (typeof candidateWithGetter.get === 'function') {
+    for (const candidate of candidates) {
+      if (candidate.startsWith('conimg.')) {
+        continue
+      }
+      const value = candidateWithGetter.get(candidate)
+      if (value !== undefined) {
+        return value
+      }
     }
-    const record = current as Record<string, unknown>
-    return segment in record ? record[segment] : undefined
-  }, workspace)
+  }
+  const recordWorkspace = workspace as Record<string, unknown>
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(recordWorkspace, candidate)) {
+      return recordWorkspace[candidate]
+    }
+  }
+  for (const candidate of candidates) {
+    const resolved = candidate.split('.').reduce<unknown>((current, segment) => {
+      if (!current || typeof current !== 'object') {
+        return undefined
+      }
+      const record = current as Record<string, unknown>
+      return segment in record ? record[segment] : undefined
+    }, workspace)
+    if (resolved !== undefined) {
+      return resolved
+    }
+  }
+  return undefined
 }
 
 export interface AutoSavePolicyResolutionOptions {
