@@ -188,7 +188,7 @@ const parseMergePrecision = (value: unknown): MergePrecision | undefined => {
 
 export const getDefaultPreference = (precision: MergePrecision, diffEnabled: boolean): MergeDockPreference => {
   if (precision === 'stable') {
-    return diffEnabled ? 'manual-first' : 'diff-merge'
+    return 'diff-merge'
   }
   return precision !== 'legacy' && diffEnabled ? 'diff-merge' : 'manual-first'
 }
