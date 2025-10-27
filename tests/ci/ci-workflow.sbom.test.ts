@@ -9,7 +9,14 @@ import { describe, test } from 'node:test';
 
 type WorkflowYaml = { jobs?: { sbom?: WorkflowJob } };
 type WorkflowJob = { steps?: StepConfig[] };
-type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown; if?: unknown };
+type StepConfig = {
+  name?: unknown;
+  run?: unknown;
+  uses?: unknown;
+  with?: unknown;
+  if?: unknown;
+  env?: unknown;
+};
 type ActionStep<TConfig extends Record<string, unknown>> = StepConfig & { uses: string; with: TConfig };
 type AnchoreSbomConfig = { format: string; 'output-file': string };
 type UploadArtifactConfig = {
@@ -42,6 +49,14 @@ describe('ci workflow sbom job', () => {
         sbomAction.with['output-file'],
         'sbom.json',
         'Anchore SBOM action must output sbom.json',
+      );
+      const envConfig = sbomAction.env;
+      assert.ok(envConfig && typeof envConfig === 'object', 'Anchore SBOM action must define env block');
+      const syftUpdateSetting = (envConfig as Record<string, unknown>).SYFT_CHECK_FOR_APP_UPDATE;
+      assert.strictEqual(
+        syftUpdateSetting,
+        'false',
+        'Anchore SBOM action must disable update checks via SYFT_CHECK_FOR_APP_UPDATE="false"',
       );
       const uploadStep = expectUploadStep(sbomSteps, 'sbom', 'sbom job must upload sbom.json artifact', {
         ifCondition: 'always()',

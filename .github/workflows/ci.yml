@@ -30,6 +30,8 @@ jobs:
           path: .
           format: spdx-json
           output-file: sbom.json
+        env:
+          SYFT_CHECK_FOR_APP_UPDATE: 'false'
 
       - name: Prepare SBOM log
         run: |
