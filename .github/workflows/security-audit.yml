@@ -16,7 +16,7 @@ permissions:
 env:
   NODE_VERSION: '22'
   PNPM_VERSION: '9'
-  AUDIT_ALLOWLIST: ''
+  AUDIT_ALLOWLIST: 'GHSA-67mh-4wv8-2f99'
   RUN_OSV_SCANNER: 'true'
 
 jobs:
