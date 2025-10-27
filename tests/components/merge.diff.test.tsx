@@ -1,18 +1,33 @@
+if (!process.env.TS_NODE_IGNORE_DIAGNOSTICS) {
+  process.env.TS_NODE_IGNORE_DIAGNOSTICS = '2304,5097'
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var releaseMonitor: Promise<void> | undefined
+}
+
+if (typeof globalThis.releaseMonitor === 'undefined') {
+  ;(globalThis as typeof globalThis & { releaseMonitor?: Promise<void> }).releaseMonitor = Promise.resolve()
+}
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
-import {
+// @ts-ignore allow direct TSX extension import for ts-node test runner
+const mergeDockModule = await import('../../src/components/MergeDock.tsx')
+const {
   resolveMergeDockPhasePlan,
   planMergeDockTabs,
   resolveMergeThresholdPlan,
   resolveMergeThresholdSnapshot,
-  type MergeDockPhasePlan,
   diffBackupPolicy,
   shouldRenderDiffBackupCTA,
   shouldShowDiffBackupCTA,
   isDiffBackupCTAEligible,
-} from '../../src/components/MergeDock.tsx'
+} = mergeDockModule
+type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
 
 test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
   const snapshot = resolveMergeThresholdSnapshot({ workspace: null, storage: null })
@@ -202,6 +217,40 @@ test('stable precision sourced from workspace threshold stays opt-in without rev
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'default')
   assert.equal(plan.guard.phaseBRequired, false)
+})
+
+test('stable precision tab planning restores stored merge.lastTab preference', () => {
+  const tabPlan = planMergeDockTabs('stable', 'compiled')
+
+  assert.deepEqual(tabPlan, {
+    tabs: [
+      { id: 'compiled', label: 'Compiled Script' },
+      { id: 'shot', label: 'Shotlist / Export' },
+      { id: 'assets', label: 'Assets' },
+      { id: 'import', label: 'Import' },
+      { id: 'diff', label: 'Diff' },
+      { id: 'golden', label: 'Golden' },
+    ],
+    initialTab: 'compiled',
+    diff: { exposure: 'default', backupAfterMs: 300000 },
+  })
+
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.88,
+    lastTab: 'compiled',
+  })
+
+  assert.equal(phasePlan.tabs.initialTab, 'compiled')
+  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'default', backupAfterMs: 300000 })
+  assert.deepEqual(
+    phasePlan.tabs.tabs.map((entry) => entry.id),
+    ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
+  )
+  assert.equal(phasePlan.diff.initialTab, 'compiled')
+  assert.equal(phasePlan.diff.visible, true)
+  assert.equal(phasePlan.diff.enabled, false)
+  assert.equal(phasePlan.diff.exposure, 'default')
 })
 
 test('stable precision restores last selected non-diff tab when merge.lastTab is set', () => {
