@@ -50,6 +50,7 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/components/*.test.tsx',
     'tests/components/*.test.mjs',
   ],
+  'merge.diff': ['tests/components/merge.diff.test.tsx'],
   golden: ['tests/export/golden*.test.ts'],
   collector: [
     'tests/plugins/*.test.ts',
