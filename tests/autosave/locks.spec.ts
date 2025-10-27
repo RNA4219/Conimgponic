@@ -636,12 +636,13 @@ scenario(
 
     const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock', retry: false })
 
-    await assert.rejects(projectLockApi.release(lease), (error: unknown) => {
-      assert.ok(error instanceof ProjectLockError)
-      assert.equal(error.code, 'release-failed')
-      assert.equal(error.retryable, false)
-      return true
-    })
+    const firstError = await assert.rejects(async () => projectLockApi.release(lease))
+    assert.ok(firstError instanceof ProjectLockError)
+    assert.equal(firstError.code, 'release-failed')
+    assert.equal(firstError.retryable, false)
+
+    const secondError = await assert.rejects(async () => projectLockApi.release(lease))
+    assert.strictEqual(secondError, firstError)
 
     assert.equal(
       events.some((event) => event.type === 'lock:released' && event.leaseId === lease.leaseId),
