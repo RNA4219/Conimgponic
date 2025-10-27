@@ -308,12 +308,15 @@ const readWorkspaceSetting = (
   const accessor = workspace as { readonly get?: <T = unknown>(target: string) => T | undefined }
   if (typeof accessor.get === 'function') {
     for (const candidate of candidates) {
-      if (candidate.startsWith('conimg.')) {
-        continue
-      }
-      const value = accessor.get(candidate)
-      if (value !== undefined) {
-        return value
+      try {
+        const value = accessor.get(candidate)
+        if (value !== undefined) {
+          return value
+        }
+      } catch (error) {
+        if (!candidate.startsWith('conimg.')) {
+          throw error
+        }
       }
     }
     return undefined

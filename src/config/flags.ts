@@ -140,6 +140,10 @@ export const workspaceKeyCandidates = (key: string): readonly string[] => {
     if (trimmed) {
       return [trimmed, key]
     }
+    return [key]
+  }
+  if (key) {
+    return [key, `${WORKSPACE_KEY_PREFIX}${key}`]
   }
   return [key]
 }
@@ -159,12 +163,15 @@ function readWorkspaceValue(
   }
   if (typeof withGetter.get === 'function') {
     for (const candidate of candidates) {
-      if (candidate.startsWith(WORKSPACE_KEY_PREFIX)) {
-        continue
-      }
-      const value = withGetter.get(candidate)
-      if (value !== undefined) {
-        return value
+      try {
+        const value = withGetter.get(candidate)
+        if (value !== undefined) {
+          return value
+        }
+      } catch (error) {
+        if (!candidate.startsWith(WORKSPACE_KEY_PREFIX)) {
+          throw error
+        }
       }
     }
   }
@@ -177,15 +184,15 @@ function readWorkspaceValue(
   }
 
   for (const candidate of candidates) {
-    const resolved = candidate.split('.').reduce<unknown>(
-      (current, segment) =>
-        current &&
-        typeof current === 'object' &&
-        segment in (current as Record<string, unknown>)
-          ? (current as Record<string, unknown>)[segment]
-          : undefined,
-      workspace
-    )
+    const resolved = candidate
+      .split('.')
+      .reduce<unknown>((current, segment) => {
+        if (!current || typeof current !== 'object') {
+          return undefined
+        }
+        const record = current as Record<string, unknown>
+        return segment in record ? record[segment] : undefined
+      }, workspace)
     if (resolved !== undefined) {
       return resolved
     }
