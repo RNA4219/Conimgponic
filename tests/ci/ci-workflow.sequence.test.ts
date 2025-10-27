@@ -322,7 +322,7 @@ describe('ci workflow build job', () => {
     );
   });
 
-  test('quality job run step captures suite output into logs directory', async () => {
+  test('quality job run steps expose deterministic ids for downstream steps', async () => {
     const workflow = await readWorkflowYaml();
     const quality = workflow.jobs?.quality;
     if (!quality) {
@@ -332,49 +332,16 @@ describe('ci workflow build job', () => {
     const steps = quality.steps;
     assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
 
-    const { autosave: runSuiteAutosave, default: runSuiteDefault } = assertRunSuiteSteps(
-      steps,
-      'quality job must include "Run ${{ matrix.suite }} suite" steps for autosave and default suites',
-    );
+    const autosaveRunStep = assertStepWithNameAndId(steps, 'Run ${{ matrix.suite }} suite', 'run_suite_autosave', 'quality job must include autosave run suite step');
 
-    assertStepRunIncludesLine(
-      runSuiteAutosave,
-      'mkdir -p logs',
-      '"Run ${{ matrix.suite }} suite" autosave step must create logs directory',
-    );
+    const defaultRunStep = assertStepWithNameAndId(steps, 'Run ${{ matrix.suite }} suite', 'run_suite_default', 'quality job must include default run suite step');
 
-    assertStepRunIncludesLine(
-      runSuiteDefault,
-      'mkdir -p logs',
-      '"Run ${{ matrix.suite }} suite" default step must create logs directory',
-    );
+    assertStepIdEquals(autosaveRunStep, 'run_suite_autosave', 'autosave run suite step must expose id "run_suite_autosave" for downstream conditionals');
 
-    assertStepRunIncludesLine(
-      runSuiteAutosave,
-      'tee "logs/${{ matrix.suite }}.log"',
-      '"Run ${{ matrix.suite }} suite" autosave step must tee suite output into logs/${{ matrix.suite }}.log',
-    );
-
-    assertStepRunIncludesLine(
-      runSuiteDefault,
-      'tee "logs/${{ matrix.suite }}.log"',
-      '"Run ${{ matrix.suite }} suite" default step must tee suite output into logs/${{ matrix.suite }}.log',
-    );
-
-    assertStepRunIncludesLine(
-      runSuiteAutosave,
-      '${{ matrix.command }}',
-      '"Run ${{ matrix.suite }} suite" autosave step must execute ${{ matrix.command }}',
-    );
-
-    assertStepRunIncludesLine(
-      runSuiteDefault,
-      '${{ matrix.command }}',
-      '"Run ${{ matrix.suite }} suite" default step must execute ${{ matrix.command }}',
-    );
+    assertStepIdEquals(defaultRunStep, 'run_suite_default', 'default run suite step must expose id "run_suite_default" for downstream conditionals');
   });
 
-  test('quality job run step exposes deterministic id for downstream steps', async () => {
+  test('quality job run steps configure logging, command execution, and continue-on-error', async () => {
     const workflow = await readWorkflowYaml();
     const quality = workflow.jobs?.quality;
     if (!quality) {
@@ -384,22 +351,16 @@ describe('ci workflow build job', () => {
     const steps = quality.steps;
     assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
 
-    const { autosave: runSuiteAutosave, default: runSuiteDefault } = assertRunSuiteSteps(
-      steps,
-      'quality job must include "Run ${{ matrix.suite }} suite" steps for autosave and default suites',
-    );
+    const autosaveRunStep = assertStepWithNameAndId(steps, 'Run ${{ matrix.suite }} suite', 'run_suite_autosave', 'quality job must include autosave run suite step');
 
-    assertStepIdEquals(
-      runSuiteAutosave,
-      'run_suite_autosave',
-      '"Run ${{ matrix.suite }} suite" autosave step must expose id "run_suite_autosave" for downstream conditionals',
-    );
+    const defaultRunStep = assertStepWithNameAndId(steps, 'Run ${{ matrix.suite }} suite', 'run_suite_default', 'quality job must include default run suite step');
 
-    assertStepIdEquals(
-      runSuiteDefault,
-      'run_suite_default',
-      '"Run ${{ matrix.suite }} suite" default step must expose id "run_suite_default" for downstream conditionals',
-    );
+    for (const runSuiteStep of [autosaveRunStep, defaultRunStep]) {
+      assertStepContinueOnError(runSuiteStep, 'run suite steps must enable continue-on-error');
+      assertStepRunIncludesLine(runSuiteStep, 'mkdir -p logs', 'run suite steps must create logs directory');
+      assertStepRunIncludesLine(runSuiteStep, 'tee "logs/${{ matrix.suite }}.log"', 'run suite steps must tee suite output into logs/${{ matrix.suite }}.log');
+      assertStepRunIncludesLine(runSuiteStep, '${{ matrix.command }}', 'run suite steps must execute ${{ matrix.command }}');
+    }
   });
 
   test('uploads suite logs artifact on quality job matrix runs', async () => {
@@ -734,12 +695,40 @@ function assertStepWithName(
   expectedName: string,
   message: string,
 ): StepConfig {
-  const match = steps.find(
+  const matches = assertStepsWithName(steps, expectedName, message);
+
+  return matches[0];
+}
+
+function assertStepsWithName(
+  steps: StepConfig[],
+  expectedName: string,
+  message: string,
+): StepConfig[] {
+  const matches = steps.filter(
     (step) => typeof step.name === 'string' && step.name.trim() === expectedName,
   );
 
-  if (!match) {
+  if (matches.length === 0) {
     assert.fail(message);
+  }
+
+  return matches;
+}
+
+function assertStepWithNameAndId(
+  steps: StepConfig[],
+  expectedName: string,
+  expectedId: string,
+  message: string,
+): StepConfig {
+  const matches = assertStepsWithName(steps, expectedName, message);
+  const match = matches.find(
+    (step) => typeof step.id === 'string' && step.id.trim() === expectedId,
+  );
+
+  if (!match) {
+    assert.fail(`${message}; expected id "${expectedId}"`);
   }
 
   return match;
