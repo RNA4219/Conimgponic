@@ -6,6 +6,12 @@ import {
   COLLECT_METRICS_CONTRACT,
   FLAG_RESOLUTION_SOURCE_VARIANTS
 } from '../../scripts/monitor/collect-metrics.js'
+import {
+  publishFlagResolution,
+  type Day8Collector,
+  type Day8CollectorFlagResolutionEvent,
+  type FlagResolutionEventPayload
+} from '../../src/telemetry/day8Collector.js'
 
 type JsonSchemaObject = {
   readonly type?: string
@@ -154,6 +160,58 @@ describe('vscode extension telemetry contract (RED)', () => {
       'localStorage',
       'default'
     ])
+  })
+
+  test('publishFlagResolution の payload.phase が RolloutPhase 契約に一致する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'flag_resolution'
+    )
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'flag',
+      'variant',
+      'source',
+      'phase',
+      'evaluation_ms'
+    ])
+    assertOk(
+      payloadSchema.properties,
+      'flag_resolution payload schema must define properties'
+    )
+    const phaseSchema = payloadSchema.properties.phase
+    assertOk(phaseSchema, 'flag_resolution payload schema must define phase')
+    assertOk(phaseSchema.enum, 'flag_resolution phase must define enum')
+
+    const captured: Day8CollectorFlagResolutionEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorFlagResolutionEvent)
+      }
+    } as Day8Collector
+
+    try {
+      const payload: FlagResolutionEventPayload = {
+        flag: 'autosave.enabled',
+        variant: 'true',
+        source: 'env',
+        phase: 'phase-a0',
+        evaluation_ms: 42,
+        errors: []
+      }
+      publishFlagResolution('app.autosave', 'bootstrap', [payload], 42)
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    assertOk(captured.length > 0, 'flag_resolution telemetry must be published')
+    const [event] = captured
+    assertOk(event, 'flag_resolution event must be captured')
+    const allowedPhases = new Set(phaseSchema.enum)
+    assertOk(
+      allowedPhases.has(event.payload.phase),
+      `flag_resolution payload.phase must be one of ${Array.from(allowedPhases).join(', ')}`
+    )
   })
 
   test('telemetry schema の flag_resolution payload が FlagSource と必須フィールドを同期する', () => {
