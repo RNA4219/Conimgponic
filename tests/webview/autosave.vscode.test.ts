@@ -1143,12 +1143,14 @@ describe('createVscodeAutoSaveBridge', () => {
 
     const result = sent.find((msg) => msg.type === 'snapshot.result') as AutoSaveSnapshotResultMessage | undefined
     assert.ok(result, 'disabled snapshot should emit snapshot.result')
+    assert.equal(result.phase, 'A-2')
     if (result.payload.ok !== false) {
       assert.fail('disabled snapshot should return ok=false')
     }
     assert.equal(result.payload.error.code, 'disabled')
     const status = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave').at(-1)
     assert.equal(status?.payload.state, 'disabled')
+    assert.equal(status?.phase, 'A-1')
 
     const statusTelemetry = telemetry.find(
       (event) => event.name === 'autosave.status' && event.properties?.correlationId === 'corr-disabled'
