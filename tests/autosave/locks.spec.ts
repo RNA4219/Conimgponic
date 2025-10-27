@@ -331,6 +331,111 @@ scenario(
 )
 
 scenario(
+  'AS-LK-07: projectLockApi.release fails when navigator.locks.request rejects after release',
+  {
+    locks: {
+      async request(_key, optionsOrCallback, callback) {
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+
+        const released = createDeferred<void>()
+        const handle: LockHandleLike & { released: Promise<void> } = {
+          async release() {
+            released.resolve()
+          },
+          released: released.promise
+        }
+
+        await handler(handle)
+        await released.promise
+        throw new Error('navigator.locks.request rejected after release')
+      }
+    }
+  },
+  async (t) => {
+    const uuids = ['lease-release-request-reject', 'owner-release-request-reject']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock', retry: false })
+
+    await assert.rejects(projectLockApi.release(lease), (error: unknown) => {
+      assert.ok(error instanceof ProjectLockError)
+      assert.equal(error.code, 'release-failed')
+      return true
+    })
+
+    assert.equal(
+      events.some((event) => event.type === 'lock:released' && event.leaseId === lease.leaseId),
+      false,
+      'lock:released must not emit when navigator.locks.request rejects after release'
+    )
+  }
+)
+
+scenario(
+  'AS-LK-08: projectLockApi.release fails when lock.released rejects',
+  {
+    locks: {
+      async request(_key, optionsOrCallback, callback) {
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+
+        const releaseCalled = createDeferred<void>()
+        const handle: LockHandleLike & { released: Promise<void> } = {
+          async release() {
+            releaseCalled.resolve()
+          },
+          released: releaseCalled.promise.then(() => {
+            throw new Error('lock.released rejected')
+          })
+        }
+
+        await handler(handle)
+        await releaseCalled.promise
+      }
+    }
+  },
+  async (t) => {
+    const uuids = ['lease-release-released-reject', 'owner-release-released-reject']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock', retry: false })
+
+    await assert.rejects(projectLockApi.release(lease), (error: unknown) => {
+      assert.ok(error instanceof ProjectLockError)
+      assert.equal(error.code, 'release-failed')
+      return true
+    })
+
+    assert.equal(
+      events.some((event) => event.type === 'lock:released' && event.leaseId === lease.leaseId),
+      false,
+      'lock:released must not emit when lock.released rejects'
+    )
+  }
+)
+
+scenario(
   'AS-I-03: Web Lock handle without release resolves via released promise',
   {
     locks: {
