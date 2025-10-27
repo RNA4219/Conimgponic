@@ -80,9 +80,7 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
 
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 1, 0, 0, 0) })
 
-  const policy = { ...ctx.AUTOSAVE_POLICY, maxGenerations: 2, maxBytes: 16 * 1024 }
-  t.mock.method(ctx, 'resolveAutoSavePolicy', () => policy)
-
+  const policy = ctx.AUTOSAVE_POLICY
   const runner = ctx.initAutoSave(createStoryboard, { disabled: false }, ENABLED_GUARD)
 
   const flushViaIdle = async () => {
@@ -93,11 +91,20 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
     await waitForIdle(t, runner)
   }
 
-  await flushViaIdle()
-  t.mock.timers.tick(10)
-  await flushViaIdle()
-  t.mock.timers.tick(10)
-  await flushViaIdle()
+  let firstHistoryPath: string | undefined
+
+  for (let i = 0; i < policy.maxGenerations + 1; i += 1) {
+    await flushViaIdle()
+    if (i === 0) {
+      const initialWrites = collectAutoSaveWrites(ctx.opfs)
+      const initialHistory = initialWrites.find(({ path }) =>
+        path.startsWith('project/autosave/history/')
+      )
+      assert.ok(initialHistory, 'first history snapshot should exist')
+      firstHistoryPath = initialHistory.path
+    }
+    t.mock.timers.tick(10)
+  }
 
   await runner.dispose()
 
@@ -107,10 +114,13 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
     telemetry
   }
 
-  const historyBytes = writes
-    .filter(({ path }) => path.startsWith('project/autosave/history/'))
-    .reduce((total, entry) => total + entry.bytes, 0)
+  const historyWrites = writes.filter(({ path }) => path.startsWith('project/autosave/history/'))
+  const historyPaths = historyWrites.map(({ path }) => path)
+  const historyBytes = historyWrites.reduce((total, entry) => total + entry.bytes, 0)
   assert.ok(historyBytes <= policy.maxBytes)
+  assert.ok(historyWrites.length <= policy.maxGenerations)
+  assert.ok(firstHistoryPath)
+  assert.ok(!historyPaths.includes(firstHistoryPath!), 'oldest history entry should be rotated out')
 
   await assertSnapshot('history-as-i-02', expectation)
 })
