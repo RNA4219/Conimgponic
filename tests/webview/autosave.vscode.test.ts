@@ -554,6 +554,74 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledDuringRequest.properties?.retryCount, 0)
   })
 
+  it('autosave.status telemetry includes performance.flush_latency_ms for saving/backoff/saved/error/disabled', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const offsets = [0, 10, 20, 50, 70, 90, 140, 160, 180, 240], baseTs = Date.parse('2024-01-01T00:00:00.000Z')
+    const now = (): Date => {
+      const offset = offsets.shift()
+      assert.ok(offset !== undefined, 'now timeline exhausted')
+      return new Date(baseTs + offset)
+    }
+    let scenario: 'success' | 'retryable' | 'fatal' = 'success'
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now,
+      sendMessage: () => {},
+      atomicWrite: async (): Promise<AutoSaveAtomicWriteResult> =>
+        scenario === 'success'
+          ? {
+              ok: true,
+              bytes: 1024,
+              generation: 1,
+              lastSuccessAt: new Date('2024-01-01T00:00:10.000Z').toISOString(),
+              lockStrategy: 'web-lock'
+            }
+          : {
+              ok: false,
+              error: {
+                name: 'AutoSaveError',
+                message: scenario === 'retryable' ? 'transient failure' : 'fatal failure',
+                code: scenario === 'retryable' ? 'write-failed' : 'fatal',
+                retryable: scenario === 'retryable'
+              }
+            },
+      telemetry: telemetry.push.bind(telemetry)
+    })
+    const scenarios: readonly [typeof scenario, string, number, number][] = [
+      ['success', 'corr-success', 512, 1],
+      ['retryable', 'corr-backoff', 256, 2],
+      ['fatal', 'corr-fatal', 128, 3]
+    ]
+    for (const [mode, correlationId, pendingBytes, generation] of scenarios) {
+      scenario = mode
+      bridge.reportDirty(pendingBytes, guardEnabled)
+      await bridge.handleSnapshotRequest(
+        createRequest(`req-${mode}`, correlationId, guardEnabled, pendingBytes, generation)
+      )
+    }
+    const expectations: readonly [AutoSaveStatusMessage['payload']['state'], string, number][] = [
+      ['saved', 'corr-success', 30],
+      ['backoff', 'corr-backoff', 50],
+      ['error', 'corr-fatal', 60],
+      ['disabled', 'corr-fatal', 60]
+    ]
+    for (const [state, correlationId, latency] of expectations) {
+      const event = telemetry.find(
+        (candidate) =>
+          candidate.name === 'autosave.status' &&
+          candidate.properties?.state === state &&
+          candidate.properties?.correlationId === correlationId
+      )
+      assert.equal(
+        event?.properties?.performance?.flush_latency_ms,
+        latency,
+        `autosave.status telemetry for ${state} (${correlationId}) should include flush latency`
+      )
+    }
+  })
+
   it('enforces history max generations and size limit', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const bridge = createVscodeAutoSaveBridge({
