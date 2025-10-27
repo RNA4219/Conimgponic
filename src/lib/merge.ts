@@ -201,6 +201,9 @@ interface Day8CollectorLike {
   publish(event: Record<string, unknown>): void;
 }
 
+const AUTO_SAVE_LOCK_ATTACHED = Symbol('merge.autosave.lock.attached');
+const LAST_COLLECTOR_STAGES = new Map<string, 'acquired' | 'released'>();
+
 const resolveDay8Collector = (): Day8CollectorLike | undefined => {
   const scope = globalThis as { Day8Collector?: unknown };
   const candidate = scope.Day8Collector as { publish?: unknown } | undefined;
@@ -213,6 +216,18 @@ const publishAutoSaveLockCollectorEvent = (
   stage: 'acquired' | 'released',
   lease: ProjectLockLease,
 ): void => {
+  const previousStage = LAST_COLLECTOR_STAGES.get(lease.leaseId);
+  if (previousStage === stage) {
+    return;
+  }
+  LAST_COLLECTOR_STAGES.set(lease.leaseId, stage);
+  if (stage === 'released') {
+    queueMicrotask(() => {
+      if (LAST_COLLECTOR_STAGES.get(lease.leaseId) === 'released') {
+        LAST_COLLECTOR_STAGES.delete(lease.leaseId);
+      }
+    });
+  }
   const collector = resolveDay8Collector();
   if (!collector) return;
   collector.publish({
@@ -232,6 +247,15 @@ const publishAutoSaveLockCollectorEvent = (
 export const attachAutoSaveLockEvents = (events?: MergeEventHub): (() => void) | undefined => {
   if (!events && !resolveDay8Collector()) {
     return undefined;
+  }
+  const autoSaveAwareEvents = events as (MergeEventHub & {
+    [AUTO_SAVE_LOCK_ATTACHED]?: boolean;
+  }) | undefined;
+  if (autoSaveAwareEvents?.[AUTO_SAVE_LOCK_ATTACHED]) {
+    return undefined;
+  }
+  if (autoSaveAwareEvents) {
+    autoSaveAwareEvents[AUTO_SAVE_LOCK_ATTACHED] = true;
   }
   const leases = new Map<string, ProjectLockLease>();
   const publish = (stage: 'acquired' | 'released', lease: ProjectLockLease): void => {
@@ -255,6 +279,9 @@ export const attachAutoSaveLockEvents = (events?: MergeEventHub): (() => void) |
   return () => {
     leases.clear();
     unsubscribe();
+    if (autoSaveAwareEvents) {
+      delete autoSaveAwareEvents[AUTO_SAVE_LOCK_ATTACHED];
+    }
   };
 };
 
