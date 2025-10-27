@@ -562,6 +562,77 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledDuringRequest.properties?.retryCount, 0)
   })
 
+  it('autosave.status telemetry includes request phase for saving/backoff/saved transitions', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    let attempt = 0
+    const retryableError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'temporary failure',
+      code: 'write-failed',
+      retryable: true
+    }
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {},
+      atomicWrite: async ({ request }) => {
+        attempt += 1
+        if (attempt === 1) {
+          return { ok: false as const, error: retryableError }
+        }
+        return {
+          ok: true as const,
+          bytes: 2048,
+          generation: request.payload.queuedGeneration ?? attempt,
+          lastSuccessAt: new Date('2024-01-01T00:00:05.000Z').toISOString(),
+          lockStrategy: 'web-lock' as const
+        }
+      },
+      telemetry: telemetry.push.bind(telemetry)
+    })
+
+    const findStatus = (
+      state: AutoSaveStatusMessage['payload']['state'],
+      correlationId: string
+    ) =>
+      telemetry.find(
+        (event) =>
+          event.name === 'autosave.status' &&
+          event.properties?.state === state &&
+          event.properties?.correlationId === correlationId
+      )
+
+    const retryRequest: AutoSaveSnapshotRequestMessage = {
+      ...createRequest('req-phase-retry', 'corr-phase-retry', guardEnabled, 1024, 1),
+      phase: 'B-0'
+    }
+    await bridge.handleSnapshotRequest(retryRequest)
+
+    const savingRetry = findStatus('saving', 'corr-phase-retry')
+    assert.ok(savingRetry, 'saving telemetry should exist for retry request')
+    assert.equal(savingRetry.properties?.phase, 'B-0')
+
+    const backoffRetry = findStatus('backoff', 'corr-phase-retry')
+    assert.ok(backoffRetry, 'backoff telemetry should exist after retryable failure')
+    assert.equal(backoffRetry.properties?.phase, 'B-0')
+
+    const successRequest: AutoSaveSnapshotRequestMessage = {
+      ...createRequest('req-phase-success', 'corr-phase-success', guardEnabled, 1024, 2),
+      phase: 'B-1'
+    }
+    await bridge.handleSnapshotRequest(successRequest)
+
+    const savingSuccess = findStatus('saving', 'corr-phase-success')
+    assert.ok(savingSuccess, 'saving telemetry should exist for success request')
+    assert.equal(savingSuccess.properties?.phase, 'B-1')
+
+    const savedSuccess = findStatus('saved', 'corr-phase-success')
+    assert.ok(savedSuccess, 'saved telemetry should exist after success request')
+    assert.equal(savedSuccess.properties?.phase, 'B-1')
+  })
+
   it('autosave.status telemetry includes performance.flush_latency_ms for saving/backoff/saved/error/disabled', async () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     const recordedMessages: AutoSaveBridgeMessage[] = []
