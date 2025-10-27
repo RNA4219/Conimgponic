@@ -6,9 +6,9 @@
   "properties": {
     "type": { "type": "string", "minLength": 1 },
     "apiVersion": { "type": "integer", "const": 1 },
-    "reqId": { "type": "string", "minLength": 1 },
+    "reqId": { "type": "string", "minLength": 1, "format": "uuid" },
     "ts": { "type": "string", "format": "date-time" },
-    "correlationId": { "type": "string", "minLength": 1 },
+    "correlationId": { "type": "string", "minLength": 1, "format": "uuid" },
     "phase": { "$ref": "#/definitions/rolloutPhase" },
     "schema": { "type": "string", "const": "vscode.telemetry.v1" },
     "event": { "$ref": "#/definitions/telemetryEventName" },

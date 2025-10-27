@@ -28,8 +28,10 @@ export type TelemetryEventName =
 export interface MessageEnvelope {
   readonly type: string;
   readonly apiVersion: 1;
+  /** RFC4122 形式の UUID。Collector 再送信時も固定。 */
   readonly reqId: string;
   readonly ts: string;
+  /** RFC4122 形式の UUID。reqId と一致させること。 */
   readonly correlationId: string;
   readonly phase: RolloutPhase;
 }
