@@ -2,16 +2,15 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
-import { scenario } from '../lib/autosave/setup'
 import {
   acquireProjectLock,
-  projectLockApi,
-  projectLockEvents,
-  ProjectLockError,
   releaseProjectLock,
-  WEB_LOCK_KEY
+  projectLockEvents,
+  WEB_LOCK_KEY,
+  type ProjectLockEvent
 } from '../../src/lib/locks'
-import type { ProjectLockEvent } from '../../src/lib/locks'
+import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
+import { scenario } from '../lib/autosave/setup'
 
 const snapshotBase = new URL('./__snapshots__/autosave/on/', import.meta.url)
 
