@@ -107,7 +107,7 @@ interface MergeThresholdRule {
   readonly diffExposure: 'hidden' | 'opt-in' | 'default'
   readonly clamp: { readonly min: number; readonly max: number | null }
   readonly autoOffset: number
-  readonly autoClamp?: { readonly min: number; readonly max: number }
+  readonly autoRange: { readonly min: number; readonly max: number }
   readonly reviewBand?: { readonly below: number; readonly above: number }
   readonly conflictBand?: { readonly below: number }
   readonly slider: { readonly min: number; readonly max: number }
@@ -123,6 +123,7 @@ const THRESHOLD_RULES: Record<MergePrecision, MergeThresholdRule> = Object.freez
     diffExposure: 'hidden',
     clamp: { min: 0.65, max: null },
     autoOffset: 0.08,
+    autoRange: { min: 0.65, max: 0.9 },
     slider: { min: 0.65, max: 0.9 },
   },
   beta: {
@@ -130,7 +131,7 @@ const THRESHOLD_RULES: Record<MergePrecision, MergeThresholdRule> = Object.freez
     diffExposure: 'opt-in',
     clamp: { min: BETA_THRESHOLD_DEFAULT, max: 0.9 },
     autoOffset: 0.05,
-    autoClamp: { min: 0.8, max: 0.92 },
+    autoRange: { min: 0.92, max: 0.92 },
     reviewBand: { below: 0.02, above: 0.05 },
     conflictBand: { below: 0.02 },
     slider: { min: BETA_THRESHOLD_DEFAULT, max: 0.9 },
@@ -140,7 +141,7 @@ const THRESHOLD_RULES: Record<MergePrecision, MergeThresholdRule> = Object.freez
     diffExposure: 'default',
     clamp: { min: STABLE_THRESHOLD_DEFAULT, max: 0.94 },
     autoOffset: 0.03,
-    autoClamp: { min: 0.86, max: 0.95 },
+    autoRange: { min: 0.95, max: 0.95 },
     reviewBand: { below: 0.01, above: 0.03 },
     conflictBand: { below: 0.01 },
     slider: { min: STABLE_THRESHOLD_DEFAULT, max: 0.94 },
@@ -419,10 +420,7 @@ export const resolveMergeThresholdPlan = (precision: MergePrecision, threshold: 
   const clamped = clampValue(base, rule.clamp.min, rule.clamp.max)
   const request = roundRate(clamped)
   const autoBase = clamped + rule.autoOffset
-  const autoClamped = rule.autoClamp
-    ? clampValue(autoBase, rule.autoClamp.min, rule.autoClamp.max)
-    : autoBase
-  const autoTarget = roundRate(autoClamped)
+  const autoTarget = roundRate(clampValue(autoBase, rule.autoRange.min, rule.autoRange.max))
   const reviewBand = rule.reviewBand
     ? {
         min: roundRate(clamped - rule.reviewBand.below),
