@@ -295,7 +295,8 @@ jobs:
         with:
           filters: |
             autosave:
-              - 'src/**/autosave/**'
+              - 'src/**/*autosave*.ts'
+              - 'src/**/*autosave*.tsx'
               - 'tests/**/autosave.*.test.ts'
               - 'tests/**/autosave/**'
               - '.github/workflows/autosave*'

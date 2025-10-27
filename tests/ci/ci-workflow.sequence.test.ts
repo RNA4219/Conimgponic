@@ -233,12 +233,45 @@ describe('ci workflow build job', () => {
       detectAutosaveChanges,
       'autosave',
       [
-        'src/**/autosave/**',
+        'src/**/*autosave*.ts',
+        'src/**/*autosave*.tsx',
         'tests/**/autosave.*.test.ts',
         'tests/**/autosave/**',
         '.github/workflows/autosave*',
       ],
       '"Detect autosave changes" step must monitor required autosave paths',
+    );
+  });
+
+  test('autosave paths filter monitors autosave TypeScript files', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const detectAutosaveChanges = assertDetectAutosaveChangesStep(
+      steps,
+      'quality job must include "Detect autosave changes" step for autosave suite',
+    );
+
+    const globs = getPathsFilterGlobs(
+      detectAutosaveChanges,
+      'autosave',
+      '"Detect autosave changes" step must expose autosave paths filter',
+    );
+
+    assert.ok(
+      globs.includes('src/**/*autosave*.ts'),
+      '"Detect autosave changes" step must monitor autosave TypeScript files',
+    );
+
+    assert.ok(
+      globs.includes('src/**/*autosave*.tsx'),
+      '"Detect autosave changes" step must monitor autosave TSX files',
     );
   });
 
@@ -1095,7 +1128,7 @@ function assertDetectAutosaveChangesStep(
     `${message}; step must use dorny/paths-filter@v3`,
   );
 
-  return step;
+  return step as PathsFilterStep;
 }
 
 type RunSuiteStepId = (typeof expectedRunSuiteStepIds)[number];
@@ -1353,12 +1386,11 @@ function assertStringSetEquals(actual: string[], expected: string[], message: st
   );
 }
 
-function assertPathsFilterGlobs(
+function getPathsFilterGlobs(
   step: PathsFilterStep,
   filterName: string,
-  expectedGlobs: string[],
   message: string,
-): void {
+): string[] {
   const config = step.with;
   if (!config || typeof config !== 'object') {
     assert.fail(`${message}; step.with must be configured as an object`);
@@ -1392,6 +1424,16 @@ function assertPathsFilterGlobs(
     return entry.trim();
   });
 
+  return globs;
+}
+
+function assertPathsFilterGlobs(
+  step: PathsFilterStep,
+  filterName: string,
+  expectedGlobs: string[],
+  message: string,
+): void {
+  const globs = getPathsFilterGlobs(step, filterName, message);
   assertStringSetEquals(globs, expectedGlobs, message);
 }
 
