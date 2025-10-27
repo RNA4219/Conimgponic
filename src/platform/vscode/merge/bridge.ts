@@ -4,6 +4,8 @@ import type {
   MergePrecision,
   MergeProfileOverrides,
   MergeResult,
+  MergeEventHub,
+  MergeDecisionListener,
   MergeTrace,
 } from '../../../lib/merge'
 import { PRECISION_THRESHOLD_CLAMP } from '../../../lib/merge'
@@ -68,6 +70,33 @@ const sanitizeThreshold = (
 
 export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): MergeBridge => {
   const { engine, resolvePrecision, readThreshold } = dependencies
+  const createEventHub = (): { hub: MergeEventHub; dispose: () => void } => {
+    const listeners = new Set<MergeDecisionListener>()
+    const cleanup = new Set<() => void>()
+    const hub: MergeEventHub = {
+      publish(event) {
+        listeners.forEach((listener) => listener(event))
+      },
+      subscribe(listener) {
+        listeners.add(listener)
+        const unsubscribe = () => {
+          if (listeners.delete(listener)) {
+            cleanup.delete(unsubscribe)
+          }
+        }
+        cleanup.add(unsubscribe)
+        return unsubscribe
+      },
+    }
+    const dispose = () => {
+      for (const unsubscribe of [...cleanup]) {
+        unsubscribe()
+      }
+      cleanup.clear()
+      listeners.clear()
+    }
+    return { hub, dispose }
+  }
   return {
     async handleMergeRequest(message) {
       const precision = resolvePrecision()
@@ -83,14 +112,19 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
           ? { precision, threshold: effectiveThreshold }
           : { precision }
       const mergeInput = rest as MergeInput
-      const result = engine.merge3(mergeInput, { profile })
-      return {
-        type: 'merge.result',
-        apiVersion: message.apiVersion,
-        reqId: message.reqId,
-        ok: true,
-        result,
-        trace: result.trace,
+      const { hub, dispose } = createEventHub()
+      try {
+        const result = engine.merge3(mergeInput, { profile, events: hub })
+        return {
+          type: 'merge.result',
+          apiVersion: message.apiVersion,
+          reqId: message.reqId,
+          ok: true,
+          result,
+          trace: result.trace,
+        }
+      } finally {
+        dispose()
       }
     },
   }
