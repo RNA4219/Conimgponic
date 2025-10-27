@@ -107,7 +107,20 @@ scenario(
     t.after(unsubscribe)
 
     const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock' })
-    await projectLockApi.release(lease)
+    const telemetryBeforeRelease = telemetry.slice()
+    try {
+      await projectLockApi.release(lease)
+    } catch (error) {
+      if (error instanceof ProjectLockError && error.code === 'release-failed') {
+        assert.fail('projectLockApi.release must not throw release-failed for Web Lock fallback path')
+      }
+      throw error
+    }
+    assert.deepEqual(
+      telemetry,
+      telemetryBeforeRelease,
+      'Collector telemetry must remain intact after projectLockApi.release'
+    )
 
     await assertSnapshot('locks-as-i-03', { lockSequence: sequence, telemetry })
   }
@@ -355,7 +368,20 @@ scenario(
     t.after(unsubscribe)
 
     const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock' })
-    await projectLockApi.release(lease)
+    const telemetryBeforeRelease = telemetry.slice()
+    try {
+      await projectLockApi.release(lease)
+    } catch (error) {
+      if (error instanceof ProjectLockError && error.code === 'release-failed') {
+        assert.fail('projectLockApi.release must not throw release-failed when released promise resolves')
+      }
+      throw error
+    }
+    assert.deepEqual(
+      telemetry,
+      telemetryBeforeRelease,
+      'Collector telemetry must remain intact after projectLockApi.release'
+    )
 
     await assertSnapshot('locks-handle-without-release', { lockSequence: sequence, telemetry })
   }
