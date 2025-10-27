@@ -301,6 +301,10 @@ describe('ci workflow build job', () => {
       globs.includes('tests/**/*autosave*.test.ts'),
       '"Detect autosave changes" filters.autosave must monitor suffix-based autosave tests',
     );
+    assert(
+      globs.includes('tests/**/*autosave*.spec.ts'),
+      '"Detect autosave changes" filters.autosave must monitor suffix-based autosave specs',
+    );
   });
 
   test('runs recommended pnpm commands for autosave and reports', async () => {

@@ -302,6 +302,7 @@ jobs:
               - 'tests/**/autosave/**'
               - '.github/workflows/autosave*'
               - 'tests/**/*autosave*.test.ts'
+              - 'tests/**/*autosave*.spec.ts'
 
       - name: Determine autosave execution
         if: matrix.suite == 'autosave'
