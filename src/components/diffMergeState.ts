@@ -249,7 +249,7 @@ export const createDiffMergeController = ({
   readonly resolveCurrentTab?: () => DiffMergeSubTabKey | null
   readonly autoApplied?: DiffMergeAutoAppliedState
 }) => ({
-  queueMerge: async (hunkIds: readonly string[]) => {
+  queueMerge: async (hunkIds: readonly string[]): Promise<void> => {
     const ids = [...retainKnownHunkIds(hunkIds, getCurrentHunkIds())]
     if (!ids.length) return
     dispatch({ type: 'queueMerge', hunkIds: ids })
@@ -264,14 +264,13 @@ export const createDiffMergeController = ({
       )
       dispatch({ type: 'queueResult', hunkIds: ids, result: result.status })
       if (result.status === 'error') onError?.(result)
-    } catch (error) {
+    } catch {
       dispatch({ type: 'queueResult', hunkIds: ids, result: 'error' })
       onError?.({
         status: 'error',
         hunkIds: ids,
         telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: true },
       })
-      throw error
     }
   },
   openEditor: (hunkId: string) => dispatch({ type: 'openEditor', hunkId }),
