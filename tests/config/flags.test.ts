@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert'
+import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
 import {
@@ -22,6 +23,40 @@ function createStorage(values: Record<string, string | undefined>): StorageStub 
     }
   }
 }
+
+test('resolveFlags skips default storage when storage is null', () => {
+  const moduleUrl = new URL('../../src/config/flags.ts', import.meta.url)
+  const script = `const calls = [];
+globalThis.localStorage = {
+  getItem(key) {
+    calls.push(key);
+    return null;
+  }
+};
+const mod = await import(${JSON.stringify(moduleUrl.href)});
+mod.resolveFlags({ storage: null });
+console.log(JSON.stringify({ callsLength: calls.length }));
+`
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--no-warnings',
+      '--experimental-vm-modules',
+      '--loader',
+      'ts-node/esm',
+      '--experimental-specifier-resolution=node',
+      '--input-type=module'
+    ],
+    { encoding: 'utf-8', input: script }
+  )
+
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 0, result.stderr)
+  const outputLine = result.stdout.trim().split('\n').pop()
+  assert.ok(outputLine, 'child process must emit call count JSON')
+  const { callsLength } = JSON.parse(outputLine as string) as { callsLength: number }
+  assert.equal(callsLength, 0)
+})
 
 test('workspace configuration resolves plugin enable flag before storage and defaults', () => {
   const workspace = {
