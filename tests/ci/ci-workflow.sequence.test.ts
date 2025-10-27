@@ -45,6 +45,7 @@ type QualityJobConfig = {
 type QualityMatrixEntry = {
   command?: unknown;
   suite?: unknown;
+  collect_failures?: unknown;
 };
 
 type JobNeedsConfig = string | string[] | undefined;
@@ -128,6 +129,56 @@ describe('ci workflow build job', () => {
       'quality job matrix.include suites',
       { exact: true },
     );
+  });
+
+  test('quality job configures collect_failures per suite', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const matrixEntries = quality.strategy?.matrix?.include;
+    assertMatrixEntries(matrixEntries, 'quality job must configure matrix.include array');
+
+    const expectedCollectFailures: Record<string, boolean> = {
+      lint: false,
+      typecheck: false,
+      autosave: true,
+      merge: true,
+      cli: true,
+      collector: true,
+      telemetry: true,
+    };
+
+    for (const entry of matrixEntries) {
+      const { suite, collect_failures: collectFailures } = entry;
+
+      if (typeof suite !== 'string') {
+        assert.fail('quality job matrix.include suites must be configured as strings');
+      }
+
+      const suiteName = suite.trim();
+      const expectedValue = expectedCollectFailures[suiteName];
+
+      if (expectedValue === undefined) {
+        assert.fail(
+          `quality job matrix.include must configure collect_failures expectations for suite "${suiteName}"`,
+        );
+      }
+
+      if (typeof collectFailures !== 'boolean') {
+        assert.fail(
+          `quality job matrix.include entry for suite "${suiteName}" must configure collect_failures as a boolean`,
+        );
+      }
+
+      assert.strictEqual(
+        collectFailures,
+        expectedValue,
+        `quality job matrix.include entry for suite "${suiteName}" must ${expectedValue ? 'enable' : 'disable'} collect_failures`,
+      );
+    }
   });
 
   test('runs recommended pnpm commands for autosave and reports', async () => {
