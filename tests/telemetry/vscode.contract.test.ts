@@ -9,9 +9,14 @@ import {
 import {
   collectFlagResolutionPayloads,
   DEFAULT_FLAGS,
+  FEATURE_FLAG_DEFINITIONS,
   resolveFlags
 } from '../../src/config/index.js'
-import type { WorkspaceConfiguration } from '../../src/config/flags.js'
+import type {
+  FeatureFlagName,
+  FlagSnapshot,
+  WorkspaceConfiguration
+} from '../../src/config/flags.js'
 import {
   publishFlagResolution,
   type Day8Collector,
@@ -247,6 +252,50 @@ describe('vscode extension telemetry contract (RED)', () => {
     })
   })
 
+  test('publishFlagResolution は phase-a2/b1 を Collector 契約フェーズへ変換する', () => {
+    const captured: Day8CollectorFlagResolutionEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorFlagResolutionEvent)
+      }
+    } as Day8Collector
+
+    try {
+      const phaseA2Payload: FlagResolutionEventPayload = {
+        flag: 'autosave.enabled',
+        variant: 'true',
+        source: 'env',
+        phase: 'phase-a2',
+        evaluation_ms: 5,
+        errors: [],
+        threshold: null,
+        status: 'success',
+        detail: { retryable: false, default_used: false }
+      }
+      const phaseB1Payload: FlagResolutionEventPayload = {
+        flag: 'plugins.enable',
+        variant: 'false',
+        source: 'default',
+        phase: 'phase-b1',
+        evaluation_ms: 7,
+        errors: [],
+        threshold: null,
+        status: 'success',
+        detail: { retryable: false, default_used: false }
+      }
+      publishFlagResolution('app.flags', 'bootstrap', [phaseA2Payload, phaseB1Payload], 11)
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    assertOk(captured.length >= 2, 'flag_resolution telemetry must capture all payloads')
+    const phases = captured.map((event) => event.payload.phase)
+    deepStrictEqual(phases.includes('A-2'), true)
+    deepStrictEqual(phases.includes('B-1'), true)
+  })
+
   test('telemetry schema の flag_resolution payload が FlagSource と必須フィールドを同期する', () => {
     const thenClause = findConditional(
       (entry) => entry.if?.properties?.event?.const === 'flag_resolution'
@@ -376,6 +425,97 @@ describe('vscode extension telemetry contract (RED)', () => {
     deepStrictEqual(mergePayload.source, 'workspace')
     deepStrictEqual(mergePayload.threshold, DEFAULT_FLAGS.merge.profile.threshold)
     deepStrictEqual(mergePayload.detail.default_used, true)
+  })
+
+  test('collectFlagResolutionPayloads は phase-a2/b1 を JSONL 契約フェーズへ伝搬する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'flag_resolution'
+    )
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'flag',
+      'variant',
+      'source',
+      'phase',
+      'evaluation_ms',
+      'threshold',
+      'status',
+      'detail',
+      'errors'
+    ])
+    assertOk(payloadSchema.properties, 'flag_resolution payload schema must define properties')
+    const phaseSchema = payloadSchema.properties.phase
+    assertOk(phaseSchema, 'flag_resolution payload schema must define phase')
+    const allowedPhaseEnum =
+      phaseSchema.enum ??
+      (phaseSchema.$ref
+        ? telemetrySchema.definitions?.[
+            phaseSchema.$ref.replace('#/definitions/', '')
+          ]?.enum ?? null
+        : null)
+    assertOk(allowedPhaseEnum, 'flag_resolution phase must define enum')
+
+    const definitions = FEATURE_FLAG_DEFINITIONS as Record<
+      FeatureFlagName,
+      { phase: FlagResolutionEventPayload['phase'] }
+    >
+    const pluginsPhase = definitions['plugins.enable'].phase
+    const mergePhase = definitions['merge.precision'].phase
+    definitions['plugins.enable'].phase = 'phase-a2'
+    definitions['merge.precision'].phase = 'phase-b1'
+
+    const snapshot: FlagSnapshot = {
+      autosave: {
+        value: true,
+        source: 'env',
+        errors: [],
+        enabled: true
+      },
+      plugins: {
+        value: false,
+        source: 'default',
+        errors: [],
+        enabled: false
+      },
+      merge: {
+        value: 'legacy',
+        source: 'workspace',
+        errors: [],
+        precision: 'legacy',
+        threshold: 0.8
+      },
+      updatedAt: new Date(0).toISOString()
+    }
+
+    try {
+      const payloads = collectFlagResolutionPayloads(snapshot, [], 3)
+      const scope = globalThis as { Day8Collector?: Day8Collector }
+      const captured: Day8CollectorFlagResolutionEvent[] = []
+      const previousCollector = scope.Day8Collector
+      scope.Day8Collector = {
+        publish(event) {
+          captured.push(event as Day8CollectorFlagResolutionEvent)
+        }
+      } as Day8Collector
+
+      try {
+        publishFlagResolution('app.flags', 'snapshot', payloads, 3)
+      } finally {
+        scope.Day8Collector = previousCollector
+      }
+
+      const phases = captured.map((event) => event.payload.phase)
+      assertOk(phases.includes('A-2'), 'phase-a2 must map to A-2 contract phase')
+      assertOk(phases.includes('B-1'), 'phase-b1 must map to B-1 contract phase')
+      for (const phase of phases) {
+        assertOk(
+          allowedPhaseEnum.includes(phase),
+          `collector payload phase ${phase} must satisfy schema enum`
+        )
+      }
+    } finally {
+      definitions['plugins.enable'].phase = pluginsPhase
+      definitions['merge.precision'].phase = mergePhase
+    }
   })
 
   test('telemetry schema の status.autosave payload が Collector 要件を固定する', () => {

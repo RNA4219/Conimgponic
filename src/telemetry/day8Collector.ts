@@ -11,7 +11,9 @@ type RolloutPhaseContract = 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1'
 const FLAG_PHASE_TO_CONTRACT_PHASE: Record<FlagRolloutPhase, RolloutPhaseContract> = {
   'phase-a0': 'A-0',
   'phase-a1': 'A-1',
-  'phase-b0': 'B-0'
+  'phase-a2': 'A-2',
+  'phase-b0': 'B-0',
+  'phase-b1': 'B-1'
 } as const
 
 export type Day8CollectorAutoSaveGuardReason =
