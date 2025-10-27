@@ -1578,6 +1578,37 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledTelemetry.properties?.phase, 'A-1')
   })
 
+  it('reportDirty の autosave.status telemetry で guard 無効化と dirty 遷移の phase を付与する', () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        /* noop */
+      },
+      atomicWrite: async () => {
+        assert.fail('reportDirty テレメトリ検証では atomicWrite を呼ばない')
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(256, { featureFlag: { value: false, source: 'env' }, optionsDisabled: true })
+    const disabledTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'disabled'
+    )
+    assert.ok(disabledTelemetry, 'guard 無効化テレメトリが必要')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+
+    bridge.reportDirty(512, guardEnabled)
+    const dirtyTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'dirty'
+    )
+    assert.ok(dirtyTelemetry, 'dirty テレメトリが必要')
+    assert.equal(dirtyTelemetry.properties?.phase, 'A-1')
+  })
+
   it('guard disable short circuit と非 retryable 降格で status.envelope.phase を A-1 に揃える', async () => {
     const disabledMessages: AutoSaveBridgeMessage[] = []
     let disabledAtomicCalls = 0

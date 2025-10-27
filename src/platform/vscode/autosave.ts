@@ -503,7 +503,13 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         options,
         {
           name: 'autosave.status',
-          properties: { state: 'disabled', source: 'phase-guard', correlationId, retryCount: state.retryCount }
+          properties: {
+            state: 'disabled',
+            source: 'phase-guard',
+            correlationId,
+            retryCount: state.retryCount,
+            phase: PHASE_STATUS
+          }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
       )
@@ -528,7 +534,13 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         options,
         {
           name: 'autosave.status',
-          properties: { state: 'dirty', pendingBytes, correlationId, retryCount: state.retryCount }
+          properties: {
+            state: 'dirty',
+            pendingBytes,
+            correlationId,
+            retryCount: state.retryCount,
+            phase: PHASE_STATUS
+          }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
       )
