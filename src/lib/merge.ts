@@ -229,10 +229,13 @@ const publishAutoSaveLockCollectorEvent = (
   });
 };
 
-export const attachAutoSaveLockEvents = (events: MergeEventHub): () => void => {
+export const attachAutoSaveLockEvents = (events?: MergeEventHub): (() => void) | undefined => {
+  if (!events && !resolveDay8Collector()) {
+    return undefined;
+  }
   const leases = new Map<string, ProjectLockLease>();
   const publish = (stage: 'acquired' | 'released', lease: ProjectLockLease): void => {
-    events.publish({ type: 'merge:autosave:lock', stage, lease });
+    events?.publish({ type: 'merge:autosave:lock', stage, lease });
     publishAutoSaveLockCollectorEvent(stage, lease);
   };
   const unsubscribe = projectLockEvents.subscribe((event) => {
@@ -911,7 +914,7 @@ export const DEFAULT_SCORING_STRATEGY: MergeScoringStrategy = (input, profile) =
 
 export const DEFAULT_MERGE_ENGINE: MergeEngine = {
   merge3: (input, options) => {
-    const detachAutoSaveLock = options?.events ? attachAutoSaveLockEvents(options.events) : undefined;
+    const detachAutoSaveLock = attachAutoSaveLockEvents(options?.events);
     try {
       const startedAt = now();
       ensureNotAborted(options?.abortSignal);
