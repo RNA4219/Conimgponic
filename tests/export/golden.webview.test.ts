@@ -254,8 +254,8 @@ describe('export bridge golden comparison', () => {
     try {
       const comparePath = join(process.cwd(), 'scripts/golden/compare.ts')
       const result = spawnSync(process.execPath, [
-        '--loader',
-        'ts-node/esm',
+        '--import',
+        'tsx/esm',
         comparePath,
         storyboardPath,
         goldenDir,

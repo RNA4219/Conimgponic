@@ -43,8 +43,8 @@ console.log(JSON.stringify({ callsLength: calls.length }));
     [
       '--no-warnings',
       '--experimental-vm-modules',
-      '--loader',
-      'ts-node/esm',
+      '--import',
+      'tsx/esm',
       '--experimental-specifier-resolution=node',
       '--input-type=module'
     ],

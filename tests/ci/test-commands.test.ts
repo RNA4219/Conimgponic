@@ -18,10 +18,11 @@ const ensureCommand =
 
 const NODE_BASE_ARGS = [
   '--experimental-vm-modules',
-  '--loader',
-  'ts-node/esm',
+  '--import',
+  'tsx/esm',
   '--experimental-specifier-resolution=node',
   '--test',
+  '--test-timeout=30000',
 ] as const;
 
 const resolveScript = (name: string): string => {
