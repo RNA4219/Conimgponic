@@ -18,8 +18,9 @@
 
 ## ロールバック手順
 1. `autosave.lock.readonly` の 5 分移動平均が 5% を超過したら、`autosave.enabled=false` を Flags Config に設定して Phase A-1 へ戻す。【F:docs/CONFIG_FLAGS.md†L57-L90】
-2. `.lock` 残留が `project/` 配下で連続 3 回観測された場合、Day8 Runbook 手順 4 に従いフォールバック無効化 → Web Lock のみで再試行。【F:docs/design/autosave/project-locks.md†L113-L127】
-3. Collector が `.lock` を誤収集した場合はパイプラインを停止し、`workflow-cookbook/` リストから除外設定を見直す。復旧後に `autosave.lock.readonly` の異常値が 30 分以内に収束しない場合はリリースをロールバック。
+2. `lock:release-requested` 発火後に 3 秒以内の `lock:released` が観測できない場合、`releaseDeferred`／`requestSettled` が停滞していると判断し `lock:readonly-entered(reason='release-failed')` を強制送出 → Phase A-1 へ降格して Web Lock のみで再試行する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L734-L778】
+3. `.lock` 残留が `project/` 配下で連続 3 回観測された場合、Day8 Runbook 手順 4 に従いフォールバック無効化 → Web Lock のみで再試行。【F:docs/design/autosave/project-locks.md†L113-L127】
+4. Collector が `.lock` を誤収集した場合はパイプラインを停止し、`workflow-cookbook/` リストから除外設定を見直す。復旧後に `autosave.lock.readonly` の異常値が 30 分以内に収束しない場合はリリースをロールバック。
 
 ## 依存
 - Implementation Plan §1.1〜§1.4 のイベントマトリクス。
