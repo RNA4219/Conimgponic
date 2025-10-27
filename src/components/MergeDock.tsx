@@ -420,7 +420,8 @@ export const resolveMergeThresholdPlan = (precision: MergePrecision, threshold: 
   const clamped = clampValue(base, rule.clamp.min, rule.clamp.max)
   const request = roundRate(clamped)
   const autoBase = clamped + rule.autoOffset
-  const autoTarget = roundRate(clampValue(autoBase, rule.autoRange.min, rule.autoRange.max))
+  const { min: autoMin, max: autoMax } = rule.autoRange
+  const autoTarget = roundRate(clampValue(autoBase, autoMin, autoMax))
   const reviewBand = rule.reviewBand
     ? {
         min: roundRate(clamped - rule.reviewBand.below),

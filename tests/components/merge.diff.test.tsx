@@ -238,6 +238,7 @@ test('stable precision threshold never drops below 0.82', () => {
 
   assert.equal(plan.request, 0.82)
   assert.equal(plan.slider.min, 0.82)
+  assert.equal(plan.autoTarget, 0.86)
 })
 
 test('stable precision auto target clamps to rollout maximum', () => {
@@ -247,16 +248,16 @@ test('stable precision auto target clamps to rollout maximum', () => {
   assert.equal(plan.autoTarget, 0.95)
 })
 
-test('stable autoApplied meetsTarget flips at 0.91 boundary', () => {
+test('stable autoApplied meetsTarget flips at 0.86 boundary', () => {
   const below = resolveMergeDockPhasePlan({
     precision: 'stable',
-    threshold: 0.88,
-    autoAppliedRate: 0.9,
+    threshold: 0.82,
+    autoAppliedRate: 0.85,
   })
   const atTarget = resolveMergeDockPhasePlan({
     precision: 'stable',
-    threshold: 0.88,
-    autoAppliedRate: 0.91,
+    threshold: 0.82,
+    autoAppliedRate: 0.86,
   })
 
   assert.equal(below.autoApplied.meetsTarget, false)
