@@ -760,6 +760,45 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(state.retryCount, 1)
   })
 
+  it('Collector telemetry は非 retryable エラーを Phase A-2 として記録する', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {},
+      atomicWrite: async () => ({
+        ok: false,
+        error: {
+          name: 'AutoSaveError',
+          message: 'fatal',
+          code: 'write-failed',
+          retryable: false
+        }
+      }),
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    const request = createRequest('req-fatal', 'corr-fatal', guardEnabled, 1024, 1)
+    await bridge.handleSnapshotRequest(request)
+
+    const statusTelemetry = telemetry.filter(
+      (event) =>
+        event.name === 'autosave.status' && event.properties?.correlationId === request.correlationId
+    )
+
+    const expectPhase = (state: string) => {
+      const event = statusTelemetry.find((candidate) => candidate.properties?.state === state)
+      assert.ok(event, `${state} status telemetry が必要`)
+      assert.equal(event.properties?.phase, 'A-2')
+    }
+
+    expectPhase('error')
+    expectPhase('disabled')
+  })
+
   it('maintains retryCount when retrying after backoff', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     let attempt = 0
@@ -1286,7 +1325,7 @@ describe('createVscodeAutoSaveBridge', () => {
         event.properties?.correlationId === request.correlationId
     )
     assert.ok(disabledTelemetry, 'disabled autosave.status telemetry must exist')
-    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-2')
   })
 
   it('emits envelope phases A-2→A-1 when non-retryable error disables autosave', async () => {
@@ -1342,7 +1381,7 @@ describe('createVscodeAutoSaveBridge', () => {
         event.properties?.correlationId === request.correlationId
     )
     assert.ok(disabledTelemetry, 'disabled telemetry should follow non-retryable failure')
-    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-2')
   })
 
   it('emits warn telemetry when file-lock fallback is used', async () => {
