@@ -298,22 +298,46 @@ test('queueMerge telemetry payload reflects current tab selection', async () => 
   assert.equal(telemetryLastTab, 'merged')
 })
 
-test('queueMerge metadata disables auto save when autoApplied target is not met', async () => {
+test('DiffMergeView queueMerge metadata disables auto save when autoApplied target is not met', async () => {
+  type DiffMergeController = ReturnType<typeof createDiffMergeController>
   let capturedAutoSave: boolean | undefined
-  let state: DiffMergeState = createInitialDiffMergeState([createMergeHunk('h1')])
-  const dispatch: Dispatch = (action) => {
-    state = diffMergeReducer(state, action)
+  let capturedController: DiffMergeController | undefined
+  const previousHook = (globalThis as {
+    __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+  }).__diffMergeViewOnControllerReady
+  ;(globalThis as {
+    __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+  }).__diffMergeViewOnControllerReady = (controller) => {
+    capturedController = controller
   }
-  const controller = createDiffMergeController({
-    precision: 'stable',
-    dispatch,
-    queueMergeCommand: async (payload) => {
-      capturedAutoSave = payload.metadata.autoSaveRequested
-      return successEvent
-    },
-    getCurrentHunkIds: () => ['h1'],
-    autoApplied: { rate: 0.6, target: 0.8, meetsTarget: false },
-  })
-  await controller.queueMerge(['h1'])
-  assert.equal(capturedAutoSave, false)
+
+  try {
+    renderToStaticMarkup(
+      createElement(DiffMergeView, {
+        precision: 'stable',
+        hunks: sampleHunks,
+        queueMergeCommand: async (payload) => {
+          capturedAutoSave = payload.metadata.autoSaveRequested
+          return successEvent
+        },
+        autoApplied: { rate: 0.6, target: 0.8, meetsTarget: false },
+      }),
+    )
+
+    assert.ok(capturedController)
+
+    await capturedController?.queueMerge(['h1'])
+
+    assert.equal(capturedAutoSave, false)
+  } finally {
+    if (previousHook) {
+      ;(globalThis as {
+        __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+      }).__diffMergeViewOnControllerReady = previousHook
+    } else {
+      delete (globalThis as {
+        __diffMergeViewOnControllerReady?: (controller: DiffMergeController) => void
+      }).__diffMergeViewOnControllerReady
+    }
+  }
 })
