@@ -1716,6 +1716,10 @@ export function initAutoSave(
           })
           .catch(() => undefined)
       }
+      emitRunnerTelemetry('change-queued', 'debouncing', new Date().toISOString(), {
+        pendingBytes: estimated,
+        backlog
+      })
       if (phase === 'idle' || phase === 'debouncing') {
         phase = 'debouncing'
       }
