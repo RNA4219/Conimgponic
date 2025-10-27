@@ -137,19 +137,15 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
     return { ...setStatus(state, action.hunkId, 'Selected'), editingHunkId: null }
   }
   if (action.type === 'cancelEdit') {
-    if (state.editingHunkId === null) return state
     const editingId = state.editingHunkId
+    if (editingId === null) return state
     if (!hasHunkState(state, editingId)) return { ...state, editingHunkId: null }
     const currentStatus = state.hunkStates[editingId]
     if (currentStatus === 'Unreviewed') return { ...state, editingHunkId: null }
     // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md（型安全・最小差分・TDD）と
-    // Day8/docs/day8/guides/07_contributing.md（タスク分割・衝突回避）に基づき、
-    // `cancelEdit` で編集モーダルを閉じつつ対象ハンクを idle（'Unreviewed'）へ戻す。
-    return {
-      ...state,
-      editingHunkId: null,
-      hunkStates: { ...state.hunkStates, [editingId]: 'Unreviewed' },
-    }
+    // Day8/docs/day8/guides/07_contributing.md（1タスク=1PR）に従い、対象ハンクのみ
+    // `'Unreviewed'` へ戻しつつ編集モードを閉じる。
+    return { ...setStatus(state, editingId, 'Unreviewed'), editingHunkId: null }
   }
   if (action.type === 'queueMerge') {
     const knownIds = Object.keys(state.hunkStates)

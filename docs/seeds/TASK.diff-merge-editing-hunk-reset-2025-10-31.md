@@ -56,7 +56,7 @@ pnpm test -- --filter diff-merge-view-state
 ## Plan
 
 1. `tests/merge/diff-merge-view-state.test.ts` に編集モード中の `queueMerge` / `queueResult` が `editingHunkId` を `null` にする赤テストを Day8/docs/TASKS.md に沿って追加する。
-2. 同テストファイルへ `cancelEdit` の idle 遷移を確認する赤テストを追記し、Day8/workflow-cookbook/HUB.codex.md のタスク分割フローを踏まえた検証観点を固める。
+2. 同テストファイルへ `cancelEdit` の idle 遷移を確認し対象ハンクが `'Unreviewed'` に戻ることを保証する赤テストを追記し、Day8/workflow-cookbook/HUB.codex.md のタスク分割フローと整合する検証観点を固める。
 3. `diffMergeReducer` の `queueMerge` / `queueResult` 分岐で対象ハンクを検出し、Guardrails の「型安全・最小差分・TDD」を引用したコメントを添えて `editingHunkId` を `null` にする実装を追加する。
 4. `pnpm test -- --filter diff-merge-view-state` を実行し、緑化ログを Tests セクションに記録する。
 
@@ -70,6 +70,10 @@ pnpm test -- --filter diff-merge-view-state
 - 2025-10-31: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`（緑）
 - 2025-10-31: `pnpm test -- --filter diff-merge-view-state`（`ts-node/esm` が `.tsx` を解決できず失敗）
 - 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（再実行・緑）
+- 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm tsx tests/merge/diff-merge-view-state.test.ts`（赤: `cancelEdit` が `'Unreviewed'` に戻らず失敗）
+- 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm tsx tests/merge/diff-merge-view-state.test.ts`（緑: `cancelEdit` 状態リセット修正後）
+- 2025-10-27: `pnpm test -- --filter diff-merge-view-state`（赤: `ts-node/esm` ローダーの制約で失敗）
+- 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（緑: フィルタ実行成功）
 
 ## Commands
 
@@ -77,6 +81,9 @@ pnpm test -- --filter diff-merge-view-state
 - 2025-10-31: `pnpm tsx tests/merge/diff-merge-view-state.test.ts`
 - 2025-10-31: `pnpm test -- --filter diff-merge-view-state`
 - 2025-10-31: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`（再実行）
+- 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm tsx tests/merge/diff-merge-view-state.test.ts`
+- 2025-10-27: `pnpm test -- --filter diff-merge-view-state`
+- 2025-10-27: `TS_NODE_TRANSPILE_ONLY=1 pnpm test -- --filter diff-merge-view-state`
 
 ## Notes
 

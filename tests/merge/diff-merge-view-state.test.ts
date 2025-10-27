@@ -261,6 +261,22 @@ test('cancelEdit resets editing hunk to Unreviewed idle state', () => {
   assert.equal(h.state().hunkStates.h1, 'Unreviewed')
 })
 
+test('diffMergeReducer cancelEdit resets only the editing hunk back to Unreviewed', () => {
+  // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md（型安全・最小差分・TDD）と
+  // Day8/docs/day8/guides/07_contributing.md（1タスク=1PR）に沿って、reducer 単体で
+  // `cancelEdit` が対象ハンクのみ `'Unreviewed'` へ戻し他は維持することを赤テストで確認する。
+  const initial: DiffMergeState = {
+    hunkStates: { h1: 'Editing', h2: 'Selected' },
+    editingHunkId: 'h1',
+  }
+
+  const next = diffMergeReducer(initial, { type: 'cancelEdit' })
+
+  assert.equal(next.editingHunkId, null)
+  assert.equal(next.hunkStates.h1, 'Unreviewed')
+  assert.equal(next.hunkStates.h2, 'Selected')
+})
+
 test('openEditor/commitEdit', () => {
   const h = harness()
   h.controller.openEditor('h1')
