@@ -136,7 +136,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.variant',
       'payload.source',
       'payload.phase',
-      'payload.evaluation_ms'
+      'payload.evaluation_ms',
+      'payload.threshold'
     ]
 
     for (const field of requiredFields) {
@@ -165,7 +166,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'variant',
       'source',
       'phase',
-      'evaluation_ms'
+      'evaluation_ms',
+      'threshold'
     ])
 
     assertOk(payloadSchema.properties, 'flag_resolution payload schema must define properties')

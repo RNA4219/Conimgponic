@@ -96,14 +96,16 @@
                 "enum": ["env", "workspace", "localStorage", "default"]
               },
               "phase": { "$ref": "#/definitions/rolloutPhase" },
-              "evaluation_ms": { "type": "number", "minimum": 0 }
+              "evaluation_ms": { "type": "number", "minimum": 0 },
+              "threshold": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
             },
             "required": [
               "flag",
               "variant",
               "source",
               "phase",
-              "evaluation_ms"
+              "evaluation_ms",
+              "threshold"
             ]
           }
         }
