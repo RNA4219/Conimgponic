@@ -77,10 +77,10 @@ describe('createVscodeAutoSaveBridge', () => {
   it('bootstrap で workspace 由来の FlagSnapshot を伝搬する', () => {
     const workspace = {
       get: (key: string): unknown => {
-        if (key === 'conimg.autosave.enabled') {
+        if (key === 'autosave.enabled') {
           return 'false'
         }
-        if (key === 'conimg.merge.threshold') {
+        if (key === 'merge.threshold') {
           return 'beta'
         }
         return undefined

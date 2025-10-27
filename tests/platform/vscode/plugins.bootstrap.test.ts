@@ -169,7 +169,7 @@ test('bootstrapPluginBridge skips initialization when plugin flag disabled', () 
   };
   const workspace: ResolveOptions['workspace'] = {
     get(key) {
-      if (key === 'conimg.plugins.enable') {
+      if (key === 'plugins.enable') {
         return false;
       }
       return undefined;
