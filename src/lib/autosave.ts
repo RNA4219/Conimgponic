@@ -1,3 +1,4 @@
+import { workspaceKeyCandidates } from '../config/flags.js'
 import type { FlagSnapshot, WorkspaceConfiguration } from '../config/flags.js'
 import type { Storyboard } from '../types'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
@@ -59,6 +60,8 @@ export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze(AUTOSAVE_POLICY_VAL
 
 export const AUTOSAVE_DEFAULTS = AUTOSAVE_POLICY
 
+const WORKSPACE_KEY_PREFIX = 'conimg.' as const
+
 const readWorkspaceValue = (
   workspace: WorkspaceConfiguration | null | undefined,
   key: string
@@ -66,20 +69,71 @@ const readWorkspaceValue = (
   if (!workspace) {
     return undefined
   }
-  const candidate = workspace as { get?: (name: string) => unknown }
-  if (typeof candidate.get === 'function') {
-    return candidate.get(key)
+
+  const candidates = workspaceKeyCandidates(key)
+
+  const candidateWithGetter = workspace as {
+    readonly get?: (name: string) => unknown
   }
-  if (Object.prototype.hasOwnProperty.call(workspace, key)) {
-    return (workspace as Record<string, unknown>)[key]
-  }
-  return key.split('.').reduce<unknown>((current, segment) => {
-    if (!current || typeof current !== 'object') {
-      return undefined
+  if (typeof candidateWithGetter.get === 'function') {
+    for (const candidate of candidates) {
+      if (candidate.startsWith(WORKSPACE_KEY_PREFIX)) {
+        continue
+      }
+      const value = candidateWithGetter.get(candidate)
+      if (value !== undefined) {
+        return value
+      }
     }
-    const record = current as Record<string, unknown>
-    return segment in record ? record[segment] : undefined
-  }, workspace)
+  }
+
+  const recordWorkspace = workspace as Record<string, unknown>
+  const nonPrefixedCandidates = candidates.filter(
+    (candidate) => !candidate.startsWith(WORKSPACE_KEY_PREFIX)
+  )
+  const prefixedCandidates = candidates.filter((candidate) =>
+    candidate.startsWith(WORKSPACE_KEY_PREFIX)
+  )
+
+  for (const candidate of nonPrefixedCandidates) {
+    if (Object.prototype.hasOwnProperty.call(recordWorkspace, candidate)) {
+      return recordWorkspace[candidate]
+    }
+  }
+
+  for (const candidate of nonPrefixedCandidates) {
+    const resolved = candidate.split('.').reduce<unknown>((current, segment) => {
+      if (!current || typeof current !== 'object') {
+        return undefined
+      }
+      const record = current as Record<string, unknown>
+      return segment in record ? record[segment] : undefined
+    }, workspace)
+    if (resolved !== undefined) {
+      return resolved
+    }
+  }
+
+  for (const candidate of prefixedCandidates) {
+    if (Object.prototype.hasOwnProperty.call(recordWorkspace, candidate)) {
+      return recordWorkspace[candidate]
+    }
+  }
+
+  for (const candidate of prefixedCandidates) {
+    const resolved = candidate.split('.').reduce<unknown>((current, segment) => {
+      if (!current || typeof current !== 'object') {
+        return undefined
+      }
+      const record = current as Record<string, unknown>
+      return segment in record ? record[segment] : undefined
+    }, workspace)
+    if (resolved !== undefined) {
+      return resolved
+    }
+  }
+
+  return undefined
 }
 
 export interface AutoSavePolicyResolutionOptions {

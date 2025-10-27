@@ -170,7 +170,13 @@ scenario(
       configurable: true
     })
     const workspace = {
-      get(key: string){ return key === 'conimg.autosave.enabled' ? false : undefined }
+      // AUTOSAVE-DESIGN-IMPL §1 / MERGE-DESIGN-IMPL §5.4: VS Code は
+      // getConfiguration('conimg').get('autosave.enabled') で Phase ガードを切り替える。
+      get(key: string){
+        if (key === 'autosave.enabled') return false
+        if (key === 'conimg.autosave.enabled') return true
+        return undefined
+      }
     }
     const originalWorkspace = Object.getOwnPropertyDescriptor(globalThis, '__AUTOSAVE_WORKSPACE__')
     Object.defineProperty(globalThis, '__AUTOSAVE_WORKSPACE__', {
@@ -190,6 +196,47 @@ scenario(
       } else {
         delete (globalThis as any).localStorage
       }
+      if (originalWorkspace) {
+        Object.defineProperty(globalThis, '__AUTOSAVE_WORKSPACE__', originalWorkspace)
+      } else {
+        delete (globalThis as any).__AUTOSAVE_WORKSPACE__
+      }
+      if (originalCollector) {
+        Object.defineProperty(globalThis, 'Day8Collector', originalCollector)
+      } else {
+        delete (globalThis as any).Day8Collector
+      }
+    })
+
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false })
+
+    assert.equal(runner.snapshot().phase, 'disabled')
+    assert.equal(events.length, 1)
+    const guard = events[0]?.guard as { featureFlag?: { value?: boolean; source?: string } }
+    assert.equal(guard?.featureFlag?.source, 'workspace')
+    assert.equal(guard?.featureFlag?.value, false)
+    assert.doesNotThrow(() => runner.dispose())
+  }
+)
+
+scenario(
+  'fallback guard prefers trimmed workspace key over prefixed record entries',
+  async (t: any, { initAutoSave }: any) => {
+    const originalWorkspace = Object.getOwnPropertyDescriptor(globalThis, '__AUTOSAVE_WORKSPACE__')
+    Object.defineProperty(globalThis, '__AUTOSAVE_WORKSPACE__', {
+      value: {
+        'conimg.autosave.enabled': true,
+        autosave: { enabled: false }
+      },
+      configurable: true
+    })
+    const events: Record<string, unknown>[] = []
+    const originalCollector = Object.getOwnPropertyDescriptor(globalThis, 'Day8Collector')
+    Object.defineProperty(globalThis, 'Day8Collector', {
+      value: { publish(event: Record<string, unknown>){ events.push(event) } },
+      configurable: true
+    })
+    t.after(() => {
       if (originalWorkspace) {
         Object.defineProperty(globalThis, '__AUTOSAVE_WORKSPACE__', originalWorkspace)
       } else {
