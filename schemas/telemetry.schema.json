@@ -100,7 +100,11 @@
                 "enum": ["A-0", "A-1", "A-2", "B-0", "B-1"]
               },
               "evaluation_ms": { "type": "number", "minimum": 0 },
-              "threshold": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+              "threshold": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+              "errors": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/flagValidationError" }
+              }
             },
             "required": [
               "flag",
@@ -108,7 +112,8 @@
               "source",
               "phase",
               "evaluation_ms",
-              "threshold"
+              "threshold",
+              "errors"
             ]
           }
         }
@@ -322,6 +327,34 @@
         "idle",
         "backoff",
         "error"
+      ]
+    },
+    "flagValidationError": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": ["invalid-boolean", "invalid-precision"]
+        },
+        "flag": { "type": "string", "minLength": 1 },
+        "raw": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "retryable": { "type": "boolean", "const": false },
+        "source": { "$ref": "#/definitions/flagResolutionSource" },
+        "phase": {
+          "type": "string",
+          "enum": ["phase-a0", "phase-a1", "phase-a2", "phase-b0", "phase-b1"]
+        }
+      },
+      "required": [
+        "code",
+        "flag",
+        "raw",
+        "message",
+        "retryable",
+        "source",
+        "phase"
       ]
     }
   }
