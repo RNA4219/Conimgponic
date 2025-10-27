@@ -96,6 +96,7 @@ export interface TelemetryJsonlRecordBase extends MessageEnvelope {
   readonly attempt: number;
   readonly maxAttempts: number;
   readonly backoffMs: ReadonlyArray<number>;
+  readonly payload: TelemetryPayloads[TelemetryEventName];
 }
 
 export type AutoSavePhaseStep =
