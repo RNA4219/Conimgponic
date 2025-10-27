@@ -505,6 +505,24 @@ export const diffBackupPolicy: DiffBackupPolicy = Object.freeze({
   thresholdMs: DIFF_BACKUP_THRESHOLD_MS,
 })
 
+const resolveDiffBackupPolicy = (
+  tabPlan: MergeDockTabPlan,
+  policy: DiffBackupPolicy,
+): DiffBackupPolicy => ({
+  ...policy,
+  thresholdMs: tabPlan.diff?.backupAfterMs ?? policy.thresholdMs,
+})
+
+type DiffBackupCTAContext = {
+  readonly diffPlan: MergeDockPhasePlan['diff']
+  readonly tabPlan: MergeDockTabPlan
+  readonly policy: DiffBackupPolicy
+  readonly precision: MergePrecision
+  readonly activeTab: MergeDockTabId
+  readonly autoSave: Pick<MergeDockAutoSaveState, 'flushNow' | 'lastSuccessAt'>
+  readonly now: number
+}
+
 export const shouldShowDiffBackupCTA = (
   policy: DiffBackupPolicy,
   precision: MergePrecision,
@@ -515,6 +533,21 @@ export const shouldShowDiffBackupCTA = (
   if (!policy.enabledPrecisions.includes(precision) || tab !== policy.gateTab || !lastSuccessAt) return false
   const ts = Date.parse(lastSuccessAt)
   return Number.isFinite(ts) && now - ts > policy.thresholdMs
+}
+
+export const shouldRenderDiffBackupCTA = ({
+  diffPlan,
+  tabPlan,
+  policy,
+  precision,
+  activeTab,
+  autoSave,
+  now,
+}: DiffBackupCTAContext): boolean => {
+  if (!diffPlan.enabled) return false
+  if (typeof autoSave.flushNow !== 'function') return false
+  const resolvedPolicy = resolveDiffBackupPolicy(tabPlan, policy)
+  return shouldShowDiffBackupCTA(resolvedPolicy, precision, activeTab, autoSave.lastSuccessAt, now)
 }
 
 const computeStoryboardWarnings = (storyboard: Storyboard): string[] => {
@@ -673,13 +706,15 @@ export function MergeDock(props?: MergeDockProps){
   }, [sb, preference])
   const compiledDisplay = compiledOverride ?? compiled
 
-  const diffBackupThresholdMs = plan.diff?.backupAfterMs ?? diffBackupPolicy.thresholdMs
-  const backupPolicy = { ...diffBackupPolicy, thresholdMs: diffBackupThresholdMs }
-  const showBackupCTA =
-    diffPlan.enabled &&
-    diffPlan.exposure === 'default' &&
-    !!autoSave.flushNow &&
-    shouldShowDiffBackupCTA(backupPolicy, precision, activeTab, autoSave.lastSuccessAt, Date.now())
+  const showBackupCTA = shouldRenderDiffBackupCTA({
+    diffPlan,
+    tabPlan: plan,
+    policy: diffBackupPolicy,
+    precision,
+    activeTab,
+    autoSave,
+    now: Date.now(),
+  })
 
   const onImport = useCallback(
     async (file: File, mode: ImportMode) => {
