@@ -33,38 +33,6 @@
       }
     },
     {
-      "path": "project/autosave/history/2024-01-01T00-00-02-800Z.json",
-      "payload": {
-        "id": "autosave-history",
-        "title": "AutoSave History Test",
-        "scenes": [
-          {
-            "id": "intro",
-            "manual": "Once upon a time",
-            "ai": "A",
-            "status": "idle",
-            "assets": []
-          },
-          {
-            "id": "conflict",
-            "manual": "Conflict arises",
-            "ai": "B",
-            "status": "idle",
-            "assets": []
-          },
-          {
-            "id": "resolve",
-            "manual": "Resolution",
-            "ai": "C",
-            "status": "idle",
-            "assets": []
-          }
-        ],
-        "selection": [],
-        "version": 1
-      }
-    },
-    {
       "path": "project/autosave/history/2024-01-01T00-00-06-060Z.json",
       "payload": {
         "id": "autosave-history",
@@ -129,15 +97,699 @@
       }
     },
     {
+      "path": "project/autosave/history/2024-01-01T00-00-12-600Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-15-870Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-19-140Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-22-410Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-25-680Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-28-950Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-32-220Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-35-490Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-38-760Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-42-030Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-45-300Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-48-570Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-51-840Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-55-110Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-00-58-380Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-01-01-650Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-01-04-920Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
+      "path": "project/autosave/history/2024-01-01T00-01-08-190Z.json",
+      "payload": {
+        "id": "autosave-history",
+        "title": "AutoSave History Test",
+        "scenes": [
+          {
+            "id": "intro",
+            "manual": "Once upon a time",
+            "ai": "A",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "conflict",
+            "manual": "Conflict arises",
+            "ai": "B",
+            "status": "idle",
+            "assets": []
+          },
+          {
+            "id": "resolve",
+            "manual": "Resolution",
+            "ai": "C",
+            "status": "idle",
+            "assets": []
+          }
+        ],
+        "selection": [],
+        "version": 1
+      }
+    },
+    {
       "path": "project/autosave/index.json",
       "payload": {
         "current": {
-          "ts": "2024-01-01T00:00:09.330Z",
+          "ts": "2024-01-01T00:01:08.190Z",
           "bytes": 507,
           "location": "current",
           "retained": true
         },
         "history": [
+          {
+            "ts": "2024-01-01T00:01:08.190Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:01:04.920Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:01:01.650Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:58.380Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:55.110Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:51.840Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:48.570Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:45.300Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:42.030Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:38.760Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:35.490Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:32.220Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:28.950Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:25.680Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:22.410Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:19.140Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:15.870Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:12.600Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
           {
             "ts": "2024-01-01T00:00:09.330Z",
             "bytes": 507,
@@ -146,12 +798,6 @@
           },
           {
             "ts": "2024-01-01T00:00:06.060Z",
-            "bytes": 507,
-            "location": "history",
-            "retained": true
-          },
-          {
-            "ts": "2024-01-01T00:00:02.800Z",
             "bytes": 507,
             "location": "history",
             "retained": true
@@ -159,6 +805,114 @@
         ],
         "entries": [
           {
+            "ts": "2024-01-01T00:01:08.190Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:01:04.920Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:01:01.650Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:58.380Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:55.110Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:51.840Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:48.570Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:45.300Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:42.030Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:38.760Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:35.490Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:32.220Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:28.950Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:25.680Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:22.410Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:19.140Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:15.870Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
+            "ts": "2024-01-01T00:00:12.600Z",
+            "bytes": 507,
+            "location": "history",
+            "retained": true
+          },
+          {
             "ts": "2024-01-01T00:00:09.330Z",
             "bytes": 507,
             "location": "history",
@@ -169,15 +923,9 @@
             "bytes": 507,
             "location": "history",
             "retained": true
-          },
-          {
-            "ts": "2024-01-01T00:00:02.800Z",
-            "bytes": 507,
-            "location": "history",
-            "retained": true
           }
         ],
-        "generation": 2
+        "generation": 20
       }
     }
   ],
