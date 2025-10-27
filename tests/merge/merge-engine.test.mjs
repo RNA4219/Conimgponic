@@ -8,6 +8,23 @@ const { DEFAULT_MERGE_ENGINE } = await import('../../src/lib/merge.ts')
 const { projectLockEvents } = await import('../../src/lib/locks.ts')
 const { createVsCodeMergeBridge } = await import('../../src/platform/vscode/merge/bridge.ts')
 
+const collectorLockEvent = (stage, lease) => ({
+  feature: 'merge.autosave',
+  event: 'autosave.lock',
+  stage,
+  lease: {
+    id: lease.leaseId,
+    owner: lease.ownerId,
+    strategy: lease.strategy,
+    via_fallback: lease.viaFallback,
+    resource: lease.resource,
+  },
+})
+
+const expectCollectorLockEvents = (events, lease) => {
+  assert.deepEqual(events, [collectorLockEvent('acquired', lease), collectorLockEvent('released', lease)])
+}
+
 function runMerge(input, options) {
   return DEFAULT_MERGE_ENGINE.merge3(input, options)
 }
@@ -285,32 +302,7 @@ test('stable precision publishes autosave lock integration events (MG-I-02)', ()
       { type: 'merge:autosave:lock', stage: 'released', lease },
     ])
 
-    assert.deepEqual(collectorEvents, [
-      {
-        feature: 'merge.autosave',
-        event: 'autosave.lock',
-        stage: 'acquired',
-        lease: {
-          id: lease.leaseId,
-          owner: lease.ownerId,
-          strategy: lease.strategy,
-          via_fallback: lease.viaFallback,
-          resource: lease.resource,
-        },
-      },
-      {
-        feature: 'merge.autosave',
-        event: 'autosave.lock',
-        stage: 'released',
-        lease: {
-          id: lease.leaseId,
-          owner: lease.ownerId,
-          strategy: lease.strategy,
-          via_fallback: lease.viaFallback,
-          resource: lease.resource,
-        },
-      },
-    ])
+    expectCollectorLockEvents(collectorEvents, lease)
   } finally {
     process.env.MERGE_PRECISION = originalPrecision
     if (originalCollector) {
@@ -363,32 +355,7 @@ test('MG-I-02: collector receives AutoSave lock events without merge event hub',
       },
     )
 
-    assert.deepEqual(collectorEvents, [
-      {
-        feature: 'merge.autosave',
-        event: 'autosave.lock',
-        stage: 'acquired',
-        lease: {
-          id: lease.leaseId,
-          owner: lease.ownerId,
-          strategy: lease.strategy,
-          via_fallback: lease.viaFallback,
-          resource: lease.resource,
-        },
-      },
-      {
-        feature: 'merge.autosave',
-        event: 'autosave.lock',
-        stage: 'released',
-        lease: {
-          id: lease.leaseId,
-          owner: lease.ownerId,
-          strategy: lease.strategy,
-          via_fallback: lease.viaFallback,
-          resource: lease.resource,
-        },
-      },
-    ])
+    expectCollectorLockEvents(collectorEvents, lease)
   } finally {
     process.env.MERGE_PRECISION = originalPrecision
     if (originalCollector) {
@@ -470,5 +437,88 @@ test('MG-I-02: VS Code bridge publishes AutoSave lock lifecycle events', async (
     ])
   } finally {
     process.env.MERGE_PRECISION = originalPrecision
+  }
+})
+
+test('MG-I-02: VS Code bridge emits AutoSave lock events when engine omits hub wiring', async () => {
+  const originalPrecision = process.env.MERGE_PRECISION
+  process.env.MERGE_PRECISION = 'stable'
+
+  const scope = globalThis
+  const originalCollector = scope.Day8Collector
+  const collectorEvents = []
+  scope.Day8Collector = { publish: (event) => collectorEvents.push(event) }
+
+  const published = []
+  const baseMerge3 = DEFAULT_MERGE_ENGINE.merge3
+  const lease = {
+    leaseId: 'lease-bridge-autosave-missing',
+    ownerId: 'bridge-worker',
+    strategy: 'web-lock',
+    viaFallback: false,
+    resource: '/project.lock',
+    acquiredAt: 100,
+    expiresAt: 200,
+    ttlMillis: 5000,
+    nextHeartbeatAt: 150,
+    renewAttempt: 0,
+  }
+
+  const bridge = createVsCodeMergeBridge({
+    engine: {
+      ...DEFAULT_MERGE_ENGINE,
+      merge3(input, options) {
+        assert.ok(options?.events)
+        const unsubscribe = options.events.subscribe((event) => published.push(event))
+        let emitted = false
+        try {
+          return baseMerge3(input, {
+            ...options,
+            events: undefined,
+            scoring: (scoreInput, profile) => {
+              if (!emitted) {
+                emitted = true
+                projectLockEvents.emit({ type: 'lock:acquired', lease })
+                projectLockEvents.emit({ type: 'lock:released', leaseId: lease.leaseId })
+              }
+              return DEFAULT_MERGE_ENGINE.score(scoreInput, profile)
+            },
+          })
+        } finally {
+          unsubscribe()
+        }
+      },
+    },
+    resolvePrecision: () => 'stable',
+    readThreshold: () => undefined,
+  })
+
+  try {
+    const response = await bridge.handleMergeRequest({
+      type: 'merge.request',
+      apiVersion: 1,
+      reqId: 'bridge-autosave-missing',
+      payload: {
+        base: 'Alpha',
+        ours: 'Alpha',
+        theirs: 'Alpha',
+        sceneId: 'scene-bridge-autosave-missing',
+      },
+    })
+
+    assert.equal(response.ok, true)
+    const lockEvents = published.filter((event) => event.type === 'merge:autosave:lock')
+    assert.deepEqual(lockEvents, [
+      { type: 'merge:autosave:lock', stage: 'acquired', lease },
+      { type: 'merge:autosave:lock', stage: 'released', lease },
+    ])
+    expectCollectorLockEvents(collectorEvents, lease)
+  } finally {
+    process.env.MERGE_PRECISION = originalPrecision
+    if (originalCollector) {
+      scope.Day8Collector = originalCollector
+    } else {
+      delete scope.Day8Collector
+    }
   }
 })

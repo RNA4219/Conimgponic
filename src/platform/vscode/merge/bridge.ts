@@ -8,7 +8,7 @@ import type {
   MergeDecisionListener,
   MergeTrace,
 } from '../../../lib/merge'
-import { PRECISION_THRESHOLD_CLAMP } from '../../../lib/merge'
+import { PRECISION_THRESHOLD_CLAMP, attachAutoSaveLockEvents } from '../../../lib/merge'
 
 export interface MergeBridgeDependencies {
   readonly engine: MergeEngine
@@ -73,8 +73,16 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
   const createEventHub = (): { hub: MergeEventHub; dispose: () => void } => {
     const listeners = new Set<MergeDecisionListener>()
     const cleanup = new Set<() => void>()
+    const autoSaveLeaseStages = new Map<string, 'acquired' | 'released'>()
     const hub: MergeEventHub = {
       publish(event) {
+        if (event.type === 'merge:autosave:lock') {
+          const previousStage = autoSaveLeaseStages.get(event.lease.leaseId)
+          if (previousStage === event.stage) {
+            return
+          }
+          autoSaveLeaseStages.set(event.lease.leaseId, event.stage)
+        }
         listeners.forEach((listener) => listener(event))
       },
       subscribe(listener) {
@@ -94,6 +102,7 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
       }
       cleanup.clear()
       listeners.clear()
+      autoSaveLeaseStages.clear()
     }
     return { hub, dispose }
   }
@@ -113,6 +122,7 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
           : { precision }
       const mergeInput = rest as MergeInput
       const { hub, dispose } = createEventHub()
+      const detachAutoSaveLock = attachAutoSaveLockEvents(hub)
       try {
         const result = engine.merge3(mergeInput, { profile, events: hub })
         return {
@@ -124,6 +134,7 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
           trace: result.trace,
         }
       } finally {
+        detachAutoSaveLock?.()
         dispose()
       }
     },
