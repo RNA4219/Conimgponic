@@ -573,7 +573,13 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         options,
         {
           name: 'autosave.status',
-          properties: { state: 'disabled', correlationId: request.correlationId, retryCount: state.retryCount, performance: { flush_latency_ms: 0 } }
+          properties: {
+            state: 'disabled',
+            correlationId: request.correlationId,
+            retryCount: state.retryCount,
+            phase: PHASE_STATUS,
+            performance: { flush_latency_ms: 0 }
+          }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
       )

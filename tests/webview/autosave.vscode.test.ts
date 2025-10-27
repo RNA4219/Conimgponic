@@ -1405,6 +1405,46 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(statusTelemetry?.properties?.state, 'disabled')
   })
 
+  it('guard disable short circuit で autosave.status テレメトリに A-1 phase を付与する', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => {
+        assert.fail('guard 無効化ショートサーキットでは atomicWrite を呼ばない')
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    const request = createRequest(
+      'req-guard-phase',
+      'corr-guard-phase',
+      { featureFlag: { value: false, source: 'env' }, optionsDisabled: true },
+      0,
+      0
+    )
+    await bridge.handleSnapshotRequest(request)
+
+    const nonBootstrap = sent.filter((message) => message.type !== 'bridge.bootstrap')
+    assert.equal(
+      nonBootstrap.length,
+      2,
+      'guard 無効化ショートサーキットは snapshot.result と status.autosave を送る'
+    )
+
+    const disabledTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' && event.properties?.correlationId === request.correlationId
+    )
+    assert.ok(disabledTelemetry, 'guard 無効化テレメトリが必要')
+    assert.equal(disabledTelemetry.properties?.state, 'disabled')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+  })
+
   it('guard disable short circuit と非 retryable 降格で status.envelope.phase を A-1 に揃える', async () => {
     const disabledMessages: AutoSaveBridgeMessage[] = []
     let disabledAtomicCalls = 0
