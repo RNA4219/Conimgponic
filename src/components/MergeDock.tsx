@@ -307,6 +307,7 @@ const readWorkspaceSetting = (
   const candidates = workspaceKeyCandidates(key)
   const accessor = workspace as { readonly get?: <T = unknown>(target: string) => T | undefined }
   if (typeof accessor.get === 'function') {
+    let deferredError: unknown = undefined
     for (const candidate of candidates) {
       try {
         const value = accessor.get(candidate)
@@ -315,9 +316,14 @@ const readWorkspaceSetting = (
         }
       } catch (error) {
         if (!candidate.startsWith('conimg.')) {
-          throw error
+          if (deferredError === undefined) {
+            deferredError = error
+          }
         }
       }
+    }
+    if (deferredError !== undefined) {
+      throw deferredError
     }
     return undefined
   }
