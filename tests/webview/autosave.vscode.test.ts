@@ -1245,6 +1245,62 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledTelemetry.properties?.phase, 'A-1')
   })
 
+  it('emits envelope phases A-2→A-1 when non-retryable error disables autosave', async () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => ({
+        ok: false,
+        error: {
+          name: 'AutoSaveError',
+          message: 'fatal',
+          code: 'data-corrupted',
+          retryable: false
+        }
+      }),
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(2048, guardEnabled)
+    const request = createRequest('req-phase-envelope', 'corr-phase-envelope', guardEnabled, 2048, 1)
+    await bridge.handleSnapshotRequest(request)
+
+    const statuses = sent.filter(
+      (msg): msg is AutoSaveStatusMessage =>
+        msg.type === 'status.autosave' && msg.correlationId === request.correlationId
+    )
+    const errorStatus = statuses.find((msg) => msg.payload.state === 'error')
+    assert.ok(errorStatus, 'non-retryable error should emit error status before disabling')
+    assert.equal(errorStatus.phase, request.phase)
+
+    const disabledStatus = statuses.find((msg) => msg.payload.state === 'disabled')
+    assert.ok(disabledStatus, 'non-retryable error should emit disabled status after error')
+    assert.equal(disabledStatus.phase, 'A-1')
+
+    const errorTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' &&
+        event.properties?.state === 'error' &&
+        event.properties?.correlationId === request.correlationId
+    )
+    assert.ok(errorTelemetry, 'error telemetry should be recorded for non-retryable failure')
+    assert.equal(errorTelemetry.properties?.phase, request.phase)
+
+    const disabledTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' &&
+        event.properties?.state === 'disabled' &&
+        event.properties?.correlationId === request.correlationId
+    )
+    assert.ok(disabledTelemetry, 'disabled telemetry should follow non-retryable failure')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+  })
+
   it('emits warn telemetry when file-lock fallback is used', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     const warns: AutoSaveWarnEvent[] = []
