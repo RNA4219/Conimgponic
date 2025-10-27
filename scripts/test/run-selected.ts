@@ -406,6 +406,7 @@ function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   const compilerOptions = mergeCompilerOptions(env.TS_NODE_COMPILER_OPTIONS);
   env.TS_NODE_COMPILER_OPTIONS = JSON.stringify(compilerOptions);
+  env.TS_NODE_TRANSPILE_ONLY = 'true';
   return env;
 }
 
@@ -421,6 +422,7 @@ function mergeCompilerOptions(raw: string | undefined): CompilerOptions {
     ...parsed,
     moduleResolution: 'bundler',
     allowSyntheticDefaultImports: true,
+    esModuleInterop: true,
     types,
   };
 }
@@ -444,7 +446,7 @@ function parseCompilerOptions(raw: string | undefined): CompilerOptions {
 
 function normalizeTypes(value: CompilerOptions['types']): readonly string[] {
   if (!Array.isArray(value)) {
-    return ['node'];
+    return ['node', './src/node-compat'];
   }
 
   const deduplicated = new Set<string>();
@@ -456,6 +458,7 @@ function normalizeTypes(value: CompilerOptions['types']): readonly string[] {
   }
 
   deduplicated.add('node');
+  deduplicated.add('./src/node-compat');
 
   return [...deduplicated];
 }

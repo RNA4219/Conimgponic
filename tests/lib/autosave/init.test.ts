@@ -38,7 +38,11 @@ scenario('flushNow persists storyboard and restorePrompt exposes metadata', asyn
   assert.ok(opfs.files.has('project/autosave/index.json'))
   assert.ok(!opfs.files.has('project/autosave/current.json.tmp'))
   assert.ok(!opfs.files.has('project/autosave/index.json.tmp'))
-  assert.ok(Array.from(opfs.files.keys()).some((key) => key.startsWith('project/autosave/history/')))
+  assert.ok(
+    Array.from(opfs.files.keys() as IterableIterator<string>).some((key) =>
+      key.startsWith('project/autosave/history/')
+    )
+  )
   const indexRaw = opfs.files.get('project/autosave/index.json')
   assert.ok(typeof indexRaw === 'string')
   const index = JSON.parse(indexRaw) as { entries?: unknown }
@@ -46,14 +50,16 @@ scenario('flushNow persists storyboard and restorePrompt exposes metadata', asyn
   assert.equal(runner.snapshot().retryCount, 0)
   assert.equal(runner.snapshot().pendingBytes, 0)
   assert.ok(typeof runner.snapshot().lastSuccessAt === 'string')
-  for (const key of opfs.files.keys()) assert.ok(!key.endsWith('.tmp'))
+  for (const key of opfs.files.keys() as IterableIterator<string>) assert.ok(!key.endsWith('.tmp'))
   assert.equal(meta?.source, 'current')
 })
 
 scenario('history rotation keeps at most 20 generations', async (_t, { initAutoSave, opfs }) => {
   const runner = initAutoSave(() => makeStoryboard([]), { disabled: false }, ENABLED_GUARD)
   for (let i = 0; i < 22; i++) await runner.flushNow()
-  const historyCount = Array.from(opfs.files.keys()).filter((k) => k.startsWith('project/autosave/history/')).length
+  const historyCount = Array.from(opfs.files.keys() as IterableIterator<string>).filter((k) =>
+    k.startsWith('project/autosave/history/')
+  ).length
   assert.ok(historyCount <= 20)
 })
 

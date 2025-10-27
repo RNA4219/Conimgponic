@@ -101,7 +101,7 @@ scenario(
     await secondResume()
     const finalPhase = await waitForSettledPhase()
 
-    const historyKeys = Array.from(opfs.files.keys()).filter((key) =>
+    const historyKeys = Array.from(opfs.files.keys() as IterableIterator<string>).filter((key) =>
       key.startsWith('project/autosave/history/')
     )
     assert.equal(historyKeys.length, 2)
@@ -173,7 +173,7 @@ scenario(
     await secondResume()
     await awaitPhase('idle')
 
-    const historyKeys = Array.from(opfs.files.keys()).filter((key) =>
+    const historyKeys = Array.from(opfs.files.keys() as IterableIterator<string>).filter((key) =>
       key.startsWith('project/autosave/history/')
     )
     assert.equal(historyKeys.length, 2)

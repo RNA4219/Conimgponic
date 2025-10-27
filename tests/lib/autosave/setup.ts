@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
-import vm from 'node:vm'
+import * as vm from 'node:vm'
 import ts from 'typescript'
 
 import type * as AutoSaveModule from '../../../src/lib/autosave'
@@ -137,7 +137,7 @@ export const createOpfs = (): OpfsMock => {
       },
       async *entries(){
         const seen = new Set<string>()
-        for (const key of files.keys()){
+        for (const key of files.keys() as IterableIterator<string>){
           if (!key.startsWith(prefix)) continue
           const head = key.slice(prefix.length).replace(/^\//, '').split('/')[0]
           if (head && !seen.has(head)){

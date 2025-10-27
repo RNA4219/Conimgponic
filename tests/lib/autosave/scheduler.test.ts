@@ -3,7 +3,11 @@ import type { TestContext } from 'node:test'
 
 import { ENABLED_GUARD, scenario } from './setup'
 
-import type { AutoSaveError } from '../../../src/lib/autosave'
+import type {
+  AutoSaveError,
+  AutoSaveRunnerEvent,
+  AutoSaveTelemetryEvent
+} from '../../../src/lib/autosave'
 import type { Storyboard } from '../../../src/types'
 
 const makeStoryboard = (nodes: string[]): Storyboard => ({
@@ -28,6 +32,48 @@ const flushAllTimers = async (t: TestContext) => {
   t.mock.timers.runAll()
 }
 
+type RunnerTelemetryEvent = AutoSaveTelemetryEvent & {
+  readonly slo: 'p99-success' | 'p95-latency'
+}
+
+const captureRunnerTelemetry = () => {
+  const events: RunnerTelemetryEvent[] = []
+  const scope = globalThis as {
+    __AUTOSAVE_RUNNER_HOST__?: { telemetry?: (event: RunnerTelemetryEvent) => void; [key: string]: unknown }
+  }
+  const previous = scope.__AUTOSAVE_RUNNER_HOST__
+  scope.__AUTOSAVE_RUNNER_HOST__ = {
+    ...(typeof previous === 'object' && previous !== null ? previous : {}),
+    telemetry(event: RunnerTelemetryEvent) {
+      events.push(event)
+      const legacy =
+        previous && typeof previous === 'object' && typeof previous.telemetry === 'function'
+          ? previous.telemetry
+          : null
+      legacy?.(event)
+    }
+  }
+  return {
+    events,
+    restore() {
+      if (previous === undefined) {
+        delete scope.__AUTOSAVE_RUNNER_HOST__
+      } else {
+        scope.__AUTOSAVE_RUNNER_HOST__ = previous
+      }
+    }
+  }
+}
+
+const serializeEvents = (events: readonly AutoSaveRunnerEvent[]) =>
+  events.map(({ type, phase, at, payload, error }) => ({
+    type,
+    phase,
+    at,
+    payload,
+    ...(error ? { error: { code: error.code, retryable: error.retryable } } : {})
+  }))
+
 scenario('scheduler transitions debouncing → awaiting-lock → gc with fake timers', async (t, ctx) => {
   const { initAutoSave, AUTOSAVE_POLICY } = ctx
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'], now: 0 })
@@ -48,6 +94,60 @@ scenario('scheduler transitions debouncing → awaiting-lock → gc with fake ti
   phases.push(runner.snapshot().phase)
   assert.deepEqual(phases, ['debouncing', 'awaiting-lock', 'gc', 'idle'])
   assert.equal(collectorEvents.length, 0)
+})
+
+scenario('runner emits telemetry-coupled events for successful flush', async (t, ctx) => {
+  const { initAutoSave, AUTOSAVE_POLICY } = ctx
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 1, 0, 0, 0) })
+  const telemetry = captureRunnerTelemetry()
+  t.after(() => {
+    telemetry.restore()
+  })
+  const runner = initAutoSave(() => makeStoryboard(['events']), { disabled: false }, ENABLED_GUARD)
+  const events: AutoSaveRunnerEvent[] = []
+  const unsubscribe = runner.onEvent((event: AutoSaveRunnerEvent) => {
+    events.push(event)
+  })
+  runner.markDirty({ pendingBytes: 256 })
+  t.mock.timers.tick(AUTOSAVE_POLICY.debounceMs)
+  await Promise.resolve()
+  t.mock.timers.tick(AUTOSAVE_POLICY.idleMs)
+  await flushAllTimers(t)
+  await Promise.resolve()
+  unsubscribe()
+  await runner.dispose()
+  const sequence = events.map(({ type, phase }) => ({ type, phase }))
+  assert.deepEqual(sequence, [
+    { type: 'change-queued', phase: 'idle' },
+    { type: 'lock-acquired', phase: 'awaiting-lock' },
+    { type: 'write-succeeded', phase: 'writing-current' },
+    { type: 'gc-completed', phase: 'gc' }
+  ])
+  assert.equal(events.length, 4)
+  const [changeQueued, lockAcquired, writeSucceeded, gcCompleted] = events
+  assert.deepEqual(changeQueued.payload, {
+    reason: 'change',
+    estimatedBytes: 256,
+    queued: 1,
+    retries: 0
+  })
+  assert.ok(lockAcquired.payload)
+  assert.equal(lockAcquired.payload?.retryCount, 0)
+  assert.equal(lockAcquired.payload?.strategy, 'web-lock')
+  assert.equal(typeof lockAcquired.payload?.leaseMs, 'number')
+  assert.equal(typeof lockAcquired.payload?.viaFallback, 'boolean')
+  assert.ok(writeSucceeded.payload)
+  assert.equal(writeSucceeded.payload?.retryCount, 0)
+  assert.equal(typeof writeSucceeded.payload?.bytes, 'number')
+  assert.equal(typeof writeSucceeded.payload?.generation, 'number')
+  assert.ok(gcCompleted.payload)
+  assert.equal(gcCompleted.payload?.retryCount, 0)
+  assert.equal(typeof gcCompleted.payload?.bytes, 'number')
+  assert.equal(gcCompleted.payload?.backlog, 0)
+  assert.deepEqual(
+    telemetry.events.map((entry) => ({ event: entry.detail?.event, at: entry.at })),
+    events.map((event) => ({ event: event.type, at: event.at }))
+  )
 })
 
 scenario('markDirty transitions snapshot to debouncing and updates pendingBytes', async (_t, ctx) => {
@@ -117,7 +217,9 @@ scenario('history guard enforces 20 generations and 50MB capacity', async (_t, c
       collectorEvents.push(error)
     }
   }
-  const historyKeys = Array.from(opfs.files.keys()).filter((key) => key.startsWith('project/autosave/history/'))
+  const historyKeys = Array.from(opfs.files.keys() as IterableIterator<string>).filter((key) =>
+    key.startsWith('project/autosave/history/')
+  )
   const totalBytes = historyKeys.reduce<number>((sum, key) => {
     const content = opfs.files.get(key)
     return sum + Buffer.byteLength(content ?? '', 'utf8')
@@ -133,7 +235,15 @@ scenario(
   async (t, ctx) => {
     const { initAutoSave, AUTOSAVE_RETRY_POLICY } = ctx
     t.mock.timers.enable({ apis: ['setTimeout'], now: Date.now() })
+    const telemetry = captureRunnerTelemetry()
+    t.after(() => {
+      telemetry.restore()
+    })
     const runner = initAutoSave(() => makeStoryboard(['gamma']), { disabled: false }, ENABLED_GUARD)
+    const events: AutoSaveRunnerEvent[] = []
+    const unsubscribe = runner.onEvent((event: AutoSaveRunnerEvent) => {
+      events.push(event)
+    })
     const expectedError = { code: 'lock-unavailable', retryable: true } as const
     const rejection = await assert.rejects(runner.flushNow(), isAutoSaveError(expectedError))
     assert.ok(isAutoSaveError(expectedError)(rejection))
@@ -149,6 +259,23 @@ scenario(
     await Promise.resolve()
     assert.equal(runner.snapshot().phase, 'disabled')
     await runner.dispose()
+    unsubscribe()
+    const serialized = serializeEvents(events)
+    assert.deepEqual(
+      serialized.slice(0, 2).map(({ type, phase }) => ({ type, phase })),
+      [
+        { type: 'lock-rejected', phase: 'awaiting-lock' },
+        { type: 'retry-scheduled', phase: 'error' }
+      ]
+    )
+    const retryScheduled = serialized[1]
+    assert.equal(retryScheduled.payload?.retryCount, 1)
+    assert.equal(retryScheduled.payload?.delayMs, AUTOSAVE_RETRY_POLICY.initialDelayMs)
+    assert.equal(retryScheduled.payload?.code, 'lock-unavailable')
+    assert.deepEqual(
+      telemetry.events.slice(0, 2).map((entry) => ({ event: entry.detail?.event, at: entry.at })),
+      events.slice(0, 2).map((event) => ({ event: event.type, at: event.at }))
+    )
     const finalSnapshot = runner.snapshot()
     assert.equal(finalSnapshot.phase, 'disabled')
     assert.equal(finalSnapshot.retryCount, 1)
