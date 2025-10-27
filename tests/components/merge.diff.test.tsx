@@ -1,11 +1,9 @@
-// @ts-nocheck
 const tsNodeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
 if (tsNodeEnv && !tsNodeEnv.TS_NODE_IGNORE_DIAGNOSTICS) {
   tsNodeEnv.TS_NODE_IGNORE_DIAGNOSTICS = '2304,2307,2580,5097'
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var releaseMonitor: Promise<void> | undefined
 }
 
@@ -13,13 +11,13 @@ if (typeof globalThis.releaseMonitor === 'undefined') {
   ;(globalThis as typeof globalThis & { releaseMonitor?: Promise<void> }).releaseMonitor = Promise.resolve()
 }
 
-// @ts-ignore node:test diagnostics are suppressed via TS_NODE_IGNORE_DIAGNOSTICS
+// @ts-expect-error node:test diagnostics are suppressed via TS_NODE_IGNORE_DIAGNOSTICS
 import assert from 'node:assert/strict'
-// @ts-ignore node:test diagnostics are suppressed via TS_NODE_IGNORE_DIAGNOSTICS
+// @ts-expect-error node:test diagnostics are suppressed via TS_NODE_IGNORE_DIAGNOSTICS
 import test from 'node:test'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
-// @ts-ignore ts-node resolves TS extensions via experimental specifier resolution
+// @ts-expect-error ts-node resolves TS extensions via experimental specifier resolution
 const mergeDockModule = await import('../../src/components/MergeDock')
 const {
   resolveMergeDockPhasePlan,
