@@ -293,7 +293,12 @@ export const projectLockEvents: ProjectLockEventTarget = {
   },
 };
 
-const webLockHandles = new Map<string, { release: () => Promise<void> }>();
+type WebLockHandleEntry = {
+  readonly release: () => Promise<void>;
+  readonly getReleaseError: () => ProjectLockError | undefined;
+};
+
+const webLockHandles = new Map<string, WebLockHandleEntry>();
 const fallbackTtlSeconds = Math.round(FALLBACK_LOCK_TTL_MS / 1000);
 
 type AcquireContext = {
@@ -477,6 +482,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
                 throw errorToThrow;
               }
             },
+            getReleaseError: () => releaseError,
           });
 
           ready.resolve();
@@ -680,10 +686,15 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     throw aborted;
   }
 
+  const handle = lease.strategy === 'web-lock' ? webLockHandles.get(lease.leaseId) : undefined;
+  const existingReleaseError = handle?.getReleaseError();
+  if (existingReleaseError) {
+    throw existingReleaseError;
+  }
+
   projectLockEvents.emit({ type: 'lock:release-requested', lease });
   try {
     if (lease.strategy === 'web-lock') {
-      const handle = webLockHandles.get(lease.leaseId);
       if (handle) {
         await handle.release();
         webLockHandles.delete(lease.leaseId);

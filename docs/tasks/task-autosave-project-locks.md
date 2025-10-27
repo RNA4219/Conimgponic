@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | LOCK-RETRY-01 | Acquire 再試行 | Web Lock 失敗を 2 回シミュレート → 3 回目で成功。 | `lock:attempt` → `lock:waiting(delay=500)` → `lock:waiting(delay=1000)` → `lock:acquired`。再試行上限到達時は `lock:readonly-entered(reason='acquire-timeout')`。 |
 | LOCK-TTL-02 | Heartbeat TTL 更新 | `.lock` 戦略で `renewProjectLock` を 2 回成功させ `expiresAt` 延長を検証。 | `lock:renew-scheduled` の `nextHeartbeat` が `ttl-5000`、更新後 `expiresAt` が `now + 30000ms` に更新。遅延時は `lock:warning('heartbeat-delayed')`。 |
-| LOCK-READONLY-03 | Readonly 降格 | Acquire 失敗上限・Renew 失敗・Release 失敗を個別に再現。 | それぞれ `lock:readonly-entered` が `reason='acquire-timeout' / 'renew-failed' / 'release-failed'` を返す。`onReadonly` コールバックが 1 度のみ起動。 |
+| LOCK-READONLY-03 | Readonly 降格 | Acquire 失敗上限・Renew 失敗・Release 失敗を個別に再現。 | それぞれ `lock:readonly-entered` が `reason='acquire-timeout' / 'renew-failed' / 'release-failed'` を返す。`onReadonly` コールバックが 1 度のみ起動し、Release 失敗後に再度 `releaseProjectLock` を呼んでも同じ例外が即座に再送出され `lock:released` が出ない。 |
 | LOCK-WITH-04 | withProjectLock 心拍 | 長時間タスクをモックし `renewIntervalMs` 既定値で自動更新。 | Acquire→Renew→Release が順序通り呼ばれ、例外時に `releaseOnError` が true のまま解放される。 |
 
 ## ロールバック手順
