@@ -331,6 +331,51 @@ describe('ci workflow build job', () => {
     }
   });
 
+  test('quality job prepares failure log files before running suites', async () => {
+    const workflow = await readWorkflowYaml();
+    const quality = workflow.jobs?.quality;
+    if (!quality) {
+      assert.fail('workflow.jobs.quality must exist');
+    }
+
+    const steps = quality.steps;
+    assertStepArray(steps, 'workflow.jobs.quality.steps must be an array');
+
+    const { autosave: runSuiteAutosave, default: runSuiteDefault } = assertRunSuiteSteps(
+      steps,
+      'quality job must include "Run ${{ matrix.suite }} suite" steps for autosave and default suites',
+    );
+
+    const failureLogInit = ': > "logs/${{ matrix.suite }}-failures.log"';
+    const suiteCommand = '${{ matrix.command }} |& tee "logs/${{ matrix.suite }}.log"';
+
+    assertStepRunIncludesLine(
+      runSuiteAutosave,
+      failureLogInit,
+      'autosave suite execution must pre-create failure log before running tests',
+    );
+
+    assertStepRunIncludesLine(
+      runSuiteDefault,
+      failureLogInit,
+      'non-autosave suites (including collect_failures: false) must pre-create failure log before running tests',
+    );
+
+    assertRunScriptHasPrecedingLine(
+      [runSuiteAutosave],
+      suiteCommand,
+      failureLogInit,
+      'autosave suite execution must initialize failure log prior to invoking the suite command',
+    );
+
+    assertRunScriptHasPrecedingLine(
+      [runSuiteDefault],
+      suiteCommand,
+      failureLogInit,
+      'non-autosave suite execution must initialize failure log prior to invoking the suite command',
+    );
+  });
+
   test('quality job disables matrix fail-fast', async () => {
     const workflow = await readWorkflowYaml();
     const quality = workflow.jobs?.quality;
