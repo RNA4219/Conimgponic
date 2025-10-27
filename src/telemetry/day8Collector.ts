@@ -105,6 +105,7 @@ type TelemetryEnvelopeOverrides = {
   readonly maxAttempts?: number
   readonly backoffMs?: ReadonlyArray<number>
   readonly ts?: string
+  readonly workspace_id?: string
 }
 
 const UUID_REGEX =
@@ -123,6 +124,7 @@ const createCollectorTelemetryEnvelopeSeed = (
   const maxAttempts = overrides?.maxAttempts ?? retryPolicy.maxAttempts
   const attempt = Math.min(Math.max(1, overrides?.attempt ?? 1), maxAttempts)
   const backoffMs = overrides?.backoffMs ?? retryPolicy.backoffMs
+  const workspaceId = resolveWorkspaceId(overrides?.workspace_id)
 
   return {
     type: 'telemetry.event',
@@ -130,6 +132,7 @@ const createCollectorTelemetryEnvelopeSeed = (
     reqId,
     ts: overrides?.ts ?? new Date().toISOString(),
     correlationId,
+    workspace_id: workspaceId,
     attempt,
     maxAttempts,
     backoffMs
@@ -176,6 +179,34 @@ const createTelemetryId = (): string => {
     `${toHex(bytes[8])}${toHex(bytes[9])}-` +
     `${toHex(bytes[10])}${toHex(bytes[11])}${toHex(bytes[12])}${toHex(bytes[13])}${toHex(bytes[14])}${toHex(bytes[15])}`
   )
+}
+
+const readWorkspaceIdFromEnv = (): string | undefined => {
+  const scope = globalThis as {
+    process?: { env?: Record<string, unknown> }
+  }
+  const envCandidate = scope.process?.env?.CONIMG_WORKSPACE_ID
+  if (typeof envCandidate !== 'string') {
+    return undefined
+  }
+  const normalized = envCandidate.trim()
+  return normalized ? normalized : undefined
+}
+
+let cachedWorkspaceId: string | undefined
+
+const resolveWorkspaceId = (candidate?: string): string => {
+  if (isUuid(candidate)) {
+    return candidate
+  }
+
+  if (cachedWorkspaceId && isUuid(cachedWorkspaceId)) {
+    return cachedWorkspaceId
+  }
+
+  const envId = readWorkspaceIdFromEnv()
+  cachedWorkspaceId = isUuid(envId) ? envId : createTelemetryId()
+  return cachedWorkspaceId
 }
 
 export const publishFlagResolution = (
