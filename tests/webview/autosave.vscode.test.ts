@@ -1157,4 +1157,87 @@ describe('createVscodeAutoSaveBridge', () => {
     )
     assert.equal(statusTelemetry?.properties?.state, 'disabled')
   })
+
+  it('guard disable short circuit と非 retryable 降格で status.envelope.phase を A-1 に揃える', async () => {
+    const disabledMessages: AutoSaveBridgeMessage[] = []
+    let disabledAtomicCalls = 0
+    const disabledBridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (message) => disabledMessages.push(message),
+      atomicWrite: async () => {
+        disabledAtomicCalls += 1
+        return {
+          ok: false as const,
+          error: {
+            name: 'AutoSaveError',
+            message: 'guard disabled should short-circuit',
+            code: 'disabled',
+            retryable: false
+          }
+        }
+      }
+    })
+
+    const disabledRequest = createRequest(
+      'req-disabled',
+      'corr-disabled',
+      { featureFlag: { value: false, source: 'env' }, optionsDisabled: true },
+      0,
+      0
+    )
+    await disabledBridge.handleSnapshotRequest(disabledRequest)
+
+    const disabledStatus = disabledMessages
+      .filter((message): message is AutoSaveStatusMessage => message.type === 'status.autosave')
+      .find((message) => message.correlationId === disabledRequest.correlationId)
+
+    assert.ok(disabledStatus, 'guard 無効化時に status.autosave が必要')
+    assert.equal(disabledStatus.phase, 'A-1')
+    assert.equal(disabledStatus.reqId, disabledRequest.reqId)
+    assert.equal(disabledStatus.correlationId, disabledRequest.correlationId)
+    assert.equal(disabledStatus.payload.retryCount, 0)
+    assert.equal(disabledAtomicCalls, 0, 'guard 無効化ショートサーキットでは atomicWrite を呼び出さない')
+
+    const fatalMessages: AutoSaveBridgeMessage[] = []
+    const fatalBridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: (message) => fatalMessages.push(message),
+      atomicWrite: async () => ({
+        ok: false,
+        error: {
+          name: 'AutoSaveError',
+          message: 'non-retryable failure',
+          code: 'data-corrupted',
+          retryable: false
+        }
+      })
+    })
+
+    const fatalRequest = createRequest('req-fatal', 'corr-fatal', guardEnabled, 1024, 1)
+    await fatalBridge.handleSnapshotRequest(fatalRequest)
+
+    const fatalStatuses = fatalMessages
+      .filter((message): message is AutoSaveStatusMessage => message.type === 'status.autosave')
+      .filter((message) => message.correlationId === fatalRequest.correlationId)
+
+    const errorStatus = fatalStatuses.find((message) => message.payload.state === 'error')
+    assert.ok(errorStatus, '非 retryable エラーで state=error を通知する必要がある')
+    assert.equal(errorStatus.phase, 'A-1')
+    assert.equal(errorStatus.reqId, fatalRequest.reqId)
+    assert.equal(errorStatus.correlationId, fatalRequest.correlationId)
+    assert.equal(errorStatus.payload.retryCount, 0)
+
+    const disabledAfterError = fatalStatuses.find((message) => message.payload.state === 'disabled')
+    assert.ok(disabledAfterError, '非 retryable エラー後に state=disabled を通知する必要がある')
+    assert.equal(disabledAfterError.phase, 'A-1')
+    assert.equal(disabledAfterError.reqId, fatalRequest.reqId)
+    assert.equal(disabledAfterError.correlationId, fatalRequest.correlationId)
+    assert.equal(disabledAfterError.payload.retryCount, 0)
+  })
 })
