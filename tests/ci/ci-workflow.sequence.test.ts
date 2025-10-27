@@ -302,60 +302,6 @@ describe('ci workflow build job', () => {
         'always()',
       );
 
-      const audit = workflow.jobs?.audit;
-      if (!audit) {
-        assert.fail('workflow.jobs.audit must exist');
-      }
-
-      assertJobNeedsIncludeAll(
-        audit.needs,
-        ['sbom'],
-        'audit job must depend on sbom job',
-      );
-
-      const auditSteps = audit.steps;
-      assertStepArray(auditSteps, 'workflow.jobs.audit.steps must be an array');
-      const auditRunLines = extractRunLines(auditSteps);
-
-      assertLineIncludes(
-        auditRunLines,
-        expectedAuditReportRedirection,
-        'audit job must run pnpm audit with JSON output redirected to audit-report.json',
-      );
-
-      assertLineIncludes(
-        auditRunLines,
-        'https://raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh',
-        'audit job must install osv-scanner via official install script',
-      );
-
-      assertLineIncludes(
-        auditRunLines,
-        'osv-scanner',
-        'audit job must run osv-scanner',
-      );
-      assertLineIncludes(
-        auditRunLines,
-        expectedOsvReportOutputFlag,
-        'audit job must configure osv-scanner to write report to osv-report.json',
-      );
-
-      const auditArtifactSteps = auditSteps.filter(isUploadArtifactStep);
-      assertArtifactStep(
-        auditArtifactSteps,
-        'audit-report',
-        'audit-report.json',
-        'error',
-        'always()',
-      );
-      assertArtifactStep(
-        auditArtifactSteps,
-        'osv-report',
-        'osv-report.json',
-        'warn',
-        'always()',
-      );
-
       const build = workflow.jobs?.build;
       if (!build) {
         assert.fail('workflow.jobs.build must exist');
@@ -388,6 +334,63 @@ describe('ci workflow build job', () => {
       strategy['fail-fast'],
       false,
       'quality job strategy.fail-fast must be explicitly set to false',
+    );
+  });
+
+  test('audit job generates separate artifacts for pnpm audit and osv scanner reports', async () => {
+    const workflow = await readWorkflowYaml();
+    const audit = workflow.jobs?.audit;
+    if (!audit) {
+      assert.fail('workflow.jobs.audit must exist');
+    }
+
+    assertJobNeedsIncludeAll(
+      audit.needs,
+      ['sbom'],
+      'audit job must depend on sbom job',
+    );
+
+    const auditSteps = audit.steps;
+    assertStepArray(auditSteps, 'workflow.jobs.audit.steps must be an array');
+    const auditRunLines = extractRunLines(auditSteps);
+
+    assertLineIncludes(
+      auditRunLines,
+      expectedAuditReportRedirection,
+      'audit job must run pnpm audit with JSON output redirected to audit-report.json',
+    );
+
+    assertLineIncludes(
+      auditRunLines,
+      'https://raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh',
+      'audit job must install osv-scanner via official install script',
+    );
+
+    assertLineIncludes(
+      auditRunLines,
+      'osv-scanner',
+      'audit job must run osv-scanner',
+    );
+    assertLineIncludes(
+      auditRunLines,
+      expectedOsvReportOutputFlag,
+      'audit job must configure osv-scanner to write report to osv-report.json',
+    );
+
+    const auditArtifactSteps = auditSteps.filter(isUploadArtifactStep);
+    assertArtifactStep(
+      auditArtifactSteps,
+      'audit-report',
+      'audit-report.json',
+      'error',
+      'always()',
+    );
+    assertArtifactStep(
+      auditArtifactSteps,
+      'osv-report',
+      'osv-report.json',
+      'warn',
+      'always()',
     );
   });
 
