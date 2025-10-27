@@ -7,6 +7,12 @@ import {
   FLAG_RESOLUTION_SOURCE_VARIANTS
 } from '../../scripts/monitor/collect-metrics.js'
 import {
+  collectFlagResolutionPayloads,
+  DEFAULT_FLAGS,
+  resolveFlags
+} from '../../src/config/index.js'
+import type { WorkspaceConfiguration } from '../../src/config/flags.js'
+import {
   publishFlagResolution,
   type Day8Collector,
   type Day8CollectorFlagResolutionEvent,
@@ -333,6 +339,43 @@ describe('vscode extension telemetry contract (RED)', () => {
       retryable: false,
       default_used: true
     })
+  })
+
+  test('collectFlagResolutionPayloads は workspace 設定の検証失敗で default threshold へフォールバックした場合に default_used=true を通知する', () => {
+    const workspace = {
+      __called: false,
+      get(this: { __called: boolean }, key: string) {
+        if (key === 'merge.threshold') {
+          if (!this.__called) {
+            this.__called = true
+            return 'beta'
+          }
+          return 'not-a-number'
+        }
+        return undefined
+      }
+    } satisfies WorkspaceConfiguration & { __called: boolean }
+
+    const workspaceOption: WorkspaceConfiguration = workspace
+    const resolution = resolveFlags(
+      { workspace: workspaceOption },
+      { withErrors: true }
+    )
+
+    assertOk('errors' in resolution, 'resolveFlags must return errors summary')
+    assertOk(resolution.errors.length > 0, 'merge.precision errors must be recorded')
+    const payloads = collectFlagResolutionPayloads(
+      resolution.snapshot,
+      resolution.errors,
+      7
+    )
+    const mergePayload = payloads.find(
+      (payload) => payload.flag === 'merge.precision'
+    )
+    assertOk(mergePayload, 'merge.precision payload must exist')
+    deepStrictEqual(mergePayload.source, 'workspace')
+    deepStrictEqual(mergePayload.threshold, DEFAULT_FLAGS.merge.profile.threshold)
+    deepStrictEqual(mergePayload.detail.default_used, true)
   })
 
   test('telemetry schema の status.autosave payload が Collector 要件を固定する', () => {

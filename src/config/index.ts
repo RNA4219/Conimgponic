@@ -15,6 +15,7 @@ import type {
 } from './flags.js'
 
 import {
+  DEFAULT_FLAGS,
   FLAG_MIGRATION_PLAN,
   FEATURE_FLAG_DEFINITIONS,
   resolveFlags
@@ -87,7 +88,12 @@ const toFlagPayload = (
   const retryable = errors.some((error) => error.retryable)
   const status: FlagResolutionEventPayload['status'] =
     errors.length === 0 ? 'success' : 'failure'
-  const defaultUsed = source === 'default'
+  const thresholdValue = options?.threshold ?? null
+  const defaultThresholdUsed =
+    flag === 'merge.precision' &&
+    thresholdValue === DEFAULT_FLAGS.merge.profile.threshold &&
+    errors.some((error) => error.flag === flag)
+  const defaultUsed = source === 'default' || defaultThresholdUsed
 
   return {
     flag,
@@ -96,7 +102,7 @@ const toFlagPayload = (
     phase: FEATURE_FLAG_DEFINITIONS[flag].phase,
     evaluation_ms: evaluationMs,
     errors,
-    threshold: options?.threshold ?? null,
+    threshold: thresholdValue,
     status,
     detail: { retryable, default_used: defaultUsed }
   }
