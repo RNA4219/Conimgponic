@@ -209,6 +209,7 @@ interface InternalState {
   history: HistoryEntry[]
   retainedBytes: number
   forceDisabled: boolean
+  flushStartedAtMs?: number
 }
 
 interface AutoSaveTelemetryContext {
@@ -341,6 +342,14 @@ const emitWarn = (options: AutoSaveHostBridgeOptions, event: AutoSaveWarnEvent):
   options.warn?.(event)
 }
 
+const computeFlushLatencyMs = (state: InternalState, nowMs: number): number => {
+  const startedAt = state.flushStartedAtMs
+  if (typeof startedAt !== 'number') {
+    return 0
+  }
+  return Math.max(0, nowMs - startedAt)
+}
+
 const nextReqId = (state: InternalState): string => `autosave-${++state.reqCounter}`
 const nextCorrelationId = (state: InternalState): string => `autosave-corr-${++state.correlationCounter}`
 
@@ -349,15 +358,15 @@ const handleNonRetryableError = (
   state: InternalState,
   request: AutoSaveSnapshotRequestMessage,
   error: AutoSaveError,
-  previousStatus: AutoSaveStatusState,
-  requestStartedAtMs: number
+  previousStatus: AutoSaveStatusState
 ): void => {
   const guardForTelemetry = state.guard
   const retryCountBeforeReset = state.retryCount
   state.status = 'error'
   const errorTimestamp = options.now()
   const ts = toIso(errorTimestamp)
-  const flushLatencyMs = Math.max(0, errorTimestamp.getTime() - requestStartedAtMs)
+  const flushLatencyMs = computeFlushLatencyMs(state, errorTimestamp.getTime())
+  state.flushStartedAtMs = undefined
   options.sendMessage(
     createSnapshotResultMessage(request, ts, { ok: false, error })
   )
@@ -446,7 +455,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     correlationCounter: 0,
     history: [],
     retainedBytes: 0,
-    forceDisabled: false
+    forceDisabled: false,
+    flushStartedAtMs: undefined
   }
 
   const bootstrapFlags =
@@ -474,6 +484,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
+      state.flushStartedAtMs = undefined
       options.sendMessage(
         createStatusMessage(
           nextReqId(state),
@@ -532,6 +543,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
+      state.flushStartedAtMs = undefined
       options.sendMessage(
         createSnapshotResultMessage(request, ts, { ok: false, error: createDisabledError() })
       )
@@ -572,6 +584,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const shouldPreserveRetryCount =
       statusBeforeSaving === 'backoff' || retryCountBeforeSaving > 0
     state.retryCount = shouldPreserveRetryCount ? retryCountBeforeSaving : 0
+    state.flushStartedAtMs = requestStartedAtMs
     options.sendMessage(
       createStatusMessage(
         request.reqId,
@@ -611,7 +624,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         state.status = 'backoff'
         state.retryCount += 1
         const retryTimestamp = options.now()
-        const retryLatency = Math.max(0, retryTimestamp.getTime() - requestStartedAtMs)
+        const retryLatency = computeFlushLatencyMs(state, retryTimestamp.getTime())
+        state.flushStartedAtMs = undefined
         const retryTs = toIso(retryTimestamp)
         options.sendMessage(createSnapshotResultMessage(request, retryTs, writeResult))
         options.sendMessage(
@@ -644,7 +658,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         )
         return
       }
-      handleNonRetryableError(options, state, request, writeResult.error, state.status, requestStartedAtMs)
+      handleNonRetryableError(options, state, request, writeResult.error, state.status)
       return
     }
 
@@ -663,7 +677,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     state.retryCount = 0
 
     const successTimestamp = options.now()
-    const successLatency = Math.max(0, successTimestamp.getTime() - requestStartedAtMs)
+    const successLatency = computeFlushLatencyMs(state, successTimestamp.getTime())
+    state.flushStartedAtMs = undefined
     const successTs = toIso(successTimestamp)
     const payload: AutoSaveSnapshotResultPayload = {
       ok: true,
