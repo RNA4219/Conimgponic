@@ -264,6 +264,8 @@
       "then": {
         "properties": {
           "payload": {
+            "type": "object",
+            "additionalProperties": false,
             "properties": {
               "sandboxViolation": { "type": "boolean", "const": true },
               "next_backoff_ms": { "type": "number", "minimum": 0 }
