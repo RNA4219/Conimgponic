@@ -247,15 +247,22 @@ export function sanitizeArgs(
   args: readonly string[],
   nodeVersion: string = process.versions.node,
 ): string[] {
-  if (!args.includes(TEST_COVERAGE_FLAG)) {
-    return [...args];
+  const coverageSupported = supportsTestCoverage(nodeVersion);
+  const sanitized: string[] = [];
+
+  for (const arg of args) {
+    if (arg === '--filter') {
+      continue;
+    }
+
+    if (arg === TEST_COVERAGE_FLAG && !coverageSupported) {
+      continue;
+    }
+
+    sanitized.push(arg);
   }
 
-  if (supportsTestCoverage(nodeVersion)) {
-    return [...args];
-  }
-
-  return args.filter((arg) => arg !== TEST_COVERAGE_FLAG);
+  return sanitized;
 }
 
 function determineDefaultTargets(): readonly string[] {
