@@ -87,6 +87,8 @@ export interface MessageEnvelope extends TelemetryEnvelopeMetadata {
   readonly ts: string;
   /** RFC4122 形式の UUID。reqId と一致させること。無効な overrides は Collector 側で reqId に正規化される。 */
   readonly correlationId: string;
+  /** RFC4122 形式の UUID。Workspace 別集計で使用するため必須。 */
+  readonly workspace_id: string;
   readonly phase: RolloutPhase;
 }
 
@@ -643,6 +645,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       'reqId',
       'ts',
       'correlationId',
+      'workspace_id',
       'phase',
       'schema',
       'event',

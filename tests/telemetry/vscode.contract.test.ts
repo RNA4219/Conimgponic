@@ -152,6 +152,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'reqId',
       'ts',
       'correlationId',
+      'workspace_id',
       'phase',
       'schema',
       'event',
@@ -176,6 +177,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'reqId',
       'ts',
       'correlationId',
+      'workspace_id',
       'phase',
       'schema',
       'event',
@@ -194,9 +196,15 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(properties, 'telemetry schema must define properties')
     const reqId = properties.reqId
     const correlationId = properties.correlationId
-    assertOk(reqId && correlationId, 'telemetry schema must define reqId/correlationId')
+    const workspaceId = properties.workspace_id
+    assertOk(reqId && correlationId && workspaceId, 'telemetry schema must define reqId/correlationId/workspace_id')
     strictEqual(reqId.format, 'uuid', 'telemetry reqId must enforce uuid format')
     strictEqual(correlationId.format, 'uuid', 'telemetry correlationId must enforce uuid format')
+    strictEqual(
+      workspaceId.format,
+      'uuid',
+      'telemetry workspace_id must enforce uuid format'
+    )
   })
   test('telemetry schema は feature/component/kind/source/evaluation_ms を enumerated として公開する', () => {
     assertOk(telemetrySchema.properties, 'telemetry schema must expose properties')
@@ -382,6 +390,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(event, 'flag_resolution event must be captured')
     assertOk(UUID_REGEX.test(event.reqId), 'flag_resolution reqId must be uuid')
     assertOk(UUID_REGEX.test(event.correlationId), 'flag_resolution correlationId must be uuid')
+    assertOk(UUID_REGEX.test(event.workspace_id), 'flag_resolution workspace_id must be uuid')
     strictEqual(
       event.correlationId,
       event.reqId,
@@ -444,6 +453,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(event, 'flag_resolution event must be captured when overrides provided')
     assertOk(UUID_REGEX.test(event.reqId), 'flag_resolution reqId overrides must be normalized to uuid')
     assertOk(UUID_REGEX.test(event.correlationId), 'flag_resolution correlationId overrides must be normalized to uuid')
+    assertOk(UUID_REGEX.test(event.workspace_id), 'flag_resolution workspace_id overrides must be normalized to uuid')
     strictEqual(event.correlationId, event.reqId, 'flag_resolution correlationId overrides must match reqId when normalized')
     strictEqual(
       event.reqId === 'not-a-uuid',
@@ -637,6 +647,8 @@ describe('vscode extension telemetry contract (RED)', () => {
     strictEqual(event.apiVersion, 1)
     assertOk(event.reqId.length > 0)
     assertOk(event.correlationId.length > 0)
+    assertOk(event.workspace_id.length > 0)
+    assertOk(UUID_REGEX.test(event.workspace_id))
     assertOk(!Number.isNaN(Date.parse(event.ts)))
     strictEqual(event.phase, 'A-0')
     strictEqual(event.feature, 'config.flags')
