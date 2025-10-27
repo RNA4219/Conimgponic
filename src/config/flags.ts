@@ -138,7 +138,7 @@ export const workspaceKeyCandidates = (key: string): readonly string[] => {
   if (key.startsWith(WORKSPACE_KEY_PREFIX)) {
     const trimmed = key.slice(WORKSPACE_KEY_PREFIX.length)
     if (trimmed) {
-      return [trimmed, key]
+      return [key, trimmed]
     }
     return [key]
   }

@@ -103,6 +103,33 @@ test('workspace getter handles conimg-prefixed keys for autosave and merge flags
   assert.equal(snapshot.merge.threshold, 0.84)
 })
 
+test('workspace getter that requires conimg prefix is supported', () => {
+  const workspace = {
+    get(key: string) {
+      if (!key.startsWith('conimg.')) {
+        assert.notEqual(key, 'autosave.enabled', 'autosave.enabled must be resolved via conimg prefix')
+        assert.notEqual(key, 'merge.threshold', 'merge.threshold must be resolved via conimg prefix')
+        return undefined
+      }
+      if (key === 'conimg.autosave.enabled') {
+        return 'true'
+      }
+      if (key === 'conimg.merge.threshold') {
+        return 0.86
+      }
+      return undefined
+    }
+  } satisfies WorkspaceConfiguration
+
+  const snapshot = resolveFlags({ workspace })
+
+  assert.equal(snapshot.autosave.enabled, true)
+  assert.equal(snapshot.autosave.source, 'workspace')
+  assert.equal(snapshot.merge.precision, 'stable')
+  assert.equal(snapshot.merge.source, 'workspace')
+  assert.equal(snapshot.merge.threshold, 0.86)
+})
+
 test('localStorage is used when env and workspace are invalid', () => {
   const env = {
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'INVALID'
