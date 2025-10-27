@@ -6,6 +6,14 @@ import type {
   FlagValidationError
 } from '../config/flags.js'
 
+type RolloutPhaseContract = 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1'
+
+const FLAG_PHASE_TO_CONTRACT_PHASE: Record<FlagRolloutPhase, RolloutPhaseContract> = {
+  'phase-a0': 'A-0',
+  'phase-a1': 'A-1',
+  'phase-b0': 'B-0'
+} as const
+
 export type Day8CollectorAutoSaveGuardReason =
   | 'phase-a0-failsafe'
   | 'feature-flag-disabled'
@@ -30,10 +38,13 @@ export interface FlagResolutionEventPayload {
   readonly threshold: number | null
 }
 
-export type FlagResolutionContractPayload = Pick<
-  FlagResolutionEventPayload,
-  'flag' | 'variant' | 'source' | 'phase' | 'evaluation_ms' | 'threshold'
->
+export type FlagResolutionContractPayload = {
+  readonly flag: FeatureFlagName
+  readonly variant: string
+  readonly source: FlagSource
+  readonly phase: RolloutPhaseContract
+  readonly evaluation_ms: number
+}
 
 export type Day8CollectorFlagResolutionEvent = {
   readonly schema: 'vscode.telemetry.v1'
@@ -75,9 +86,8 @@ export const publishFlagResolution = (
       flag: payload.flag,
       variant: payload.variant,
       source: payload.source,
-      phase: payload.phase,
-      evaluation_ms: payload.evaluation_ms,
-      threshold: payload.threshold
+      phase: FLAG_PHASE_TO_CONTRACT_PHASE[payload.phase],
+      evaluation_ms: payload.evaluation_ms
     }
     collector.publish({
       schema: 'vscode.telemetry.v1',
