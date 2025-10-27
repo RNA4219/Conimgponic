@@ -5,7 +5,10 @@ import type {
   FlagSource,
   FlagValidationError
 } from '../config/flags.js'
-import type { RolloutPhase } from '../../scripts/monitor/collect-metrics.js'
+import {
+  COLLECT_METRICS_CONTRACT,
+  type RolloutPhase
+} from '../../scripts/monitor/collect-metrics.js'
 
 type FlagPhaseToContractPhase = { readonly [Phase in FlagRolloutPhase]: RolloutPhase }
 
@@ -56,14 +59,21 @@ export type FlagResolutionContractPayload = {
 }
 
 export type Day8CollectorFlagResolutionEvent = {
+  readonly type: 'telemetry.event'
+  readonly apiVersion: 1
+  readonly reqId: string
+  readonly ts: string
+  readonly correlationId: string
+  readonly phase: RolloutPhase
+  readonly attempt: number
+  readonly maxAttempts: number
+  readonly backoffMs: ReadonlyArray<number>
   readonly schema: 'vscode.telemetry.v1'
   readonly feature: 'config.flags'
   readonly event: 'flag_resolution'
   readonly source: string
-  readonly phase: string
   readonly evaluation_ms: number
   readonly payload: FlagResolutionContractPayload
-  readonly ts: string
 }
 
 export type Day8CollectorEvent =
@@ -80,16 +90,52 @@ export const getDay8Collector = (): Day8Collector | undefined => {
   return candidate && typeof candidate.publish === 'function' ? candidate : undefined
 }
 
+type TelemetryEnvelopeOverrides = {
+  readonly reqId?: string
+  readonly correlationId?: string
+  readonly attempt?: number
+  readonly maxAttempts?: number
+  readonly backoffMs?: ReadonlyArray<number>
+  readonly ts?: string
+}
+
+const createTelemetryId = (prefix: string, context: string): string => {
+  const scope = globalThis as { crypto?: { randomUUID?: () => string } }
+  const random = scope.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`
+  return `${prefix}-${context}-${random}`
+}
+
 export const publishFlagResolution = (
   source: string,
   phase: string,
   payloads: readonly FlagResolutionEventPayload[],
-  evaluationMs: number
+  evaluationMs: number,
+  overrides?: TelemetryEnvelopeOverrides
 ): void => {
   const collector = getDay8Collector()
   if (!collector) {
     return
   }
+  const retryPolicy = COLLECT_METRICS_CONTRACT.telemetry.retryPolicy
+  const reqId = overrides?.reqId ?? createTelemetryId('req', phase)
+  const correlationId = overrides?.correlationId ?? reqId
+  const maxAttempts = overrides?.maxAttempts ?? retryPolicy.maxAttempts
+  const attempt = Math.min(Math.max(1, overrides?.attempt ?? 1), maxAttempts)
+  const backoffMs = overrides?.backoffMs ?? retryPolicy.backoffMs
+  const createEnvelope = (contractPhase: RolloutPhase): Pick<
+    Day8CollectorFlagResolutionEvent,
+    'type' | 'apiVersion' | 'reqId' | 'ts' | 'correlationId' | 'phase' | 'attempt' | 'maxAttempts' | 'backoffMs'
+  > => ({
+    type: 'telemetry.event',
+    apiVersion: 1,
+    reqId,
+    ts: overrides?.ts ?? new Date().toISOString(),
+    correlationId,
+    phase: contractPhase,
+    attempt,
+    maxAttempts,
+    backoffMs
+  })
   for (const payload of payloads) {
     const contractPayload: FlagResolutionContractPayload = {
       flag: payload.flag,
@@ -103,14 +149,13 @@ export const publishFlagResolution = (
       detail: payload.detail
     }
     collector.publish({
+      ...createEnvelope(contractPayload.phase),
       schema: 'vscode.telemetry.v1',
       feature: 'config.flags',
       event: 'flag_resolution',
       source,
-      phase,
       evaluation_ms: evaluationMs,
-      payload: contractPayload,
-      ts: new Date().toISOString()
+      payload: contractPayload
     })
   }
 }
