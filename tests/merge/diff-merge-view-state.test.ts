@@ -155,6 +155,28 @@ test('openEditor/commitEdit', () => {
   assert.equal(h.state().hunkStates.h1, 'Selected')
 })
 
+test('queueMerge clears editing hunk when included', async () => {
+  const h = harness()
+  h.controller.openEditor('h1')
+  assert.equal(h.state().editingHunkId, 'h1')
+
+  await h.controller.queueMerge(['h1'])
+
+  assert.equal(h.state().editingHunkId, null)
+  assert.equal(h.state().hunkStates.h1, 'Merged')
+})
+
+test('queueResult clears editing hunk when included', () => {
+  const h = harness()
+  h.controller.openEditor('h1')
+  assert.equal(h.state().editingHunkId, 'h1')
+
+  h.dispatch({ type: 'queueResult', hunkIds: ['h1'], result: 'conflict' })
+
+  assert.equal(h.state().editingHunkId, null)
+  assert.equal(h.state().hunkStates.h1, 'Conflict')
+})
+
 test('planDiffMergeView legacy restricts panes to review hunk list', () => {
   const plan = planDiffMergeView('legacy')
   assert.deepEqual(
