@@ -153,6 +153,11 @@ export interface PluginEventPayload {
   readonly next_backoff_ms?: number;
 }
 
+export interface PluginFailedPayload extends PluginEventPayload {
+  readonly sandboxViolation: true;
+  readonly next_backoff_ms: number;
+}
+
 const PLUGIN_RESULT_JSONL_FIELDS = [
   'payload.pluginId',
   'payload.action',
@@ -169,10 +174,7 @@ export interface TelemetryPayloads {
   readonly 'export.failed': ExportFailedPayload;
   readonly 'plugins.invoked': PluginEventPayload;
   readonly 'plugins.completed': PluginEventPayload;
-  readonly 'plugins.failed': PluginEventPayload & {
-    readonly sandboxViolation: true;
-    readonly next_backoff_ms: number;
-  };
+  readonly 'plugins.failed': PluginFailedPayload;
 }
 
 export interface TelemetryEventSpec<E extends TelemetryEventName = TelemetryEventName> {

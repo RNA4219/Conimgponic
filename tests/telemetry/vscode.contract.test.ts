@@ -360,7 +360,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     const exportFailed = findTelemetrySpec('export.failed')
     assertOk(exportFailed, 'export.failed telemetry spec is missing')
 
-    const exportRequiredFields = [
+    deepStrictEqual(exportFailed.jsonlFields, [
       'payload.runId',
       'payload.matchRate',
       'payload.formats',
@@ -371,15 +371,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.entries[].name',
       'payload.entries[].status',
       'payload.entries[].diff',
-      'payload.next_backoff_ms',
-    ] as const
-
-    for (const field of exportRequiredFields) {
-      assertOk(
-        exportFailed.jsonlFields.includes(field),
-        `export.failed must require ${field} in Reporter JSONL`
-      )
-    }
+      'payload.next_backoff_ms'
+    ])
 
     const exportThen = findConditional(
       (entry) => entry.if?.properties?.event?.const === 'export.failed'
@@ -397,6 +390,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       exportPayloadSchema.properties,
       'export.failed payload schema must define properties'
     )
+    deepStrictEqual(exportPayloadSchema.type, 'object')
+    deepStrictEqual(exportPayloadSchema.additionalProperties, false)
     const exportBackoffSchema = exportPayloadSchema.properties.next_backoff_ms
     assertOk(
       exportBackoffSchema,
@@ -406,10 +401,14 @@ describe('vscode extension telemetry contract (RED)', () => {
 
     const pluginsFailed = findTelemetrySpec('plugins.failed')
     assertOk(pluginsFailed, 'plugins.failed telemetry spec is missing')
-    assertOk(
-      pluginsFailed.jsonlFields.includes('payload.next_backoff_ms'),
-      'plugins.failed must require payload.next_backoff_ms in Reporter JSONL'
-    )
+    deepStrictEqual(pluginsFailed.jsonlFields, [
+      'payload.pluginId',
+      'payload.action',
+      'payload.result',
+      'payload.duration_ms',
+      'payload.sandboxViolation',
+      'payload.next_backoff_ms'
+    ])
 
     const pluginsThen = findConditional(
       (entry) => entry.if?.properties?.event?.const === 'plugins.failed'
@@ -427,6 +426,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       pluginsPayloadSchema.properties,
       'plugins.failed payload schema must define properties'
     )
+    deepStrictEqual(pluginsPayloadSchema.type, 'object')
+    deepStrictEqual(pluginsPayloadSchema.additionalProperties, false)
     const pluginsBackoffSchema = pluginsPayloadSchema.properties.next_backoff_ms
     assertOk(
       pluginsBackoffSchema,
