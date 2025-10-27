@@ -9,6 +9,8 @@ import {
   type MergeDockPhasePlan,
   diffBackupPolicy,
   shouldRenderDiffBackupCTA,
+  shouldShowDiffBackupCTA,
+  isDiffBackupCTAEligible,
 } from '../../src/components/MergeDock.tsx'
 
 test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
@@ -112,6 +114,44 @@ test('beta precision diff plan triggers backup CTA when diff is enabled', () => 
   })
 
   assert.equal(showBackupCTA, true)
+})
+
+test('beta precision resolves diff backup eligibility when autosave is stale', () => {
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'beta',
+    threshold: 0.76,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(phasePlan.diff.enabled, true)
+  assert.equal(isDiffBackupCTAEligible(phasePlan.diff, 'beta'), true)
+
+  const lastSuccessAt = '2024-05-01T00:00:00.000Z'
+  const now = Date.parse('2024-05-01T00:08:00.000Z')
+  const resolvedPolicyThreshold = phasePlan.tabs.diff?.backupAfterMs ?? diffBackupPolicy.thresholdMs
+
+  assert.equal(
+    shouldShowDiffBackupCTA(
+      { ...diffBackupPolicy, thresholdMs: resolvedPolicyThreshold },
+      'beta',
+      'diff',
+      lastSuccessAt,
+      now,
+    ),
+    true,
+  )
+
+  const shouldRender = shouldRenderDiffBackupCTA({
+    diffPlan: phasePlan.diff,
+    tabPlan: phasePlan.tabs,
+    policy: diffBackupPolicy,
+    precision: 'beta',
+    activeTab: 'diff',
+    autoSave: { flushNow: () => undefined, lastSuccessAt },
+    now,
+  })
+
+  assert.equal(shouldRender, true)
 })
 
 test('stable precision without phase stats keeps diff visible and gated', () => {

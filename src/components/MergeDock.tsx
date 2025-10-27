@@ -535,6 +535,11 @@ export const shouldShowDiffBackupCTA = (
   return Number.isFinite(ts) && now - ts > policy.thresholdMs
 }
 
+export const isDiffBackupCTAEligible = (
+  diffPlan: MergeDockPhasePlan['diff'],
+  precision: MergePrecision,
+): boolean => diffPlan.enabled && precision !== 'legacy'
+
 export const shouldRenderDiffBackupCTA = ({
   diffPlan,
   tabPlan,
@@ -544,7 +549,7 @@ export const shouldRenderDiffBackupCTA = ({
   autoSave,
   now,
 }: DiffBackupCTAContext): boolean => {
-  if (!diffPlan.enabled) return false
+  if (!isDiffBackupCTAEligible(diffPlan, precision)) return false
   if (typeof autoSave.flushNow !== 'function') return false
   const resolvedPolicy = resolveDiffBackupPolicy(tabPlan, policy)
   return shouldShowDiffBackupCTA(resolvedPolicy, precision, activeTab, autoSave.lastSuccessAt, now)
