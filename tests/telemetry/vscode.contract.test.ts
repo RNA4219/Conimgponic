@@ -158,6 +158,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.source',
       'payload.phase',
       'payload.evaluation_ms',
+      'payload.errors',
       'payload.threshold',
       'payload.status',
       'payload.detail.retryable',

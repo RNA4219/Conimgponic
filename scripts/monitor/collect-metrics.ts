@@ -75,12 +75,23 @@ export const FLAG_RESOLUTION_SOURCE_VARIANTS = [
 
 export type FlagResolutionSource = (typeof FLAG_RESOLUTION_SOURCE_VARIANTS)[number];
 
+export interface FlagResolutionError {
+  readonly code: string;
+  readonly flag: string;
+  readonly raw: string;
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly source: FlagResolutionSource;
+  readonly phase: RolloutPhase;
+}
+
 export interface FlagResolutionPayload {
   readonly flag: string;
   readonly variant: string;
   readonly source: FlagResolutionSource;
   readonly phase: RolloutPhase;
   readonly evaluation_ms: number;
+  readonly errors: ReadonlyArray<FlagResolutionError>;
   readonly threshold: number | null;
   readonly status: 'success' | 'failure';
   readonly detail: {
@@ -604,6 +615,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.source',
           'payload.phase',
           'payload.evaluation_ms',
+          'payload.errors',
           'payload.threshold',
           'payload.status',
           'payload.detail.retryable',
