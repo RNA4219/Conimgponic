@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint \"{src,tests}/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test/run-selected.ts",
+    "test": "pnpm run tsx scripts/test/run-selected.ts",
     "test:ci": "pnpm test -- --filter ci",
     "test:autosave": "pnpm test -- --filter autosave",
     "test:merge": "pnpm test -- --filter merge",
@@ -20,7 +20,8 @@
     "test:junit": "node --input-type=module --eval \"import { mkdirSync } from 'node:fs'; const dir = process.argv.at(-1); if (!dir) throw new Error('missing dir'); mkdirSync(dir, { recursive: true });\" reports && node --experimental-vm-modules --loader ts-node/esm --experimental-specifier-resolution=node --test --test-reporter=junit --test-reporter-destination=file=reports/junit.xml tests/**/*.test.ts",
     "license:check": "node --loader ts-node/esm scripts/license/verify.ts",
     "golden": "pnpm -s ts-node --files scripts/golden/compare.ts",
-    "golden:ci": "pnpm -s ts-node --files scripts/golden/compare.ts tests/fixtures/case-mini-03/project.storyboard.json tests/fixtures/case-mini-03 ."
+    "golden:ci": "pnpm -s ts-node --files scripts/golden/compare.ts tests/fixtures/case-mini-03/project.storyboard.json tests/fixtures/case-mini-03 .",
+    "tsx": "node --input-type=module --eval \"import { spawnSync } from 'node:child_process'; const raw = process.argv.slice(1); const sanitized = []; for (let index = 0; index < raw.length; index += 1) { const arg = raw[index]; if (arg === '--') { const next = raw[index + 1]; if (!next || next.startsWith('-')) { continue; } } sanitized.push(arg); } const result = spawnSync(process.execPath, ['--loader', 'ts-node/esm', '--experimental-specifier-resolution=node', ...sanitized], { stdio: 'inherit', env: process.env }); if (result.error) throw result.error; process.exit(result.status ?? 0);\""
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -34,9 +35,7 @@
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "esbuild": "^0.25.0",
     "ts-node": "^10.9.2",
-    "tsx": "^4.19.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.8"
   },
