@@ -591,6 +591,11 @@ describe('ci workflow build job', () => {
       );
       assertStepRunIncludesLine(
         runSuiteStep,
+        ': > "logs/${{ matrix.suite }}-failures.log"',
+        `run suite ${expectedId} step must create empty failure log placeholder`,
+      );
+      assertStepRunIncludesLine(
+        runSuiteStep,
         'tee "logs/${{ matrix.suite }}.log"',
         `run suite ${expectedId} step must tee suite output into logs/\${{ matrix.suite }}.log`,
       );
