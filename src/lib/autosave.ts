@@ -257,6 +257,53 @@ const publishGuardCollectorEvent = (
   })
 }
 
+const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): AutoSaveEnvelopePhase => {
+  if (!guard.featureFlag.value || guard.optionsDisabled) {
+    return 'A-0'
+  }
+  switch (guard.featureFlag.source) {
+    case 'env':
+      return 'A-1'
+    case 'workspace':
+      return 'A-2'
+    default:
+      return 'A-0'
+  }
+}
+
+interface AutoSaveSaveCompletedEvent {
+  readonly guard: AutoSavePhaseGuardSnapshot
+  readonly durationMs: number
+  readonly bytes: number
+  readonly generation: number
+  readonly retryCount: number
+  readonly source: 'manual' | 'auto'
+  readonly ts: string
+  readonly leaseId?: string
+}
+
+const publishSaveCompletedCollectorEvent = (event: AutoSaveSaveCompletedEvent): void => {
+  const collector = resolveDay8Collector()
+  if (!collector) return
+  const duration = Math.max(0, Math.round(event.durationMs))
+  const payload: Record<string, unknown> = {
+    component: 'autosave',
+    feature: 'autosave',
+    event: 'autosave.save.completed',
+    phase: resolveCollectorPhase(event.guard),
+    ts: event.ts,
+    duration_ms: duration,
+    bytes: event.bytes,
+    generation: event.generation,
+    retry_count: event.retryCount,
+    source: event.source
+  }
+  if (event.leaseId) {
+    payload.lease_id = event.leaseId
+  }
+  collector.publish(payload)
+}
+
 interface AutoSaveFlagSnapshot {
   readonly autosave: {
     readonly enabled: boolean
@@ -1229,13 +1276,26 @@ export function initAutoSave(
     }
     const payload = JSON.stringify(storyboard, null, 2)
     pendingBytes = encoder.encode(payload).length; phase = 'awaiting-lock'
+    const flushStartedAt = Date.now()
     try {
-      await projectLockApi.withProjectLock(async () => {
+      await projectLockApi.withProjectLock(async (lease) => {
         if (disposed) throw disabledError()
         phase = 'writing-current'; await saveText('project/autosave/current.json.tmp', payload); await renameFile('project/autosave/current.json.tmp', 'project/autosave/current.json')
         phase = 'updating-index'; const ts = new Date().toISOString(); await updateIndex(ts, pendingBytes, payload, generation)
         phase = 'gc';
         lastSuccessAt = ts;
+        const savedBytes = pendingBytes
+        const flushRetryCount = retryCount
+        publishSaveCompletedCollectorEvent({
+          guard,
+          durationMs: Date.now() - flushStartedAt,
+          bytes: savedBytes,
+          generation,
+          retryCount: flushRetryCount,
+          source,
+          ts,
+          leaseId: lease.leaseId
+        })
         if (consumedCount > 0) {
           pendingQueue.splice(0, consumedCount)
           inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)

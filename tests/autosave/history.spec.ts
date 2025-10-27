@@ -118,9 +118,22 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
   assert.ok(firstHistoryPath)
   assert.ok(!historyPaths.includes(firstHistoryPath!), 'oldest history entry should be rotated out')
 
+  assert.ok(telemetry.length > 0, 'autosave saves should publish telemetry events')
+  telemetry.forEach((entry, index) => {
+    assert.equal(entry.feature, 'autosave', `telemetry[${index}].feature should be autosave`)
+    assert.equal(entry.event, 'autosave.save.completed', `telemetry[${index}].event should be autosave.save.completed`)
+    assert.equal(entry.phase, 'A-1', `telemetry[${index}].phase should be A-1`)
+  })
+
+  const expectedTelemetry = telemetry.map(() => ({
+    feature: 'autosave',
+    event: 'autosave.save.completed',
+    phase: 'A-1'
+  }))
+
   const expectation = {
     history: historyWrites.map(({ bytes: _bytes, ...rest }) => rest),
-    telemetry
+    telemetry: expectedTelemetry
   }
 
   await assertSnapshot('history-as-i-02', expectation)
