@@ -419,9 +419,9 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   };
 
   const toReleaseProjectError = (error: unknown): ProjectLockError =>
-    error instanceof ProjectLockError && error.operation === 'release' && error.retryable
+    error instanceof ProjectLockError && error.operation === 'release'
       ? error
-      : makeError('release-failed', 'Web Lock release invocation failed', 'release', true, error);
+      : makeError('release-failed', 'Web Lock release invocation failed', 'release', false, error);
 
   try {
     const requestOutcome: Promise<unknown> = locks
@@ -496,25 +496,20 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
         if (!completionDeferred.isSettled()) completionDeferred.reject(projectError);
         throw projectError;
       });
-    const requestSettled = requestOutcome.then(
-      () => undefined,
+    const completion = (async () => {
+      await releaseDeferred.promise;
+      await awaitReleased(releasedPromise);
+      await requestOutcome;
+    })();
+    completion.then(
+      () => {
+        if (!completionDeferred.isSettled()) completionDeferred.resolve();
+      },
       (error) => {
         captureCompletionError(error);
-        throw error;
+        if (!completionDeferred.isSettled()) completionDeferred.reject(error);
       },
     );
-    releaseDeferred.promise
-      .then(async () => {
-        await awaitReleased(releasedPromise);
-        await requestSettled;
-      })
-      .then(
-        () => completionDeferred.resolve(),
-        (error) => {
-          captureCompletionError(error);
-          completionDeferred.reject(error);
-        },
-      );
     requestOutcome.catch(() => undefined);
   } catch (cause) {
     const projectError =
