@@ -235,6 +235,9 @@ export const resolvePreferenceSelection = (input: {
     return sanitizedDefault
   }
   if (diffUnlocked) {
+    if (sanitizedPreference === 'manual-first') {
+      return sanitizedPreference
+    }
     return sanitizedDefault
   }
   return sanitizedPreference
