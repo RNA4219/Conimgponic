@@ -571,21 +571,14 @@ export const resolveMergeDockPhasePlan = ({
     : undefined
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
-  const shouldHideDiff = diffConfigured && statsProvided && !phaseBRequired
   const shouldDemoteDiff = diffConfigured && (meetsTarget === false || !phaseBRequired)
-
-  if (shouldHideDiff) {
-    diffVisible = false
-    diffExposure = 'opt-in'
-    if (diffTabsPlan) {
-      diffTabsPlan = { ...diffTabsPlan, exposure: 'opt-in' }
-    }
-  }
 
   if (shouldDemoteDiff) {
     if (precision === 'stable') {
       diffVisible = true
-      diffTabsPlan = { exposure: 'opt-in' }
+      diffTabsPlan = diffTabsPlan
+        ? { ...diffTabsPlan, exposure: 'opt-in' }
+        : { exposure: 'opt-in' }
     } else if (diffTabsPlan) {
       diffTabsPlan = { ...diffTabsPlan, exposure: 'opt-in' }
     }
