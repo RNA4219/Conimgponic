@@ -61,7 +61,7 @@ jobs:
         with:
           name: sbom-log
           path: sbom.log
-          if-no-files-found: error
+          if-no-files-found: 'error'
 
       - name: Fail when syft exits non-zero
         if: steps.generate_sbom.outputs.exit_code != '0'
