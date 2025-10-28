@@ -574,7 +574,8 @@ const handleNonRetryableError = (
         ok: false,
         code: error.code,
         retryable: error.retryable,
-        correlationId: request.correlationId
+        correlationId: request.correlationId,
+        retryCount: retryCountBeforeReset
       }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
@@ -789,7 +790,13 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         options,
         {
           name: 'autosave.snapshot.result',
-          properties: { ok: false, code: 'disabled', retryable: false, correlationId: request.correlationId }
+          properties: {
+            ok: false,
+            code: 'disabled',
+            retryable: false,
+            correlationId: request.correlationId,
+            retryCount: state.retryCount
+          }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
       )
@@ -997,7 +1004,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           ok: true,
           generation: writeResult.generation,
           retainedBytes: state.retainedBytes,
-          correlationId: request.correlationId
+          correlationId: request.correlationId,
+          retryCount: 0
         }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }

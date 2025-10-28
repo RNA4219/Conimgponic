@@ -569,6 +569,131 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledDuringRequest.properties?.detail?.retry_count, 0)
   })
 
+  it('autosave.snapshot.result telemetry includes retryCount when guard disables request', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {},
+      atomicWrite: async () => {
+        throw new Error('guard disabled branch should not perform writes')
+      },
+      telemetry: telemetry.push.bind(telemetry)
+    })
+
+    const request = createRequest('req-guard-disabled', 'corr-guard-disabled', guardReadonly, 512, 1)
+    await bridge.handleSnapshotRequest(request)
+
+    const snapshotTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.snapshot.result' &&
+        event.properties?.correlationId === request.correlationId
+    )
+
+    assert.ok(snapshotTelemetry, 'guard disabled snapshot.result telemetry が必要')
+    assert.equal(snapshotTelemetry.properties?.retryCount, 0)
+    assert.equal(snapshotTelemetry.properties?.detail?.retry_count, 0)
+  })
+
+  it('autosave.snapshot.result telemetry copies retryCount for non-retryable errors', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    let attempt = 0
+    const retryable: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'temporary failure',
+      code: 'write-failed',
+      retryable: true
+    }
+    const fatal: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'permanent failure',
+      code: 'write-failed',
+      retryable: false
+    }
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {},
+      atomicWrite: async () => {
+        attempt += 1
+        return attempt === 1 ? { ok: false as const, error: retryable } : { ok: false as const, error: fatal }
+      },
+      telemetry: telemetry.push.bind(telemetry)
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-retryable', 'corr-retryable', guardEnabled, 1024, 1)
+    )
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(createRequest('req-fatal', 'corr-fatal', guardEnabled, 1024, 2))
+
+    const snapshotTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.snapshot.result' && event.properties?.correlationId === 'corr-fatal'
+    )
+
+    assert.ok(snapshotTelemetry, '非 retryable エラーの snapshot.result telemetry が必要')
+    assert.equal(snapshotTelemetry.properties?.retryCount, 1)
+    assert.equal(snapshotTelemetry.properties?.detail?.retry_count, 1)
+  })
+
+  it('autosave.snapshot.result telemetry resets retryCount to zero on success', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    let attempt = 0
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {},
+      atomicWrite: async ({ request }) => {
+        attempt += 1
+        if (attempt === 1) {
+          return {
+            ok: false as const,
+            error: {
+              name: 'AutoSaveError',
+              message: 'temporary failure',
+              code: 'write-failed',
+              retryable: true
+            }
+          }
+        }
+        return {
+          ok: true as const,
+          bytes: request.payload.pendingBytes,
+          generation: request.payload.queuedGeneration,
+          lastSuccessAt: new Date('2024-01-01T00:00:05.000Z').toISOString(),
+          lockStrategy: 'web-lock' as const
+        }
+      },
+      telemetry: telemetry.push.bind(telemetry)
+    })
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-retry', 'corr-retry', guardEnabled, 1024, 1)
+    )
+
+    bridge.reportDirty(1024, guardEnabled)
+    await bridge.handleSnapshotRequest(
+      createRequest('req-success', 'corr-success', guardEnabled, 1024, 2)
+    )
+
+    const snapshotTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.snapshot.result' && event.properties?.correlationId === 'corr-success'
+    )
+
+    assert.ok(snapshotTelemetry, '成功時の snapshot.result telemetry が必要')
+    assert.equal(snapshotTelemetry.properties?.retryCount, 0)
+    assert.equal(snapshotTelemetry.properties?.detail?.retry_count, 0)
+  })
+
   it('autosave.status telemetry provides zero flush latency when guard short-circuits reportDirty', () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     const bridge = createVscodeAutoSaveBridge({
