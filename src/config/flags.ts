@@ -129,7 +129,7 @@ const defaultEnv = (() => {
   }
   return metaEnv
 })()
-const defaultStorage: Pick<Storage, 'getItem'> | null =
+const readDefaultStorage = (): Pick<Storage, 'getItem'> | null =>
   typeof localStorage !== 'undefined' ? localStorage : null
 
 const WORKSPACE_KEY_PREFIX = 'conimg.' as const
@@ -265,15 +265,15 @@ export function resolveFlag<T>(
   def: FlagDefinition<T>,
   options: ResolveOptions = {}
 ): FlagResolution<T> {
-  const env = options.env ?? defaultEnv
-  const storageOption = options.storage
+  const env = options?.env ?? defaultEnv
+  const storageOption = options?.storage
   const storage =
     storageOption === undefined
-      ? defaultStorage
+      ? readDefaultStorage()
       : storageOption === null
         ? null
         : storageOption
-  const workspace = options.workspace ?? null
+  const workspace = options?.workspace ?? null
   const errors: FlagValidationError[] = []
 
   const envResolved = attemptResolve(env[def.envKey], 'env', def, errors)
@@ -462,7 +462,7 @@ function resolveMergeThreshold(
   const storageOption = options?.storage
   const storage =
     storageOption === undefined
-      ? defaultStorage
+      ? readDefaultStorage()
       : storageOption === null
         ? null
         : storageOption

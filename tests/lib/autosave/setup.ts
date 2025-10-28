@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -55,10 +56,23 @@ const cache = new Map<string, vm.SourceTextModule>()
 
 const withExt = (spec: string): string => (spec.endsWith('.ts') || spec.endsWith('.js') ? spec : `${spec}.ts`)
 
-const resolveImport = (spec: string, parent: string): string =>
-  spec.startsWith('.') || spec.startsWith('/')
-    ? resolve(dirname(parent), withExt(spec))
-    : req.resolve(spec, { paths: [dirname(parent)] })
+const preferSourceFile = (resolved: string): string => {
+  if (resolved.endsWith('.js')) {
+    const tsCandidate = `${resolved.slice(0, -3)}.ts`
+    if (!existsSync(resolved) && existsSync(tsCandidate)) {
+      return tsCandidate
+    }
+  }
+  return resolved
+}
+
+const resolveImport = (spec: string, parent: string): string => {
+  const resolved =
+    spec.startsWith('.') || spec.startsWith('/')
+      ? resolve(dirname(parent), withExt(spec))
+      : req.resolve(spec, { paths: [dirname(parent)] })
+  return preferSourceFile(resolved)
+}
 
 const loadModule = async (path: string): Promise<vm.SourceTextModule> => {
   if (cache.has(path)) return cache.get(path)!
