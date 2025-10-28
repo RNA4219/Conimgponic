@@ -49,10 +49,14 @@ describe('ci workflow build job', () => {
       const logCondition = logUpload.if;
       if (typeof logCondition !== 'string') throw new TypeError('build log artifact upload must configure if string');
       assert.equal(logCondition, 'always()', 'build log artifact upload must always run');
-      const logPath = logUpload.with?.path;
+      const logConfig = logUpload.with;
+      if (!logConfig || typeof logConfig !== 'object') {
+        throw new TypeError('build log artifact upload must configure with object');
+      }
+      const logPath = (logConfig as { path?: unknown }).path;
       if (typeof logPath !== 'string') throw new TypeError('build log artifact upload must configure path string');
       assert.ok(splitLines(logPath).includes('build.log'), 'build log artifact path must include build.log');
-      const logIfNoFiles = logUpload.with?.['if-no-files-found'];
+      const logIfNoFiles = (logConfig as { 'if-no-files-found'?: unknown })['if-no-files-found'];
       if (typeof logIfNoFiles !== 'string') {
         throw new TypeError('build log artifact upload must configure if-no-files-found string');
       }
