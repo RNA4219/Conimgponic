@@ -465,7 +465,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   const toReleaseProjectError = (error: unknown): ProjectLockError =>
     error instanceof ProjectLockError && error.operation === 'release'
       ? error
-      : makeError('release-failed', 'Web Lock release invocation failed', 'release', false, error);
+      : makeError('release-failed', 'Web Lock release invocation failed', 'release', true, error);
 
   try {
     const requestOutcome: Promise<unknown> = locks

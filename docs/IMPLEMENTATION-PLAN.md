@@ -286,9 +286,9 @@ stateDiagram-v2
 - **Web Lock 取得を優先**: `navigator.locks.request('imgponic:project', { mode: 'exclusive' })` を基本とし、TTL はブラウザ依存のためリース更新 API を内製する（`docs/AUTOSAVE-DESIGN-IMPL.md` §3.1）。
 - **フォールバックの責務**: Web Lock が利用不可または衝突検出時は `project/.lock` を用いて UUID・`mtime`・TTL(30s) を同期する（同 §3.3）。
 - **失敗時の挙動**: ロック取得が最終的に失敗した場合は閲覧専用モードへ移行し、UI へ警告イベントを伝播する（同 §3.4）。
-- **解放要件の整理**: Web Lock の解放は `releaseProjectLock` が Web Lock ハンドルの `release()`／`released`／`navigator.locks.request` 完了を直列で待機し、`releaseDeferred`→`requestSettled`→`lock:released` の順で収束させる。追加モニタリング（`releaseMonitor` など）に依存せず、失敗時は `lock:readonly-entered(reason='release-failed')` を発火してフォールバック削除とロールバック判定を同期する（`docs/AUTOSAVE-DESIGN-IMPL.md` §3.1）。
-- **Release 再試行の抑止**: Web Lock 解放が失敗した場合は `releaseError` を保持し、再度 `releaseProjectLock` が呼ばれても即座に同じ例外で拒否し `lock:released` を発火させない。
-- **Readonly 降格の継続**: Release 失敗後は `lock:readonly-entered(reason='release-failed')` を維持し、Phase ガード経由で再試行可否を判定する。
+- **解放要件の整理**: Web Lock の解放は `releaseProjectLock` が Web Lock ハンドルの `release()`／`released`／`navigator.locks.request` 完了を直列で待機し、`releaseDeferred`→`requestSettled`→`lock:released` の順で収束させる。追加モニタリング（`releaseMonitor` など）に依存せず、失敗時は `lock:error(retryable=true)` → `lock:readonly-entered(reason='release-failed')` を発火してフォールバック削除とロールバック判定を同期する（`docs/AUTOSAVE-DESIGN-IMPL.md` §3.1）。
+- **Release 再試行の扱い**: Web Lock 解放が失敗した場合は `releaseError` を保持し、再度 `releaseProjectLock` が呼ばれても即座に同じ例外で拒否する。同時に例外の `retryable=true` を維持し、バックグラウンド監視が Web Lock/`.lock` の解放を再試行できるようにする。
+- **Readonly 降格の継続**: Release 失敗後は `lock:readonly-entered(reason='release-failed', lastError.retryable=true)` を維持し、Phase ガード経由で再試行可否を判定する。
 - **Collector/Analyzer との干渉防止**: Lock ファイルは `project/` 配下に限定し、`workflow-cookbook/` や `logs/` など Day8 系アーティファクトには触れない（`docs/day8/design/03_architecture.md`）。
 
 #### 1.1 ロック API 状態遷移図
@@ -307,7 +307,7 @@ stateDiagram-v2
     Renewing --> Readonly: renew-failed / lease-stale
     Acquired --> Releasing: releaseProjectLock()
     Releasing --> Idle: lock:released
-    Releasing --> Readonly: release-failed / retryable=false
+    Releasing --> Readonly: release-failed / retryable=true (lastError)
     Readonly --> Idle: manual refresh / new acquire
 ```
 
