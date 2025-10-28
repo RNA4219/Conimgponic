@@ -222,22 +222,14 @@ export const resolvePreferenceSelection = (input: {
     precision,
     previousPrecision,
     diffEnabled,
-    previousDiffEnabled,
     preference,
     defaultPreference,
   } = input
   const precisionChanged = previousPrecision !== precision
-  const diffUnlocked = !previousDiffEnabled && diffEnabled
   const sanitizedDefault = sanitizePreference(defaultPreference, precision, diffEnabled)
   const sanitizedPreference = sanitizePreference(preference, precision, diffEnabled)
 
   if (precisionChanged) {
-    return sanitizedDefault
-  }
-  if (diffUnlocked) {
-    if (sanitizedPreference === 'manual-first') {
-      return sanitizedPreference
-    }
     return sanitizedDefault
   }
   return sanitizedPreference
