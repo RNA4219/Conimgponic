@@ -20,6 +20,7 @@ import type {
 } from '../../src/config/flags.js'
 import {
   publishFlagResolution,
+  resetWorkspaceIdCacheForTests,
   type Day8Collector,
   type Day8CollectorFlagResolutionEvent,
   type FlagResolutionEventPayload
@@ -662,6 +663,51 @@ describe('vscode extension telemetry contract (RED)', () => {
     strictEqual(event.maxAttempts, retryPolicy.maxAttempts)
     deepStrictEqual(event.backoffMs, retryPolicy.backoffMs)
     strictEqual(event.reqId, event.correlationId)
+  })
+
+  test('publishFlagResolution は CONIMG_WORKSPACE_ID を優先して使用する', () => {
+    const workspaceId = '11111111-2222-4111-8111-aaaaaaaaaaaa'
+    const payload: FlagResolutionEventPayload = {
+      flag: 'autosave.enabled',
+      variant: 'true',
+      source: 'env',
+      phase: 'phase-a0',
+      evaluation_ms: 5,
+      errors: [],
+      threshold: null,
+      status: 'success',
+      detail: { retryable: false, default_used: false }
+    }
+
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const captured: Day8CollectorFlagResolutionEvent[] = []
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorFlagResolutionEvent)
+      }
+    } as Day8Collector
+
+    const previousEnv = process.env.CONIMG_WORKSPACE_ID
+    process.env.CONIMG_WORKSPACE_ID = workspaceId
+    resetWorkspaceIdCacheForTests()
+
+    try {
+      publishFlagResolution('app.autosave', 'bootstrap', [payload], 7)
+    } finally {
+      if (previousEnv === undefined) {
+        delete process.env.CONIMG_WORKSPACE_ID
+      } else {
+        process.env.CONIMG_WORKSPACE_ID = previousEnv
+      }
+      resetWorkspaceIdCacheForTests()
+      scope.Day8Collector = previousCollector
+    }
+
+    assertOk(captured.length > 0, 'flag_resolution telemetry must be published when workspace id env is set')
+    const [event] = captured
+    assertOk(event, 'flag_resolution event must be captured when workspace id env is set')
+    strictEqual(event.workspace_id, workspaceId)
   })
 
   test('collectFlagResolutionPayloads は workspace 設定の検証失敗で default threshold へフォールバックした場合に default_used=true を通知する', () => {

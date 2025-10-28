@@ -209,6 +209,13 @@ const resolveWorkspaceId = (candidate?: string): string => {
   return cachedWorkspaceId
 }
 
+/**
+ * @internal テスト専用: Day8 Collector 内部の workspace_id キャッシュを初期化する。
+ */
+export const resetWorkspaceIdCacheForTests = (): void => {
+  cachedWorkspaceId = undefined
+}
+
 export const publishFlagResolution = (
   source: TelemetrySource,
   phase: string,
