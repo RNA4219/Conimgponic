@@ -203,6 +203,10 @@ export interface ExportStartedPayload {
   readonly duration_ms?: number;
 }
 
+export interface ExportResultDetailTelemetry {
+  readonly duration_ms: number;
+}
+
 export interface ExportArtifactTelemetry {
   readonly format: ExportFormat | `package:${string}`;
   readonly name: string | null;
@@ -218,6 +222,7 @@ export interface ExportSuccessPayload {
   readonly runId: string;
   readonly matchRate: number;
   readonly formats: ReadonlyArray<string>;
+  readonly detail: ExportResultDetailTelemetry;
   readonly artifacts: ReadonlyArray<ExportArtifactTelemetry>;
 }
 
@@ -232,6 +237,7 @@ export interface ExportFailedPayload {
   readonly runId: string;
   readonly matchRate: number;
   readonly formats: ReadonlyArray<string>;
+  readonly detail: ExportResultDetailTelemetry;
   readonly error: {
     readonly code: string;
     readonly message: string;
@@ -834,6 +840,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.runId',
           'payload.matchRate',
           'payload.formats',
+          'payload.detail.duration_ms',
           'payload.artifacts[].format',
           'payload.artifacts[].name',
           'payload.artifacts[].status',
@@ -852,6 +859,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.runId',
           'payload.matchRate',
           'payload.formats',
+          'payload.detail.duration_ms',
           'payload.error.code',
           'payload.error.message',
           'payload.error.retryable',
