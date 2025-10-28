@@ -38,6 +38,8 @@ const createDisabledError = (): AutoSaveError => ({
   retryable: false
 })
 
+const ZERO_FLUSH_LATENCY = { flush_latency_ms: 0 } as const
+
 const isAutoSaveError = (value: unknown): value is AutoSaveError => {
   if (!value || typeof value !== 'object') {
     return false
@@ -512,6 +514,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const ts = toIso(options.now())
     const correlationId = nextCorrelationId(state)
     const envelopePhase = PHASE_STATUS
+    const flushLatency = ZERO_FLUSH_LATENCY
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
@@ -538,7 +541,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             correlationId,
             retryCount: state.retryCount,
             phase: envelopePhase,
-            performance: { flush_latency_ms: 0 }
+            performance: flushLatency
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
@@ -583,7 +586,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             correlationId,
             retryCount: state.retryCount,
             phase: envelopePhase,
-            performance: { flush_latency_ms: 0 }
+            performance: flushLatency
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
