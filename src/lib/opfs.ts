@@ -6,6 +6,17 @@ type IterableFileSystemDirectoryHandle = FileSystemDirectoryHandle & {
   values(): AsyncIterable<FileSystemHandle>
 }
 
+function isNotFoundError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'NotFoundError'
+  }
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+  const { name } = error as { name?: string }
+  return name === 'NotFoundError'
+}
+
 function hasIterableValues(
   handle: FileSystemDirectoryHandle,
 ): handle is IterableFileSystemDirectoryHandle {
@@ -62,8 +73,11 @@ export async function loadText(path: string): Promise<string | null> {
     const file = await directory.getFileHandle(fileName, { create: false })
     const blob = await file.getFile()
     return await blob.text()
-  } catch {
-    return null
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null
+    }
+    throw error
   }
 }
 
