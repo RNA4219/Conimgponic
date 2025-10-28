@@ -2,6 +2,11 @@ import { firstLineDiff, normalizeJson, normalizeJsonl, trimLines } from '../expo
 
 import type { ExportFormat, NormalizedOutputs } from '../exporters'
 
+const textEncoder = new TextEncoder()
+
+const measureArtifactBytes = (payload: string): number =>
+  textEncoder.encode(`${payload}\n`).byteLength
+
 export interface GoldenArtifacts {
   readonly markdown?: string
   readonly csv?: string
@@ -14,6 +19,7 @@ export interface GoldenComparisonEntry {
   readonly name?: string
   readonly status: 'matched' | 'diff'
   readonly diff?: string
+  readonly bytes?: number
 }
 
 export interface GoldenComparisonResult {
@@ -64,15 +70,22 @@ export function compareNormalizedOutputs(
   const entries: GoldenComparisonEntry[] = []
 
   scalarFormats.forEach((format) => {
+    const actualPayload = actual[format]
+    const artifactBytes = measureArtifactBytes(actualPayload)
     const expected = normalizeGoldenArtifact(format, golden)
     if (!expected) {
-      entries.push({ format, status: 'diff', diff: 'missing golden input' })
+      entries.push({ format, status: 'diff', diff: 'missing golden input', bytes: artifactBytes })
       return
     }
-    if (expected === actual[format]) {
-      entries.push({ format, status: 'matched' })
+    if (expected === actualPayload) {
+      entries.push({ format, status: 'matched', bytes: artifactBytes })
     } else {
-      entries.push({ format, status: 'diff', diff: firstLineDiff(actual[format], expected) })
+      entries.push({
+        format,
+        status: 'diff',
+        diff: firstLineDiff(actualPayload, expected),
+        bytes: artifactBytes,
+      })
     }
   })
 
@@ -86,15 +99,28 @@ export function compareNormalizedOutputs(
       entries.push({ format: 'package', name, status: 'diff', diff: 'missing generated artifact' })
       return
     }
+    const artifactBytes = measureArtifactBytes(actualPayload)
     const expected = normalizeGoldenArtifact('package', golden, name)
     if (!expected) {
-      entries.push({ format: 'package', name, status: 'diff', diff: 'missing golden input' })
+      entries.push({
+        format: 'package',
+        name,
+        status: 'diff',
+        diff: 'missing golden input',
+        bytes: artifactBytes,
+      })
       return
     }
     if (expected === actualPayload) {
-      entries.push({ format: 'package', name, status: 'matched' })
+      entries.push({ format: 'package', name, status: 'matched', bytes: artifactBytes })
     } else {
-      entries.push({ format: 'package', name, status: 'diff', diff: firstLineDiff(actualPayload, expected) })
+      entries.push({
+        format: 'package',
+        name,
+        status: 'diff',
+        diff: firstLineDiff(actualPayload, expected),
+        bytes: artifactBytes,
+      })
     }
   })
 
@@ -153,6 +179,7 @@ export function createTelemetryEvent(
       uri: null,
       normalizedPath: buildNormalizedPath(entry, runId),
       durationMs: null,
+      bytes: entry.bytes ?? null,
     }))
     return { event: 'export.success', payload: basePayload }
   }

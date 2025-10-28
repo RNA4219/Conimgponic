@@ -1448,6 +1448,63 @@ describe('vscode extension telemetry contract (RED)', () => {
       )
     }
   })
+  test('export.success telemetry は artifacts.bytes を Reporter JSONL に固定する', () => {
+    const spec = findTelemetrySpec('export.success')
+    assertOk(spec, 'export.success telemetry spec is missing')
+
+    deepStrictEqual(spec.jsonlFields, [
+      'payload.runId',
+      'payload.matchRate',
+      'payload.formats',
+      'payload.artifacts[].format',
+      'payload.artifacts[].name',
+      'payload.artifacts[].status',
+      'payload.artifacts[].normalizedPath',
+      'payload.artifacts[].uri',
+      'payload.artifacts[].durationMs',
+      'payload.artifacts[].bytes',
+    ])
+
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'export.success',
+    )
+
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'runId',
+      'matchRate',
+      'formats',
+      'artifacts',
+    ])
+
+    assertOk(payloadSchema.properties, 'export.success payload schema must define properties')
+    const artifactsSchema = resolveSchemaRef(payloadSchema.properties.artifacts)
+    assertOk(artifactsSchema, 'export.success payload must define artifacts schema')
+    deepStrictEqual(artifactsSchema.type, 'array')
+    const artifactsItems = resolveSchemaRef(artifactsSchema.items)
+    assertOk(artifactsItems, 'export.success payload artifacts must define item schema')
+    deepStrictEqual(artifactsItems.type, 'object')
+    deepStrictEqual(artifactsItems.additionalProperties, false)
+    assertOk(
+      artifactsItems.required,
+      'export.success payload artifact schema must define required fields',
+    )
+    deepStrictEqual(
+      Array.from(artifactsItems.required),
+      [
+        'format',
+        'name',
+        'status',
+        'uri',
+        'normalizedPath',
+        'durationMs',
+        'bytes',
+      ],
+    )
+    assertOk(artifactsItems.properties, 'export.success payload artifact schema must define properties')
+    const bytesSchema = resolveSchemaRef(artifactsItems.properties.bytes)
+    assertOk(bytesSchema, 'export.success payload artifact must define bytes schema')
+    deepStrictEqual(bytesSchema, { type: ['number', 'null'], minimum: 0 })
+  })
   test('error telemetry は retryable/detail.error_code/tags を Collector JSONL へ固定する', () => {
     const spec = findTelemetrySpec('error')
     assertOk(spec, 'error telemetry spec is missing')

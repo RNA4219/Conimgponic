@@ -280,6 +280,61 @@
     {
       "if": {
         "properties": {
+          "event": { "const": "export.success" }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runId": { "type": "string", "minLength": 1 },
+              "matchRate": { "type": "number" },
+              "formats": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "format": { "type": "string", "minLength": 1 },
+                    "name": { "type": ["string", "null"], "minLength": 1 },
+                    "status": {
+                      "type": "string",
+                      "enum": ["matched", "diff"]
+                    },
+                    "uri": { "type": ["string", "null"], "minLength": 1 },
+                    "normalizedPath": {
+                      "type": ["string", "null"],
+                      "minLength": 1
+                    },
+                    "durationMs": { "type": ["number", "null"], "minimum": 0 },
+                    "bytes": { "type": ["number", "null"], "minimum": 0 }
+                  },
+                  "required": [
+                    "format",
+                    "name",
+                    "status",
+                    "uri",
+                    "normalizedPath",
+                    "durationMs",
+                    "bytes"
+                  ]
+                }
+              }
+            },
+            "required": ["runId", "matchRate", "formats", "artifacts"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "event": { "const": "export.failed" }
         }
       },
