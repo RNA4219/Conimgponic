@@ -574,7 +574,8 @@ const handleNonRetryableError = (
         ok: false,
         code: error.code,
         retryable: error.retryable,
-        correlationId: request.correlationId
+        correlationId: request.correlationId,
+        performance: { flush_latency_ms: flushLatencyMs }
       }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
@@ -789,7 +790,13 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         options,
         {
           name: 'autosave.snapshot.result',
-          properties: { ok: false, code: 'disabled', retryable: false, correlationId: request.correlationId }
+          properties: {
+            ok: false,
+            code: 'disabled',
+            retryable: false,
+            correlationId: request.correlationId,
+            performance: ZERO_FLUSH_LATENCY
+          }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
       )
@@ -934,7 +941,14 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           options,
           {
             name: 'autosave.snapshot.result',
-            properties: { ok: false, code: writeResult.error.code, retryable: true, correlationId: request.correlationId, retryCount: state.retryCount }
+            properties: {
+              ok: false,
+              code: writeResult.error.code,
+              retryable: true,
+              correlationId: request.correlationId,
+              retryCount: state.retryCount,
+              performance: { flush_latency_ms: retryLatency }
+            }
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
         )
@@ -997,7 +1011,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           ok: true,
           generation: writeResult.generation,
           retainedBytes: state.retainedBytes,
-          correlationId: request.correlationId
+          correlationId: request.correlationId,
+          performance: { flush_latency_ms: successLatency }
         }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }
