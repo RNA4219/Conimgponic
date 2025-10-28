@@ -38,7 +38,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "ts-node": "^10.9.2",
-    "tsx": "link:vendor/tsx",
+    "tsx": "file:vendor/tsx",
     "typescript": "^5.6.3",
     "vite": "^5.4.8"
   },
