@@ -1666,6 +1666,87 @@ test('AS-LK-09d: releaseProjectLock failure invokes onReadonly once', async (t) 
 })
 
 scenario(
+  'AS-LK-09e: fallback release failure invokes onReadonly once and caches error',
+  { navigator: { locks: undefined } },
+  async (t, ctx) => {
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const removeEntryCalls: string[] = []
+    const originalGetDirectory = ctx.opfs.storage.getDirectory
+    const wrapDirectory = (
+      directory: Awaited<ReturnType<typeof originalGetDirectory>>
+    ): Awaited<ReturnType<typeof originalGetDirectory>> => {
+      const getDirectoryHandle = directory.getDirectoryHandle.bind(directory)
+      return {
+        ...directory,
+        async getDirectoryHandle(name: string, options?: { create?: boolean }) {
+          const next = await getDirectoryHandle(name, options as { create?: boolean })
+          return wrapDirectory(next)
+        },
+        async removeEntry(name: string) {
+          removeEntryCalls.push(name)
+          throw new DOMException('Remove blocked', 'InvalidStateError')
+        }
+      }
+    }
+    ctx.opfs.storage.getDirectory = async () => wrapDirectory(await originalGetDirectory())
+    t.after(() => {
+      ctx.opfs.storage.getDirectory = originalGetDirectory
+    })
+
+    const readonlyCalls: ProjectLockError[] = []
+    const onReadonly = (error: ProjectLockError) => {
+      readonlyCalls.push(error)
+    }
+
+    const lease = await acquireProjectLock({ preferredStrategy: 'file-lock', retry: false })
+    assert.equal(lease.strategy, 'file-lock', 'lease must be acquired via fallback strategy')
+
+    const firstError = (await assert.rejects(async () =>
+      releaseProjectLock(lease, { onReadonly })
+    )) as ProjectLockError
+    assert.equal(firstError.code, 'release-failed')
+    assert.equal(firstError.retryable, true)
+    assert.deepEqual(readonlyCalls, [firstError], 'onReadonly must fire for the first failure')
+    assert.deepEqual(removeEntryCalls, ['.lock'], 'fallback removeEntry must be attempted exactly once')
+
+    const secondError = (await assert.rejects(async () =>
+      releaseProjectLock(lease, { onReadonly })
+    )) as ProjectLockError
+    assert.strictEqual(secondError, firstError, 'cached release error must be rethrown without retries')
+    assert.deepEqual(
+      readonlyCalls,
+      [firstError],
+      'onReadonly must not be invoked again when the cached error is rethrown'
+    )
+    assert.deepEqual(
+      removeEntryCalls,
+      ['.lock'],
+      'fallback removeEntry must not be invoked again after caching the release error'
+    )
+
+    const readonlyEvents = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
+      => event.type === 'lock:readonly-entered'
+    )
+    assert.equal(readonlyEvents.length, 1, 'readonly downgrade must emit exactly once')
+    assert.equal(readonlyEvents[0]?.reason, 'release-failed')
+
+    const errorEvents = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }>
+      => event.type === 'lock:error'
+    )
+    assert.equal(errorEvents.length, 1, 'lock:error must emit exactly once for fallback release failure')
+    assert.equal(errorEvents[0]?.error.code, 'release-failed')
+    assert.equal(errorEvents[0]?.retryable, true)
+  }
+)
+
+scenario(
   'AS-I-03: Web Lock handle without release resolves via released promise',
   {
     locks: {
