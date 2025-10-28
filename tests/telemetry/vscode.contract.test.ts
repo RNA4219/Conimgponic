@@ -8,6 +8,12 @@ import {
   TELEMETRY_ENVELOPE_METADATA_FIELDS
 } from '../../scripts/monitor/collect-metrics.js'
 import {
+  compareNormalizedOutputs,
+  createTelemetryEvent
+} from '../../src/lib/golden/compare.js'
+import type { GoldenArtifacts } from '../../src/lib/golden/compare.js'
+import type { NormalizedOutputs } from '../../src/lib/exporters.js'
+import {
   collectFlagResolutionPayloads,
   DEFAULT_FLAGS,
   FEATURE_FLAG_DEFINITIONS,
@@ -1504,6 +1510,108 @@ describe('vscode extension telemetry contract (RED)', () => {
     const bytesSchema = resolveSchemaRef(artifactsItems.properties.bytes)
     assertOk(bytesSchema, 'export.success payload artifact must define bytes schema')
     deepStrictEqual(bytesSchema, { type: ['number', 'null'], minimum: 0 })
+  })
+  test('export.success payload は artifacts.bytes に実計測したバイト数を設定する', () => {
+    const runId = 'run-telemetry'
+    const packageArtifacts = {
+      'storyboard.json': JSON.stringify({ title: 'Demo Storyboard', version: 1 }, null, 2),
+      'export-info.json': JSON.stringify({ formats: ['markdown', 'csv', 'jsonl'] }, null, 2),
+    }
+    const actualOutputs: NormalizedOutputs = {
+      markdown: '# Demo Storyboard',
+      csv: 'id,text\n1,Hello',
+      jsonl: '{"id":1,"text":"Hello"}',
+      package: packageArtifacts,
+    }
+    const goldenArtifacts = {
+      markdown: actualOutputs.markdown,
+      csv: actualOutputs.csv,
+      jsonl: actualOutputs.jsonl,
+      package: packageArtifacts,
+    } satisfies GoldenArtifacts
+
+    const comparison = compareNormalizedOutputs(actualOutputs, goldenArtifacts)
+    assertOk(comparison.ok, 'export.success payload expects golden comparison to pass')
+
+    const telemetry = createTelemetryEvent(comparison, runId)
+    assertOk(telemetry, 'createTelemetryEvent must return export.success when comparison passes')
+    strictEqual(telemetry.event, 'export.success')
+
+    const payload = telemetry.payload as {
+      readonly artifacts?: ReadonlyArray<{
+        readonly format: string
+        readonly name: string | null
+        readonly status: string
+        readonly uri: string | null
+        readonly normalizedPath: string | null
+        readonly durationMs: number | null
+        readonly bytes: number | null
+      }>
+    }
+    assertOk(payload.artifacts, 'export.success payload must include artifacts')
+
+    const encoder = new TextEncoder()
+    const measure = (value: string) => encoder.encode(`${value}\n`).byteLength
+
+    const expectedArtifacts = [
+      {
+        format: 'markdown',
+        name: null,
+        status: 'matched',
+        uri: null,
+        normalizedPath: `runs/${runId}/export/markdown/storyboard.md`,
+        durationMs: null,
+        bytes: measure(actualOutputs.markdown),
+      },
+      {
+        format: 'csv',
+        name: null,
+        status: 'matched',
+        uri: null,
+        normalizedPath: `runs/${runId}/export/csv/storyboard.csv`,
+        durationMs: null,
+        bytes: measure(actualOutputs.csv),
+      },
+      {
+        format: 'jsonl',
+        name: null,
+        status: 'matched',
+        uri: null,
+        normalizedPath: `runs/${runId}/export/jsonl/storyboard.jsonl`,
+        durationMs: null,
+        bytes: measure(actualOutputs.jsonl),
+      },
+      {
+        format: 'package',
+        name: 'storyboard.json',
+        status: 'matched',
+        uri: null,
+        normalizedPath: `runs/${runId}/export/package/storyboard.json`,
+        durationMs: null,
+        bytes: measure(packageArtifacts['storyboard.json']),
+      },
+      {
+        format: 'package',
+        name: 'export-info.json',
+        status: 'matched',
+        uri: null,
+        normalizedPath: `runs/${runId}/export/package/export-info.json`,
+        durationMs: null,
+        bytes: measure(packageArtifacts['export-info.json']),
+      },
+    ]
+
+    const actualArtifacts = payload.artifacts.map((artifact) => ({
+      format: artifact.format,
+      name: artifact.name,
+      status: artifact.status,
+      uri: artifact.uri,
+      normalizedPath: artifact.normalizedPath,
+      durationMs: artifact.durationMs,
+      bytes: artifact.bytes,
+    }))
+
+    deepStrictEqual(actualArtifacts, expectedArtifacts)
   })
   test('error telemetry は retryable/detail.error_code/tags を Collector JSONL へ固定する', () => {
     const spec = findTelemetrySpec('error')

@@ -206,6 +206,7 @@ export interface ExportArtifactTelemetry {
   readonly uri: string | null;
   readonly normalizedPath: string | null;
   readonly durationMs: number | null;
+  /** 実測値。Collector は非負数バイト or null（未計測）を記録する。 */
   readonly bytes: number | null;
 }
 
