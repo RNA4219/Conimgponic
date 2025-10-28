@@ -232,6 +232,58 @@ scenario(
   }
 )
 
+scenario('AS-HB-01: Heartbeat interval customization is honoured', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+  const heartbeatMs = 6_500
+  const uuids = ['lease-heartbeat', 'owner-heartbeat']
+  t.mock.method(crypto, 'randomUUID', () => {
+    const value = uuids.shift()
+    if (!value) throw new Error('uuid exhausted')
+    return value
+  })
+
+  const scheduled: Array<{ at: number; nextIn: number; renewAttempt: number }> = []
+  const renewed: Array<{ at: number; lease: ProjectLockLease }> = []
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    switch (event.type) {
+      case 'lock:renew-scheduled':
+        scheduled.push({
+          at: Date.now(),
+          nextIn: event.nextHeartbeatInMs,
+          renewAttempt: event.lease.renewAttempt,
+        })
+        break
+      case 'lock:renewed':
+        renewed.push({ at: Date.now(), lease: event.lease })
+        break
+      default:
+        break
+    }
+  })
+  t.after(unsubscribe)
+
+  const lease = await acquireProjectLock({ preferredStrategy: 'file-lock', heartbeatIntervalMs: heartbeatMs })
+
+  const initialSchedule = scheduled.find((record) => record.renewAttempt === 0)
+  assert.ok(initialSchedule, 'initial heartbeat schedule must be recorded')
+  assert.equal(initialSchedule.nextIn, heartbeatMs)
+
+  t.mock.timers.tick(heartbeatMs)
+  const refreshed = await projectLockApi.renew(lease)
+
+  const renewedEvent = renewed.find((record) => record.lease.renewAttempt === refreshed.renewAttempt)
+  assert.ok(renewedEvent, 'renewed event must be captured')
+  assert.equal(refreshed.nextHeartbeatAt - Date.now(), heartbeatMs)
+  assert.equal(renewedEvent.lease.nextHeartbeatAt - Date.now(), heartbeatMs)
+
+  const nextSchedule = scheduled.at(-1)
+  assert.ok(nextSchedule, 'subsequent heartbeat schedule must be recorded')
+  assert.equal(nextSchedule?.renewAttempt, refreshed.renewAttempt)
+  assert.equal(nextSchedule?.nextIn, heartbeatMs)
+
+  await releaseProjectLock(refreshed)
+})
+
 scenario(
   'AS-LK-22: Fallback conflict warning exposes existing lease metadata',
   {
