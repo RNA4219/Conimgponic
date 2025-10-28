@@ -25,7 +25,6 @@ type LoadAssetsCatalogDependencies = {
   loadJSONImpl: <T>(path: string) => Promise<T | null>
   alertImpl: (message: string) => void
   consoleErrorImpl: (...args: unknown[]) => void
-  currentItems: AssetRef[]
   setItems: React.Dispatch<React.SetStateAction<AssetRef[]>>
   syncAssetsCatalog: (next: AssetRef[]) => void
 }
@@ -34,7 +33,6 @@ export async function loadAssetsCatalog({
   loadJSONImpl,
   alertImpl,
   consoleErrorImpl,
-  currentItems,
   setItems,
   syncAssetsCatalog,
 }: LoadAssetsCatalogDependencies): Promise<boolean> {
@@ -105,7 +103,6 @@ export function AssetsTab(){
       consoleErrorImpl: (...args) => {
         console.error(...args)
       },
-      currentItems: items,
       setItems,
       syncAssetsCatalog: syncAssetsCatalogState,
     })

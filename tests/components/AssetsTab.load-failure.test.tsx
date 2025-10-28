@@ -6,9 +6,6 @@ import { loadAssetsCatalog } from '../../src/components/AssetsTab'
 
 describe('AssetsTab load failure notifications (RED)', () => {
   it('alerts user, logs error, and keeps current state when OPFS load fails', async () => {
-    const currentItems: AssetRef[] = [
-      { id: 'asset-1', kind: 'character', label: 'Existing asset' }
-    ]
     const alerts: string[] = []
     const consoleErrors: unknown[][] = []
     const setItemsCalls: Array<AssetRef[] | ((prev: AssetRef[]) => AssetRef[])> = []
@@ -25,7 +22,6 @@ describe('AssetsTab load failure notifications (RED)', () => {
       consoleErrorImpl: (...args) => {
         consoleErrors.push(args)
       },
-      currentItems,
       setItems: (next) => {
         setItemsCalls.push(next)
       },
