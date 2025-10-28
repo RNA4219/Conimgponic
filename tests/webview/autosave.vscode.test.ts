@@ -1727,6 +1727,39 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledTelemetry.properties?.phase, 'A-1')
   })
 
+  it('guard 無効化ショートサーキットで autosave.guard telemetry を 1 度送信する', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        /* noop */
+      },
+      atomicWrite: async () => {
+        assert.fail('guard 無効化ショートサーキットでは atomicWrite を呼ばない')
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    const request = createRequest(
+      'req-guard-telemetry',
+      'corr-guard-telemetry',
+      { featureFlag: { value: false, source: 'env' }, optionsDisabled: true },
+      0,
+      0
+    )
+    await bridge.handleSnapshotRequest(request)
+
+    const guardEvents = telemetry.filter((event) => event.name === 'autosave.guard')
+    assert.equal(guardEvents.length, 1, 'phase guard disable は autosave.guard telemetry を 1 回送信する')
+    const guardEvent = guardEvents[0]
+    assert.equal(guardEvent?.properties?.blocked, true)
+    assert.equal(guardEvent?.properties?.reason, 'feature-flag-disabled')
+    assert.equal(guardEvent?.properties?.correlationId, request.correlationId)
+  })
+
   it('reportDirty の autosave.status telemetry で guard 無効化と dirty 遷移の phase を付与する', () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     const bridge = createVscodeAutoSaveBridge({

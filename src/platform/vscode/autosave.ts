@@ -26,6 +26,11 @@ const mergeGuard = (
 ): AutoSavePhaseGuardSnapshot =>
   forceDisabled ? { featureFlag: incoming.featureFlag, optionsDisabled: true } : incoming
 
+const resolveGuardBlockedReason = (
+  guard: AutoSavePhaseGuardSnapshot
+): 'feature-flag-disabled' | 'options-disabled' =>
+  guard.featureFlag.value ? 'options-disabled' : 'feature-flag-disabled'
+
 const createDisabledError = (): AutoSaveError => ({
   name: 'AutoSaveError',
   message: 'AutoSave is disabled by phase guard',
@@ -537,6 +542,19 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         },
         { before: previousStatus, after: state.status, guard: state.guard }
       )
+      emitTelemetry(
+        options,
+        {
+          name: 'autosave.guard',
+          properties: {
+            blocked: true,
+            reason: resolveGuardBlockedReason(state.guard),
+            source: 'phase-guard',
+            correlationId
+          }
+        },
+        { before: previousStatus, after: state.status, guard: state.guard }
+      )
       return
     }
     state.status = 'dirty'
@@ -616,6 +634,20 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             retryCount: state.retryCount,
             phase: PHASE_STATUS,
             performance: { flush_latency_ms: 0 }
+          }
+        },
+        { before: statusBeforeRequest, after: state.status, guard: state.guard }
+      )
+      emitTelemetry(
+        options,
+        {
+          name: 'autosave.guard',
+          properties: {
+            blocked: true,
+            reason: resolveGuardBlockedReason(state.guard),
+            source: 'phase-guard',
+            correlationId: request.correlationId,
+            reqId: request.reqId
           }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
