@@ -167,3 +167,8 @@ in_progress → blocked → in_progress（解除後に戻す）
   該当 Capsule も同時更新。
 - `codemap.update` は Birdseye 再生成時のみ実行。
   Dual Stack では関数呼び出し→`tool_request` ミラーを同一内容で送る。
+
+### JSONL 数値フィールド正規化タスクの指針
+
+- **Scope**: `src/lib/importers.ts` の JSONL マージ処理で `seed` / `take` を数値へ正規化する型チェックと `Number` 変換を追加し、既存 CSV インポーターや UI の仕様は変更しない。
+- **Validation Log**: `tests/lib/importers/mergeJSONL.spec.ts` を RED → GREEN で整備し、`pnpm test --filter lib -- --test-name-pattern mergeJSONL` の実行ログとサンプル JSONL 行を Task Seed へ添付する。

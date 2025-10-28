@@ -28,6 +28,7 @@
   - Scope と Requirements が最新のガバナンス（[docs/UPSTREAM.md](UPSTREAM.md)）と矛盾していないか。
   - Affected Paths と Local Commands が対象差分と一致しているか。
   - `status`・`next_review_due` が最新レビュー計画を反映しているか。
+  - JSONL 数値フィールド正規化タスクでは、`src/lib/importers.ts` の JSONL マージ処理のみを対象にし、`pnpm test --filter lib -- --test-name-pattern mergeJSONL` の実行ログと文字列数値のサンプル入力/期待出力を記録する。
 
 ## フォローアップのチェックリスト
 - [ ] `docs/seeds/` への配置と命名規約 (`TASK.<slug>-YYYY-MM-DD.md`) を満たした。
