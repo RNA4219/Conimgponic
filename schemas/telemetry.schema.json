@@ -296,6 +296,7 @@
                 "type": "array",
                 "items": { "type": "string", "minLength": 1 }
               },
+              "detail": { "$ref": "#/definitions/exportDetail" },
               "artifacts": {
                 "type": "array",
                 "items": {
@@ -328,7 +329,7 @@
                 }
               }
             },
-            "required": ["runId", "matchRate", "formats", "artifacts"]
+            "required": ["runId", "matchRate", "formats", "detail", "artifacts"]
           }
         }
       }
@@ -351,6 +352,7 @@
                 "type": "array",
                 "items": { "type": "string", "minLength": 1 }
               },
+              "detail": { "$ref": "#/definitions/exportDetail" },
               "error": {
                 "type": "object",
                 "additionalProperties": false,
@@ -384,6 +386,7 @@
               "runId",
               "matchRate",
               "formats",
+              "detail",
               "error",
               "entries",
               "next_backoff_ms"
@@ -508,6 +511,14 @@
         "plugins.failed",
         "error"
       ]
+    },
+    "exportDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": { "type": "number", "minimum": 0 }
+      },
+      "required": ["duration_ms"]
     },
     "flagResolutionSource": {
       "type": "string",
