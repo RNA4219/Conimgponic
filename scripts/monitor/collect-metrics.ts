@@ -18,6 +18,7 @@ export type TelemetryEventName =
   | 'status.autosave'
   | 'snapshot.result'
   | 'flag_resolution'
+  | 'merge.result'
   | 'merge.trace'
   | 'export.started'
   | 'export.success'
@@ -56,6 +57,7 @@ export type TelemetryKind = (typeof TELEMETRY_KINDS)[number];
 
 export const TELEMETRY_SOURCES = [
   'app.autosave',
+  'app.merge',
   'app.flags',
   'vscode.plugins',
 ] as const;
@@ -194,6 +196,22 @@ export interface MergeTracePayload {
   readonly digest: string;
 }
 
+export type MergeResultStatus = 'success' | 'conflict' | 'error';
+
+export interface MergeResultErrorPayload {
+  readonly code: string;
+  readonly message: string;
+  readonly retryable: boolean;
+}
+
+export interface MergeResultPayload {
+  readonly status: MergeResultStatus;
+  readonly precision: MergePrecision;
+  readonly processing_ms: number;
+  readonly conflict_segments: number;
+  readonly error?: MergeResultErrorPayload;
+}
+
 export type ExportFormat = 'md' | 'csv' | 'jsonl' | 'package';
 
 export interface ExportStartedPayload {
@@ -320,6 +338,7 @@ export interface TelemetryPayloads {
   readonly 'status.autosave': StatusAutosavePayload;
   readonly 'snapshot.result': SnapshotResultPayload;
   readonly 'flag_resolution': FlagResolutionPayload;
+  readonly 'merge.result': MergeResultPayload;
   readonly 'merge.trace': MergeTracePayload;
   readonly 'export.started': ExportStartedPayload;
   readonly 'export.success': ExportSuccessPayload;
@@ -799,6 +818,26 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           metric: 'restore_success_rate',
           rollbackTo: 'A-0',
         },
+      },
+      {
+        event: 'merge.result',
+        description:
+          'Diff Merge 自動適用の成功率と処理時間を Collector が集計する。',
+        jsonlFields: [
+          'payload.status',
+          'payload.precision',
+          'payload.processing_ms',
+          'payload.conflict_segments',
+          'payload.error.code',
+          'payload.error.message',
+          'payload.error.retryable'
+        ],
+        retryable: true,
+        pipelineStage: 'collector',
+        guardrail: {
+          metric: 'merge_auto_success_rate',
+          rollbackTo: 'A-2'
+        }
       },
       {
         event: 'merge.trace',

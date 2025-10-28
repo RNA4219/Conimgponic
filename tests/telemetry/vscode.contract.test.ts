@@ -287,7 +287,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(source, 'source property must be defined')
     const sourceSchema = resolveSchemaRef(source)
     assertOk(sourceSchema?.enum, 'source schema must enumerate allowed values')
-    deepStrictEqual(sourceSchema.enum, ['app.autosave', 'app.flags', 'vscode.plugins'])
+    deepStrictEqual(sourceSchema.enum, ['app.autosave', 'app.merge', 'app.flags', 'vscode.plugins'])
 
     assertOk(evaluationMs, 'evaluation_ms property must be defined')
     const evaluationSchema = resolveSchemaRef(evaluationMs)
@@ -1420,6 +1420,88 @@ describe('vscode extension telemetry contract (RED)', () => {
       'minimum' in flushLatencySchema && flushLatencySchema.minimum === 0,
       'status.autosave payload performance.flush_latency_ms must enforce non-negative values'
     )
+  })
+
+  test('telemetry schema の merge.result payload が Collector 要件を固定する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'merge.result'
+    )
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'status',
+      'precision',
+      'processing_ms',
+      'conflict_segments'
+    ])
+
+    assertOk(payloadSchema.properties, 'merge.result payload schema must define properties')
+    deepStrictEqual(payloadSchema.additionalProperties, false)
+
+    const statusSchema = resolveSchemaRef(payloadSchema.properties.status)
+    assertOk(statusSchema, 'merge.result payload schema must define status')
+    deepStrictEqual(statusSchema.enum, ['success', 'conflict', 'error'])
+
+    const precisionSchema = resolveSchemaRef(payloadSchema.properties.precision)
+    assertOk(precisionSchema, 'merge.result payload schema must define precision')
+    deepStrictEqual(precisionSchema.enum, Array.from(MERGE_PRECISION_VARIANTS))
+
+    const processingSchema = resolveSchemaRef(payloadSchema.properties.processing_ms)
+    assertOk(processingSchema, 'merge.result payload must define processing_ms schema')
+    deepStrictEqual(processingSchema, { type: 'number', minimum: 0 })
+
+    const conflictSchema = resolveSchemaRef(payloadSchema.properties.conflict_segments)
+    assertOk(conflictSchema, 'merge.result payload must define conflict_segments schema')
+    deepStrictEqual(conflictSchema, { type: 'integer', minimum: 0 })
+
+    const errorSchema = resolveSchemaRef(payloadSchema.properties.error)
+    assertOk(errorSchema, 'merge.result payload schema must define error object')
+    deepStrictEqual(errorSchema.type, 'object')
+    deepStrictEqual(errorSchema.additionalProperties, false)
+    assertOk(errorSchema.required, 'merge.result error schema must define required fields')
+    deepStrictEqual(errorSchema.required, ['code', 'message', 'retryable'])
+    assertOk(errorSchema.properties, 'merge.result error schema must define properties')
+    deepStrictEqual(resolveSchemaRef(errorSchema.properties.code), { type: 'string', minLength: 1 })
+    deepStrictEqual(resolveSchemaRef(errorSchema.properties.message), {
+      type: 'string',
+      minLength: 1
+    })
+    deepStrictEqual(resolveSchemaRef(errorSchema.properties.retryable), { type: 'boolean' })
+  })
+
+  test('merge.result telemetry は 成功率と処理時間を Collector JSONL に固定する', () => {
+    const spec = findTelemetrySpec('merge.result')
+    assertOk(spec, 'merge.result telemetry spec is missing')
+
+    deepStrictEqual(spec.jsonlFields, [
+      'payload.status',
+      'payload.precision',
+      'payload.processing_ms',
+      'payload.conflict_segments',
+      'payload.error.code',
+      'payload.error.message',
+      'payload.error.retryable'
+    ])
+    strictEqual(spec.retryable, true, 'merge.result telemetry must be retryable in Collector contract')
+    strictEqual(spec.pipelineStage, 'collector')
+    assertOk(spec.guardrail, 'merge.result telemetry must define guardrail')
+    deepStrictEqual(spec.guardrail.metric, 'merge_auto_success_rate')
+  })
+
+  test('merge.result telemetry は merge.trace と guardrail/digest 項目が重複しない', () => {
+    const resultSpec = findTelemetrySpec('merge.result')
+    assertOk(resultSpec, 'merge.result telemetry spec is missing')
+    const traceSpec = findTelemetrySpec('merge.trace')
+    assertOk(traceSpec, 'merge.trace telemetry spec is missing')
+
+    for (const field of resultSpec.jsonlFields) {
+      assertOk(!field.startsWith('payload.guardrail'), 'merge.result must not expose guardrail fields')
+      strictEqual(field === 'payload.digest', false, 'merge.result must not expose digest field')
+    }
+
+    assertOk(
+      traceSpec.jsonlFields.includes('payload.guardrail.metric'),
+      'merge.trace must retain guardrail.metric field'
+    )
+    assertOk(traceSpec.jsonlFields.includes('payload.digest'), 'merge.trace must retain digest field')
   })
 
   test('telemetry schema の merge.trace payload が Collector 要件を固定する', () => {

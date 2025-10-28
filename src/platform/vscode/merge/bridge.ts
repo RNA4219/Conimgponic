@@ -8,7 +8,8 @@ import type {
   MergeDecisionListener,
   MergeTrace,
 } from '../../../lib/merge'
-import { PRECISION_THRESHOLD_CLAMP, attachAutoSaveLockEvents } from '../../../lib/merge'
+import { MergeError, PRECISION_THRESHOLD_CLAMP, attachAutoSaveLockEvents } from '../../../lib/merge'
+import { publishMergeResult } from '../../telemetry/day8Collector.js'
 
 export interface MergeBridgeDependencies {
   readonly engine: MergeEngine
@@ -121,10 +122,20 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
           ? { precision, threshold: effectiveThreshold }
           : { precision }
       const mergeInput = rest as MergeInput
+      const resolvedProfile = engine.resolveProfile(profile)
       const { hub, dispose } = createEventHub()
       const detachAutoSaveLock = attachAutoSaveLockEvents(hub)
+      const startedAt = Date.now()
       try {
         const result = engine.merge3(mergeInput, { profile, events: hub })
+        publishMergeResult({
+          precision: resolvedProfile.precision,
+          processingMs: result.stats.processingMillis,
+          conflictSegments: result.stats.conflictDecisions,
+          status: result.stats.conflictDecisions === 0 ? 'success' : 'conflict',
+          overrides: { reqId: message.reqId, correlationId: message.reqId },
+          source: 'app.merge'
+        })
         return {
           type: 'merge.result',
           apiVersion: message.apiVersion,
@@ -133,6 +144,27 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
           result,
           trace: result.trace,
         }
+      } catch (error) {
+        const processingMs = Math.max(0, Math.round(Date.now() - startedAt))
+        const mergeError = error instanceof MergeError ? error : undefined
+        publishMergeResult({
+          precision: resolvedProfile.precision,
+          processingMs,
+          conflictSegments: 0,
+          status: 'error',
+          overrides: { reqId: message.reqId, correlationId: message.reqId },
+          source: 'app.merge',
+          error: {
+            code: mergeError?.code ?? 'unknown',
+            message:
+              mergeError?.message ??
+              (error instanceof Error && typeof error.message === 'string'
+                ? error.message
+                : 'unknown'),
+            retryable: mergeError?.retryable ?? false,
+          },
+        })
+        throw error
       } finally {
         detachAutoSaveLock?.()
         dispose()

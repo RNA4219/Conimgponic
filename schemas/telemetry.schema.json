@@ -237,6 +237,83 @@
     {
       "if": {
         "properties": {
+          "event": { "const": "merge.result" }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["success", "conflict", "error"]
+              },
+              "precision": {
+                "type": "string",
+                "enum": ["legacy", "beta", "stable"]
+              },
+              "processing_ms": { "type": "number", "minimum": 0 },
+              "conflict_segments": { "type": "integer", "minimum": 0 },
+              "error": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "code": { "type": "string", "minLength": 1 },
+                  "message": { "type": "string", "minLength": 1 },
+                  "retryable": { "type": "boolean" }
+                },
+                "required": ["code", "message", "retryable"]
+              }
+            },
+            "required": [
+              "status",
+              "precision",
+              "processing_ms",
+              "conflict_segments"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": { "const": "success" }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "conflict_segments": { "type": "integer", "const": 0 }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": { "const": "conflict" }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "conflict_segments": { "type": "integer", "minimum": 1 }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": { "const": "error" }
+                  }
+                },
+                "then": { "required": ["error"] }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "event": { "const": "merge.trace" }
         }
       },
@@ -499,6 +576,7 @@
         "status.autosave",
         "snapshot.result",
         "flag_resolution",
+        "merge.result",
         "merge.trace",
         "export.started",
         "export.success",
@@ -638,7 +716,7 @@
     },
     "telemetrySource": {
       "type": "string",
-      "enum": ["app.autosave", "app.flags", "vscode.plugins"]
+      "enum": ["app.autosave", "app.merge", "app.flags", "vscode.plugins"]
     },
     "telemetryEnvelopeMetadataField": {
       "type": "string",

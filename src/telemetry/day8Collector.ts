@@ -31,9 +31,21 @@ const FLAG_PHASE_TO_CONTRACT_PHASE = {
   'phase-b1': 'B-1'
 } as const satisfies FlagPhaseToContractPhase
 
+const MERGE_PRECISION_TO_CONTRACT_PHASE: Record<MergePrecision, RolloutPhase> = {
+  legacy: 'A-2',
+  beta: 'B-0',
+  stable: 'B-1'
+}
+
 type SnapshotResultComponent = Extract<TelemetryComponent, 'autosave'>
 type SnapshotResultKind = Extract<TelemetryKind, 'save'>
 type SnapshotResultSource = Extract<TelemetrySource, 'app.autosave'>
+
+type MergeResultComponent = Extract<TelemetryComponent, 'merge'>
+type MergeResultKind = Extract<TelemetryKind, 'merge'>
+type MergeResultSource = Extract<TelemetrySource, 'app.merge'>
+type MergeResultContractPayload = TelemetryPayloads['merge.result']
+type MergeResultStatus = MergeResultContractPayload['status']
 
 export type Day8CollectorAutoSaveGuardReason =
   | 'phase-a0-failsafe'
@@ -114,6 +126,17 @@ export type Day8CollectorSnapshotResultEvent = CollectorTelemetryEnvelope & {
   readonly payload: SnapshotResultPayload
 }
 
+export type Day8CollectorMergeResultEvent = CollectorTelemetryEnvelope & {
+  readonly schema: 'vscode.telemetry.v1'
+  readonly feature: 'autosave-diff-merge'
+  readonly event: 'merge.result'
+  readonly component: MergeResultComponent
+  readonly kind: MergeResultKind
+  readonly source: MergeResultSource
+  readonly evaluation_ms: number
+  readonly payload: MergeResultContractPayload
+}
+
 export type Day8CollectorErrorEvent = CollectorTelemetryEnvelope & {
   readonly schema: 'vscode.telemetry.v1'
   readonly feature: TelemetryFeature
@@ -143,6 +166,7 @@ export type Day8CollectorEvent =
   | Day8CollectorAutoSaveGuardEvent
   | Day8CollectorFlagResolutionEvent
   | Day8CollectorSnapshotResultEvent
+  | Day8CollectorMergeResultEvent
   | Day8CollectorErrorEvent
 
 export interface Day8Collector {
@@ -424,6 +448,23 @@ interface PublishSnapshotResultInput {
   readonly source?: SnapshotResultSource
 }
 
+interface PublishMergeResultErrorInput {
+  readonly code?: string
+  readonly message?: string
+  readonly retryable?: boolean
+}
+
+interface PublishMergeResultInput {
+  readonly precision: MergePrecision
+  readonly processingMs: number
+  readonly conflictSegments: number
+  readonly status: MergeResultStatus
+  readonly overrides?: TelemetryEnvelopeOverrides
+  readonly source?: MergeResultSource
+  readonly phase?: RolloutPhase
+  readonly error?: PublishMergeResultErrorInput
+}
+
 export const publishSnapshotResult = (input: PublishSnapshotResultInput): void => {
   const collector = getDay8Collector()
   if (!collector) {
@@ -485,6 +526,81 @@ export const publishSnapshotResult = (input: PublishSnapshotResultInput): void =
       detail,
       ...(snapshot ? { snapshot } : {})
     }
+  })
+}
+
+const resolveMergeResultPhase = (
+  precision: MergePrecision,
+  override?: RolloutPhase
+): RolloutPhase => {
+  if (override) {
+    return override
+  }
+  return MERGE_PRECISION_TO_CONTRACT_PHASE[precision] ?? 'A-2'
+}
+
+const normalizeMergeResultError = (
+  status: MergeResultStatus,
+  error: PublishMergeResultErrorInput | undefined
+): MergeResultContractPayload['error'] | undefined => {
+  if (status !== 'error') {
+    return undefined
+  }
+  const codeCandidate = typeof error?.code === 'string' ? error.code.trim() : ''
+  const messageCandidate = typeof error?.message === 'string' ? error.message.trim() : ''
+  const code = codeCandidate ? codeCandidate : 'unknown'
+  const message = messageCandidate ? messageCandidate : code
+  return {
+    code,
+    message,
+    retryable: Boolean(error?.retryable)
+  }
+}
+
+const normalizeMergeConflictSegments = (
+  status: MergeResultStatus,
+  value: number
+): number => {
+  const normalized = clampRetryCount(value)
+  if (status === 'success') {
+    return 0
+  }
+  if (status === 'conflict') {
+    return Math.max(1, normalized)
+  }
+  return normalized
+}
+
+export const publishMergeResult = (input: PublishMergeResultInput): void => {
+  const collector = getDay8Collector()
+  if (!collector) {
+    return
+  }
+
+  const phase = resolveMergeResultPhase(input.precision, input.phase)
+  const envelopeSeed = createCollectorTelemetryEnvelopeSeed(phase, input.overrides)
+  const evaluationMs = clampDuration(input.processingMs)
+  const conflictSegments = normalizeMergeConflictSegments(input.status, input.conflictSegments)
+  const error = normalizeMergeResultError(input.status, input.error)
+
+  const payload: MergeResultContractPayload = {
+    status: input.status,
+    precision: input.precision,
+    processing_ms: evaluationMs,
+    conflict_segments: conflictSegments,
+    ...(error ? { error } : {})
+  }
+
+  collector.publish({
+    ...applyPhaseToEnvelope(envelopeSeed, phase),
+    schema: 'vscode.telemetry.v1',
+    feature: 'autosave-diff-merge',
+    component: 'merge',
+    kind: 'merge',
+    event: 'merge.result',
+    source: input.source ?? 'app.merge',
+    evaluation_ms: evaluationMs,
+    payload
   })
 }
 
