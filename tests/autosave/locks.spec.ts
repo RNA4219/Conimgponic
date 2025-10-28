@@ -524,6 +524,67 @@ scenario(
 )
 
 scenario(
+  'AS-LK-17: withProjectLock defers release when releaseOnError=false',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    const releaseEvents: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      if (event.type === 'lock:release-requested' || event.type === 'lock:released') {
+        releaseEvents.push(event)
+      }
+    })
+    t.after(unsubscribe)
+
+    const failure = new Error('executor failure')
+    let capturedLease: ProjectLockLease | undefined
+
+    t.after(async () => {
+      if (capturedLease) {
+        await projectLockApi.release(capturedLease)
+      }
+    })
+
+    await projectLockApi
+      .withProjectLock(async (lease) => {
+        capturedLease = lease
+        throw failure
+      }, { preferredStrategy: 'file-lock', releaseOnError: false })
+      .then(
+        () => {
+          assert.fail('withProjectLock must reject when executor throws')
+        },
+        (error) => {
+          assert.strictEqual(error, failure)
+        }
+      )
+
+    assert.ok(capturedLease, 'executor must expose acquired lease before throwing')
+    assert.equal(releaseEvents.length, 0, 'release events must not fire automatically')
+    assert.equal(
+      ctx.opfs.files.has(FALLBACK_LOCK_PATH),
+      true,
+      'fallback lock file must remain present until manual release'
+    )
+
+    await projectLockApi.release(capturedLease!)
+    capturedLease = undefined
+
+    assert.deepEqual(
+      releaseEvents.map((event) => event.type),
+      ['lock:release-requested', 'lock:released'],
+      'manual release must emit release events once'
+    )
+    assert.equal(
+      ctx.opfs.files.has(FALLBACK_LOCK_PATH),
+      false,
+      'fallback lock file must be removed after manual release'
+    )
+  }
+)
+
+scenario(
   'AS-LK-12: Fallback acquisition aborts during pending write without creating lock file',
   {
     navigator: { locks: undefined }

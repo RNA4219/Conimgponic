@@ -909,6 +909,7 @@ const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOpti
 };
 export const withProjectLock: WithProjectLock = async (executor, options = {}) => {
   const lease = await acquireProjectLock(options);
+  const releaseOnError = options.releaseOnError !== false;
   try {
     const result = await executor(lease);
     await safeRelease(lease, options, false);
@@ -919,10 +920,8 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
       if (!error.retryable)
         emitReadonly(reasonFromOperation(error.operation), error, options.onReadonly);
     }
-    const releaseOnError = options.releaseOnError ?? true;
-    if (releaseOnError) {
-      await safeRelease(lease, options, false);
-    }
+    if (!releaseOnError) throw error;
+    await safeRelease(lease, options, false);
     throw error;
   }
 };
