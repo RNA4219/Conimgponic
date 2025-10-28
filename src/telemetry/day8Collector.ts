@@ -56,6 +56,7 @@ export interface FlagResolutionEventPayload {
   readonly phase: FlagRolloutPhase
   readonly evaluation_ms: number
   readonly errors: readonly FlagValidationError[]
+  /** merge.precision の判定結果では MergePrecision、その他は null を送信する。 */
   readonly precision: MergePrecision | null
   readonly threshold: number | null
   readonly status: 'success' | 'failure'
@@ -69,6 +70,7 @@ export type FlagResolutionContractPayload = {
   readonly phase: RolloutPhase
   readonly evaluation_ms: number
   readonly errors: readonly FlagValidationError[]
+  /** merge.precision の判定結果では MergePrecision、その他は null を送信する。 */
   readonly precision: MergePrecision | null
   readonly threshold: number | null
   readonly status: 'success' | 'failure'
