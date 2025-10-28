@@ -51,7 +51,10 @@ export async function synchronizeTemplatesList({
     apply([...builtinTemplates, ...sanitized])
   } catch (error) {
     alertImpl('テンプレートの読み込みに失敗しました')
-    consoleErrorImpl('Failed to load templates from OPFS', error)
+    consoleErrorImpl(
+      'TemplatesMenu: failed to load templates from OPFS',
+      error
+    )
   }
 }
 
@@ -85,7 +88,10 @@ export async function appendTemplateWithRollback({
   } catch (error) {
     rollback()
     alertImpl('テンプレートの保存に失敗しました')
-    consoleErrorImpl('Failed to save templates to OPFS', error)
+    consoleErrorImpl(
+      'TemplatesMenu: failed to save templates to OPFS',
+      error
+    )
   }
 }
 
@@ -134,19 +140,28 @@ export function TemplatesMenu({
             const text = prompt('テンプレ本文?'); if (text==null) return
             const id = 'user-' + Math.random().toString(36).slice(2,8)
             const previous = list
-            await appendTemplateWithRollback({
-              loadJSONImpl,
-              saveJSONImpl,
-              alertImpl,
-              consoleErrorImpl,
-              template: { id, name, text },
-              apply: (next) => {
-                setList(next)
-              },
-              rollback: () => {
-                setList(previous)
-              },
-            })
+            try {
+              await appendTemplateWithRollback({
+                loadJSONImpl,
+                saveJSONImpl,
+                alertImpl,
+                consoleErrorImpl,
+                template: { id, name, text },
+                apply: (next) => {
+                  setList(next)
+                },
+                rollback: () => {
+                  setList(previous)
+                },
+              })
+            } catch (error) {
+              setList(previous)
+              alertImpl('テンプレートの保存に失敗しました')
+              consoleErrorImpl(
+                'TemplatesMenu: failed to append template via menu action',
+                error
+              )
+            }
           }}>+ 追加</button>
         </div>
       )}
