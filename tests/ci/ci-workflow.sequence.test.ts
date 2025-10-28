@@ -85,6 +85,10 @@ const repoRoot = resolve(currentDir, '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
 const require = createRequire(import.meta.url);
 const autosaveSuffixModuleGlobs = ['src/**/*autosave*.ts', 'src/**/*autosave*.tsx'] as const;
+const autosaveTsxTestGlobs = [
+  'tests/**/*[Aa]uto[Ss]ave*.test.tsx',
+  'tests/**/*[Aa]uto[Ss]ave*.spec.tsx',
+] as const;
 const vscodeFlagsHandshakeSpecPath = 'tests/extensions/vscode/flags-handshake.spec.ts';
 
 const requiredAutosaveFilterGlobs = [
@@ -95,6 +99,7 @@ const requiredAutosaveFilterGlobs = [
   '.github/workflows/autosave*',
   'tests/**/*autosave*.test.ts',
   'tests/**/*autosave*.spec.ts',
+  ...autosaveTsxTestGlobs,
   vscodeFlagsHandshakeSpecPath,
 ];
 
@@ -340,6 +345,12 @@ describe('ci workflow build job', () => {
       globs.includes('tests/**/*autosave*.spec.ts'),
       '"Detect autosave changes" filters.autosave must monitor suffix-based autosave specs',
     );
+    for (const glob of autosaveTsxTestGlobs) {
+      assert(
+        globs.includes(glob),
+        `"Detect autosave changes" filters.autosave must monitor suffix-based autosave TSX tests via glob "${glob}"`,
+      );
+    }
   });
 
   test('autosave paths filter monitors VS Code handshake spec', async () => {
