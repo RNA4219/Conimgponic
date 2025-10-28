@@ -254,16 +254,13 @@ const emitCollectorError = (
   input: Day8CollectorErrorEventInput
 ): void => {
   const normalizedErrorCode = input.detail.error_code.trim()
+  const message =
+    typeof input.detail.message === 'string' ? input.detail.message.trim() : undefined
+
   const detail: TelemetryErrorDetail = {
     error_code: normalizedErrorCode ? normalizedErrorCode : 'unknown',
-    retryable: input.detail.retryable
-  }
-
-  if (typeof input.detail.message === 'string') {
-    const message = input.detail.message.trim()
-    if (message) {
-      detail.message = message
-    }
+    retryable: input.detail.retryable,
+    ...(message ? { message } : {})
   }
 
   const tagSet = new Set<string>([
