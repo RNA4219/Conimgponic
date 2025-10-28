@@ -171,6 +171,7 @@ type AutoSaveTestModule = AutoSaveModule & {
   opfs: OpfsMock
   collectorEvents: Array<Record<string, unknown>>
   runnerTelemetry: RunnerTelemetryEvent[]
+  guardSnapshots: AutoSavePhaseGuardSnapshot[]
 }
 
 export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Promise<AutoSaveTestModule> => {
@@ -178,6 +179,7 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
   const opfs = createOpfs()
   const collectorEvents: Array<Record<string, unknown>> = []
   const runnerTelemetry: RunnerTelemetryEvent[] = []
+  const guardSnapshots: AutoSavePhaseGuardSnapshot[] = []
   const collectorScope = globalThis as {
     Day8Collector?: { publish?: (event: Record<string, unknown>) => void }
   }
@@ -251,10 +253,14 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
     ...args: Parameters<AutoSaveModule['initAutoSave']>
   ) => {
     const runner = module.initAutoSave(...args)
+    const guardCandidate = args[2]
+    if (guardCandidate && typeof guardCandidate === 'object') {
+      guardSnapshots.push(guardCandidate as AutoSavePhaseGuardSnapshot)
+    }
     runners.push(runner)
     return runner
   }
-  return { ...module, initAutoSave, opfs, collectorEvents, runnerTelemetry }
+  return { ...module, initAutoSave, opfs, collectorEvents, runnerTelemetry, guardSnapshots }
 }
 
 export type RunnerTelemetryEvent = AutoSaveTelemetryEvent & {

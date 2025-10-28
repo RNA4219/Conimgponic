@@ -100,6 +100,8 @@ scenario('AS-TEL-01: change-queued telemetry exposes pending bytes during deboun
   assert.equal(last.phase, 'debouncing')
   assert.equal(last.detail?.pendingBytes, 2048)
   assert.equal(last.detail?.backlog, 1)
+  assert.equal(last.detail?.flag_source, ENABLED_GUARD.featureFlag.source)
+  assert.equal(last.detail?.retry_count, 0)
   assert.equal(last.slo, 'p95-latency')
 
   const changeEvent = events.filter((event) => event.type === 'change-queued').at(-1)
