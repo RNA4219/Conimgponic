@@ -303,6 +303,74 @@ scenario(
 )
 
 scenario(
+  'AS-LK-23: Fallback conflict warning retains lease metadata after record eviction',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 25_000 })
+
+    const existingRecord = {
+      leaseId: 'evicted-lease-id',
+      ownerId: 'evicted-owner-id',
+      acquiredAt: 2_000,
+      expiresAt: 32_000,
+      ttlSeconds: FALLBACK_LOCK_TTL_MS / 1000,
+      mtime: 21_000
+    }
+    ctx.opfs.files.set(FALLBACK_LOCK_PATH, JSON.stringify(existingRecord))
+
+    const warnings: Array<{
+      type: 'lock:warning'
+      warning: 'fallback-degraded'
+      detail?: string
+      lease: Pick<
+        ProjectLockEvent & { type: 'lock:warning'; warning: 'fallback-degraded' }['lease'],
+        'leaseId' | 'ownerId' | 'strategy' | 'viaFallback' | 'resource' | 'acquiredAt' | 'expiresAt' | 'ttlMillis'
+      > & { nextHeartbeatAt: number; renewAttempt: number }
+    }> = []
+
+    let evicted = false
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      if (event.type === 'lock:warning' && event.warning === 'fallback-degraded') {
+        warnings.push({
+          type: event.type,
+          warning: event.warning,
+          detail: event.detail,
+          lease: {
+            leaseId: event.lease.leaseId,
+            ownerId: event.lease.ownerId,
+            strategy: event.lease.strategy,
+            viaFallback: event.lease.viaFallback,
+            resource: event.lease.resource,
+            acquiredAt: event.lease.acquiredAt,
+            expiresAt: event.lease.expiresAt,
+            ttlMillis: event.lease.ttlMillis,
+            nextHeartbeatAt: event.lease.nextHeartbeatAt,
+            renewAttempt: event.lease.renewAttempt
+          }
+        })
+        if (!evicted) {
+          ctx.opfs.files.delete(FALLBACK_LOCK_PATH)
+          evicted = true
+        }
+      }
+    })
+    t.after(unsubscribe)
+
+    await assert.rejects(async () => {
+      await projectLockApi.acquire({ preferredStrategy: 'file-lock', retry: false })
+    }, (error: unknown) => {
+      assert.ok(error instanceof ProjectLockError)
+      assert.equal(error.code, 'fallback-conflict')
+      return true
+    })
+
+    await assertSnapshot('locks-fallback-conflict-existing-lease-evicted', warnings)
+  }
+)
+
+scenario(
   'AS-LK-15: Web Lock acquisition abort skips fallback and enters readonly immediately',
   {
     locks: {
