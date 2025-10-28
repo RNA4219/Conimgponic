@@ -20,7 +20,7 @@ import type {
   SnapshotResultFailureDetail,
   SnapshotResultSnapshot,
   SnapshotResultSuccessDetail
-} from '../../scripts/monitor/collect-metrics.js'
+} from '../../../scripts/monitor/collect-metrics'
 
 const toIso = (input: Date): string => input.toISOString()
 
@@ -456,16 +456,16 @@ const createSnapshotSuccessDetail = (
   retryCount: number,
   lagSeconds: number | undefined
 ): SnapshotResultSuccessDetail => {
-  const detail: SnapshotResultSuccessDetail = {
+  const baseDetail = {
     duration_ms: clampMilliseconds(durationMs),
     retry_count: clampCount(retryCount),
-    retryable: false,
+    retryable: false as const,
     error_code: null
   }
-  if (lagSeconds !== undefined) {
-    detail.lag_seconds = clampCount(lagSeconds)
+  if (lagSeconds === undefined) {
+    return baseDetail
   }
-  return detail
+  return { ...baseDetail, lag_seconds: clampCount(lagSeconds) }
 }
 
 const createSnapshotFailureDetail = (
@@ -477,17 +477,17 @@ const createSnapshotFailureDetail = (
   lagSeconds: number | undefined
 ): SnapshotResultFailureDetail => {
   const code = normalizeErrorCode(errorCode)
-  const detail: SnapshotResultFailureDetail = {
+  const baseDetail = {
     duration_ms: clampMilliseconds(durationMs),
     retry_count: clampCount(retryCount),
     retryable,
     error_code: code,
     error_message: normalizeErrorMessage(errorMessage, code)
   }
-  if (lagSeconds !== undefined) {
-    detail.lag_seconds = clampCount(lagSeconds)
+  if (lagSeconds === undefined) {
+    return baseDetail
   }
-  return detail
+  return { ...baseDetail, lag_seconds: clampCount(lagSeconds) }
 }
 
 const createSnapshotPayload = (
