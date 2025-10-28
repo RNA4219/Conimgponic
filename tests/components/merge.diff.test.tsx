@@ -227,7 +227,7 @@ test('diff exposure falls back to opt-in when auto applied underperforms', () =>
     autoAppliedRate: 0.84,
   })
 
-  assert.ok(plan.threshold.autoTarget > plan.autoApplied.rate)
+  assert.ok(plan.threshold.autoTarget > (plan.autoApplied.rate ?? 0))
   assert.equal(plan.diff.enabled, false)
   assert.equal(plan.diff.exposure, 'opt-in')
 })
@@ -349,7 +349,7 @@ test('stable precision demotes diff initial tab when auto apply underperforms', 
     threshold: 0.9,
     autoAppliedRate: 0.84,
     phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
-    lastTab: 'shot',
+    lastTab: 'diff',
   })
 
   assert.equal(plan.autoApplied.meetsTarget, false)
@@ -672,6 +672,26 @@ test('stable precision tab planning restores stored merge.lastTab preference', (
   assert.equal(phasePlan.diff.visible, false)
   assert.equal(phasePlan.diff.enabled, false)
   assert.equal(phasePlan.diff.exposure, 'opt-in')
+})
+
+test('stable precision preserves stored merge.lastTab across tab planners when diff demotes', () => {
+  const lastTabs = ['compiled', 'shot', 'assets'] as const
+
+  for (const lastTab of lastTabs) {
+    const tabPlan = planMergeDockTabs('stable', lastTab)
+
+    assert.equal(tabPlan.initialTab, lastTab)
+
+    const phasePlan = resolveMergeDockPhasePlan({
+      precision: 'stable',
+      threshold: 0.86,
+      autoAppliedRate: 0.81,
+      phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+      lastTab,
+    })
+
+    assert.equal(phasePlan.tabs.initialTab, lastTab)
+  }
 })
 
 test('stable precision restores last selected non-diff tab when merge.lastTab is set', () => {
