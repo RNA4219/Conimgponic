@@ -506,85 +506,84 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
       : makeError('release-failed', 'Web Lock release invocation failed', 'release', true, error);
 
   try {
-    const requestOutcome: Promise<unknown> = locks
-      .request(
-        WEB_LOCK_KEY,
-        { mode: 'exclusive', signal: ctx.signal },
-        async (lock) => {
-          if (!lock || typeof lock !== 'object') {
-            throw makeError('acquire-denied', 'Web Lock handle missing', 'acquire', false);
+    const requestCallback = async (lock: unknown) => {
+      if (!lock || typeof lock !== 'object') {
+        throw makeError('acquire-denied', 'Web Lock handle missing', 'acquire', false);
+      }
+
+      type WebLockHandle = {
+        released?: unknown;
+        release?: () => Promise<void> | void;
+      };
+      const handle = lock as WebLockHandle;
+      const released = handle.released;
+      releasedPromise =
+        released && typeof (released as Promise<unknown>).then === 'function'
+          ? (released as Promise<unknown>)
+          : Promise.resolve();
+      type ReleaseMethod = () => Promise<void> | void;
+      const releaseMethod: ReleaseMethod | undefined =
+        typeof handle.release === 'function'
+          ? ((handle.release as ReleaseMethod).bind(handle) as ReleaseMethod)
+          : undefined;
+
+      webLockHandles.set(ctx.leaseId, {
+        release: async () => {
+          if (releaseInvoked) {
+            if (releaseError) throw releaseError;
+            return;
           }
-
-          type WebLockHandle = {
-            released?: unknown;
-            release?: () => Promise<void> | void;
-          };
-          const handle = lock as WebLockHandle;
-          const released = handle.released;
-          releasedPromise =
-            released && typeof (released as Promise<unknown>).then === 'function'
-              ? (released as Promise<unknown>)
-              : Promise.resolve();
-          type ReleaseMethod = () => Promise<void> | void;
-          const releaseMethod: ReleaseMethod | undefined =
-            typeof handle.release === 'function'
-              ? ((handle.release as ReleaseMethod).bind(handle) as ReleaseMethod)
-              : undefined;
-
-          webLockHandles.set(ctx.leaseId, {
-            release: async () => {
-              if (releaseInvoked) {
-                if (releaseError) throw releaseError;
-                return;
-              }
-              releaseInvoked = true;
-              let releaseFailure: ProjectLockError | undefined;
-              if (releaseMethod) {
-                try {
-                  await releaseMethod();
-                } catch (error) {
-                  releaseFailure = toReleaseProjectError(error);
-                  if (!releaseError) releaseError = releaseFailure;
-                }
-              }
-              releaseDeferred.resolve();
-              try {
-                await completionDeferred.promise;
-              } catch (error) {
-                captureCompletionError(error);
-              }
-              const errorToThrow = releaseFailure ?? releaseError;
-              if (errorToThrow) {
-                releaseError = errorToThrow;
-                throw errorToThrow;
-              }
-            },
-            getReleaseError: () => releaseError,
-          });
-
-          ready.resolve();
-          await releaseDeferred.promise;
-        }
-      )
-      .catch((error) => {
-        const projectError =
-          error instanceof ProjectLockError
-            ? error
-            : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, error);
-        if (!ready.isSettled()) {
-          ready.reject(projectError);
-        } else if (!releaseError) {
-          releaseError = makeError(
-            'release-failed',
-            'Web Lock request failed during release',
-            'release',
-            projectError.retryable,
-            projectError,
-          );
-        }
-        if (!completionDeferred.isSettled()) completionDeferred.reject(projectError);
-        throw projectError;
+          releaseInvoked = true;
+          let releaseFailure: ProjectLockError | undefined;
+          if (releaseMethod) {
+            try {
+              await releaseMethod();
+            } catch (error) {
+              releaseFailure = toReleaseProjectError(error);
+              if (!releaseError) releaseError = releaseFailure;
+            }
+          }
+          releaseDeferred.resolve();
+          try {
+            await completionDeferred.promise;
+          } catch (error) {
+            captureCompletionError(error);
+          }
+          const errorToThrow = releaseFailure ?? releaseError;
+          if (errorToThrow) {
+            releaseError = errorToThrow;
+            throw errorToThrow;
+          }
+        },
+        getReleaseError: () => releaseError,
       });
+
+      ready.resolve();
+      await releaseDeferred.promise;
+    };
+
+    const requestOutcome: Promise<unknown> = (ctx.signal === undefined
+      ? locks.request(WEB_LOCK_KEY, requestCallback)
+      : locks.request(WEB_LOCK_KEY, { mode: 'exclusive', signal: ctx.signal }, requestCallback)
+    ).catch((error) => {
+      const projectError =
+        error instanceof ProjectLockError
+          ? error
+          : makeError('acquire-denied', 'Web Lock request rejected', 'acquire', true, error);
+      if (!ready.isSettled()) {
+        ready.reject(projectError);
+      } else if (!releaseError) {
+        releaseError = makeError(
+          'release-failed',
+          'Web Lock request failed during release',
+          'release',
+          projectError.retryable,
+          projectError,
+        );
+      }
+      if (!completionDeferred.isSettled()) completionDeferred.reject(projectError);
+      throw projectError;
+    });
     const completion = (async () => {
       await releaseDeferred.promise;
       await awaitReleased(releasedPromise);
@@ -920,7 +919,10 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
       if (!error.retryable)
         emitReadonly(reasonFromOperation(error.operation), error, options.onReadonly);
     }
-    await safeRelease(lease, options, options.releaseOnError ?? true);
+    const releaseOnError = options.releaseOnError ?? true;
+    if (releaseOnError) {
+      await safeRelease(lease, options, false);
+    }
     throw error;
   }
 };
