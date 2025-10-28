@@ -84,4 +84,5 @@ scenario('AS-TEL-01: change-queued telemetry exposes pending bytes during deboun
   assert.equal(last.phase, 'debouncing')
   assert.equal(last.detail?.pendingBytes, 2048)
   assert.equal(last.detail?.backlog, 1)
+  assert.equal(last.slo, 'p95-latency')
 })

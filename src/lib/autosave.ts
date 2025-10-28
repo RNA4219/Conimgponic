@@ -1171,7 +1171,7 @@ export function initAutoSave(
     }
   }
   const notifyOutputTelemetry = (
-    event: 'autosave.save.completed' | 'autosave.save.error',
+    event: 'change-queued' | 'autosave.save.completed' | 'autosave.save.error',
     phase: AutoSavePhase,
     slo: 'p99-success' | 'p95-latency',
     detail: Record<string, unknown>
@@ -1724,6 +1724,10 @@ export function initAutoSave(
           .catch(() => undefined)
       }
       emitRunnerTelemetry('change-queued', 'debouncing', new Date().toISOString(), {
+        pendingBytes: estimated,
+        backlog
+      })
+      notifyOutputTelemetry('change-queued', 'debouncing', 'p95-latency', {
         pendingBytes: estimated,
         backlog
       })
