@@ -704,24 +704,6 @@ const resolveAutoSaveRunnerHost = (): AutoSaveRunnerHostLike | undefined => {
   return candidate as AutoSaveRunnerHostLike
 }
 
-const emitRunnerTelemetry = (
-  type: AutoSaveRunnerEventType,
-  phase: AutoSavePhase,
-  at: string,
-  detail?: Record<string, unknown>
-): void => {
-  const spec = AUTOSAVE_RUNNER_EVENT_SPEC_MAP.get(type)
-  if (!spec) {
-    return
-  }
-  const host = resolveAutoSaveRunnerHost()
-  if (!host?.telemetry) {
-    return
-  }
-  const detailPayload = detail ? { event: type, ...detail } : { event: type }
-  host.telemetry({ feature: 'autosave', phase, at, detail: detailPayload, slo: spec.telemetrySlo })
-}
-
 export interface AutoSaveRunnerApiSurface {
   readonly start: () => Promise<void>
   readonly enqueue: (reason: 'change' | 'flushNow') => Promise<void>
@@ -1187,6 +1169,24 @@ export function initAutoSave(
       host?.telemetry?.(event)
     }
   }
+  const emitRunnerTelemetry = (
+    event: AutoSaveRunnerEvent,
+    detail?: Record<string, unknown>
+  ): void => {
+    runnerOutput.emit(event)
+    const spec = AUTOSAVE_RUNNER_EVENT_SPEC_MAP.get(event.type)
+    if (!spec) {
+      return
+    }
+    const detailPayload = detail ? { event: event.type, ...detail } : { event: event.type }
+    runnerOutput.telemetry({
+      feature: 'autosave',
+      phase: event.phase,
+      at: event.at,
+      slo: spec.telemetrySlo,
+      detail: detailPayload
+    })
+  }
   const notifyOutputTelemetry = (
     event: 'change-queued' | 'autosave.save.completed' | 'autosave.save.error',
     phase: AutoSavePhase,
@@ -1219,8 +1219,7 @@ export function initAutoSave(
       ...(options?.payload ? { payload: options.payload } : {}),
       ...(options?.error ? { error: options.error } : {})
     }
-    runnerOutput.emit(event)
-    emitRunnerTelemetry(type, phase, at, options?.telemetryDetail ?? options?.payload)
+    emitRunnerTelemetry(event, options?.telemetryDetail ?? options?.payload)
     return event
   }
   const encoder = new TextEncoder()
