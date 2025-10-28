@@ -324,6 +324,42 @@ test('stable precision keeps diff opt-in until auto apply meets target', () => {
   assert.equal(plan.diff.enabled, false)
 })
 
+test('stable tab plan restores last compiled tab selection', () => {
+  const tabPlan = planMergeDockTabs('stable', 'compiled')
+
+  assert.equal(tabPlan.initialTab, 'compiled')
+
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.9,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+    lastTab: 'compiled',
+  })
+
+  assert.equal(phasePlan.tabs.initialTab, 'compiled')
+  assert.equal(phasePlan.diff.initialTab, 'compiled')
+})
+
+test('stable tab plan preserves last base tab when diff is demoted', () => {
+  const tabPlan = planMergeDockTabs('stable', 'shot')
+
+  assert.equal(tabPlan.initialTab, 'shot')
+
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    autoAppliedRate: 0.84,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+    lastTab: 'shot',
+  })
+
+  assert.equal(phasePlan.autoApplied.meetsTarget, false)
+  assert.equal(phasePlan.diff.visible, false)
+  assert.equal(phasePlan.tabs.initialTab, 'shot')
+  assert.equal(phasePlan.diff.initialTab, 'shot')
+})
+
 test('stable precision hides diff tab when auto apply underperforms', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
