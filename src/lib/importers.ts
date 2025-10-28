@@ -19,21 +19,23 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
     try{
       const o = JSON.parse(ln)
       const i = idx.get(o.id)
+      const seed = normalizeNumber(o.seed)
+      const take = normalizeNumber(o.take)
       if (i != null){
         const sc = next.scenes[i]
         const patch: Partial<Scene> & Record<ImportMode, string> = {
-          seed: o.seed ?? sc.seed,
+          seed: seed ?? sc.seed,
           tone: o.tone ?? sc.tone,
           slate: o.slate ?? sc.slate,
           shot: o.shot ?? sc.shot,
-          take: Number.isFinite(o.take)? o.take: sc.take,
+          take: take ?? sc.take,
           manual: sc.manual,
           ai: sc.ai
         }
         patch[mode] = String(o.text||'')
         next.scenes[i] = { ...sc, ...patch }
       }else{
-        next.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed:o.seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take:o.take })
+        next.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed: seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take: take })
         idx.set(o.id, next.scenes.length - 1)
       }
     }catch{ /* ignore bad line */ }
@@ -103,4 +105,21 @@ function parseCSVLine(line: string){
   }
   out.push(cur)
   return out
+}
+
+function normalizeNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return undefined
+    const parsed = Number(trimmed)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+
+  return undefined
 }
