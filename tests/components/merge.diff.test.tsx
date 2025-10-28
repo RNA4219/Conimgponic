@@ -379,6 +379,23 @@ test('stable precision demotes diff tab when auto apply underperforms', () => {
   assert.equal(plan.diff.enabled, false)
 })
 
+test('stable precision demotes diff exposure while keeping tab visible when auto rate misses target', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    autoAppliedRate: 0.84,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.threshold.autoTarget > (plan.autoApplied.rate ?? 0), true)
+  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.diff.enabled, false)
+  assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in' })
+  assert.equal(plan.tabs.initialTab, 'compiled')
+  assert.equal(plan.diff.initialTab, 'compiled')
+})
+
 test('stable precision demotes diff initial tab when auto apply underperforms', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
