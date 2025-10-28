@@ -213,6 +213,20 @@ test('beta precision keeps diff tab visible but disabled when review band is emp
   assert.equal(plan.autoApplied.meetsTarget, false)
 })
 
+test('beta precision keeps diff visible but disabled when stats are zeroed', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'beta',
+    threshold: 0.78,
+    phaseStats: { reviewBandCount: 0, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in' })
+  assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
+})
+
 test('diff exposure falls back to opt-in when auto applied underperforms', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
@@ -384,6 +398,20 @@ test('stable precision demotes diff exposure while keeping tab visible when auto
   assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
   assert.equal(plan.tabs.initialTab, 'compiled')
   assert.equal(plan.diff.initialTab, 'compiled')
+})
+
+test('stable precision keeps diff visible but disabled when stats are zeroed', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.88,
+    phaseStats: { reviewBandCount: 0, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
+  assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
 })
 
 test('stable precision demotes diff initial tab when auto apply underperforms', () => {
@@ -735,7 +763,7 @@ test('stable precision tab planning restores stored merge.lastTab preference', (
   })
 
   assert.equal(phasePlan.tabs.initialTab, 'compiled')
-  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'opt-in' })
+  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
   assert.deepEqual(
     phasePlan.tabs.tabs.map((entry) => entry.id),
     ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
