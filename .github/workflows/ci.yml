@@ -222,7 +222,7 @@ jobs:
           name: dist
           path: |
             dist
-          if-no-files-found: 'error'
+          if-no-files-found: error
 
       - name: Upload build log
         if: always()
