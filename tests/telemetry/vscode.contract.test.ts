@@ -103,6 +103,26 @@ const resolveSchemaRef = (schema: JsonSchemaObject | undefined) => {
   return schema
 }
 
+const resolveSchemaProperties = (schema: JsonSchemaObject | undefined) => {
+  const resolved = resolveSchemaRef(schema)
+  if (!resolved) {
+    return undefined
+  }
+  if (resolved.properties) {
+    return resolved.properties
+  }
+  const composite = resolved as { readonly allOf?: readonly JsonSchemaObject[] }
+  if (Array.isArray(composite.allOf)) {
+    for (const entry of composite.allOf) {
+      const nested = resolveSchemaProperties(entry)
+      if (nested) {
+        return nested
+      }
+    }
+  }
+  return undefined
+}
+
 const assertFlagValidationErrorSchema = (schema: JsonSchemaObject | undefined) => {
   assertOk(schema && typeof schema === 'object', 'flag_resolution payload errors must define item schema')
   const resolved = resolveSchemaRef(schema)
@@ -290,6 +310,147 @@ describe('vscode extension telemetry contract (RED)', () => {
         `status.autosave must require ${field} in Collector JSONL`
       )
     }
+  })
+
+  test('snapshot.result telemetry は duration/エラー指標を Collector JSONL に含める', () => {
+    const spec = findTelemetrySpec('snapshot.result')
+    assertOk(spec, 'snapshot.result telemetry spec is missing')
+    const telemetrySpec = spec
+
+    const requiredFields = [
+      'payload.status',
+      'payload.detail.duration_ms',
+      'payload.detail.retry_count',
+      'payload.detail.retryable',
+      'payload.detail.error_code',
+      'payload.snapshot.bytes',
+      'payload.snapshot.retained_bytes',
+      'payload.snapshot.generation',
+      'payload.snapshot.last_success_at'
+    ]
+
+    for (const field of requiredFields) {
+      assertOk(
+        telemetrySpec.jsonlFields.includes(field),
+        `snapshot.result must require ${field} in Collector JSONL`
+      )
+    }
+
+    strictEqual(telemetrySpec.retryable, true, 'snapshot.result must be retryable in Collector contract')
+    strictEqual(telemetrySpec.pipelineStage, 'collector')
+  })
+
+  test('snapshot.result telemetry schema は success/failure の detail/error 構造を拘束する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'snapshot.result'
+    )
+    const payloadSchema = assertPayloadSchema(thenClause, ['status', 'detail'])
+
+    assertOk(payloadSchema.properties, 'snapshot.result payload must expose properties')
+    const properties = payloadSchema.properties
+
+    const statusSchema = resolveSchemaRef(properties.status)
+    assertOk(statusSchema?.enum, 'snapshot.result status must enumerate outcomes')
+    deepStrictEqual(statusSchema.enum, ['success', 'failure'])
+
+    const detailSchema = resolveSchemaRef(properties.detail)
+    assertOk(detailSchema, 'snapshot.result must define detail schema')
+    assertOk(detailSchema.required, 'snapshot.result detail must define required fields')
+    deepStrictEqual(detailSchema.required, [
+      'duration_ms',
+      'retry_count',
+      'retryable',
+      'error_code'
+    ])
+    const detailProperties = resolveSchemaProperties(detailSchema)
+    assertOk(detailProperties, 'snapshot.result detail must define properties')
+
+    const durationSchema = resolveSchemaRef(detailProperties.duration_ms)
+    assertOk(durationSchema?.type === 'number', 'snapshot.result detail.duration_ms must be number')
+    assertOk(
+      'minimum' in durationSchema && durationSchema.minimum === 0,
+      'snapshot.result detail.duration_ms must enforce minimum 0'
+    )
+
+    const retryCountSchema = resolveSchemaRef(detailProperties.retry_count)
+    assertOk(retryCountSchema?.type === 'integer', 'snapshot.result detail.retry_count must be integer')
+    assertOk(
+      'minimum' in retryCountSchema && retryCountSchema.minimum === 0,
+      'snapshot.result detail.retry_count must enforce minimum 0'
+    )
+
+    const retryableSchema = resolveSchemaRef(detailProperties.retryable)
+    assertOk(retryableSchema?.type === 'boolean', 'snapshot.result detail.retryable must be boolean')
+
+    const errorCodeSchema = resolveSchemaRef(detailProperties.error_code)
+    assertOk(errorCodeSchema, 'snapshot.result detail.error_code must define schema')
+    const errorCodeTypes = errorCodeSchema.type
+    const allowsString = Array.isArray(errorCodeTypes)
+      ? errorCodeTypes.includes('string')
+      : errorCodeTypes === 'string'
+    const allowsNull = Array.isArray(errorCodeTypes)
+      ? errorCodeTypes.includes('null')
+      : errorCodeTypes === 'null'
+    assertOk(allowsString || allowsNull, 'snapshot.result detail.error_code must allow string or null')
+    if (allowsString) {
+      assertOk(
+        'minLength' in errorCodeSchema && errorCodeSchema.minLength === 1,
+        'snapshot.result detail.error_code string values must enforce minLength'
+      )
+    }
+
+    const payloadConditionals = payloadSchema.allOf
+    assertOk(
+      Array.isArray(payloadConditionals) && payloadConditionals.length >= 2,
+      'snapshot.result payload must define success/failure conditionals'
+    )
+
+    const successConditional = payloadConditionals.find(
+      (entry) => entry.if?.properties?.status?.const === 'success'
+    )
+    assertOk(successConditional, 'snapshot.result payload must define success conditional')
+    const successThen = successConditional.then
+    assertOk(successThen, 'snapshot.result success conditional must define then clause')
+    assertOk(
+      successThen.required?.includes('snapshot'),
+      'snapshot.result success payload must require snapshot object'
+    )
+    const successSnapshotSchema = resolveSchemaRef(
+      successThen.properties?.snapshot ?? properties.snapshot
+    )
+    assertOk(successSnapshotSchema, 'snapshot.result success must define snapshot schema')
+    assertOk(
+      successSnapshotSchema?.required,
+      'snapshot.result snapshot schema must define required fields'
+    )
+    deepStrictEqual(
+      Array.from(successSnapshotSchema.required),
+      ['bytes', 'retained_bytes', 'generation', 'last_success_at']
+    )
+
+    const failureConditional = payloadConditionals.find(
+      (entry) => entry.if?.properties?.status?.const === 'failure'
+    )
+    assertOk(failureConditional, 'snapshot.result payload must define failure conditional')
+    const failureThen = failureConditional.then
+    assertOk(failureThen, 'snapshot.result failure conditional must define then clause')
+    const failureDetailSchema = resolveSchemaRef(failureThen.properties?.detail)
+    const failureDetailProperties = resolveSchemaProperties(failureDetailSchema)
+    assertOk(
+      failureDetailProperties,
+      'snapshot.result failure detail must define properties'
+    )
+    const errorMessageSchema = resolveSchemaRef(
+      failureDetailProperties?.error_message
+    )
+    assertOk(
+      errorMessageSchema && errorMessageSchema.type === 'string',
+      'snapshot.result failure must include error_message string'
+    )
+    assertOk(
+      'minLength' in errorMessageSchema && errorMessageSchema.minLength === 1,
+      'snapshot.result failure error_message must enforce minLength'
+    )
   })
 
   test('flag_resolution telemetry は evaluation_ms を必須にし Phase ガード指標へ渡す', () => {
