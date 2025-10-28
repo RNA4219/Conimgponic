@@ -190,11 +190,11 @@ export const getDefaultPreference = (
   precision: MergePrecision,
   diffEnabled: boolean,
 ): MergeDockPreference => {
-  if (precision === 'stable') {
-    return 'diff-merge'
-  }
   if (!diffEnabled) {
     return 'manual-first'
+  }
+  if (precision === 'stable') {
+    return 'diff-merge'
   }
   return precision === 'legacy' ? 'manual-first' : 'diff-merge'
 }
@@ -205,13 +205,7 @@ export const sanitizePreference = (
   diffEnabled: boolean,
 ): MergeDockPreference => {
   if (!diffEnabled) {
-    if (precision === 'stable') {
-      return 'diff-merge'
-    }
-    return preference === 'diff-merge' ? 'manual-first' : preference
-  }
-  if (precision === 'stable') {
-    return preference
+    return 'manual-first'
   }
   return preference
 }
