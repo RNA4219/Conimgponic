@@ -386,7 +386,6 @@ const handleNonRetryableError = (
 ): void => {
   const guardForTelemetry = state.guard
   const errorEnvelopePhase = request.phase ?? PHASE_SNAPSHOT
-  const disabledEnvelopePhase = PHASE_STATUS
   const retryCountBeforeReset = state.retryCount
   state.status = 'error'
   const errorTimestamp = options.now()
@@ -446,7 +445,7 @@ const handleNonRetryableError = (
       request.reqId,
       request.correlationId,
       ts,
-      disabledEnvelopePhase,
+      PHASE_STATUS,
       'disabled',
       state.guard,
       retryCountBeforeReset,
@@ -461,7 +460,7 @@ const handleNonRetryableError = (
         state: 'disabled',
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
-        phase: disabledEnvelopePhase,
+        phase: PHASE_STATUS,
         performance: { flush_latency_ms: flushLatencyMs }
       }
     },
