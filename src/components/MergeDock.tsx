@@ -562,13 +562,20 @@ export const resolveMergeDockPhasePlan = ({
 
   if (shouldHideDiff) {
     diffVisible = false
-  }
-
-  if (shouldHideDiff || shouldDemoteDiff) {
     diffExposure = 'opt-in'
     if (diffTabsPlan) {
       diffTabsPlan = { ...diffTabsPlan, exposure: 'opt-in' }
     }
+  }
+
+  if (shouldDemoteDiff) {
+    if (precision === 'stable') {
+      diffVisible = true
+      diffTabsPlan = { exposure: 'opt-in' }
+    } else if (diffTabsPlan) {
+      diffTabsPlan = { ...diffTabsPlan, exposure: 'opt-in' }
+    }
+    diffExposure = 'opt-in'
   }
 
   const diffEnabled = diffVisible && phaseBRequired && !shouldDemoteDiff
@@ -577,7 +584,8 @@ export const resolveMergeDockPhasePlan = ({
   const compiledInitial = effectiveTabs.find((entry) => entry.id === 'compiled')?.id
   const defaultInitial = compiledInitial ?? effectiveTabs[0]?.id ?? rawPlan.initialTab
   const shouldResetInitial =
-    precision === 'stable' && meetsTarget === false && rawPlan.initialTab === 'diff'
+    (precision === 'stable' && meetsTarget === false && rawPlan.initialTab === 'diff') ||
+    (shouldDemoteDiff && rawPlan.initialTab === 'diff')
   const effectiveInitial = shouldResetInitial
     ? defaultInitial
     : rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
