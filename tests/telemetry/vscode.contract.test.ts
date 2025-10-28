@@ -5,6 +5,7 @@ import { describe, test } from 'node:test'
 import {
   COLLECT_METRICS_CONTRACT,
   FLAG_RESOLUTION_SOURCE_VARIANTS,
+  MERGE_PRECISION_VARIANTS,
   TELEMETRY_ENVELOPE_METADATA_FIELDS
 } from '../../scripts/monitor/collect-metrics.js'
 import {
@@ -988,6 +989,18 @@ describe('vscode extension telemetry contract (RED)', () => {
     ])
 
     assertOk(payloadSchema.properties, 'flag_resolution payload schema must define properties')
+    const precisionSchema = resolveSchemaRef(payloadSchema.properties.precision)
+    assertOk(precisionSchema, 'flag_resolution payload schema must define precision')
+    assertOk(
+      precisionSchema.enum,
+      'flag_resolution payload precision must enumerate merge precision variants'
+    )
+    deepStrictEqual(precisionSchema.enum, [...MERGE_PRECISION_VARIANTS, null])
+    strictEqual(
+      precisionSchema.description,
+      'Merge precision variant when available; null for non-merge flags.'
+    )
+
     const sourceSchema = payloadSchema.properties.source
     assertOk(sourceSchema, 'flag_resolution payload schema must define source')
     assertOk(sourceSchema.enum, 'flag_resolution source must define enum')

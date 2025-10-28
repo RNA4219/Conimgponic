@@ -130,14 +130,14 @@ const toFlagPayload = (
   snapshotErrors: readonly FlagValidationError[],
   planErrors: readonly FlagValidationError[],
   evaluationMs: number,
-  options?: { readonly threshold?: number; readonly precision?: MergePrecision | null }
+  options?: { readonly threshold?: number; readonly precision?: MergePrecision }
 ): FlagResolutionEventPayload => {
   const errors = mergeErrors(flag, snapshotErrors, planErrors)
   const retryable = errors.some((error) => error.retryable)
   const status: FlagResolutionEventPayload['status'] =
     errors.length === 0 ? 'success' : 'failure'
   const thresholdValue = options?.threshold ?? null
-  const precision = options?.precision ?? null
+  const precision: FlagResolutionEventPayload['precision'] = options?.precision ?? null
   const defaultThresholdUsed =
     flag === 'merge.precision' &&
     thresholdValue === DEFAULT_FLAGS.merge.profile.threshold &&

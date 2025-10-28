@@ -159,6 +159,10 @@ export interface FlagResolutionErrorPayload {
   readonly raw: string;
 }
 
+/**
+ * Merge precision 判定を Collector が参照できるよう payload.precision を要求する。
+ * merge.precision 以外のフラグは null を送信し Phase ロールバック判定のみ使用する。
+ */
 export interface FlagResolutionPayload {
   readonly flag: string;
   readonly variant: string;
@@ -769,7 +773,8 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       },
       {
         event: 'flag_resolution',
-        description: 'Feature flag の判定結果を Analyzer の restore_success_rate 推定に反映する。',
+        description:
+          'Feature flag の判定結果と merge.precision の判定精度 (payload.precision) を Analyzer の restore_success_rate 推定へ反映する。',
         jsonlFields: [
           'feature',
           'component',
