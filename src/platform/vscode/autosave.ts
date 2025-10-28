@@ -20,7 +20,7 @@ import type {
   SnapshotResultFailureDetail,
   SnapshotResultSnapshot,
   SnapshotResultSuccessDetail
-} from '../../scripts/monitor/collect-metrics.js'
+} from '../../../scripts/monitor/collect-metrics.js'
 
 const toIso = (input: Date): string => input.toISOString()
 
@@ -462,10 +462,9 @@ const createSnapshotSuccessDetail = (
     retryable: false,
     error_code: null
   }
-  if (lagSeconds !== undefined) {
-    detail.lag_seconds = clampCount(lagSeconds)
-  }
-  return detail
+  return lagSeconds !== undefined
+    ? { ...detail, lag_seconds: clampCount(lagSeconds) }
+    : detail
 }
 
 const createSnapshotFailureDetail = (
@@ -484,10 +483,9 @@ const createSnapshotFailureDetail = (
     error_code: code,
     error_message: normalizeErrorMessage(errorMessage, code)
   }
-  if (lagSeconds !== undefined) {
-    detail.lag_seconds = clampCount(lagSeconds)
-  }
-  return detail
+  return lagSeconds !== undefined
+    ? { ...detail, lag_seconds: clampCount(lagSeconds) }
+    : detail
 }
 
 const createSnapshotPayload = (

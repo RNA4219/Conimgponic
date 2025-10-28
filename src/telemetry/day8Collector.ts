@@ -198,10 +198,7 @@ const normalizeSuccessDetail = (
     error_code: null
   }
   const lagSeconds = normalizeLagSeconds(detail.lag_seconds)
-  if (lagSeconds !== undefined) {
-    normalized.lag_seconds = lagSeconds
-  }
-  return normalized
+  return lagSeconds !== undefined ? { ...normalized, lag_seconds: lagSeconds } : normalized
 }
 
 const normalizeFailureDetail = (
@@ -220,10 +217,7 @@ const normalizeFailureDetail = (
     error_message: messageCandidate ? messageCandidate : error_code
   }
   const lagSeconds = normalizeLagSeconds(detail.lag_seconds)
-  if (lagSeconds !== undefined) {
-    normalized.lag_seconds = lagSeconds
-  }
-  return normalized
+  return lagSeconds !== undefined ? { ...normalized, lag_seconds: lagSeconds } : normalized
 }
 
 const normalizeSnapshot = (
