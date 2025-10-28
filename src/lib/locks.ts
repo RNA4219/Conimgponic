@@ -319,6 +319,31 @@ const emitError = (error: ProjectLockError) => {
   projectLockEvents.emit({ type: 'lock:error', operation: error.operation, error, retryable: error.retryable });
 };
 
+const awaitBackoff = (delayMs: number, signal?: AbortSignal): Promise<void> => {
+  if (delayMs <= 0) return Promise.resolve();
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, delayMs));
+  if (signal.aborted) {
+    return Promise.reject(
+      makeError('acquire-denied', 'Project lock acquisition aborted during backoff wait', 'acquire', false, signal.reason)
+    );
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      reject(
+        makeError('acquire-denied', 'Project lock acquisition aborted during backoff wait', 'acquire', false, signal.reason)
+      );
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+};
+
 const emitReadonly = (
   reason: ProjectLockReadonlyReason,
   error: ProjectLockError,
@@ -708,7 +733,7 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
 
     if (attempt < maxAttempts - 1) {
       projectLockEvents.emit({ type: 'lock:waiting', retry: attempt + 1, delayMs: delay });
-      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      await awaitBackoff(delay, ctx.signal);
       delay *= backoff.factor;
     }
   }

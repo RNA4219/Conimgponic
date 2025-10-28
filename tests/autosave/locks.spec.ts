@@ -436,6 +436,100 @@ scenario(
 )
 
 scenario(
+  'AS-LK-13: Acquire abort aborts backoff wait without retrying additional strategies',
+  {
+    locks: {
+      async request() {
+        throw new DOMException('Lock already held', 'AbortError')
+      }
+    }
+  },
+  async (t, ctx) => {
+    const fallbackRetryableFailure = new ProjectLockError('acquire-denied', 'Mock retryable fallback failure', {
+      operation: 'acquire',
+      retryable: true
+    })
+    const originalGetDirectory = ctx.opfs.storage.getDirectory
+    const emptyEntries = async function* (): AsyncGenerator<readonly [string, Record<string, never>], void, unknown> {}
+    const projectDir = {
+      async getDirectoryHandle() {
+        throw new Error('unexpected nested directory access')
+      },
+      async getFileHandle() {
+        throw fallbackRetryableFailure
+      },
+      async removeEntry() {
+        throw fallbackRetryableFailure
+      },
+      entries: emptyEntries
+    }
+    const rootDir = {
+      async getDirectoryHandle(name: string) {
+        if (name !== 'project') throw new Error(`unexpected directory ${name}`)
+        return projectDir
+      },
+      async getFileHandle() {
+        throw fallbackRetryableFailure
+      },
+      async removeEntry() {
+        throw fallbackRetryableFailure
+      },
+      entries: emptyEntries
+    }
+    ctx.opfs.storage.getDirectory = async () =>
+      rootDir as Awaited<ReturnType<typeof originalGetDirectory>>
+    t.after(() => {
+      ctx.opfs.storage.getDirectory = originalGetDirectory
+    })
+
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    let waitingEvent: { retry: number; delayMs: number } | undefined
+    const waitingDetected = new Promise<void>((resolve) => {
+      const unsubscribeWaiting = projectLockEvents.subscribe((event) => {
+        if (event.type === 'lock:waiting') {
+          waitingEvent = { retry: event.retry, delayMs: event.delayMs }
+          unsubscribeWaiting()
+          resolve()
+        }
+      })
+      t.after(unsubscribeWaiting)
+    })
+
+    const controller = new AbortController()
+    const acquirePromise = projectLockApi.acquire({ preferredStrategy: 'web-lock', signal: controller.signal })
+    await waitingDetected
+    controller.abort(new DOMException('User cancelled project lock acquire', 'AbortError'))
+
+    const error = (await assert.rejects(acquirePromise)) as ProjectLockError
+    assert.ok(error instanceof ProjectLockError, 'acquire must reject with ProjectLockError')
+    assert.equal(error.code, 'acquire-denied', 'error code must indicate acquisition denied')
+    assert.equal(error.retryable, false, 'abort during backoff must be treated as non-retryable')
+    assert.deepEqual(waitingEvent, { retry: 1, delayMs: 500 })
+    assert.deepEqual(
+      sequence,
+      [
+        'attempt:web-lock',
+        'error:acquire-denied:retryable=true',
+        'attempt:file-lock',
+        'error:acquire-denied:retryable=true',
+        'error:acquire-denied:retryable=false'
+      ],
+      'acquire must not perform additional attempts after abort during backoff'
+    )
+    assert.deepEqual(telemetry, [
+      { type: 'lock:error', code: 'acquire-denied', retryable: true, operation: 'acquire' },
+      { type: 'lock:error', code: 'acquire-denied', retryable: true, operation: 'acquire' },
+      { type: 'lock:error', code: 'acquire-denied', retryable: false, operation: 'acquire' },
+      { type: 'lock:readonly-entered', reason: 'acquire-failed', retryable: false }
+    ])
+    assert.equal(ctx.opfs.files.has('project/.lock'), false, 'fallback lock file must not exist after abort')
+  }
+)
+
+scenario(
   'AS-I-03: Expired fallback lock refreshes acquiredAt timestamp and telemetry',
   {
     locks: {
