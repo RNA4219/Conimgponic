@@ -746,6 +746,8 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.detail.retry_count',
           'payload.detail.retryable',
           'payload.detail.error_code',
+          'payload.detail.error_message',
+          'payload.detail.lag_seconds',
           'payload.snapshot.bytes',
           'payload.snapshot.retained_bytes',
           'payload.snapshot.generation',

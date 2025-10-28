@@ -13,7 +13,11 @@ import {
   type TelemetryKind,
   type TelemetryPayloads,
   type TelemetrySource,
-  type RolloutPhase
+  type RolloutPhase,
+  type SnapshotResultFailureDetail,
+  type SnapshotResultPayload,
+  type SnapshotResultSnapshot,
+  type SnapshotResultSuccessDetail
 } from '../../scripts/monitor/collect-metrics.js'
 
 type FlagPhaseToContractPhase = { readonly [Phase in FlagRolloutPhase]: RolloutPhase }
@@ -25,6 +29,10 @@ const FLAG_PHASE_TO_CONTRACT_PHASE = {
   'phase-b0': 'B-0',
   'phase-b1': 'B-1'
 } as const satisfies FlagPhaseToContractPhase
+
+type SnapshotResultComponent = Extract<TelemetryComponent, 'autosave'>
+type SnapshotResultKind = Extract<TelemetryKind, 'save'>
+type SnapshotResultSource = Extract<TelemetrySource, 'app.autosave'>
 
 export type Day8CollectorAutoSaveGuardReason =
   | 'phase-a0-failsafe'
@@ -90,6 +98,17 @@ export type Day8CollectorFlagResolutionEvent = CollectorTelemetryEnvelope & {
   readonly payload: FlagResolutionContractPayload
 }
 
+export type Day8CollectorSnapshotResultEvent = CollectorTelemetryEnvelope & {
+  readonly schema: 'vscode.telemetry.v1'
+  readonly feature: 'autosave-diff-merge'
+  readonly event: 'snapshot.result'
+  readonly component: SnapshotResultComponent
+  readonly kind: SnapshotResultKind
+  readonly source: SnapshotResultSource
+  readonly evaluation_ms: number
+  readonly payload: SnapshotResultPayload
+}
+
 export type Day8CollectorErrorEvent = CollectorTelemetryEnvelope & {
   readonly schema: 'vscode.telemetry.v1'
   readonly feature: TelemetryFeature
@@ -118,6 +137,7 @@ interface PublishCollectorErrorInput extends Day8CollectorErrorEventInput {
 export type Day8CollectorEvent =
   | Day8CollectorAutoSaveGuardEvent
   | Day8CollectorFlagResolutionEvent
+  | Day8CollectorSnapshotResultEvent
   | Day8CollectorErrorEvent
 
 export interface Day8Collector {
@@ -138,6 +158,85 @@ type TelemetryEnvelopeOverrides = {
   readonly backoffMs?: ReadonlyArray<number>
   readonly ts?: string
   readonly workspace_id?: string
+}
+
+const clampDuration = (value: number): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0
+  }
+  return Math.max(0, Math.round(value))
+}
+
+const clampRetryCount = (value: number): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0
+  }
+  return Math.max(0, Math.trunc(value))
+}
+
+const normalizeLagSeconds = (value: number | undefined): number | undefined => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined
+  }
+  const normalized = Math.floor(value)
+  if (!Number.isFinite(normalized) || Number.isNaN(normalized)) {
+    return undefined
+  }
+  return Math.max(0, normalized)
+}
+
+const normalizeSuccessDetail = (
+  detail: SnapshotResultSuccessDetail
+): SnapshotResultSuccessDetail => {
+  const normalized: SnapshotResultSuccessDetail = {
+    duration_ms: clampDuration(detail.duration_ms),
+    retry_count: clampRetryCount(detail.retry_count),
+    retryable: false,
+    error_code: null
+  }
+  const lagSeconds = normalizeLagSeconds(detail.lag_seconds)
+  if (lagSeconds !== undefined) {
+    normalized.lag_seconds = lagSeconds
+  }
+  return normalized
+}
+
+const normalizeFailureDetail = (
+  detail: SnapshotResultFailureDetail
+): SnapshotResultFailureDetail => {
+  const codeCandidate =
+    typeof detail.error_code === 'string' ? detail.error_code.trim() : ''
+  const error_code = codeCandidate ? codeCandidate : 'unknown'
+  const messageCandidate =
+    typeof detail.error_message === 'string' ? detail.error_message.trim() : ''
+  const normalized: SnapshotResultFailureDetail = {
+    duration_ms: clampDuration(detail.duration_ms),
+    retry_count: clampRetryCount(detail.retry_count),
+    retryable: Boolean(detail.retryable),
+    error_code,
+    error_message: messageCandidate ? messageCandidate : error_code
+  }
+  const lagSeconds = normalizeLagSeconds(detail.lag_seconds)
+  if (lagSeconds !== undefined) {
+    normalized.lag_seconds = lagSeconds
+  }
+  return normalized
+}
+
+const normalizeSnapshot = (
+  snapshot: SnapshotResultSnapshot,
+  fallbackTs: string
+): SnapshotResultSnapshot => {
+  const lastSuccess =
+    typeof snapshot.last_success_at === 'string'
+      ? snapshot.last_success_at.trim()
+      : ''
+  return {
+    bytes: clampRetryCount(snapshot.bytes),
+    retained_bytes: clampRetryCount(snapshot.retained_bytes),
+    generation: clampRetryCount(snapshot.generation),
+    last_success_at: lastSuccess ? lastSuccess : fallbackTs
+  }
 }
 
 const UUID_REGEX =
@@ -313,6 +412,79 @@ export const publishCollectorError = (input: PublishCollectorErrorInput): void =
     input.overrides
   )
   emitCollectorError(collector, envelopeSeed, input)
+}
+
+interface PublishSnapshotResultInput {
+  readonly phase: RolloutPhase
+  readonly status: SnapshotResultPayload['status']
+  readonly detail: SnapshotResultSuccessDetail | SnapshotResultFailureDetail
+  readonly snapshot?: SnapshotResultSnapshot
+  readonly overrides?: TelemetryEnvelopeOverrides
+  readonly source?: SnapshotResultSource
+}
+
+export const publishSnapshotResult = (input: PublishSnapshotResultInput): void => {
+  const collector = getDay8Collector()
+  if (!collector) {
+    return
+  }
+
+  const timestamp = input.overrides?.ts ?? new Date().toISOString()
+  const envelopeOverrides: TelemetryEnvelopeOverrides = {
+    ...input.overrides,
+    ts: timestamp
+  }
+  const envelopeSeed = createCollectorTelemetryEnvelopeSeed(
+    input.phase,
+    envelopeOverrides
+  )
+
+  if (input.status === 'success') {
+    if (!input.snapshot) {
+      return
+    }
+    const detail = normalizeSuccessDetail(
+      input.detail as SnapshotResultSuccessDetail
+    )
+    const snapshot = normalizeSnapshot(input.snapshot, timestamp)
+    collector.publish({
+      ...applyPhaseToEnvelope(envelopeSeed, input.phase),
+      schema: 'vscode.telemetry.v1',
+      feature: 'autosave-diff-merge',
+      component: 'autosave',
+      kind: 'save',
+      event: 'snapshot.result',
+      source: input.source ?? 'app.autosave',
+      evaluation_ms: detail.duration_ms,
+      payload: {
+        status: 'success',
+        detail,
+        snapshot
+      }
+    })
+    return
+  }
+
+  const detail = normalizeFailureDetail(input.detail as SnapshotResultFailureDetail)
+  const snapshot = input.snapshot
+    ? normalizeSnapshot(input.snapshot, timestamp)
+    : undefined
+
+  collector.publish({
+    ...applyPhaseToEnvelope(envelopeSeed, input.phase),
+    schema: 'vscode.telemetry.v1',
+    feature: 'autosave-diff-merge',
+    component: 'autosave',
+    kind: 'save',
+    event: 'snapshot.result',
+    source: input.source ?? 'app.autosave',
+    evaluation_ms: detail.duration_ms,
+    payload: {
+      status: 'failure',
+      detail,
+      ...(snapshot ? { snapshot } : {})
+    }
+  })
 }
 
 export const publishFlagResolution = (
