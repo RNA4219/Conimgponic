@@ -230,6 +230,50 @@ scenario(
   }
 )
 
+scenario(
+  'AS-LK-15: Web Lock acquisition abort skips fallback and enters readonly immediately',
+  {
+    locks: {
+      request(key, options) {
+        assert.equal(key, WEB_LOCK_KEY)
+        const signal = options?.signal
+        return new Promise((_, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new DOMException('Web Lock acquisition aborted', 'AbortError'))
+            },
+            { once: true }
+          )
+        })
+      },
+    },
+  },
+  async (t) => {
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    const controller = new AbortController()
+    const acquirePromise = projectLockApi.acquire({ signal: controller.signal })
+    controller.abort(new DOMException('Abort web lock', 'AbortError'))
+
+    const error = (await assert.rejects(async () => {
+      await acquirePromise
+    })) as ProjectLockError
+
+    assert.ok(error instanceof ProjectLockError, 'abort must surface as ProjectLockError')
+    assert.equal(error.code, 'acquire-denied', 'abort must report acquire-denied code')
+    assert.equal(error.retryable, false, 'abort must be treated as non-retryable')
+
+    assert.deepEqual(sequence, ['attempt:web-lock', 'error:acquire-denied:retryable=false'])
+    assert.deepEqual(telemetry, [
+      { type: 'lock:error', code: 'acquire-denied', retryable: false, operation: 'acquire' },
+      { type: 'lock:readonly-entered', reason: 'acquire-failed', retryable: false }
+    ])
+  }
+)
+
 baseScenario(
   'AS-I-07: Successful lock acquisition emits autosave runner telemetry',
   async (t, ctx) => {
