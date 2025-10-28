@@ -282,6 +282,41 @@
     {
       "if": {
         "properties": {
+          "event": { "const": "error" }
+        }
+      },
+      "then": {
+        "properties": {
+          "component": { "$ref": "#/definitions/telemetryComponent" },
+          "kind": { "type": "string", "const": "error" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "detail": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "error_code": { "type": "string", "minLength": 1 },
+                  "retryable": { "type": "boolean" },
+                  "message": { "type": "string", "minLength": 1 }
+                },
+                "required": ["error_code", "retryable"]
+              },
+              "tags": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "minItems": 1
+              }
+            },
+            "required": ["detail", "tags"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "event": { "enum": [
             "plugins.invoked",
             "plugins.completed",
@@ -356,7 +391,8 @@
         "export.failed",
         "plugins.invoked",
         "plugins.completed",
-        "plugins.failed"
+        "plugins.failed",
+        "error"
       ]
     },
     "flagResolutionSource": {

@@ -958,6 +958,70 @@ describe('vscode extension telemetry contract (RED)', () => {
       )
     }
   })
+  test('error telemetry は retryable/detail.error_code/tags を Collector JSONL へ固定する', () => {
+    const spec = findTelemetrySpec('error')
+    assertOk(spec, 'error telemetry spec is missing')
+
+    deepStrictEqual(spec.jsonlFields, [
+      'feature',
+      'component',
+      'kind',
+      'source',
+      'payload.detail.error_code',
+      'payload.detail.retryable',
+      'payload.tags[]',
+    ])
+
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'error'
+    )
+
+    const payloadSchema = assertPayloadSchema(thenClause, ['detail', 'tags'])
+    deepStrictEqual(payloadSchema.type, 'object')
+    deepStrictEqual(payloadSchema.additionalProperties, false)
+
+    const kindSchema = resolveSchemaRef(thenClause.properties?.kind)
+    assertOk(kindSchema, 'error telemetry must define kind constraint')
+    deepStrictEqual(kindSchema, { type: 'string', const: 'error' })
+
+    const componentSchema = resolveSchemaRef(thenClause.properties?.component)
+    assertOk(componentSchema, 'error telemetry must constrain component')
+    deepStrictEqual(componentSchema?.enum, [
+      'autosave',
+      'merge',
+      'flags',
+      'export',
+    ])
+
+    const detailSchema = resolveSchemaRef(payloadSchema.properties?.detail)
+    assertOk(detailSchema, 'error telemetry must define detail schema')
+    deepStrictEqual(detailSchema.type, 'object')
+    deepStrictEqual(detailSchema.additionalProperties, false)
+    assertOk(detailSchema.required, 'error detail must define required fields')
+    deepStrictEqual(detailSchema.required, ['error_code', 'retryable'])
+    assertOk(detailSchema.properties, 'error detail must define properties')
+
+    const errorCodeSchema = resolveSchemaRef(detailSchema.properties.error_code)
+    assertOk(errorCodeSchema, 'error detail must define error_code schema')
+    deepStrictEqual(errorCodeSchema, { type: 'string', minLength: 1 })
+
+    const retryableSchema = resolveSchemaRef(detailSchema.properties.retryable)
+    assertOk(retryableSchema, 'error detail must define retryable schema')
+    deepStrictEqual(retryableSchema, { type: 'boolean' })
+
+    const messageSchema = resolveSchemaRef(detailSchema.properties.message)
+    if (messageSchema) {
+      deepStrictEqual(messageSchema, { type: 'string', minLength: 1 })
+    }
+
+    const tagsSchema = resolveSchemaRef(payloadSchema.properties?.tags)
+    assertOk(tagsSchema, 'error telemetry must define tags schema')
+    deepStrictEqual(tagsSchema.type, 'array')
+    deepStrictEqual(tagsSchema.minItems, 1)
+    const tagItemsSchema = resolveSchemaRef(tagsSchema.items)
+    assertOk(tagItemsSchema, 'error telemetry must define tags item schema')
+    deepStrictEqual(tagItemsSchema, { type: 'string', minLength: 1 })
+  })
   test('export.failed/plugins.failed telemetry は retry backoff を Collector 契約で固定する', () => {
     const exportFailed = findTelemetrySpec('export.failed')
     assertOk(exportFailed, 'export.failed telemetry spec is missing')
