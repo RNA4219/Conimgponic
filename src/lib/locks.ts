@@ -148,7 +148,11 @@ export interface AcquireProjectLockOptions {
 
 export interface RenewProjectLockOptions { readonly signal?: AbortSignal; }
 
-export interface ReleaseProjectLockOptions { readonly signal?: AbortSignal; readonly force?: boolean; }
+export interface ReleaseProjectLockOptions {
+  readonly signal?: AbortSignal;
+  readonly force?: boolean;
+  readonly onReadonly?: (error: ProjectLockError) => void;
+}
 
 export interface WithProjectLockOptions extends AcquireProjectLockOptions { readonly renewIntervalMs?: number; readonly releaseOnError?: boolean; }
 
@@ -898,13 +902,13 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
         ? error
         : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
     emitError(projectError);
-    emitReadonly('release-failed', projectError);
+    emitReadonly('release-failed', projectError, options.onReadonly);
     throw projectError;
   }
 };
 const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOptions, force: boolean) => {
   try {
-    await releaseProjectLock(lease, { signal: options.signal, force });
+    await releaseProjectLock(lease, { signal: options.signal, force, onReadonly: options.onReadonly });
   } catch (error) {
     const projectError =
       error instanceof ProjectLockError
@@ -912,9 +916,7 @@ const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOpti
         : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
     if (!(error instanceof ProjectLockError)) {
       emitError(projectError);
-      if (!projectError.retryable) emitReadonly('release-failed', projectError, options.onReadonly);
-    } else if (!projectError.retryable) {
-      options.onReadonly?.(projectError);
+      emitReadonly('release-failed', projectError, options.onReadonly);
     }
     throw projectError;
   }

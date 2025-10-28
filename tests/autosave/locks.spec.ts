@@ -1528,6 +1528,91 @@ test('AS-LK-09c: releaseProjectLock failure remains retryable across retries', a
   assert.equal(readonlyEvent.retryable, false)
 })
 
+test('AS-LK-09d: releaseProjectLock failure invokes onReadonly once', async (t) => {
+  const events: ProjectLockEvent[] = []
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    events.push(event)
+  })
+  t.after(unsubscribe)
+
+  const releaseMock = t.mock.fn(async () => {
+    throw new DOMException('Release denied', 'InvalidStateError')
+  })
+
+  const request = t.mock.fn((...args: unknown[]) => {
+    assert.equal(args.length, 3, 'navigator.locks.request must receive key, options, and callback')
+    const [key, options, callback] = args as [
+      string,
+      { mode: 'exclusive'; signal?: AbortSignal },
+      (lock: { release: () => Promise<void>; released: Promise<void> }) => Promise<unknown>
+    ]
+    assert.equal(key, WEB_LOCK_KEY)
+    assert.equal(options.mode, 'exclusive')
+    const handle = {
+      release: releaseMock,
+      released: Promise.resolve()
+    }
+    const callbackResult = Promise.resolve(callback(handle))
+    return callbackResult
+  })
+
+  const originalNavigator = (globalThis as typeof globalThis & { navigator?: unknown }).navigator
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { locks: { request } },
+    configurable: true
+  })
+  t.after(() => {
+    if (originalNavigator === undefined) {
+      delete (globalThis as { navigator?: unknown }).navigator
+    } else {
+      Object.defineProperty(globalThis, 'navigator', { value: originalNavigator, configurable: true })
+    }
+  })
+
+  const uuids = ['lease-release-onreadonly', 'owner-release-onreadonly']
+  t.mock.method(crypto, 'randomUUID', () => {
+    const value = uuids.shift()
+    if (!value) throw new Error('uuid exhausted')
+    return value
+  })
+
+  const readonlyCalls: ProjectLockError[] = []
+  const onReadonly = (error: ProjectLockError) => {
+    readonlyCalls.push(error)
+  }
+
+  const lease = await acquireProjectLock({ preferredStrategy: 'web-lock', retry: false })
+
+  const firstError = await assert.rejects(async () => releaseProjectLock(lease, { onReadonly }))
+  assert.ok(firstError instanceof ProjectLockError)
+  assert.equal(firstError.code, 'release-failed')
+  assert.equal(firstError.retryable, true)
+  assert.deepEqual(readonlyCalls, [firstError])
+
+  const secondError = await assert.rejects(async () => releaseProjectLock(lease, { onReadonly }))
+  assert.strictEqual(secondError, firstError)
+  assert.deepEqual(readonlyCalls, [firstError], 'onReadonly must fire only once across retries')
+
+  const readonlyEvent = events.find(
+    (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }> => event.type === 'lock:readonly-entered'
+  )
+  if (!readonlyEvent) {
+    assert.fail('lock:readonly-entered not emitted after release failure')
+  }
+  assert.equal(readonlyEvent.reason, 'release-failed')
+  assert.equal(readonlyEvent.retryable, false)
+
+  const errorEvent = events.find(
+    (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }> => event.type === 'lock:error'
+  )
+  if (!errorEvent) {
+    assert.fail('lock:error not emitted after release failure')
+  }
+  assert.equal(errorEvent.operation, 'release')
+  assert.equal(errorEvent.retryable, true)
+  assert.equal(errorEvent.error.code, 'release-failed')
+})
+
 scenario(
   'AS-I-03: Web Lock handle without release resolves via released promise',
   {
