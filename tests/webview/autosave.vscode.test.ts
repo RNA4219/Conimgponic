@@ -631,6 +631,8 @@ describe('createVscodeAutoSaveBridge', () => {
 
     assert.ok(snapshotResult, 'guard disabled request should emit snapshot.result telemetry')
     assert.equal(snapshotResult.properties?.performance?.flush_latency_ms, 0)
+    assert.equal(snapshotResult.properties?.retryCount, 0)
+    assert.equal(snapshotResult.properties?.detail?.retry_count, 0)
   })
 
   it('autosave.status telemetry includes request phase for saving/backoff/saved transitions', async () => {
@@ -978,6 +980,8 @@ describe('createVscodeAutoSaveBridge', () => {
 
     assert.ok(snapshotResult, 'non-retryable error should emit snapshot.result telemetry')
     assert.equal(snapshotResult.properties?.performance?.flush_latency_ms, 1500)
+    assert.equal(snapshotResult.properties?.retryCount, 0)
+    assert.equal(snapshotResult.properties?.detail?.retry_count, 0)
   })
 
   it('autosave.snapshot.result telemetry records flush latency for successful saves', async () => {
@@ -1020,6 +1024,8 @@ describe('createVscodeAutoSaveBridge', () => {
 
     assert.ok(snapshotResult, 'successful request should emit snapshot.result telemetry')
     assert.equal(snapshotResult.properties?.performance?.flush_latency_ms, 600)
+    assert.equal(snapshotResult.properties?.retryCount, 0)
+    assert.equal(snapshotResult.properties?.detail?.retry_count, 0)
   })
 
   it('autosave.status テレメトリの phase を saving/backoff/saved と guard 無効化で検証する', async () => {
