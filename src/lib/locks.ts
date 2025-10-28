@@ -642,7 +642,7 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
     }
 
     const ttl = ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS;
-    const ttlSeconds = ttl / 1000; // ← codex側の追加ロジックを統合
+    const ttlSeconds = FALLBACK_LOCK_TTL_MS / 1000;
     const isReentrantActiveLease =
       record !== null && record.leaseId === ctx.leaseId && record.expiresAt > now;
     const acquiredAt = isReentrantActiveLease ? record.acquiredAt : now;
@@ -793,7 +793,7 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
       await saveJSON(FALLBACK_LOCK_PATH, {
         ...record,
         expiresAt: now + lease.ttlMillis,
-        ttlSeconds: lease.ttlMillis / 1000,
+        ttlSeconds: FALLBACK_LOCK_TTL_MS / 1000,
         mtime: now,
       });
     }
