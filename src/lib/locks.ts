@@ -842,6 +842,14 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
     throw makeError('renew-failed', 'Renew aborted by signal', 'renew', true, options.signal.reason);
 
   const now = Date.now();
+  const renewalAnchor = lease.expiresAt - lease.ttlMillis;
+  const storedInterval = lease.heartbeatIntervalMs;
+  const inferredInterval =
+    storedInterval > 0
+      ? storedInterval
+      : Math.max(0, lease.nextHeartbeatAt - renewalAnchor);
+  const heartbeatInterval = inferredInterval > 0 ? inferredInterval : LOCK_HEARTBEAT_INTERVAL_MS;
+
   if (now > lease.nextHeartbeatAt) {
     projectLockEvents.emit({ type: 'lock:warning', lease, warning: 'heartbeat-delayed' });
   }
@@ -869,7 +877,8 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
     const refreshed: ProjectLockLease = {
       ...lease,
       expiresAt: nextExpires,
-      nextHeartbeatAt: now + (lease.heartbeatIntervalMs > 0 ? lease.heartbeatIntervalMs : LOCK_HEARTBEAT_INTERVAL_MS),
+      heartbeatIntervalMs: heartbeatInterval,
+      nextHeartbeatAt: now + heartbeatInterval,
       renewAttempt: lease.renewAttempt + 1,
     };
     projectLockEvents.emit({ type: 'lock:renewed', lease: refreshed });

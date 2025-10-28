@@ -7,6 +7,7 @@ import type { TestContext } from 'node:test'
 
 import {
   acquireProjectLock,
+  renewProjectLock,
   releaseProjectLock,
   projectLockEvents,
   WEB_LOCK_KEY,
@@ -280,6 +281,42 @@ scenario('AS-HB-01: Heartbeat interval customization is honoured', async (t) => 
   assert.ok(nextSchedule, 'subsequent heartbeat schedule must be recorded')
   assert.equal(nextSchedule?.renewAttempt, refreshed.renewAttempt)
   assert.equal(nextSchedule?.nextIn, heartbeatMs)
+
+  await releaseProjectLock(refreshed)
+})
+
+scenario('AS-HB-02: Renew infers heartbeat interval when lease omits heartbeatIntervalMs', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+  const heartbeatMs = 7_200
+  const uuids = ['lease-heartbeat-missing', 'owner-heartbeat-missing']
+  t.mock.method(crypto, 'randomUUID', () => {
+    const value = uuids.shift()
+    if (!value) throw new Error('uuid exhausted')
+    return value
+  })
+
+  const renewals: ProjectLockLease[] = []
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    if (event.type === 'lock:renewed') {
+      renewals.push(event.lease)
+    }
+  })
+  t.after(unsubscribe)
+
+  const lease = await acquireProjectLock({ preferredStrategy: 'file-lock', heartbeatIntervalMs: heartbeatMs })
+  const expectedInterval = lease.heartbeatIntervalMs
+  const legacyLease = { ...lease, heartbeatIntervalMs: 0 } as ProjectLockLease
+
+  t.mock.timers.tick(Math.max(0, lease.nextHeartbeatAt - Date.now()))
+  const refreshed = await renewProjectLock(legacyLease)
+
+  assert.equal(refreshed.heartbeatIntervalMs, expectedInterval)
+  assert.equal(refreshed.nextHeartbeatAt - Date.now(), expectedInterval)
+
+  const renewedLease = renewals.at(-1)
+  assert.ok(renewedLease, 'renewed lease event must be captured')
+  assert.equal(renewedLease?.heartbeatIntervalMs, expectedInterval)
+  assert.equal((renewedLease?.nextHeartbeatAt ?? 0) - Date.now(), expectedInterval)
 
   await releaseProjectLock(refreshed)
 })
