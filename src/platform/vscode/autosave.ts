@@ -14,6 +14,13 @@ import type {
 } from '../../lib/autosave'
 import { resolveFlags } from '../../config/index.js'
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
+import { publishSnapshotResult } from '../../telemetry/day8Collector.js'
+import type {
+  RolloutPhase,
+  SnapshotResultFailureDetail,
+  SnapshotResultSnapshot,
+  SnapshotResultSuccessDetail
+} from '../../scripts/monitor/collect-metrics.js'
 
 const toIso = (input: Date): string => input.toISOString()
 
@@ -382,6 +389,152 @@ const computeFlushLatencyMs = (state: InternalState, nowMs: number): number => {
 const nextReqId = (state: InternalState): string => `autosave-${++state.reqCounter}`
 const nextCorrelationId = (state: InternalState): string => `autosave-corr-${++state.correlationCounter}`
 
+const clampMilliseconds = (value: number): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0
+  }
+  return Math.max(0, Math.round(value))
+}
+
+const clampCount = (value: number): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0
+  }
+  return Math.max(0, Math.trunc(value))
+}
+
+const normalizeErrorCode = (code: string): string => {
+  const trimmed = typeof code === 'string' ? code.trim() : ''
+  return trimmed ? trimmed : 'unknown'
+}
+
+const normalizeErrorMessage = (message: string | undefined, fallback: string): string => {
+  if (typeof message !== 'string') {
+    return fallback
+  }
+  const trimmed = message.trim()
+  return trimmed ? trimmed : fallback
+}
+
+const computeLagSeconds = (
+  lastSuccessAt: string | undefined,
+  timestamp: string
+): number | undefined => {
+  if (!lastSuccessAt) {
+    return undefined
+  }
+  const last = Date.parse(lastSuccessAt)
+  const current = Date.parse(timestamp)
+  if (!Number.isFinite(last) || Number.isNaN(last) || !Number.isFinite(current) || Number.isNaN(current)) {
+    return undefined
+  }
+  const diffMs = current - last
+  if (!Number.isFinite(diffMs) || Number.isNaN(diffMs) || diffMs < 0) {
+    return undefined
+  }
+  return Math.max(0, Math.floor(diffMs / 1000))
+}
+
+const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): RolloutPhase => {
+  if (!guard.featureFlag.value || guard.optionsDisabled) {
+    return 'A-0'
+  }
+  switch (guard.featureFlag.source) {
+    case 'env':
+      return 'A-1'
+    case 'workspace':
+      return 'A-2'
+    default:
+      return 'A-0'
+  }
+}
+
+const createSnapshotSuccessDetail = (
+  durationMs: number,
+  retryCount: number,
+  lagSeconds: number | undefined
+): SnapshotResultSuccessDetail => {
+  const detail: SnapshotResultSuccessDetail = {
+    duration_ms: clampMilliseconds(durationMs),
+    retry_count: clampCount(retryCount),
+    retryable: false,
+    error_code: null
+  }
+  if (lagSeconds !== undefined) {
+    detail.lag_seconds = clampCount(lagSeconds)
+  }
+  return detail
+}
+
+const createSnapshotFailureDetail = (
+  durationMs: number,
+  retryCount: number,
+  retryable: boolean,
+  errorCode: string,
+  errorMessage: string,
+  lagSeconds: number | undefined
+): SnapshotResultFailureDetail => {
+  const code = normalizeErrorCode(errorCode)
+  const detail: SnapshotResultFailureDetail = {
+    duration_ms: clampMilliseconds(durationMs),
+    retry_count: clampCount(retryCount),
+    retryable,
+    error_code: code,
+    error_message: normalizeErrorMessage(errorMessage, code)
+  }
+  if (lagSeconds !== undefined) {
+    detail.lag_seconds = clampCount(lagSeconds)
+  }
+  return detail
+}
+
+const createSnapshotPayload = (
+  bytes: number,
+  retainedBytes: number,
+  generation: number,
+  lastSuccessAt: string | undefined,
+  fallbackTs: string
+): SnapshotResultSnapshot => ({
+  bytes: clampCount(bytes),
+  retained_bytes: clampCount(retainedBytes),
+  generation: clampCount(generation),
+  last_success_at:
+    typeof lastSuccessAt === 'string' && lastSuccessAt.trim()
+      ? lastSuccessAt
+      : fallbackTs
+})
+
+type SnapshotResultCollectorPayload =
+  | {
+      readonly status: 'success'
+      readonly detail: SnapshotResultSuccessDetail
+      readonly snapshot: SnapshotResultSnapshot
+    }
+  | {
+      readonly status: 'failure'
+      readonly detail: SnapshotResultFailureDetail
+      readonly snapshot?: SnapshotResultSnapshot
+    }
+
+const publishCollectorSnapshotResult = (
+  request: AutoSaveSnapshotRequestMessage,
+  guard: AutoSavePhaseGuardSnapshot,
+  timestamp: string,
+  payload: SnapshotResultCollectorPayload
+): void => {
+  publishSnapshotResult({
+    phase: resolveCollectorPhase(guard),
+    status: payload.status,
+    detail: payload.detail,
+    snapshot: payload.snapshot,
+    overrides: {
+      reqId: request.reqId,
+      correlationId: request.correlationId,
+      ts: timestamp
+    }
+  })
+}
+
 const handleNonRetryableError = (
   options: AutoSaveHostBridgeOptions,
   state: InternalState,
@@ -400,6 +553,17 @@ const handleNonRetryableError = (
   options.sendMessage(
     createSnapshotResultMessage(request, ts, { ok: false, error })
   )
+  publishCollectorSnapshotResult(request, guardForTelemetry, ts, {
+    status: 'failure',
+    detail: createSnapshotFailureDetail(
+      flushLatencyMs,
+      retryCountBeforeReset,
+      error.retryable,
+      error.code,
+      error.message,
+      computeLagSeconds(state.lastSuccessAt, ts)
+    )
+  })
   emitTelemetry(
     options,
     {
@@ -603,9 +767,21 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       state.status = 'disabled'
       state.retryCount = 0
       state.flushStartedAtMs = undefined
+      const disabledError = createDisabledError()
       options.sendMessage(
-        createSnapshotResultMessage(request, ts, { ok: false, error: createDisabledError() })
+        createSnapshotResultMessage(request, ts, { ok: false, error: disabledError })
       )
+      publishCollectorSnapshotResult(request, state.guard, ts, {
+        status: 'failure',
+        detail: createSnapshotFailureDetail(
+          0,
+          state.retryCount,
+          disabledError.retryable,
+          disabledError.code,
+          disabledError.message,
+          computeLagSeconds(state.lastSuccessAt, ts)
+        )
+      })
       emitTelemetry(
         options,
         {
@@ -714,6 +890,17 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         state.flushStartedAtMs = undefined
         const retryTs = toIso(retryTimestamp)
         options.sendMessage(createSnapshotResultMessage(request, retryTs, writeResult))
+        publishCollectorSnapshotResult(request, state.guard, retryTs, {
+          status: 'failure',
+          detail: createSnapshotFailureDetail(
+            retryLatency,
+            state.retryCount,
+            true,
+            writeResult.error.code,
+            writeResult.error.message,
+            computeLagSeconds(state.lastSuccessAt, retryTs)
+          )
+        })
         options.sendMessage(
           createStatusMessage(
             request.reqId,
@@ -762,6 +949,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     }
 
     const statusBeforeSuccess = state.status
+    const retryCountForSnapshot = state.retryCount
+    const previousLastSuccessAt = state.lastSuccessAt
     state.history = [...state.history, { generation: writeResult.generation, bytes: writeResult.bytes }]
     clampHistory(state, options.policy)
     state.lastSuccessAt = writeResult.lastSuccessAt
@@ -780,6 +969,23 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       retainedBytes: state.retainedBytes
     }
     options.sendMessage(createSnapshotResultMessage(request, successTs, payload))
+    const successDetail = createSnapshotSuccessDetail(
+      successLatency,
+      retryCountForSnapshot,
+      computeLagSeconds(previousLastSuccessAt, successTs)
+    )
+    const collectorSnapshot = createSnapshotPayload(
+      writeResult.bytes,
+      state.retainedBytes,
+      writeResult.generation,
+      state.lastSuccessAt,
+      successTs
+    )
+    publishCollectorSnapshotResult(request, state.guard, successTs, {
+      status: 'success',
+      detail: successDetail,
+      snapshot: collectorSnapshot
+    })
     emitTelemetry(
       options,
       {

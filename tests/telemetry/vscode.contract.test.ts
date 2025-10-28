@@ -20,9 +20,11 @@ import type {
 } from '../../src/config/flags.js'
 import {
   publishFlagResolution,
+  publishSnapshotResult,
   resetWorkspaceIdCacheForTests,
   type Day8Collector,
   type Day8CollectorFlagResolutionEvent,
+  type Day8CollectorSnapshotResultEvent,
   type FlagResolutionEventPayload
 } from '../../src/telemetry/day8Collector.js'
 
@@ -323,6 +325,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.detail.retry_count',
       'payload.detail.retryable',
       'payload.detail.error_code',
+      'payload.detail.error_message',
+      'payload.detail.lag_seconds',
       'payload.snapshot.bytes',
       'payload.snapshot.retained_bytes',
       'payload.snapshot.generation',
@@ -399,6 +403,17 @@ describe('vscode extension telemetry contract (RED)', () => {
       )
     }
 
+    const lagSecondsSchema = resolveSchemaRef(detailProperties.lag_seconds)
+    assertOk(lagSecondsSchema, 'snapshot.result detail.lag_seconds must define schema')
+    assertOk(
+      lagSecondsSchema?.type === 'number',
+      'snapshot.result detail.lag_seconds must be number'
+    )
+    assertOk(
+      'minimum' in lagSecondsSchema && lagSecondsSchema.minimum === 0,
+      'snapshot.result detail.lag_seconds must enforce minimum 0'
+    )
+
     const payloadConditionals = payloadSchema.allOf
     assertOk(
       Array.isArray(payloadConditionals) && payloadConditionals.length >= 2,
@@ -451,6 +466,193 @@ describe('vscode extension telemetry contract (RED)', () => {
       'minLength' in errorMessageSchema && errorMessageSchema.minLength === 1,
       'snapshot.result failure error_message must enforce minLength'
     )
+  })
+
+  test('publishSnapshotResult は Collector 契約の success payload を送信する', () => {
+    const captured: Day8CollectorSnapshotResultEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorSnapshotResultEvent)
+      }
+    } as Day8Collector
+
+    try {
+      const overrides = {
+        reqId: '00000000-0000-4000-8000-000000000001',
+        correlationId: '00000000-0000-4000-8000-000000000002',
+        ts: '2024-01-01T00:00:00.000Z'
+      } as const
+
+      publishSnapshotResult({
+        phase: 'A-1',
+        status: 'success',
+        detail: {
+          duration_ms: 120,
+          retry_count: 1,
+          retryable: false,
+          error_code: null,
+          lag_seconds: 45
+        },
+        snapshot: {
+          bytes: 1024,
+          retained_bytes: 2048,
+          generation: 3,
+          last_success_at: '2023-12-31T23:59:00.000Z'
+        },
+        overrides
+      })
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    strictEqual(captured.length, 1, 'snapshot.result collector event must be emitted')
+    const [event] = captured
+    assertOk(event, 'snapshot.result collector event must be captured')
+    strictEqual(event.schema, 'vscode.telemetry.v1')
+    strictEqual(event.event, 'snapshot.result')
+    strictEqual(event.feature, 'autosave-diff-merge')
+    strictEqual(event.component, 'autosave')
+    strictEqual(event.kind, 'save')
+    strictEqual(event.source, 'app.autosave')
+    strictEqual(event.reqId, '00000000-0000-4000-8000-000000000001')
+    strictEqual(event.correlationId, '00000000-0000-4000-8000-000000000002')
+    strictEqual(event.ts, '2024-01-01T00:00:00.000Z')
+    strictEqual(event.evaluation_ms, 120)
+    deepStrictEqual(event.payload, {
+      status: 'success',
+      detail: {
+        duration_ms: 120,
+        retry_count: 1,
+        retryable: false,
+        error_code: null,
+        lag_seconds: 45
+      },
+      snapshot: {
+        bytes: 1024,
+        retained_bytes: 2048,
+        generation: 3,
+        last_success_at: '2023-12-31T23:59:00.000Z'
+      }
+    })
+  })
+
+  test('publishSnapshotResult は failure payload を正規化して Collector へ送信する', () => {
+    const captured: Day8CollectorSnapshotResultEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorSnapshotResultEvent)
+      }
+    } as Day8Collector
+
+    try {
+      const overrides = {
+        reqId: '00000000-0000-4000-8000-000000000003',
+        correlationId: '00000000-0000-4000-8000-000000000004',
+        ts: '2024-01-02T00:00:00.000Z'
+      } as const
+
+      publishSnapshotResult({
+        phase: 'A-2',
+        status: 'failure',
+        detail: {
+          duration_ms: 321.6,
+          retry_count: 3.9,
+          retryable: true,
+          error_code: '  disk-full  ',
+          error_message: '   disk is full   ',
+          lag_seconds: 12.9
+        },
+        snapshot: {
+          bytes: 4096.7,
+          retained_bytes: 8191.2,
+          generation: 12.5,
+          last_success_at: '   '
+        },
+        overrides
+      })
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    strictEqual(captured.length, 1, 'snapshot.result failure event must be emitted')
+    const [event] = captured
+    assertOk(event, 'snapshot.result failure event must be captured')
+    strictEqual(event.schema, 'vscode.telemetry.v1')
+    strictEqual(event.event, 'snapshot.result')
+    strictEqual(event.evaluation_ms, 322)
+    deepStrictEqual(event.payload, {
+      status: 'failure',
+      detail: {
+        duration_ms: 322,
+        retry_count: 3,
+        retryable: true,
+        error_code: 'disk-full',
+        error_message: 'disk is full',
+        lag_seconds: 12
+      },
+      snapshot: {
+        bytes: 4096,
+        retained_bytes: 8191,
+        generation: 12,
+        last_success_at: '2024-01-02T00:00:00.000Z'
+      }
+    })
+  })
+
+  test('publishSnapshotResult は snapshot なし failure payload を Collector へ送信する', () => {
+    const captured: Day8CollectorSnapshotResultEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorSnapshotResultEvent)
+      }
+    } as Day8Collector
+
+    try {
+      const overrides = {
+        reqId: '00000000-0000-4000-8000-000000000005',
+        correlationId: '00000000-0000-4000-8000-000000000006',
+        ts: '2024-01-03T00:00:00.000Z'
+      } as const
+
+      publishSnapshotResult({
+        phase: 'A-2',
+        status: 'failure',
+        detail: {
+          duration_ms: -42,
+          retry_count: -1,
+          retryable: false,
+          error_code: '   ',
+          error_message: '   ',
+          lag_seconds: Number.NaN
+        },
+        overrides
+      })
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    strictEqual(captured.length, 1, 'snapshot.result failure event without snapshot must be emitted')
+    const [event] = captured
+    assertOk(event, 'snapshot.result failure event without snapshot must be captured')
+    strictEqual(event.schema, 'vscode.telemetry.v1')
+    strictEqual(event.event, 'snapshot.result')
+    strictEqual(event.evaluation_ms, 0)
+    deepStrictEqual(event.payload, {
+      status: 'failure',
+      detail: {
+        duration_ms: 0,
+        retry_count: 0,
+        retryable: false,
+        error_code: 'unknown',
+        error_message: 'unknown'
+      }
+    })
   })
 
   test('flag_resolution telemetry は evaluation_ms を必須にし Phase ガード指標へ渡す', () => {

@@ -164,7 +164,8 @@
                 },
                 "then": {
                   "properties": {
-                    "detail": { "$ref": "#/definitions/snapshotResultFailureDetail" }
+                    "detail": { "$ref": "#/definitions/snapshotResultFailureDetail" },
+                    "snapshot": { "$ref": "#/definitions/snapshotResultSnapshot" }
                   }
                 }
               }
