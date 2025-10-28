@@ -33,10 +33,14 @@ describe('ci workflow build job', () => {
       assert.equal(distCondition, 'always()', 'dist artifact upload must always run');
       const distConfig = distUpload.with;
       if (!distConfig || typeof distConfig !== 'object') throw new TypeError('dist artifact upload must configure with object');
-      const distPath = (distConfig as { path?: unknown }).path;
+      const distRecord = distConfig as Record<string, unknown>;
+      if (!Object.prototype.hasOwnProperty.call(distRecord, 'if-no-files-found')) {
+        throw new TypeError('dist artifact upload must configure if-no-files-found');
+      }
+      const distPath = (distRecord as { path?: unknown }).path;
       if (typeof distPath !== 'string') throw new TypeError('dist artifact upload must configure path string');
       assert.ok(splitLines(distPath).includes('dist'), 'dist artifact path must include dist directory');
-      const distIfNoFilesFound = (distConfig as { 'if-no-files-found'?: unknown })['if-no-files-found'];
+      const distIfNoFilesFound = distRecord['if-no-files-found'];
       if (typeof distIfNoFilesFound !== 'string') {
         throw new TypeError('dist artifact upload must configure if-no-files-found string');
       }
@@ -49,10 +53,17 @@ describe('ci workflow build job', () => {
       const logCondition = logUpload.if;
       if (typeof logCondition !== 'string') throw new TypeError('build log artifact upload must configure if string');
       assert.equal(logCondition, 'always()', 'build log artifact upload must always run');
-      const logPath = logUpload.with?.path;
+      const logConfig = logUpload.with;
+      if (!logConfig || typeof logConfig !== 'object') {
+        throw new TypeError('build log artifact upload must configure with object');
+      }
+      if (!Object.prototype.hasOwnProperty.call(logConfig, 'if-no-files-found')) {
+        throw new TypeError('build log artifact upload must configure if-no-files-found');
+      }
+      const logPath = (logConfig as { path?: unknown }).path;
       if (typeof logPath !== 'string') throw new TypeError('build log artifact upload must configure path string');
       assert.ok(splitLines(logPath).includes('build.log'), 'build log artifact path must include build.log');
-      const logIfNoFiles = logUpload.with?.['if-no-files-found'];
+      const logIfNoFiles = (logConfig as Record<string, unknown>)['if-no-files-found'];
       if (typeof logIfNoFiles !== 'string') {
         throw new TypeError('build log artifact upload must configure if-no-files-found string');
       }
