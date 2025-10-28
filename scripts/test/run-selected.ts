@@ -52,6 +52,12 @@ function resolveNodeTestLoader(): LoaderResolution {
 const TEST_COVERAGE_FLAG = '--test-coverage';
 const TEST_COVERAGE_MINIMUM_MAJOR_VERSION = 22;
 const FILTER_TARGETS: Record<string, readonly string[]> = {
+  app: [
+    'tests/app/app.*.test.ts',
+    'tests/app/app.*.test.tsx',
+    'tests/app/autosave.*.test.ts',
+    'tests/app/autosave.*.test.tsx'
+  ],
   autosave: [
     'tests/app/autosave.*.test.ts',
     'tests/app/autosave.*.test.tsx',
