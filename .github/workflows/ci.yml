@@ -303,6 +303,7 @@ jobs:
               # Ensure autosave-suffixed modules trigger the autosave matrix
               - 'src/**/*autosave*.ts'
               - 'src/**/*autosave*.tsx'
+              - 'src/**/*[Aa]uto[Ss]ave*.tsx'
               - 'tests/**/autosave.*.test.ts'
               - 'tests/**/autosave/**'
               - '.github/workflows/autosave*'
