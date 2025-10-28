@@ -197,6 +197,10 @@
                 "enum": ["A-0", "A-1", "A-2", "B-0", "B-1"]
               },
               "evaluation_ms": { "type": "number", "minimum": 0 },
+              "precision": {
+                "type": ["string", "null"],
+                "enum": ["legacy", "beta", "stable", null]
+              },
               "threshold": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
               "status": { "type": "string", "enum": ["success", "failure"] },
               "detail": {
@@ -219,6 +223,7 @@
               "source",
               "phase",
               "evaluation_ms",
+              "precision",
               "threshold",
               "status",
               "detail",

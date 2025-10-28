@@ -138,6 +138,10 @@ export const FLAG_RESOLUTION_SOURCE_VARIANTS = [
 
 export type FlagResolutionSource = (typeof FLAG_RESOLUTION_SOURCE_VARIANTS)[number];
 
+export const MERGE_PRECISION_VARIANTS = ['legacy', 'beta', 'stable'] as const;
+
+export type MergePrecision = (typeof MERGE_PRECISION_VARIANTS)[number];
+
 export type FlagResolutionErrorPhase =
   | 'phase-a0'
   | 'phase-a1'
@@ -161,6 +165,7 @@ export interface FlagResolutionPayload {
   readonly source: FlagResolutionSource;
   readonly phase: RolloutPhase;
   readonly evaluation_ms: number;
+  readonly precision: MergePrecision | null;
   readonly errors: ReadonlyArray<FlagResolutionErrorPayload>;
   readonly threshold: number | null;
   readonly status: 'success' | 'failure';
@@ -774,6 +779,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.source',
           'payload.phase',
           'payload.evaluation_ms',
+          'payload.precision',
           'payload.errors',
           'payload.threshold',
           'payload.status',
