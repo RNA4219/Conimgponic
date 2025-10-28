@@ -39,7 +39,8 @@ test('LeftRight は chatStream 例外時に busy を解除しエラー通知す�
 
   const failure = new OllamaRequestError(503, 'Service Unavailable', 'temporary outage')
   const chatStream = async function* mockChatStream() {
-    yield await Promise.reject<never>(failure)
+    yield {}
+    throw failure
   }
 
   await executeLeftRightGeneration({
