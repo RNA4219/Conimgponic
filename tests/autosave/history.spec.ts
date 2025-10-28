@@ -47,10 +47,18 @@ const makeCollector = () => {
   Object.defineProperty(globalThis, 'Day8Collector', {
     value: {
       publish(event: Record<string, unknown>) {
-        const { feature, event: name, phase, reason, code, retryable } = event
+        const { feature, event: name, phase, reason, code, retryable, flag_source } = event
         telemetry.push(
           Object.fromEntries(
-            Object.entries({ feature, event: name, phase, reason, code, retryable }).filter(([, value]) => value !== undefined)
+            Object.entries({
+              feature,
+              event: name,
+              phase,
+              reason,
+              code,
+              retryable,
+              flag_source
+            }).filter(([, value]) => value !== undefined)
           )
         )
       }
@@ -121,7 +129,6 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
   assert.ok(!historyPaths.includes(firstHistoryPath!), 'oldest history entry should be rotated out')
 
   const runnerTelemetry = ctx.runnerTelemetry
-
   const writeSucceededEvents = runnerTelemetry.filter(
     (event) => event.detail && (event.detail as { event?: unknown }).event === 'write-succeeded'
   )
@@ -131,6 +138,7 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
     assert.equal(event.slo, 'p99-success')
     const detail = event.detail as Record<string, unknown>
     assert.equal(detail.event, 'write-succeeded')
+    assert.equal(detail.flag_source, 'env')
     assert.equal(typeof detail.bytes, 'number')
     assert.ok(Number.isFinite(detail.bytes), 'write-succeeded telemetry must include bytes')
     assert.equal(typeof detail.retryCount, 'number')
@@ -145,6 +153,7 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
     assert.equal(event.slo, 'p99-success')
     const detail = event.detail as Record<string, unknown>
     assert.equal(detail.event, 'gc-completed')
+    assert.equal(detail.flag_source, 'env')
     assert.equal(typeof detail.bytes, 'number')
     assert.ok(Number.isFinite(detail.bytes), 'gc-completed telemetry must include bytes')
     assert.equal(typeof detail.retryCount, 'number')
@@ -159,6 +168,7 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
     assert.equal(event.slo, 'p99-success')
     const detail = event.detail as Record<string, unknown>
     assert.equal(detail.event, 'autosave.save.completed')
+    assert.equal(detail.flag_source, 'env')
     assert.equal(typeof detail.duration_ms, 'number')
     assert.equal(detail.source, 'auto')
   })
@@ -171,18 +181,21 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
   assert.equal(disposeEvent.phase, 'disabled')
   assert.equal(disposeEvent.slo, 'p95-latency')
   assert.equal((disposeEvent.detail as { reason?: unknown }).reason, 'dispose')
+  assert.equal((disposeEvent.detail as { flag_source?: unknown }).flag_source, 'env')
 
   assert.ok(telemetry.length > 0, 'autosave saves should publish telemetry events')
   telemetry.forEach((entry, index) => {
     assert.equal(entry.feature, 'autosave', `telemetry[${index}].feature should be autosave`)
     assert.equal(entry.event, 'autosave.save.completed', `telemetry[${index}].event should be autosave.save.completed`)
     assert.equal(entry.phase, 'A-1', `telemetry[${index}].phase should be A-1`)
+    assert.equal(entry.flag_source, 'env', `telemetry[${index}].flag_source should be env`)
   })
 
   const expectedTelemetry = telemetry.map(() => ({
     feature: 'autosave',
     event: 'autosave.save.completed',
-    phase: 'A-1'
+    phase: 'A-1',
+    flag_source: 'env'
   }))
 
   const expectation = {
@@ -239,6 +252,7 @@ scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, 
     assert.equal(event.slo, 'p95-latency')
     const detail = event.detail as Record<string, unknown>
     assert.equal(detail.event, 'retry-scheduled')
+    assert.equal(detail.flag_source, 'env')
     assert.equal(typeof detail.bytes, 'number')
     assert.equal(typeof detail.retryCount, 'number')
     assert.equal(typeof detail.delayMs, 'number')
@@ -252,6 +266,7 @@ scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, 
   assert.equal(retryExhausted.slo, 'p95-latency')
   const exhaustedDetail = retryExhausted.detail as Record<string, unknown>
   assert.equal(exhaustedDetail.event, 'retry-exhausted')
+  assert.equal(exhaustedDetail.flag_source, 'env')
   assert.equal(exhaustedDetail.code, 'lock-unavailable')
   assert.equal(exhaustedDetail.retryCount, AUTOSAVE_RETRY_POLICY.maxAttempts)
 })

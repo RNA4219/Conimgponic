@@ -21,8 +21,17 @@ const collectorLockEvent = (stage, lease) => ({
   },
 })
 
+const VALID_FLAG_SOURCES = new Set(['env', 'workspace', 'localStorage', 'default'])
+
 const expectCollectorLockEvents = (events, lease) => {
-  assert.deepEqual(events, [collectorLockEvent('acquired', lease), collectorLockEvent('released', lease)])
+  assert.equal(events.length, 2)
+  const normalized = events.map(({ flag_source, ...rest }) => {
+    assert.ok(VALID_FLAG_SOURCES.has(flag_source), `unexpected flag_source: ${String(flag_source)}`)
+    return rest
+  })
+  assert.deepEqual(normalized, [collectorLockEvent('acquired', lease), collectorLockEvent('released', lease)])
+  const [firstSource, secondSource] = events.map((event) => event.flag_source)
+  assert.equal(firstSource, secondSource)
 }
 
 function runMerge(input, options) {

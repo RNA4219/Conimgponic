@@ -645,107 +645,128 @@
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     },
     {
       "feature": "autosave",
       "event": "autosave.save.completed",
-      "phase": "A-1"
+      "phase": "A-1",
+      "flag_source": "env"
     }
   ]
 }

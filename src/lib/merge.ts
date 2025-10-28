@@ -204,6 +204,20 @@ interface Day8CollectorLike {
 const AUTO_SAVE_LOCK_ATTACHED = Symbol('merge.autosave.lock.attached');
 const LAST_COLLECTOR_STAGES = new Map<string, 'acquired' | 'released'>();
 
+const normalizeFlagSource = (
+  value: unknown,
+): 'env' | 'workspace' | 'localStorage' | 'default' => {
+  if (value === 'env' || value === 'workspace' || value === 'localStorage') {
+    return value;
+  }
+  return 'default';
+};
+
+const resolveAutoSaveFlagSource = (): 'env' | 'workspace' | 'localStorage' | 'default' => {
+  const scope = globalThis as { __AUTOSAVE_FLAG_SOURCE__?: unknown };
+  return normalizeFlagSource(scope.__AUTOSAVE_FLAG_SOURCE__);
+};
+
 const resolveDay8Collector = (): Day8CollectorLike | undefined => {
   const scope = globalThis as { Day8Collector?: unknown };
   const candidate = scope.Day8Collector as { publish?: unknown } | undefined;
@@ -241,6 +255,7 @@ const publishAutoSaveLockCollectorEvent = (
       via_fallback: lease.viaFallback,
       resource: lease.resource,
     },
+    flag_source: resolveAutoSaveFlagSource(),
   });
 };
 

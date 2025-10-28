@@ -93,5 +93,12 @@
       }
     }
   ],
-  "telemetry": []
+  "telemetry": [
+    {
+      "feature": "autosave",
+      "event": "autosave.save.completed",
+      "phase": "A-1",
+      "flag_source": "env"
+    }
+  ]
 }

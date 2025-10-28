@@ -314,7 +314,8 @@ const publishSaveCompletedCollectorEvent = (event: AutoSaveSaveCompletedEvent): 
     bytes: event.bytes,
     generation: event.generation,
     retry_count: event.retryCount,
-    source: event.source
+    source: event.source,
+    flag_source: event.guard.featureFlag.source
   }
   if (event.leaseId) {
     payload.lease_id = event.leaseId
@@ -1132,6 +1133,10 @@ export function initAutoSave(
   const flagEnabled = guard.featureFlag.value
   const effectiveOptionsDisabled = guard.optionsDisabled
   const guardAllowsDirtyExposure = flagEnabled && !effectiveOptionsDisabled
+  const flagSource = guard.featureFlag.source
+  ;(globalThis as {
+    __AUTOSAVE_FLAG_SOURCE__?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
+  }).__AUTOSAVE_FLAG_SOURCE__ = flagSource
   if (effectiveOptionsDisabled || !flagEnabled) {
     const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
     publishGuardCollectorEvent(
@@ -1178,7 +1183,9 @@ export function initAutoSave(
     if (!spec) {
       return
     }
-    const detailPayload = detail ? { event: event.type, ...detail } : { event: event.type }
+    const detailPayload = detail
+      ? { event: event.type, ...detail, flag_source: flagSource }
+      : { event: event.type, flag_source: flagSource }
     runnerOutput.telemetry({
       feature: 'autosave',
       phase: event.phase,
@@ -1198,7 +1205,7 @@ export function initAutoSave(
       phase,
       at: new Date().toISOString(),
       slo,
-      detail: { event, ...detail }
+      detail: { event, ...detail, flag_source: flagSource }
     })
   }
   const emitRunnerEvent = (
