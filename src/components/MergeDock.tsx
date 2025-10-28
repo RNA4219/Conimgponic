@@ -190,11 +190,11 @@ export const getDefaultPreference = (
   precision: MergePrecision,
   diffEnabled: boolean,
 ): MergeDockPreference => {
-  if (precision === 'stable') {
-    return 'diff-merge'
-  }
   if (!diffEnabled) {
     return 'manual-first'
+  }
+  if (precision === 'stable') {
+    return 'diff-merge'
   }
   return precision === 'legacy' ? 'manual-first' : 'diff-merge'
 }
@@ -205,13 +205,7 @@ export const sanitizePreference = (
   diffEnabled: boolean,
 ): MergeDockPreference => {
   if (!diffEnabled) {
-    if (precision === 'stable') {
-      return 'diff-merge'
-    }
-    return preference === 'diff-merge' ? 'manual-first' : preference
-  }
-  if (precision === 'stable') {
-    return preference
+    return 'manual-first'
   }
   return preference
 }
@@ -486,7 +480,7 @@ export const planMergeDockTabs = (precision: MergePrecision, lastTab?: MergeDock
   const sanitized = requested && plan.tabs.some((entry) => entry.id === requested) ? requested : undefined
   const diffConfig = plan.diff ? { diff: plan.diff } : {}
   if (precision === 'stable') {
-    const initialTab = sanitized === 'diff' ? 'diff' : plan.initialTab
+    const initialTab = sanitized && sanitized !== 'diff' ? sanitized : plan.initialTab
     return { tabs: plan.tabs, initialTab, ...diffConfig }
   }
   if (precision === 'legacy') {
