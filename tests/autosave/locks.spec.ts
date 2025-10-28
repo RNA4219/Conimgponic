@@ -11,6 +11,7 @@ import {
   projectLockEvents,
   WEB_LOCK_KEY,
   FALLBACK_LOCK_PATH,
+  FALLBACK_LOCK_TTL_MS,
   WEB_LOCK_TTL_MS,
   type ProjectLockEvent
 } from '../../src/lib/locks'
@@ -759,7 +760,7 @@ scenario(
 )
 
 scenario(
-  'AS-I-03: TTL override persists ttlSeconds metadata in fallback lock',
+  'AS-I-03: TTL override keeps fallback ttlSeconds metadata fixed',
   {
     locks: {
       async request() {
@@ -778,6 +779,7 @@ scenario(
     })
 
     const overrideTtlMs = 45_000
+    const acquisitionNow = Date.now()
     const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock', ttlMs: overrideTtlMs })
 
     assert.equal(lease.strategy, 'file-lock')
@@ -789,8 +791,14 @@ scenario(
 
     assert.equal(
       fallbackRecord.ttlSeconds,
-      overrideTtlMs / 1000,
-      'ttlSeconds metadata must be stored in seconds using the overridden ttlMs'
+      FALLBACK_LOCK_TTL_MS / 1000,
+      'ttlSeconds metadata must remain fixed regardless of override ttlMs'
+    )
+
+    assert.equal(
+      fallbackRecord.expiresAt,
+      acquisitionNow + overrideTtlMs,
+      'expiresAt must continue to reflect the overridden ttlMs'
     )
 
     await projectLockApi.release(lease)
