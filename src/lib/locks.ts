@@ -305,6 +305,7 @@ type AcquireContext = {
   readonly ttlMs?: number;
   readonly heartbeatMs: number;
   readonly signal?: AbortSignal;
+  conflictLease?: ProjectLockLease;
 };
 
 const makeError = (
@@ -420,6 +421,15 @@ const fallbackRecordToLease = (
     nextHeartbeatAt,
     renewAttempt,
   };
+};
+
+const captureFallbackConflictLease = (
+  record: FallbackLockLeaseRecord,
+  ctx: AcquireContext
+): ProjectLockLease => {
+  const lease = fallbackRecordToLease(record, ctx.heartbeatMs);
+  ctx.conflictLease = lease;
+  return lease;
 };
 
 const readFallbackLeaseSnapshot = async (
@@ -662,7 +672,7 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
     throwIfAborted();
 
     if (record && record.leaseId !== ctx.leaseId && record.expiresAt > now) {
-      const lease = fallbackRecordToLease(record, ctx.heartbeatMs);
+      const lease = captureFallbackConflictLease(record, ctx);
       projectLockEvents.emit({
         type: 'lock:warning',
         lease,
@@ -770,8 +780,10 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
 
         if (projectError.code === 'fallback-conflict') {
           const lease =
+            ctx.conflictLease ??
             (await readFallbackLeaseSnapshot(ctx.heartbeatMs)) ??
             buildLease('file-lock', FALLBACK_LOCK_PATH, ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS, ctx.heartbeatMs, ctx);
+          ctx.conflictLease = undefined;
           projectLockEvents.emit({
             type: 'lock:warning',
             lease,
