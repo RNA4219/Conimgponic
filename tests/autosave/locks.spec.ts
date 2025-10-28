@@ -272,6 +272,40 @@ baseScenario(
   }
 )
 
+baseScenario(
+  'AS-I-08: AutoSave runner telemetry exposes lease metadata after lock acquisition',
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 1) })
+
+    const runner = ctx.initAutoSave(createStoryboard, { disabled: false }, ENABLED_GUARD)
+    t.after(async () => {
+      await runner.dispose()
+    })
+
+    runner.markDirty({ pendingBytes: 1024 })
+    await runner.flushNow()
+
+    const lockEvent = ctx.runnerTelemetry.find((event) => {
+      return (event.detail as { event?: string } | undefined)?.event === 'lock-acquired'
+    })
+
+    assert.ok(lockEvent, 'lock-acquired telemetry event must exist after flush')
+    assert.equal(lockEvent!.phase, 'awaiting-lock')
+
+    const detail = lockEvent!.detail as Record<string, unknown>
+    assert.equal(detail.retryCount, 0)
+
+    const lease = detail.lease as Record<string, unknown> | undefined
+    assert.ok(lease, 'lock-acquired telemetry must include lease metadata')
+    assert.equal(typeof lease!.leaseId, 'string')
+    assert.equal(typeof lease!.ownerId, 'string')
+    assert.equal(lease!.strategy, 'web-lock')
+    assert.equal(lease!.viaFallback, false)
+    assert.equal(typeof lease!.ttlMillis, 'number')
+    assert.equal(typeof lease!.resource, 'string')
+  }
+)
+
 scenario(
   'AS-I-03: Fallback acquisition aborts immediately when signal is already aborted',
   {

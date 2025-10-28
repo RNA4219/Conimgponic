@@ -1359,7 +1359,15 @@ export function initAutoSave(
           retryCount,
           strategy: lease.strategy,
           viaFallback: lease.viaFallback,
-          leaseMs: lease.ttlMillis
+          leaseMs: lease.ttlMillis,
+          lease: {
+            leaseId: lease.leaseId,
+            ownerId: lease.ownerId,
+            strategy: lease.strategy,
+            viaFallback: lease.viaFallback,
+            resource: lease.resource,
+            ttlMillis: lease.ttlMillis
+          }
         })
         phase = 'writing-current'; await saveText('project/autosave/current.json.tmp', payload); await renameFile('project/autosave/current.json.tmp', 'project/autosave/current.json')
         phase = 'updating-index'; const ts = new Date().toISOString(); const flushRetryCount = retryCount; emitRunnerTelemetry(
