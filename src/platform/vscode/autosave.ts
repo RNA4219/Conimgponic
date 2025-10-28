@@ -537,7 +537,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             source: 'phase-guard',
             correlationId,
             retryCount: state.retryCount,
-            phase: envelopePhase
+            phase: envelopePhase,
+            performance: { flush_latency_ms: 0 }
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }

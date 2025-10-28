@@ -1685,6 +1685,7 @@ describe('createVscodeAutoSaveBridge', () => {
       (event) => event.name === 'autosave.status' && event.properties?.correlationId === 'corr-disabled'
     )
     assert.equal(statusTelemetry?.properties?.state, 'disabled')
+    assert.deepEqual(statusTelemetry?.properties?.performance, { flush_latency_ms: 0 })
   })
 
   it('guard disable short circuit で autosave.status テレメトリに A-1 phase を付与する', async () => {
@@ -1725,6 +1726,7 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(disabledTelemetry, 'guard 無効化テレメトリが必要')
     assert.equal(disabledTelemetry.properties?.state, 'disabled')
     assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+    assert.deepEqual(disabledTelemetry.properties?.performance, { flush_latency_ms: 0 })
   })
 
   it('guard 無効化ショートサーキットで autosave.guard telemetry を 1 度送信する', async () => {
@@ -1785,6 +1787,11 @@ describe('createVscodeAutoSaveBridge', () => {
       disabledTelemetry.properties?.phase,
       'A-1',
       "guard 無効化 autosave.status telemetry は envelope phase 'A-1' を含む"
+    )
+    assert.deepEqual(
+      disabledTelemetry.properties?.performance,
+      { flush_latency_ms: 0 },
+      'guard 無効化 autosave.status telemetry は flush_latency_ms=0 を含む'
     )
 
     bridge.reportDirty(512, guardEnabled)
