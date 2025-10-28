@@ -517,6 +517,8 @@ export interface AutoSaveInitResult {
    * フライト中の場合でも完了を待機してから `phase='disabled'` に確定させる。
    */
   dispose: () => Promise<void>
+  /** ランナーイベントを購読し、解除用 disposer を返す。 */
+  readonly onEvent: (handler: (event: AutoSaveRunnerEvent) => void) => () => void
   /** Phase A UI からの通知を反映して pendingBytes を更新する。 */
   readonly markDirty: (meta?: { readonly pendingBytes?: number }) => void
 }
@@ -1160,11 +1162,22 @@ export function initAutoSave(
       snapshot: () => ({ ...snapshot }),
       flushNow: noopAsync,
       dispose: noopAsync,
+      onEvent: () => () => {},
       markDirty: () => {}
     }
   }
+  const eventHandlers = new Set<(event: AutoSaveRunnerEvent) => void>()
   const runnerOutput: AutoSaveRunnerIOContract['output'] = {
-    emit: () => {},
+    emit: (event) => {
+      const listeners = Array.from(eventHandlers)
+      for (const listener of listeners) {
+        try {
+          listener(event)
+        } catch (handlerError) {
+          console.error('AutoSave runner event handler failed', handlerError)
+        }
+      }
+    },
     telemetry: (event) => {
       const host = resolveAutoSaveRunnerHost()
       host?.telemetry?.(event)
@@ -1183,6 +1196,23 @@ export function initAutoSave(
       slo,
       detail: { event, ...detail }
     })
+  }
+  const publishRunnerEvent = (
+    type: AutoSaveRunnerEventType,
+    phase: AutoSavePhase,
+    payload?: Record<string, unknown>,
+    error?: AutoSaveError
+  ): void => {
+    const at = new Date().toISOString()
+    const event: AutoSaveRunnerEvent = {
+      type,
+      phase,
+      at,
+      ...(payload ? { payload } : {}),
+      ...(error ? { error } : {})
+    }
+    runnerOutput.emit(event)
+    emitRunnerTelemetry(type, phase, at, payload)
   }
   const encoder = new TextEncoder()
   const pendingQueue: AutoSaveQueueEntry[] = []
@@ -1354,8 +1384,7 @@ export function initAutoSave(
     try {
       await projectLockApi.withProjectLock(async (lease) => {
         if (disposed) throw disabledError()
-        const lockTelemetryAt = new Date().toISOString()
-        emitRunnerTelemetry('lock-acquired', 'awaiting-lock', lockTelemetryAt, {
+        publishRunnerEvent('lock-acquired', 'awaiting-lock', {
           retryCount,
           strategy: lease.strategy,
           viaFallback: lease.viaFallback,
@@ -1370,12 +1399,15 @@ export function initAutoSave(
           }
         })
         phase = 'writing-current'; await saveText('project/autosave/current.json.tmp', payload); await renameFile('project/autosave/current.json.tmp', 'project/autosave/current.json')
-        phase = 'updating-index'; const ts = new Date().toISOString(); const flushRetryCount = retryCount; emitRunnerTelemetry(
-          'write-succeeded',
-          'writing-current',
-          ts,
-          { bytes: pendingBytes, retryCount: flushRetryCount, generation }
-        ); await updateIndex(ts, pendingBytes, payload, generation)
+        phase = 'updating-index';
+        const ts = new Date().toISOString();
+        const flushRetryCount = retryCount;
+        publishRunnerEvent('write-succeeded', 'writing-current', {
+          bytes: pendingBytes,
+          retryCount: flushRetryCount,
+          generation
+        })
+        await updateIndex(ts, pendingBytes, payload, generation)
         phase = 'gc';
         lastSuccessAt = ts;
         const savedBytes = pendingBytes
@@ -1403,7 +1435,7 @@ export function initAutoSave(
           inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)
         }
         const backlog = Math.max(0, pendingQueue.length - inflightQueueCount)
-        emitRunnerTelemetry('gc-completed', 'gc', ts, {
+        publishRunnerEvent('gc-completed', 'gc', {
           bytes: savedBytes,
           retryCount: flushRetryCount,
           backlog
@@ -1432,7 +1464,6 @@ export function initAutoSave(
       }
       if (disposed) throw disabledError()
       const stage = phase
-      const telemetryAt = new Date().toISOString()
       const autoError =
         isAutoSaveError(error)
           ? error
@@ -1455,15 +1486,15 @@ export function initAutoSave(
         reason: stage === 'awaiting-lock' ? 'lock' : 'write'
       })
       if (stage === 'awaiting-lock') {
-        emitRunnerTelemetry('lock-rejected', 'awaiting-lock', telemetryAt, {
+        publishRunnerEvent('lock-rejected', 'awaiting-lock', {
           code: autoError.code,
           retryable: autoError.retryable
-        })
+        }, autoError)
       } else if (stage === 'writing-current' || stage === 'updating-index') {
-        emitRunnerTelemetry('write-failed', 'writing-current', telemetryAt, {
+        publishRunnerEvent('write-failed', 'writing-current', {
           code: autoError.code,
           retryable: autoError.retryable
-        })
+        }, autoError)
       }
       lastError = autoError
       if (autoError.retryable) {
@@ -1475,12 +1506,17 @@ export function initAutoSave(
             AUTOSAVE_RETRY_POLICY.initialDelayMs * Math.pow(AUTOSAVE_RETRY_POLICY.multiplier, attempt),
             AUTOSAVE_RETRY_POLICY.maxDelayMs
           )
-          emitRunnerTelemetry('retry-scheduled', 'error', telemetryAt, {
-            retryCount: nextAttempt,
-            bytes: pendingBytes,
-            delayMs: delay,
-            code: autoError.code
-          })
+          publishRunnerEvent(
+            'retry-scheduled',
+            'error',
+            {
+              retryCount: nextAttempt,
+              bytes: pendingBytes,
+              delayMs: delay,
+              code: autoError.code
+            },
+            autoError
+          )
           notifyOutputTelemetry('autosave.save.error', 'error', 'p95-latency', {
             code: autoError.code,
             retryable: autoError.retryable,
@@ -1524,11 +1560,16 @@ export function initAutoSave(
             return
           }
         } else {
-          emitRunnerTelemetry('retry-exhausted', stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current', telemetryAt, {
-            retryCount: nextAttempt,
-            bytes: pendingBytes,
-            code: autoError.code
-          })
+          publishRunnerEvent(
+            'retry-exhausted',
+            stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
+            {
+              retryCount: nextAttempt,
+              bytes: pendingBytes,
+              code: autoError.code
+            },
+            autoError
+          )
           notifyOutputTelemetry(
             'autosave.save.error',
             stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
@@ -1551,12 +1592,17 @@ export function initAutoSave(
           phase = 'disabled'
         }
       } else {
-        emitRunnerTelemetry('retry-exhausted', stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current', telemetryAt, {
-          retryCount: attempt + 1,
-          bytes: pendingBytes,
-          code: autoError.code,
-          retryable: false
-        })
+        publishRunnerEvent(
+          'retry-exhausted',
+          stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
+          {
+            retryCount: attempt + 1,
+            bytes: pendingBytes,
+            code: autoError.code,
+            retryable: false
+          },
+          autoError
+        )
         notifyOutputTelemetry(
           'autosave.save.error',
           stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
@@ -1670,6 +1716,7 @@ export function initAutoSave(
       disposing = true
       const pendingFlush = inFlightFlush
       const pendingBackoff = inFlightBackoff
+      const cancellationPhase = phase
       disposePromise = (async () => {
         const finishBackoff = resolveBackoff
         resolveBackoff = null
@@ -1684,6 +1731,9 @@ export function initAutoSave(
           [pendingFlush, pendingBackoff].filter((candidate): candidate is Promise<void> => Boolean(candidate))
         )
         resetSchedule()
+        if (cancellationPhase === 'debouncing' || cancellationPhase === 'awaiting-lock' || cancellationPhase === 'error') {
+          publishRunnerEvent('cancelled', cancellationPhase, { reason: 'dispose' })
+        }
         disposed = true
         disposing = false
         phase = 'disabled'
@@ -1695,8 +1745,15 @@ export function initAutoSave(
         notifyOutputTelemetry('autosave.save.error', 'disabled', 'p95-latency', {
           reason: 'dispose'
         })
+        eventHandlers.clear()
       })()
       await disposePromise
+    },
+    onEvent: (handler) => {
+      eventHandlers.add(handler)
+      return () => {
+        eventHandlers.delete(handler)
+      }
     },
     markDirty: (meta) => {
       if (disposed || disposing) return
@@ -1731,14 +1788,9 @@ export function initAutoSave(
           })
           .catch(() => undefined)
       }
-      emitRunnerTelemetry('change-queued', 'debouncing', new Date().toISOString(), {
-        pendingBytes: estimated,
-        backlog
-      })
-      notifyOutputTelemetry('change-queued', 'debouncing', 'p95-latency', {
-        pendingBytes: estimated,
-        backlog
-      })
+      const payload = { pendingBytes: estimated, backlog }
+      publishRunnerEvent('change-queued', 'debouncing', payload)
+      notifyOutputTelemetry('change-queued', 'debouncing', 'p95-latency', payload)
       if (phase === 'idle' || phase === 'debouncing') {
         phase = 'debouncing'
       }

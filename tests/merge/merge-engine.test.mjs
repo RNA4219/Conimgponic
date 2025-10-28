@@ -8,6 +8,8 @@ const { DEFAULT_MERGE_ENGINE } = await import('../../src/lib/merge.ts')
 const { projectLockEvents } = await import('../../src/lib/locks.ts')
 const { createVsCodeMergeBridge } = await import('../../src/platform/vscode/merge/bridge.ts')
 
+const LOCK_EVENT_SERIES = ['lock-acquired', 'gc-completed']
+
 const collectorLockEvent = (stage, lease) => ({
   feature: 'merge.autosave',
   event: 'autosave.lock',
@@ -297,10 +299,12 @@ test('stable precision publishes autosave lock integration events (MG-I-02)', ()
     )
 
     const lockEvents = published.filter((event) => event.type === 'merge:autosave:lock')
-    assert.deepEqual(lockEvents, [
-      { type: 'merge:autosave:lock', stage: 'acquired', lease },
-      { type: 'merge:autosave:lock', stage: 'released', lease },
-    ])
+    const expectedLockEvents = LOCK_EVENT_SERIES.map((eventType) => ({
+      type: 'merge:autosave:lock',
+      stage: eventType === 'lock-acquired' ? 'acquired' : 'released',
+      lease,
+    }))
+    assert.deepEqual(lockEvents, expectedLockEvents)
 
     expectCollectorLockEvents(collectorEvents, lease)
   } finally {
@@ -355,6 +359,19 @@ test('MG-I-02: collector receives AutoSave lock events without merge event hub',
       },
     )
 
+    const expectedLockEvents = LOCK_EVENT_SERIES.map((eventType) => ({
+      feature: 'merge.autosave',
+      event: 'autosave.lock',
+      stage: eventType === 'lock-acquired' ? 'acquired' : 'released',
+      lease: {
+        id: lease.leaseId,
+        owner: lease.ownerId,
+        strategy: lease.strategy,
+        via_fallback: lease.viaFallback,
+        resource: lease.resource,
+      },
+    }))
+    assert.deepEqual(collectorEvents, expectedLockEvents)
     expectCollectorLockEvents(collectorEvents, lease)
   } finally {
     process.env.MERGE_PRECISION = originalPrecision

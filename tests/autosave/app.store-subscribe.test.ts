@@ -39,6 +39,9 @@ test('AS-U-04: App autosave subscription marks runner dirty on storyboard diff',
     snapshot: () => ({ phase: 'idle', retryCount: 0 }),
     async flushNow() {},
     async dispose() {},
+    onEvent() {
+      return () => {}
+    },
     markDirty(meta) {
       markDirtyPayloads.push(meta?.pendingBytes)
     }

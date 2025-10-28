@@ -4,13 +4,15 @@ import { beforeEach } from 'node:test'
 import type { TestContext } from 'node:test'
 
 import { ENABLED_GUARD, scenario } from '../lib/autosave/setup'
-import type { AutoSaveInitResult } from '../../src/lib/autosave'
+import type { AutoSaveInitResult, AutoSaveRunnerEvent } from '../../src/lib/autosave'
 import { AUTOSAVE_RETRY_POLICY } from '../../src/lib/autosave'
 import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
 import type { Storyboard } from '../../src/types'
 import { collectAutoSaveWrites, reset } from './__mocks__/opfs'
 
 const snapshotBase = new URL('./__snapshots__/autosave/on/', import.meta.url)
+
+const LOCK_EVENT_SERIES: readonly AutoSaveRunnerEvent['type'][] = ['lock-acquired', 'gc-completed'] as const
 
 const readSnapshot = async (name: string): Promise<unknown> => {
   const file = new URL(`${name}.json`, snapshotBase)
@@ -84,6 +86,11 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
 
   const policy = ctx.AUTOSAVE_POLICY
   const runner = ctx.initAutoSave(createStoryboard, { disabled: false }, ENABLED_GUARD)
+  const events: AutoSaveRunnerEvent[] = []
+  const unsubscribe = runner.onEvent((event) => {
+    events.push(event)
+  })
+  t.after(() => unsubscribe())
 
   const flushViaIdle = async () => {
     runner.markDirty({ pendingBytes: 2048 })
@@ -108,7 +115,30 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
     t.mock.timers.tick(10)
   }
 
-  await runner.dispose()
+  const expectedSaveSequence: AutoSaveRunnerEvent['type'][] = [
+    'change-queued',
+    'lock-acquired',
+    'write-succeeded',
+    'gc-completed'
+  ]
+  assert.deepEqual(
+    events.slice(0, expectedSaveSequence.length).map((event) => event.type),
+    expectedSaveSequence
+  )
+  const lockSequence = events
+    .filter((event) => LOCK_EVENT_SERIES.includes(event.type))
+    .map((event) => event.type)
+  assert.deepEqual(lockSequence.slice(0, LOCK_EVENT_SERIES.length), Array.from(LOCK_EVENT_SERIES))
+
+  runner.markDirty({ pendingBytes: 512 })
+  const disposePromise = runner.dispose()
+  await disposePromise
+  const lastEvent = events.at(-1)
+  assert.ok(lastEvent, 'expected autosave dispose to emit events')
+  if (lastEvent) {
+    assert.equal(lastEvent.type, 'cancelled')
+    assert.equal((lastEvent.payload as { reason?: unknown } | undefined)?.reason, 'dispose')
+  }
 
   const historyWrites = collectAutoSaveWrites(ctx.opfs).filter(({ path }) =>
     path.startsWith('project/autosave/history/')
@@ -211,6 +241,11 @@ scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, 
   t.after(async () => {
     await runner.dispose()
   })
+  const retryEvents: AutoSaveRunnerEvent[] = []
+  const stop = runner.onEvent((event) => {
+    retryEvents.push(event)
+  })
+  t.after(() => stop())
 
   runner.markDirty({ pendingBytes: 4096 })
   const policy = ctx.AUTOSAVE_POLICY
@@ -254,6 +289,20 @@ scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, 
   assert.equal(exhaustedDetail.event, 'retry-exhausted')
   assert.equal(exhaustedDetail.code, 'lock-unavailable')
   assert.equal(exhaustedDetail.retryCount, AUTOSAVE_RETRY_POLICY.maxAttempts)
+
+  const eventTypes = retryEvents.map((event) => event.type)
+  assert.equal(eventTypes[0], 'change-queued')
+  const lockRejectedCount = eventTypes.filter((type) => type === 'lock-rejected').length
+  assert.equal(lockRejectedCount, AUTOSAVE_RETRY_POLICY.maxAttempts)
+  const retryScheduledCount = eventTypes.filter((type) => type === 'retry-scheduled').length
+  assert.equal(retryScheduledCount, AUTOSAVE_RETRY_POLICY.maxAttempts - 1)
+  assert.equal(eventTypes.at(-1), 'retry-exhausted')
+  const exhaustedEvent = retryEvents.find((event) => event.type === 'retry-exhausted')
+  assert.ok(exhaustedEvent)
+  if (exhaustedEvent) {
+    assert.equal(exhaustedEvent.error?.code, 'lock-unavailable')
+    assert.equal(exhaustedEvent.error?.retryable, true)
+  }
 })
 
 let resumeLock: (() => Promise<void>) | null = null
