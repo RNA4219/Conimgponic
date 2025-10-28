@@ -16,15 +16,16 @@ type StepConfig = {
   with?: unknown;
   if?: unknown;
   env?: unknown;
+  id?: unknown;
+  'continue-on-error'?: unknown;
 };
-type ActionStep<TConfig extends Record<string, unknown>> = StepConfig & { uses: string; with: TConfig };
-type AnchoreSbomConfig = { format: string; 'output-file': string };
 type UploadArtifactConfig = {
   name: string;
   path: string;
   'if-no-files-found': string;
 };
 type UploadStep = StepConfig & { uses: string; with: UploadArtifactConfig };
+type RunStep = StepConfig & { name: string; run: string };
 type JsYamlModule = { load: (input: string) => unknown };
 const require = createRequire(import.meta.url);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -58,32 +59,18 @@ describe('ci workflow sbom job', () => {
     );
   });
 
-  test('generates sbom.json via Anchore SBOM action and always uploads artifact', async () => {
+  test('produces sbom.json via syft CLI and always uploads artifact', async () => {
     try {
       const workflow = await loadWorkflow();
       const sbomSteps = expectJobSteps(workflow.jobs?.sbom, 'sbom job must exist');
-      const sbomAction = expectActionStep<AnchoreSbomConfig>(
-        sbomSteps,
-        'anchore/sbom-action@v0.17.6',
-        'sbom job must use Anchore SBOM action to produce sbom.json',
-      );
-      assert.strictEqual(
-        sbomAction.with.format,
-        'spdx-json',
-        'Anchore SBOM action must emit spdx-json format',
-      );
-      assert.strictEqual(
-        sbomAction.with['output-file'],
-        'sbom.json',
-        'Anchore SBOM action must output sbom.json',
-      );
-      const envConfig = sbomAction.env;
-      assert.ok(envConfig && typeof envConfig === 'object', 'Anchore SBOM action must define env block');
+      const sbomRunStep = expectRunStep(sbomSteps, 'Generate SBOM', 'sbom job must run syft CLI to generate sbom.json');
+      const envConfig = sbomRunStep.env;
+      assert.ok(envConfig && typeof envConfig === 'object', 'Generate SBOM step must define env block');
       const syftUpdateSetting = (envConfig as Record<string, unknown>).SYFT_CHECK_FOR_APP_UPDATE;
       assert.strictEqual(
         syftUpdateSetting,
         'false',
-        'Anchore SBOM action must disable update checks via SYFT_CHECK_FOR_APP_UPDATE="false"',
+        'Generate SBOM step must disable update checks via SYFT_CHECK_FOR_APP_UPDATE="false"',
       );
       const syftLogFile = (envConfig as Record<string, unknown>).SYFT_LOG_FILE;
       assert.strictEqual(
@@ -132,25 +119,56 @@ describe('ci workflow sbom job', () => {
       'sbom log artifact upload must fail when sbom.log is missing to surface SBOM execution issues',
     );
   });
-});
 
-function expectActionStep<TConfig extends Record<string, unknown>>(
-  steps: StepConfig[],
-  uses: string,
-  message: string,
-): ActionStep<TConfig> {
-  const match = steps.find((step): step is ActionStep<Record<string, unknown>> => {
-    if (typeof step.uses !== 'string') return false;
-    return step.uses.trim() === uses;
+  test('runs syft CLI with tee logging and fails explicitly on non-zero exit code', async () => {
+    const workflow = await loadWorkflow();
+    const sbomSteps = expectJobSteps(workflow.jobs?.sbom, 'sbom job must exist');
+
+    const generateStep = expectRunStep(
+      sbomSteps,
+      'Generate SBOM',
+      'sbom job must define Generate SBOM run step',
+    );
+    assert.strictEqual(generateStep.id, 'generate_sbom', 'Generate SBOM step must expose id for outputs');
+    assert.strictEqual(
+      generateStep['continue-on-error'],
+      true,
+      'Generate SBOM step must continue on error to allow log uploads',
+    );
+
+    const runScript = generateStep.run;
+    assert.ok(runScript.includes('syft '), 'Generate SBOM step must invoke syft CLI');
+    assert.ok(
+      runScript.includes('|& tee sbom.log'),
+      'Generate SBOM step must pipe stdout/stderr through tee to sbom.log',
+    );
+    assert.ok(
+      runScript.includes('echo "exit_code=$status" >> "$GITHUB_OUTPUT"'),
+      'Generate SBOM step must record syft exit code into GITHUB_OUTPUT',
+    );
+
+    const failStep = sbomSteps.find((step): step is StepConfig & { name: string; run: string } => {
+      if (typeof step.name !== 'string') return false;
+      if (step.name.trim() !== 'Fail when syft exits non-zero') return false;
+      return typeof step.run === 'string';
+    });
+
+    assert.ok(failStep, 'sbom job must define explicit failure step for syft exit code');
+    assert.ok(
+      typeof failStep.if === 'string',
+      'failure step must define conditional expression on syft exit code',
+    );
+    assert.strictEqual(
+      (failStep.if as string).trim(),
+      "steps.generate_sbom.outputs.exit_code != '0'",
+      'failure step must check syft exit code output',
+    );
+    assert.ok(
+      failStep.run.includes('exit "${{ steps.generate_sbom.outputs.exit_code }}"'),
+      'failure step must exit with syft exit code to fail job',
+    );
   });
-  if (!match) {
-    throw new Error(message);
-  }
-  if (!match.with || typeof match.with !== 'object') {
-    throw new Error('action step must configure the with block');
-  }
-  return match as ActionStep<TConfig>;
-}
+});
 
 function findUploadStep(steps: StepConfig[], name: string): UploadStep | undefined {
   return steps.find((step): step is UploadStep => {
@@ -165,6 +183,18 @@ function findUploadStep(steps: StepConfig[], name: string): UploadStep | undefin
     if (typeof typedConfig['if-no-files-found'] !== 'string') return false;
     return true;
   });
+}
+
+function expectRunStep(steps: StepConfig[], name: string, message: string): RunStep {
+  const match = steps.find((step): step is RunStep => {
+    if (typeof step.name !== 'string') return false;
+    if (step.name.trim() !== name) return false;
+    return typeof step.run === 'string';
+  });
+  if (!match) {
+    throw new Error(message);
+  }
+  return match;
 }
 
 async function importJsYaml(): Promise<JsYamlModule> {

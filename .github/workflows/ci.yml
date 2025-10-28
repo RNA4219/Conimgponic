@@ -32,14 +32,19 @@ jobs:
             | sh -s -- -b "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0.17.6
-        with:
-          path: .
-          format: spdx-json
-          output-file: sbom.json
+        id: generate_sbom
+        continue-on-error: true
         env:
           SYFT_CHECK_FOR_APP_UPDATE: 'false'
           SYFT_LOG_FILE: sbom.log
+        run: |
+          set -euo pipefail
+          set +e
+          syft packages . -o spdx-json=sbom.json |& tee sbom.log
+          status=$?
+          set -e
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
 
       - name: Upload SBOM artifact
         if: "always()"
@@ -57,6 +62,10 @@ jobs:
           name: sbom-log
           path: sbom.log
           if-no-files-found: error
+
+      - name: Fail when syft exits non-zero
+        if: steps.generate_sbom.outputs.exit_code != '0'
+        run: exit "${{ steps.generate_sbom.outputs.exit_code }}"
 
   audit:
     needs:

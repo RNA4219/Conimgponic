@@ -6,11 +6,12 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 const DEFAULT_TEST_ROOT = 'tests';
-const DEFAULT_TEST_SUFFIXES = ['.test.ts', '.test.tsx', '.test.mjs'] as const;
+const DEFAULT_TEST_SUFFIXES = ['.test.ts', '.test.tsx', '.test.mjs', '.spec.tsx'] as const;
 const DEFAULT_TEST_GLOBS = [
   'tests/**/*.test.ts',
   'tests/**/*.test.tsx',
   'tests/**/*.test.mjs',
+  'tests/**/*.spec.tsx',
 ] as const;
 const moduleLoader = createRequire(import.meta.url);
 
@@ -56,7 +57,8 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/app/app.*.test.ts',
     'tests/app/app.*.test.tsx',
     'tests/app/autosave.*.test.ts',
-    'tests/app/autosave.*.test.tsx'
+    'tests/app/autosave.*.test.tsx',
+    'tests/app/*.spec.tsx'
   ],
   autosave: [
     'tests/app/autosave.*.test.ts',
@@ -82,11 +84,6 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/extensions/vscode/merge-bridge.sanitize.test.ts',
     'tests/extensions/vscode/merge-bridge.sanitize.test.tsx',
     'tests/extensions/vscode/merge-bridge.sanitize.test.mjs',
-    'tests/components/*.test.ts',
-    'tests/components/*.test.tsx',
-    'tests/components/*.test.mjs',
-  ],
-  components: [
     'tests/components/*.test.ts',
     'tests/components/*.test.tsx',
     'tests/components/*.test.mjs',
