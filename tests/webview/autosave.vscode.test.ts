@@ -688,6 +688,19 @@ describe('createVscodeAutoSaveBridge', () => {
         createRequest(`req-${mode}`, correlationId, guardEnabled, pendingBytes, generation)
       )
     }
+    const dirtyTelemetryEvents = telemetry.filter(
+      (candidate) =>
+        candidate.name === 'autosave.status' && candidate.properties?.state === 'dirty'
+    )
+    assert.ok(dirtyTelemetryEvents.length > 0, 'dirty telemetry events should exist')
+    for (const event of dirtyTelemetryEvents) {
+      assert.equal(
+        event.properties?.performance?.flush_latency_ms,
+        0,
+        `autosave.status telemetry for dirty (${event.properties?.correlationId ?? 'unknown'}) should include flush latency`
+      )
+    }
+
     const expectations: readonly [AutoSaveStatusMessage['payload']['state'], string, number][] = [
       ['saved', 'corr-success', 30],
       ['backoff', 'corr-backoff', 50],
