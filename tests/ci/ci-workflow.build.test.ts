@@ -11,7 +11,7 @@ type WorkflowJob = { steps?: StepConfig[] };
 type StepConfig = { name?: unknown; run?: unknown; uses?: unknown; with?: unknown };
 type UploadStep = StepConfig & {
   uses: string;
-  with?: { name?: unknown; path?: unknown };
+  with?: { name?: unknown; path?: unknown; ['if-no-files-found']?: unknown };
   if?: unknown;
 };
 type JsYamlModule = { load: (input: string) => unknown };
@@ -52,6 +52,11 @@ describe('ci workflow build job', () => {
       const logPath = logUpload.with?.path;
       if (typeof logPath !== 'string') throw new TypeError('build log artifact upload must configure path string');
       assert.ok(splitLines(logPath).includes('build.log'), 'build log artifact path must include build.log');
+      const logIfNoFiles = logUpload.with?.['if-no-files-found'];
+      if (typeof logIfNoFiles !== 'string') {
+        throw new TypeError('build log artifact upload must configure if-no-files-found string');
+      }
+      assert.equal(logIfNoFiles, 'error', 'build log artifact upload must fail when build.log is missing');
     } catch (error) {
       console.error('CI build workflow verification failed:', error);
       throw error;
