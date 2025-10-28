@@ -20,6 +20,115 @@ import {
 } from './lib/autosave'
 import { getDay8Collector } from './telemetry/day8Collector'
 
+interface ToolbarNotifiers {
+  readonly alert: (message: string) => void
+  readonly consoleError: (message: string, error: unknown) => void
+}
+
+function formatOpfsError(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+  return String(error)
+}
+
+function notifyOpfsFailure(
+  notifiers: ToolbarNotifiers,
+  alertPrefix: string,
+  consoleMessage: string,
+  error: unknown
+): void {
+  notifiers.alert(`${alertPrefix}: ${formatOpfsError(error)}`)
+  notifiers.consoleError(consoleMessage, error)
+}
+
+export async function handleToolbarSaveProject(
+  {
+    storyboard,
+    save,
+    alert: alertUser,
+    consoleError
+  }: ToolbarNotifiers & {
+    readonly storyboard: Storyboard
+    readonly save: (path: string, storyboard: Storyboard) => Promise<void>
+  }
+): Promise<void> {
+  try {
+    await save('project/storyboard.json', storyboard)
+    alertUser('Saved to OPFS: project/storyboard.json')
+  } catch (error) {
+    notifyOpfsFailure({ alert: alertUser, consoleError }, 'OPFS 保存に失敗しました', 'Failed to save project to OPFS', error)
+  }
+}
+
+function isStoryboardPayload(candidate: unknown): candidate is Storyboard {
+  if (!candidate || typeof candidate !== 'object') {
+    return false
+  }
+  const storyboard = candidate as Storyboard
+  return (
+    typeof storyboard.id === 'string' &&
+    typeof storyboard.title === 'string' &&
+    Array.isArray(storyboard.scenes) &&
+    Array.isArray(storyboard.selection)
+  )
+}
+
+export async function handleToolbarLoadProject(
+  {
+    load,
+    applyStoryboard,
+    alert: alertUser,
+    consoleError
+  }: ToolbarNotifiers & {
+    readonly load: (path: string) => Promise<Storyboard | null | undefined>
+    readonly applyStoryboard: (storyboard: Storyboard) => void
+  }
+): Promise<void> {
+  try {
+    const storyboard = await load('project/storyboard.json')
+    if (isStoryboardPayload(storyboard)) {
+      applyStoryboard(storyboard)
+      alertUser('Loaded from OPFS')
+      return
+    }
+    alertUser('No project found')
+  } catch (error) {
+    notifyOpfsFailure(
+      { alert: alertUser, consoleError },
+      'OPFS 読み込みに失敗しました',
+      'Failed to load project from OPFS',
+      error
+    )
+  }
+}
+
+export async function handleToolbarPackageExport(
+  {
+    storyboard,
+    build,
+    createDownload,
+    alert: alertUser,
+    consoleError
+  }: ToolbarNotifiers & {
+    readonly storyboard: Storyboard
+    readonly build: (storyboard: Storyboard) => Promise<string>
+    readonly createDownload: (content: string, storyboard: Storyboard) => void
+  }
+): Promise<void> {
+  try {
+    const pkg = await build(storyboard)
+    createDownload(pkg, storyboard)
+  } catch (error) {
+    notifyOpfsFailure(
+      { alert: alertUser, consoleError },
+      'パッケージ出力に失敗しました',
+      'Failed to export package',
+      error
+    )
+  }
+}
+
 function getDockOpenPreference(): boolean {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
     return true
@@ -212,6 +321,16 @@ export default function App(){
   const [autoSavePlan, setAutoSavePlan] = useState<AutoSaveBootstrapPlan | null>(null)
   const [autoSaveDecision, setAutoSaveDecision] = useState<AutoSaveActivationDecision | null>(null)
   const autoSaveRunner = useRef<AutoSaveInitResult | null>(null)
+  const toolbarNotifiers: ToolbarNotifiers = {
+    alert(message) {
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(message)
+      }
+    },
+    consoleError(message, error) {
+      console.error(message, error)
+    }
+  }
 
   useEffect(()=>{
     const handler = createKeyboardShortcutHandler({
@@ -314,23 +433,28 @@ export default function App(){
         }} />
         <input value={base} onChange={e=>setBase(e.target.value)} placeholder="Ollama Base" style={{width:240, padding:'.35rem .5rem', border:'1px solid #e5e5e5', borderRadius:8}} />
         <button className="btn" onClick={()=>{ setOllamaBase(base); location.reload() }}>Save</button>
-        <button className="btn" onClick={async()=>{ const sb = useSB.getState().sb; await saveJSON('project/storyboard.json', sb); alert('Saved to OPFS: project/storyboard.json') }}>Save Project</button>
         <button
           className="btn"
-          onClick={async () => {
-            const storyboard = await loadJSON<Storyboard>('project/storyboard.json')
-            if (
-              storyboard &&
-              typeof storyboard.id === 'string' &&
-              typeof storyboard.title === 'string' &&
-              Array.isArray(storyboard.scenes) &&
-              Array.isArray(storyboard.selection)
-            ) {
-              useSB.setState({ sb: storyboard })
-              alert('Loaded from OPFS')
-            } else {
-              alert('No project found')
-            }
+          onClick={() => {
+            void handleToolbarSaveProject({
+              storyboard: useSB.getState().sb,
+              save: saveJSON,
+              ...toolbarNotifiers
+            })
+          }}
+        >
+          Save Project
+        </button>
+        <button
+          className="btn"
+          onClick={() => {
+            void handleToolbarLoadProject({
+              load: (path) => loadJSON<Storyboard>(path),
+              applyStoryboard(storyboard) {
+                useSB.setState({ sb: storyboard })
+              },
+              ...toolbarNotifiers
+            })
           }}
         >
           Load Project
@@ -354,12 +478,28 @@ export default function App(){
         >
           {dockOpen ? '統合 ⌃' : '統合 ⌄'}
         </button>
-        <button className="btn" onClick={async()=>{
-          const sb = useSB.getState().sb
-          const pkg = await buildPackage(sb)
-          const blob = new Blob([pkg], {type:'application/json'})
-          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (sb.title||'project') + '.imgponic.json'; a.click(); setTimeout(()=> URL.revokeObjectURL(a.href), 2000)
-        }}>Package Export</button>
+        <button
+          className="btn"
+          onClick={() => {
+            void handleToolbarPackageExport({
+              storyboard: useSB.getState().sb,
+              build: buildPackage,
+              createDownload(content, currentStoryboard) {
+                const blob = new Blob([content], { type: 'application/json' })
+                const anchor = document.createElement('a')
+                anchor.href = URL.createObjectURL(blob)
+                anchor.download = `${currentStoryboard.title || 'project'}.imgponic.json`
+                anchor.click()
+                setTimeout(() => {
+                  URL.revokeObjectURL(anchor.href)
+                }, 2000)
+              },
+              ...toolbarNotifiers
+            })
+          }}
+        >
+          Package Export
+        </button>
         <button className="btn" onClick={()=> setHelp(true)}>Help</button>
       </div>
       <div style={{display:'grid', gridTemplateRows:'minmax(220px, 45vh) 1fr'}}>
