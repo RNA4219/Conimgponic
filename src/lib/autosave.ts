@@ -1202,7 +1202,12 @@ export function initAutoSave(
       phase,
       at: new Date().toISOString(),
       slo,
-      detail: { event, ...detail }
+      detail: {
+        event,
+        flag_source: guard.featureFlag.source,
+        retry_count: retryCount,
+        ...detail
+      }
     })
   }
   const emitRunnerEvent = (
@@ -1829,17 +1834,15 @@ export function initAutoSave(
           .catch(() => undefined)
       }
       const changePhase: AutoSavePhase = phase === 'idle' ? 'idle' : 'debouncing'
-      emitRunnerEvent('change-queued', changePhase, {
-        payload: {
-          reason: 'change',
-          pendingBytes: estimated,
-          backlog
-        }
-      })
-      notifyOutputTelemetry('change-queued', 'debouncing', 'p95-latency', {
+      const changeDetail = {
+        reason: 'change',
         pendingBytes: estimated,
-        backlog
-      })
+        backlog,
+        flag_source: guard.featureFlag.source,
+        retry_count: retryCount
+      }
+      emitRunnerEvent('change-queued', changePhase, { payload: changeDetail })
+      notifyOutputTelemetry('change-queued', 'debouncing', 'p95-latency', changeDetail)
       if (phase === 'idle' || phase === 'debouncing') {
         phase = 'debouncing'
       }
