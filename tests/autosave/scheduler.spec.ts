@@ -21,6 +21,35 @@ const createStoryboard = (): Storyboard => ({
  * - 自動tickでdebounce→awaiting-lock→idleへの遷移を検証
  * - flushNow()が遅延をバイパスして即時フラッシュされることを検証
  */
+scenario('AS-I-03: runner onEvent streams change→lock sequence during Phase A', async (t, ctx) => {
+  const { initAutoSave, AUTOSAVE_POLICY } = ctx
+
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'], now: 0 })
+
+  const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
+  const events: AutoSaveRunnerEvent[] = []
+  const unsubscribe = runner.onEvent((event) => {
+    events.push(event)
+  })
+  t.after(() => unsubscribe())
+  t.after(() => runner.dispose())
+
+  runner.markDirty({ pendingBytes: 256 })
+
+  t.mock.timers.tick(AUTOSAVE_POLICY.debounceMs)
+  await Promise.resolve()
+  t.mock.timers.tick(AUTOSAVE_POLICY.idleMs)
+
+  for (let attempt = 0; attempt < 50 && events.length < 2; attempt += 1) {
+    await Promise.resolve()
+    t.mock.timers.tick(0)
+  }
+
+  const eventTypes = events.map((event) => event.type)
+  assert.ok(eventTypes.length >= 2, 'expected at least two runner events')
+  assert.deepEqual(eventTypes.slice(0, 2), ['change-queued', 'lock-acquired'])
+})
+
 scenario('AS-I-04: flushNow and timers drive expected phase transitions', async (t, ctx) => {
   const { initAutoSave, AUTOSAVE_POLICY, opfs } = ctx
 

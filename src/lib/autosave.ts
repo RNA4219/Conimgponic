@@ -1169,18 +1169,35 @@ export function initAutoSave(
       }
     }
   }
-  const eventHandlers = new Set<(event: AutoSaveRunnerEvent) => void>()
+  const createRunnerEventEmitter = () => {
+    const handlers = new Set<(event: AutoSaveRunnerEvent) => void>()
+    return {
+      emit(event: AutoSaveRunnerEvent) {
+        for (const handler of handlers) {
+          try {
+            handler(event)
+          } catch {
+            // ignore handler errors to keep runner steady
+          }
+        }
+      },
+      subscribe(handler: (event: AutoSaveRunnerEvent) => void) {
+        handlers.add(handler)
+        return () => {
+          handlers.delete(handler)
+        }
+      },
+      clear() {
+        handlers.clear()
+      }
+    }
+  }
+  const runnerEvents = createRunnerEventEmitter()
   const runnerOutput: AutoSaveRunnerIOContract['output'] = {
     emit: (event) => {
       const host = resolveAutoSaveRunnerHost()
       host?.emit?.(event)
-      for (const handler of eventHandlers) {
-        try {
-          handler(event)
-        } catch {
-          // ignore handler errors to keep runner steady
-        }
-      }
+      runnerEvents.emit(event)
     },
     telemetry: (event) => {
       const host = resolveAutoSaveRunnerHost()
@@ -1760,19 +1777,14 @@ export function initAutoSave(
         queuedGeneration = 0
         inflightGeneration = null
         inflightQueueCount = 0
-        eventHandlers.clear()
+        runnerEvents.clear()
         notifyOutputTelemetry('autosave.save.error', 'disabled', 'p95-latency', {
           reason: 'dispose'
         })
       })()
       await disposePromise
     },
-    onEvent: (handler) => {
-      eventHandlers.add(handler)
-      return () => {
-        eventHandlers.delete(handler)
-      }
-    },
+    onEvent: (handler) => runnerEvents.subscribe(handler),
     markDirty: (meta) => {
       if (disposed || disposing) return
       const hasPending = typeof meta?.pendingBytes === 'number' && Number.isFinite(meta.pendingBytes)
