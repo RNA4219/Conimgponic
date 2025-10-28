@@ -151,16 +151,28 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
   })
 
   const saveCompletedEvents = runnerTelemetry.filter(
-    (event) => event.detail && (event.detail as { event?: unknown }).event === 'autosave.save.completed'
+    (event) => event.detail && (event.detail as { event?: unknown }).event === 'autosave.write.completed'
   )
-  assert.ok(saveCompletedEvents.length > 0, 'autosave.save.completed telemetry should be recorded')
+  assert.ok(saveCompletedEvents.length > 0, 'autosave.write.completed telemetry should be recorded')
   saveCompletedEvents.forEach((event) => {
     assert.equal(event.phase, 'gc')
     assert.equal(event.slo, 'p99-success')
     const detail = event.detail as Record<string, unknown>
-    assert.equal(detail.event, 'autosave.save.completed')
+    assert.equal(detail.event, 'autosave.write.completed')
     assert.equal(typeof detail.duration_ms, 'number')
     assert.equal(detail.source, 'auto')
+    const historySize = detail.history_size
+    assert.equal(typeof historySize, 'number')
+    assert.ok(
+      Number.isFinite(historySize),
+      'autosave.write.completed telemetry must include history_size'
+    )
+    const gcEvicted = detail.gc_evicted
+    assert.equal(typeof gcEvicted, 'number')
+    assert.ok(
+      (gcEvicted as number) >= 0,
+      'autosave.write.completed telemetry must include gc_evicted'
+    )
   })
 
   const disposeEvents = runnerTelemetry.filter(
@@ -175,13 +187,13 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
   assert.ok(telemetry.length > 0, 'autosave saves should publish telemetry events')
   telemetry.forEach((entry, index) => {
     assert.equal(entry.feature, 'autosave', `telemetry[${index}].feature should be autosave`)
-    assert.equal(entry.event, 'autosave.save.completed', `telemetry[${index}].event should be autosave.save.completed`)
+    assert.equal(entry.event, 'autosave.write.completed', `telemetry[${index}].event should be autosave.write.completed`)
     assert.equal(entry.phase, 'A-1', `telemetry[${index}].phase should be A-1`)
   })
 
   const expectedTelemetry = telemetry.map(() => ({
     feature: 'autosave',
-    event: 'autosave.save.completed',
+    event: 'autosave.write.completed',
     phase: 'A-1'
   }))
 
