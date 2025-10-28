@@ -201,6 +201,7 @@ export interface ExportArtifactTelemetry {
   readonly uri: string | null;
   readonly normalizedPath: string | null;
   readonly durationMs: number | null;
+  readonly bytes: number | null;
 }
 
 export interface ExportSuccessPayload {
@@ -827,6 +828,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.artifacts[].normalizedPath',
           'payload.artifacts[].uri',
           'payload.artifacts[].durationMs',
+          'payload.artifacts[].bytes',
         ],
         retryable: false,
         pipelineStage: 'reporter',
