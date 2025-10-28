@@ -358,9 +358,6 @@ test('stable precision demotes diff initial tab when auto apply underperforms', 
 })
 
 test('stable precision keeps diff merge preference locked while guarded', () => {
-  // 内容が続く場合ここに
-})
-
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.82,
