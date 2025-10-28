@@ -193,7 +193,7 @@ test('beta precision without phase stats keeps diff tab visible but disabled', (
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
 })
 
-test('beta precision suppresses diff tab when review band is empty', () => {
+test('beta precision keeps diff tab visible but disabled when review band is empty', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'beta',
     threshold: 0.85,
@@ -202,12 +202,10 @@ test('beta precision suppresses diff tab when review band is empty', () => {
   })
 
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.visible, false)
+  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.guard.phaseBRequired, false)
-  assert.deepEqual(
-    plan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'golden'],
-  )
+  assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
   assert.equal(plan.tabs.initialTab, 'compiled')
   assert.equal(plan.threshold.request, 0.85)
   assert.equal(plan.threshold.autoTarget, 0.9)
@@ -383,7 +381,7 @@ test('stable precision demotes diff exposure while keeping tab visible when auto
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.diff.enabled, false)
-  assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in' })
+  assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
   assert.equal(plan.tabs.initialTab, 'compiled')
   assert.equal(plan.diff.initialTab, 'compiled')
 })
@@ -708,9 +706,10 @@ test('stable precision sourced from workspace threshold stays opt-in without rev
 
   assert.equal(plan.threshold.request, 0.88)
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.visible, false)
+  assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.guard.phaseBRequired, false)
+  assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
 })
 
 test('stable precision tab planning restores stored merge.lastTab preference', () => {
