@@ -289,7 +289,7 @@ const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): AutoSaveEnvel
   }
 }
 
-interface AutoSaveSaveCompletedEvent {
+interface AutoSaveWriteCompletedEvent {
   readonly guard: AutoSavePhaseGuardSnapshot
   readonly durationMs: number
   readonly bytes: number
@@ -298,20 +298,24 @@ interface AutoSaveSaveCompletedEvent {
   readonly source: 'manual' | 'auto'
   readonly ts: string
   readonly leaseId?: string
+  readonly historyBytes: number
+  readonly gcEvicted: number
 }
 
-const publishSaveCompletedCollectorEvent = (event: AutoSaveSaveCompletedEvent): void => {
+const publishWriteCompletedCollectorEvent = (event: AutoSaveWriteCompletedEvent): void => {
   const collector = resolveDay8Collector()
   if (!collector) return
   const duration = Math.max(0, Math.round(event.durationMs))
   const payload: Record<string, unknown> = {
     component: 'autosave',
     feature: 'autosave',
-    event: 'autosave.save.completed',
+    event: 'autosave.write.completed',
     phase: resolveCollectorPhase(event.guard),
     ts: event.ts,
     duration_ms: duration,
     bytes: event.bytes,
+    history_size: event.historyBytes,
+    gc_evicted: event.gcEvicted,
     generation: event.generation,
     retry_count: event.retryCount,
     source: event.source
@@ -1188,7 +1192,7 @@ export function initAutoSave(
     })
   }
   const notifyOutputTelemetry = (
-    event: 'change-queued' | 'autosave.save.completed' | 'autosave.save.error',
+    event: 'change-queued' | 'autosave.write.completed' | 'autosave.save.error',
     phase: AutoSavePhase,
     slo: 'p99-success' | 'p95-latency',
     detail: Record<string, unknown>
@@ -1261,7 +1265,16 @@ export function initAutoSave(
     return loadGenerationPromise
   }
 
-  const updateIndex = async (ts: string, bytes: number, payload: string, generation: number) => {
+  const updateIndex = async (
+    ts: string,
+    bytes: number,
+    payload: string,
+    generation: number
+  ): Promise<{
+    readonly history: AutoSaveHistoryEntry[]
+    readonly totalBytes: number
+    readonly evicted: number
+  }> => {
     const path = INDEX_PATH
     const tmp = `${path}.tmp`
     const historyKey = sanitizeTimestamp(ts)
@@ -1301,12 +1314,14 @@ export function initAutoSave(
       ...history
     ]
     let total = nextHistory.reduce((sum, entry) => sum + entry.bytes, 0)
+    let evicted = 0
     while (
       (nextHistory.length > policy.maxGenerations || total > policy.maxBytes) &&
       nextHistory.length > 0
     ) {
       const drop = nextHistory.pop()!
       total -= drop.bytes
+      evicted += 1
       await removeFile(`${HISTORY_DIRECTORY}/${sanitizeTimestamp(drop.ts)}.json`)
     }
     if (total > policy.maxBytes) {
@@ -1325,6 +1340,7 @@ export function initAutoSave(
       generation: Math.max(0, Math.trunc(generation))
     })
     await renameFile(tmp, path)
+    return { history: normalizedHistory, totalBytes: total, evicted }
   }
   const clearDebounceTimer = () => {
     if (debounceTimer) {
@@ -1416,12 +1432,15 @@ export function initAutoSave(
           'write-succeeded',
           'writing-current',
           { at: ts, payload: { bytes: pendingBytes, retryCount: flushRetryCount, generation } }
-        ); await updateIndex(ts, pendingBytes, payload, generation)
+        );
+        const indexResult = await updateIndex(ts, pendingBytes, payload, generation)
         phase = 'gc';
         lastSuccessAt = ts;
         const savedBytes = pendingBytes
         const durationMs = Date.now() - flushStartedAt
-        publishSaveCompletedCollectorEvent({
+        const historySize = indexResult.history.reduce((sum, entry) => sum + entry.bytes, 0)
+        const gcEvicted = indexResult.evicted
+        publishWriteCompletedCollectorEvent({
           guard,
           durationMs,
           bytes: savedBytes,
@@ -1429,11 +1448,15 @@ export function initAutoSave(
           retryCount: flushRetryCount,
           source,
           ts,
-          leaseId: lease.leaseId
+          leaseId: lease.leaseId,
+          historyBytes: historySize,
+          gcEvicted
         })
-        notifyOutputTelemetry('autosave.save.completed', 'gc', 'p99-success', {
+        notifyOutputTelemetry('autosave.write.completed', 'gc', 'p99-success', {
           duration_ms: durationMs,
           bytes: savedBytes,
+          history_size: historySize,
+          gc_evicted: gcEvicted,
           generation,
           retry_count: flushRetryCount,
           source,
