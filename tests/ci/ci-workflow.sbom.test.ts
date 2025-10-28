@@ -139,12 +139,20 @@ describe('ci workflow sbom job', () => {
     const runScript = generateStep.run;
     assert.ok(runScript.includes('syft '), 'Generate SBOM step must invoke syft CLI');
     assert.ok(
+      runScript.includes('status=$?'),
+      'Generate SBOM step must capture syft exit status for later evaluation',
+    );
+    assert.ok(
       runScript.includes('|& tee sbom.log'),
       'Generate SBOM step must pipe stdout/stderr through tee to sbom.log',
     );
     assert.ok(
       runScript.includes('echo "exit_code=$status" >> "$GITHUB_OUTPUT"'),
       'Generate SBOM step must record syft exit code into GITHUB_OUTPUT',
+    );
+    assert.ok(
+      !runScript.includes('exit "$status"'),
+      'Generate SBOM step must not exit with syft status; the dedicated failure step must handle termination',
     );
 
     const failStep = sbomSteps.find((step): step is StepConfig & { name: string; run: string } => {
