@@ -85,6 +85,12 @@ describe('ci workflow sbom job', () => {
         'false',
         'Anchore SBOM action must disable update checks via SYFT_CHECK_FOR_APP_UPDATE="false"',
       );
+      const syftLogFile = (envConfig as Record<string, unknown>).SYFT_LOG_FILE;
+      assert.strictEqual(
+        syftLogFile,
+        'sbom.log',
+        'Anchore SBOM action must log to sbom.log via SYFT_LOG_FILE="sbom.log"',
+      );
       const uploadStep = expectUploadStep(sbomSteps, 'sbom', 'sbom job must upload sbom.json artifact', {
         ifCondition: 'always()',
         stepName: 'Upload SBOM artifact',
@@ -122,8 +128,8 @@ describe('ci workflow sbom job', () => {
     const ifNoFilesFound = uploadLogStep.with['if-no-files-found'];
     assert.strictEqual(
       ifNoFilesFound,
-      'ignore',
-      'sbom log artifact upload must ignore missing files to avoid masking primary failures',
+      'error',
+      'sbom log artifact upload must fail when sbom.log is missing to surface SBOM execution issues',
     );
   });
 });

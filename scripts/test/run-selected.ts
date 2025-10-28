@@ -113,11 +113,6 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   cli: ['tests/ci/test-commands.test.ts', 'tests/cli/*.test.ts', 'tests/cli/**/*.test.ts'],
   telemetry: ['tests/telemetry/*.test.ts'],
   'diff-merge-view-state': ['tests/components/DiffMergeView.test.tsx'],
-  components: [
-    'tests/components/*.test.ts',
-    'tests/components/*.test.tsx',
-    'tests/components/*.test.mjs',
-  ],
 };
 
 let cachedTestFiles: readonly string[] | undefined;

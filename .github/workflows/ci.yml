@@ -39,11 +39,7 @@ jobs:
           output-file: sbom.json
         env:
           SYFT_CHECK_FOR_APP_UPDATE: 'false'
-
-      - name: Prepare SBOM log
-        run: |
-          set -euo pipefail
-          cat sbom.json > sbom.log
+          SYFT_LOG_FILE: sbom.log
 
       - name: Upload SBOM artifact
         if: "always()"
@@ -60,7 +56,7 @@ jobs:
         with:
           name: sbom-log
           path: sbom.log
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   audit:
     needs:
