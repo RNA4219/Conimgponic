@@ -17,7 +17,8 @@ import {
   type AutoSaveAtomicWriteResult,
   type AutoSaveTelemetryEvent,
   type AutoSaveTelemetryEventProperties,
-  type AutoSaveWarnEvent
+  type AutoSaveWarnEvent,
+  type AutoSaveHostBridgeOptions
 } from '../../src/platform/vscode/autosave'
 import type { Storyboard } from '../../src/types'
 
@@ -1020,6 +1021,100 @@ describe('createVscodeAutoSaveBridge', () => {
 
     assert.ok(snapshotResult, 'successful request should emit snapshot.result telemetry')
     assert.equal(snapshotResult.properties?.performance?.flush_latency_ms, 600)
+  })
+
+  it('autosave.snapshot.result テレメトリは guard 無効化・非 retryable エラー・保存成功で flush_latency_ms を記録する', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const base = Date.parse('2024-01-01T00:00:00.000Z')
+    const createBridgeWithOffsets = (
+      offsets: readonly number[],
+      atomicWrite: AutoSaveHostBridgeOptions['atomicWrite']
+    ) => {
+      const queue = [...offsets]
+      const now = () => {
+        const offset = queue.shift()
+        assert.ok(offset !== undefined, 'now timeline should provide enough points')
+        return new Date(base + offset)
+      }
+      return createVscodeAutoSaveBridge({
+        policy: AUTOSAVE_POLICY,
+        initialGuard: guardEnabled,
+        flags: createDefaultFlags(),
+        now,
+        sendMessage: () => {},
+        atomicWrite,
+        telemetry: telemetry.push.bind(telemetry)
+      })
+    }
+
+    let guardAtomicWriteCalls = 0
+    const guardBridge = createBridgeWithOffsets([0, 0], async () => {
+      guardAtomicWriteCalls += 1
+      assert.fail('guard disabled request must not call atomicWrite')
+    })
+    await guardBridge.handleSnapshotRequest(
+      createRequest('req-guard-latency', 'corr-guard-latency', guardReadonly, 1024, 1)
+    )
+
+    const fatalError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'non-retryable failure',
+      code: 'write-failed',
+      retryable: false
+    }
+    let fatalAtomicWriteCalls = 0
+    const fatalBridge = createBridgeWithOffsets([1000, 1000, 2500], async () => {
+      fatalAtomicWriteCalls += 1
+      return { ok: false as const, error: fatalError }
+    })
+    await fatalBridge.handleSnapshotRequest(
+      createRequest('req-fatal-latency', 'corr-fatal-latency', guardEnabled, 2048, 2)
+    )
+
+    let successAtomicWriteCalls = 0
+    const successBridge = createBridgeWithOffsets([4000, 4000, 4600], async ({ request }) => {
+      successAtomicWriteCalls += 1
+      return {
+        ok: true as const,
+        bytes: 2048,
+        generation: request.payload.queuedGeneration ?? 1,
+        lastSuccessAt: new Date(base + 4600).toISOString(),
+        lockStrategy: 'web-lock' as const
+      }
+    })
+    await successBridge.handleSnapshotRequest(
+      createRequest('req-success-latency', 'corr-success-latency', guardEnabled, 4096, 3)
+    )
+
+    assert.equal(guardAtomicWriteCalls, 0, 'guard disabled request must not call atomicWrite')
+    assert.equal(fatalAtomicWriteCalls, 1, 'non-retryable error scenario should call atomicWrite once')
+    assert.equal(successAtomicWriteCalls, 1, 'successful scenario should call atomicWrite once')
+
+    const findSnapshotResult = (correlationId: string) =>
+      telemetry.find(
+        (event) =>
+          event.name === 'autosave.snapshot.result' &&
+          event.properties?.correlationId === correlationId
+      )
+
+    const expectations: readonly [string, number][] = [
+      ['corr-guard-latency', 0],
+      ['corr-fatal-latency', 1500],
+      ['corr-success-latency', 600]
+    ]
+
+    for (const [correlationId, expectedLatency] of expectations) {
+      const snapshotResult = findSnapshotResult(correlationId)
+      assert.ok(
+        snapshotResult,
+        `snapshot.result telemetry for ${correlationId} should exist`
+      )
+      assert.equal(
+        snapshotResult.properties?.performance?.flush_latency_ms,
+        expectedLatency,
+        `flush latency for ${correlationId} should match expectation`
+      )
+    }
   })
 
   it('autosave.status テレメトリの phase を saving/backoff/saved と guard 無効化で検証する', async () => {

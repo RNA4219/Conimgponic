@@ -45,8 +45,6 @@ const createDisabledError = (): AutoSaveError => ({
   retryable: false
 })
 
-const ZERO_FLUSH_LATENCY = { flush_latency_ms: 0 } as const
-
 const isAutoSaveError = (value: unknown): value is AutoSaveError => {
   if (!value || typeof value !== 'object') {
     return false
@@ -139,6 +137,15 @@ export interface AutoSaveTelemetryEventProperties {
   readonly detail?: { readonly retry_count: number }
   readonly [key: string]: unknown
 }
+
+const ZERO_FLUSH_LATENCY: AutoSaveTelemetryEventProperties['performance'] = {
+  flush_latency_ms: 0
+} as const
+
+const createFlushLatencyPerformance = (
+  latencyMs: number
+): AutoSaveTelemetryEventProperties['performance'] =>
+  latencyMs === 0 ? ZERO_FLUSH_LATENCY : { flush_latency_ms: latencyMs }
 
 export interface AutoSaveTelemetryEvent {
   readonly name: string
@@ -575,7 +582,7 @@ const handleNonRetryableError = (
         code: error.code,
         retryable: error.retryable,
         correlationId: request.correlationId,
-        performance: { flush_latency_ms: flushLatencyMs }
+        performance: createFlushLatencyPerformance(flushLatencyMs)
       }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
@@ -601,7 +608,7 @@ const handleNonRetryableError = (
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
         phase: errorEnvelopePhase,
-        performance: { flush_latency_ms: flushLatencyMs }
+        performance: createFlushLatencyPerformance(flushLatencyMs)
       }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
@@ -633,7 +640,7 @@ const handleNonRetryableError = (
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
         phase: PHASE_STATUS,
-        performance: { flush_latency_ms: flushLatencyMs }
+        performance: createFlushLatencyPerformance(flushLatencyMs)
       }
     },
     { before: statusBeforeDisable, after: state.status, guard: state.guard }
@@ -821,7 +828,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             correlationId: request.correlationId,
             retryCount: state.retryCount,
             phase: PHASE_STATUS,
-            performance: { flush_latency_ms: 0 }
+            performance: ZERO_FLUSH_LATENCY
           }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
@@ -873,7 +880,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           correlationId: request.correlationId,
           retryCount: state.retryCount,
           phase: requestEnvelopePhase,
-          performance: { flush_latency_ms: 0 }
+          performance: ZERO_FLUSH_LATENCY
         }
       },
       { before: statusBeforeSaving, after: state.status, guard: state.guard }
@@ -932,7 +939,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
               correlationId: request.correlationId,
               retryCount: state.retryCount,
               phase: requestEnvelopePhase,
-              performance: { flush_latency_ms: retryLatency }
+              performance: createFlushLatencyPerformance(retryLatency)
             }
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
@@ -947,7 +954,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
               retryable: true,
               correlationId: request.correlationId,
               retryCount: state.retryCount,
-              performance: { flush_latency_ms: retryLatency }
+              performance: createFlushLatencyPerformance(retryLatency)
             }
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
@@ -1012,7 +1019,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           generation: writeResult.generation,
           retainedBytes: state.retainedBytes,
           correlationId: request.correlationId,
-          performance: { flush_latency_ms: successLatency }
+          performance: createFlushLatencyPerformance(successLatency)
         }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }
@@ -1039,7 +1046,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           correlationId: request.correlationId,
           retryCount: state.retryCount,
           phase: requestEnvelopePhase,
-          performance: { flush_latency_ms: successLatency }
+          performance: createFlushLatencyPerformance(successLatency)
         }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }
