@@ -315,6 +315,22 @@ const makeError = (
   cause?: unknown
 ) => new ProjectLockError(code, message, { operation, retryable, cause });
 
+const isAbortReason = (reason: unknown): boolean => {
+  if (!reason) return false;
+  if (reason instanceof DOMException) return reason.name === 'AbortError';
+  if (reason instanceof Error) return reason.name === 'AbortError';
+  return typeof reason === 'string' && reason === 'AbortError';
+};
+
+const createAbortError = (
+  base: ProjectLockError,
+  signal: AbortSignal | undefined
+): ProjectLockError => {
+  if (!base.retryable) return base;
+  const cause = base.cause ?? signal?.reason ?? base;
+  return makeError('acquire-denied', 'Project lock acquisition aborted', 'acquire', false, cause);
+};
+
 const emitError = (error: ProjectLockError) => {
   projectLockEvents.emit({ type: 'lock:error', operation: error.operation, error, retryable: error.retryable });
 };
@@ -678,12 +694,23 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
         });
         return lease;
       } catch (error) {
-        const projectError =
+        const baseError =
           error instanceof ProjectLockError
             ? error
             : makeError('acquire-denied', 'Project lock acquisition failed', 'acquire', true, error);
+        const abortDetected =
+          strategy === 'web-lock' &&
+          (options.signal?.aborted === true ||
+            isAbortReason(options.signal?.reason) ||
+            isAbortReason(baseError.cause));
+        const projectError = abortDetected ? createAbortError(baseError, options.signal) : baseError;
 
         emitError(projectError);
+
+        if (abortDetected) {
+          emitReadonly('acquire-failed', projectError, options.onReadonly);
+          throw projectError;
+        }
 
         if (projectError.code === 'fallback-conflict') {
           projectLockEvents.emit({
