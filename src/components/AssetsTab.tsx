@@ -7,6 +7,48 @@ import { saveJSON, loadJSON } from '../lib/opfs'
 const ASSETS_OPFS_PATH = 'project/assets.json'
 const ASSETS_SAVE_SUCCESS_MESSAGE = 'Assets saved to OPFS'
 const ASSETS_SAVE_FAILURE_MESSAGE = 'Failed to save assets to OPFS'
+const ASSETS_LOAD_FAILURE_MESSAGE = 'Failed to load assets from OPFS'
+
+const isAssetRef = (value: unknown): value is AssetRef => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Partial<AssetRef>
+  return (
+    typeof candidate.id === 'string' &&
+    (candidate.kind === 'character' || candidate.kind === 'prop' || candidate.kind === 'background') &&
+    typeof candidate.label === 'string'
+  )
+}
+
+type LoadAssetsCatalogDependencies = {
+  loadJSONImpl: <T>(path: string) => Promise<T | null>
+  alertImpl: (message: string) => void
+  consoleErrorImpl: (...args: unknown[]) => void
+  setItems: React.Dispatch<React.SetStateAction<AssetRef[]>>
+  syncAssetsCatalog: (next: AssetRef[]) => void
+}
+
+export async function loadAssetsCatalog({
+  loadJSONImpl,
+  alertImpl,
+  consoleErrorImpl,
+  setItems,
+  syncAssetsCatalog,
+}: LoadAssetsCatalogDependencies): Promise<boolean> {
+  try {
+    const saved = await loadJSONImpl<AssetRef[]>(ASSETS_OPFS_PATH)
+    if (Array.isArray(saved) && saved.every(isAssetRef)) {
+      setItems(saved)
+      syncAssetsCatalog(saved)
+    }
+    return true
+  } catch (error) {
+    consoleErrorImpl(ASSETS_LOAD_FAILURE_MESSAGE, error)
+    alertImpl(ASSETS_LOAD_FAILURE_MESSAGE)
+    return false
+  }
+}
 
 type PersistAssetsCatalogDependencies = {
   items: AssetRef[]
@@ -41,30 +83,30 @@ export async function persistAssetsCatalog({
   }
 }
 
-const isAssetRef = (value: unknown): value is AssetRef => {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-  const candidate = value as Partial<AssetRef>
-  return (
-    typeof candidate.id === 'string' &&
-    (candidate.kind === 'character' || candidate.kind === 'prop' || candidate.kind === 'background') &&
-    typeof candidate.label === 'string'
-  )
-}
-
 export function AssetsTab(){
   const { sb } = useSB()
   const [items, setItems] = useState<AssetRef[]>(() =>
     Array.isArray(sb.assetsCatalog) ? sb.assetsCatalog.filter(isAssetRef) : []
   )
 
-  useEffect(()=>{ (async()=>{
-    const saved = await loadJSON<AssetRef[]>(ASSETS_OPFS_PATH)
-    if (Array.isArray(saved) && saved.every(isAssetRef)) {
-      setItems(saved)
-    }
-  })() }, [])
+  const syncAssetsCatalogState = (next: AssetRef[]) => {
+    useSB.setState((state) => ({ sb: { ...state.sb, assetsCatalog: next } }))
+  }
+
+  useEffect(() => {
+    const alertImpl = typeof globalThis.alert === 'function'
+      ? globalThis.alert.bind(globalThis)
+      : () => {}
+    void loadAssetsCatalog({
+      loadJSONImpl: loadJSON,
+      alertImpl,
+      consoleErrorImpl: (...args) => {
+        console.error(...args)
+      },
+      setItems,
+      syncAssetsCatalog: syncAssetsCatalogState,
+    })
+  }, [])
 
   function add(){
     setItems([...items, { id: Math.random().toString(36).slice(2, 8), kind:'character', label:'New', prompt:'' }])
@@ -81,9 +123,7 @@ export function AssetsTab(){
       items,
       previousItems,
       saveJSONImpl: saveJSON,
-      syncAssetsCatalog: (next) => {
-        useSB.setState((state) => ({ sb: { ...state.sb, assetsCatalog: next } }))
-      },
+      syncAssetsCatalog: syncAssetsCatalogState,
       alertImpl,
       consoleErrorImpl: (...args) => {
         console.error(...args)
