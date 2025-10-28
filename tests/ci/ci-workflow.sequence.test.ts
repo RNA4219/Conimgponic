@@ -87,6 +87,17 @@ const require = createRequire(import.meta.url);
 const autosaveSuffixModuleGlobs = ['src/**/*autosave*.ts', 'src/**/*autosave*.tsx'] as const;
 const vscodeFlagsHandshakeSpecPath = 'tests/extensions/vscode/flags-handshake.spec.ts';
 
+const requiredAutosaveFilterGlobs = [
+  'src/**/autosave/**',
+  ...autosaveSuffixModuleGlobs,
+  'tests/**/autosave.*.test.ts',
+  'tests/**/autosave/**',
+  '.github/workflows/autosave*',
+  'tests/**/*autosave*.test.ts',
+  'tests/**/*autosave*.spec.ts',
+  vscodeFlagsHandshakeSpecPath,
+];
+
 const expectedQualitySequence = [
   'pnpm -s lint',
   'pnpm -s typecheck',
@@ -235,16 +246,7 @@ describe('ci workflow build job', () => {
     assertPathsFilterGlobs(
       detectAutosaveChanges,
       'autosave',
-      [
-        'src/**/autosave/**',
-        ...autosaveSuffixModuleGlobs,
-        'tests/**/autosave.*.test.ts',
-        'tests/**/autosave/**',
-        '.github/workflows/autosave*',
-        'tests/**/*autosave*.test.ts',
-        'tests/**/*autosave*.spec.ts',
-        vscodeFlagsHandshakeSpecPath,
-      ],
+      requiredAutosaveFilterGlobs,
       '"Detect autosave changes" step must monitor required autosave paths',
     );
   });
