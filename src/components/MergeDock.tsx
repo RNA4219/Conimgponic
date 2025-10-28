@@ -557,7 +557,17 @@ export const resolveMergeDockPhasePlan = ({
     : undefined
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
-  const shouldDemoteDiff = diffConfigured && (!phaseBRequired || meetsTarget === false)
+  const guardReleased = diffConfigured && !phaseBRequired
+
+  if (guardReleased) {
+    diffVisible = true
+    diffExposure = 'opt-in'
+    if (diffTabsPlan) {
+      diffTabsPlan = { ...diffTabsPlan, exposure: 'opt-in' }
+    }
+  }
+
+  const shouldDemoteDiff = diffConfigured && phaseBRequired && meetsTarget === false
 
   if (shouldDemoteDiff) {
     diffVisible = false
@@ -567,13 +577,13 @@ export const resolveMergeDockPhasePlan = ({
     }
   }
 
-  const diffEnabled = diffVisible && phaseBRequired
+  const diffEnabled = diffConfigured && phaseBRequired && !shouldDemoteDiff
 
-  const effectiveTabs = diffVisible ? rawPlan.tabs : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
+  const effectiveTabs = rawPlan.tabs
   const compiledInitial = effectiveTabs.find((entry) => entry.id === 'compiled')?.id
   const defaultInitial = compiledInitial ?? effectiveTabs[0]?.id ?? rawPlan.initialTab
   const shouldResetInitial =
-    precision === 'stable' && meetsTarget === false && rawPlan.initialTab === 'diff'
+    precision === 'stable' && rawPlan.initialTab === 'diff' && (!phaseBRequired || meetsTarget === false)
   const effectiveInitial = shouldResetInitial
     ? defaultInitial
     : rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
