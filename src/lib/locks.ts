@@ -885,7 +885,10 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
       if (!error.retryable)
         emitReadonly(reasonFromOperation(error.operation), error, options.onReadonly);
     }
-    await safeRelease(lease, options, options.releaseOnError ?? true);
+    const releaseOnError = options.releaseOnError ?? true;
+    if (releaseOnError) {
+      await safeRelease(lease, options, releaseOnError);
+    }
     throw error;
   }
 };

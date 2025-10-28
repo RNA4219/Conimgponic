@@ -13,7 +13,8 @@ import {
   FALLBACK_LOCK_PATH,
   FALLBACK_LOCK_TTL_MS,
   WEB_LOCK_TTL_MS,
-  type ProjectLockEvent
+  type ProjectLockEvent,
+  type ProjectLockLease
 } from '../../src/lib/locks'
 import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
 import {
@@ -387,6 +388,68 @@ scenario(
       false,
       'fallback lock file must not be created when acquisition aborts before start'
     )
+  }
+)
+
+scenario(
+  'AS-LK-16: withProjectLock retains lease when releaseOnError=false',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    const failure = new Error('executor failure')
+    let capturedLease: ProjectLockLease | undefined
+
+    t.after(async () => {
+      if (capturedLease) {
+        await projectLockApi.release(capturedLease)
+      }
+    })
+
+    await projectLockApi
+      .withProjectLock(async (lease) => {
+        capturedLease = lease
+        throw failure
+      }, { preferredStrategy: 'file-lock', releaseOnError: false })
+      .then(
+        () => {
+          assert.fail('withProjectLock must reject when executor throws')
+        },
+        (error) => {
+          assert.strictEqual(error, failure)
+        }
+      )
+
+    assert.ok(capturedLease, 'executor must expose acquired lease before throwing')
+
+    const beforeReleaseSequence = sequence.slice()
+    assert.equal(
+      beforeReleaseSequence.includes('released'),
+      false,
+      'lease must remain active when releaseOnError=false'
+    )
+    assert.equal(
+      ctx.opfs.files.has(FALLBACK_LOCK_PATH),
+      true,
+      'fallback lock file must remain present until manual release'
+    )
+    assert.equal(telemetry.length, 0, 'no telemetry events should be emitted for executor failure')
+
+    await projectLockApi.release(capturedLease!)
+    capturedLease = undefined
+
+    assert.equal(
+      ctx.opfs.files.has(FALLBACK_LOCK_PATH),
+      false,
+      'fallback lock file must be removed after manual release'
+    )
+
+    const afterReleaseSequence = sequence.slice(beforeReleaseSequence.length)
+    assert.ok(afterReleaseSequence.includes('released'), 'manual release must emit lock:released event')
   }
 )
 
