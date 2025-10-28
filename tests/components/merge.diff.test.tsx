@@ -343,7 +343,24 @@ test('stable precision hides diff tab when auto apply underperforms', () => {
   assert.equal(plan.diff.enabled, false)
 })
 
-test('stable precision defaults to manual preference while guard active', () => {
+test('stable precision demotes diff initial tab when auto apply underperforms', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    autoAppliedRate: 0.84,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+    lastTab: 'shot',
+  })
+
+  assert.equal(plan.autoApplied.meetsTarget, false)
+  assert.equal(plan.tabs.initialTab, 'compiled')
+  assert.equal(plan.diff.initialTab, 'compiled')
+})
+
+test('stable precision keeps diff merge preference locked while guarded', () => {
+  // 内容が続く場合ここに
+})
+
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.82,
