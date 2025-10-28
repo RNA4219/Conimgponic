@@ -114,9 +114,14 @@ describe('ci workflow sbom job', () => {
 
     const ifNoFilesFound = uploadLogStep.with['if-no-files-found'];
     assert.strictEqual(
+      typeof ifNoFilesFound,
+      'string',
+      'sbom log artifact upload must configure if-no-files-found option explicitly',
+    );
+    assert.strictEqual(
       ifNoFilesFound,
       'error',
-      'sbom log artifact upload must fail when sbom.log is missing to surface SBOM execution issues',
+      'sbom log artifact upload must set if-no-files-found="error" to fail fast when sbom.log is missing',
     );
   });
 
