@@ -355,12 +355,12 @@ test('stable tab plan preserves last base tab when diff is demoted', () => {
   })
 
   assert.equal(phasePlan.autoApplied.meetsTarget, false)
-  assert.equal(phasePlan.diff.visible, false)
+  assert.equal(phasePlan.diff.visible, true)
   assert.equal(phasePlan.tabs.initialTab, 'shot')
   assert.equal(phasePlan.diff.initialTab, 'shot')
 })
 
-test('stable precision hides diff tab when auto apply underperforms', () => {
+test('stable precision demotes diff tab when auto apply underperforms', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.86,
@@ -371,10 +371,10 @@ test('stable precision hides diff tab when auto apply underperforms', () => {
   assert.equal(plan.threshold.autoTarget > (plan.autoApplied.rate ?? 0), true)
   assert.deepEqual(
     plan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'golden'],
+    ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
   )
   assert.equal(plan.tabs.initialTab, 'compiled')
-  assert.equal(plan.diff.visible, false)
+  assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.diff.enabled, false)
 })
