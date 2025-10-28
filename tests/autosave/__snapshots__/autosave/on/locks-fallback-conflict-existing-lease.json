@@ -1,0 +1,36 @@
+[
+  {
+    "type": "lock:warning",
+    "warning": "fallback-degraded",
+    "detail": "Existing fallback lease still active",
+    "lease": {
+      "leaseId": "existing-lease-id",
+      "ownerId": "existing-owner-id",
+      "strategy": "file-lock",
+      "viaFallback": true,
+      "resource": "project/.lock",
+      "acquiredAt": 1000,
+      "expiresAt": 31000,
+      "ttlMillis": 30000,
+      "nextHeartbeatAt": 30000,
+      "renewAttempt": 1
+    }
+  },
+  {
+    "type": "lock:warning",
+    "warning": "fallback-degraded",
+    "detail": "Existing fallback lock is owned by another client",
+    "lease": {
+      "leaseId": "existing-lease-id",
+      "ownerId": "existing-owner-id",
+      "strategy": "file-lock",
+      "viaFallback": true,
+      "resource": "project/.lock",
+      "acquiredAt": 1000,
+      "expiresAt": 31000,
+      "ttlMillis": 30000,
+      "nextHeartbeatAt": 30000,
+      "renewAttempt": 1
+    }
+  }
+]
