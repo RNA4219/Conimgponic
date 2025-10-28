@@ -302,6 +302,15 @@ interface AutoSaveWriteCompletedEvent {
   readonly gcEvicted: number
 }
 
+interface AutoSaveScheduleRequestedEvent {
+  readonly guard: AutoSavePhaseGuardSnapshot
+  readonly ts: string
+  readonly reason: 'change' | 'flushNow'
+  readonly pendingBytes: number
+  readonly backlog: number
+  readonly retryCount: number
+}
+
 const publishWriteCompletedCollectorEvent = (event: AutoSaveWriteCompletedEvent): void => {
   const collector = resolveDay8Collector()
   if (!collector) return
@@ -324,6 +333,23 @@ const publishWriteCompletedCollectorEvent = (event: AutoSaveWriteCompletedEvent)
     payload.lease_id = event.leaseId
   }
   collector.publish(payload)
+}
+
+const publishScheduleRequestedCollectorEvent = (event: AutoSaveScheduleRequestedEvent): void => {
+  const collector = resolveDay8Collector()
+  if (!collector) return
+  collector.publish({
+    component: 'autosave',
+    feature: 'autosave',
+    event: 'autosave.schedule.requested',
+    phase: resolveCollectorPhase(event.guard),
+    ts: event.ts,
+    reason: event.reason,
+    pending_bytes: event.pendingBytes,
+    backlog: event.backlog,
+    flag_source: event.guard.featureFlag.source,
+    retry_count: event.retryCount
+  })
 }
 
 interface AutoSaveFlagSnapshot {
@@ -556,7 +582,7 @@ export interface AutoSaveTelemetryEvent {
 }
 
 export type AutoSaveRunnerEventType =
-  | 'change-queued'
+  | 'autosave.schedule.requested'
   | 'lock-acquired'
   | 'lock-rejected'
   | 'retry-scheduled'
@@ -584,11 +610,11 @@ export interface AutoSaveRunnerEventSpec {
 
 export const AUTOSAVE_RUNNER_EVENT_SPECS: readonly AutoSaveRunnerEventSpec[] = Object.freeze([
   {
-    type: 'change-queued',
+    type: 'autosave.schedule.requested',
     summary: 'UI からの変更検知を保存キューへ登録しデバウンスを開始する',
     emittedFrom: ['idle'],
     telemetrySlo: 'p95-latency',
-    notes: ['Phase A では change→lock-acquired まで 2.5s 以内']
+    notes: ['Phase A では autosave.schedule.requested→lock-acquired まで 2.5s 以内']
   },
   {
     type: 'lock-acquired',
@@ -727,7 +753,7 @@ export const AUTOSAVE_RUNNER_TRANSITIONS: readonly AutoSaveRunnerTransitionSpec[
   {
     from: 'idle',
     to: 'debouncing',
-    via: 'change-queued',
+    via: 'autosave.schedule.requested',
     guard: 'autosave.enabled=true && options.disabled!=true',
     actions: ['デバウンスタイマー起動', 'pendingBytes を更新']
   },
@@ -816,7 +842,12 @@ export const AUTOSAVE_TDD_SCENARIOS: readonly AutoSaveScenarioSpec[] = Object.fr
       {
         description: '書き込み成功で idle に復帰',
         expectedPhase: 'idle',
-        expectedEvents: ['change-queued', 'lock-acquired', 'write-succeeded', 'gc-completed']
+        expectedEvents: [
+          'autosave.schedule.requested',
+          'lock-acquired',
+          'write-succeeded',
+          'gc-completed'
+        ]
       }
     ]
   },
@@ -828,7 +859,7 @@ export const AUTOSAVE_TDD_SCENARIOS: readonly AutoSaveScenarioSpec[] = Object.fr
       {
         description: 'retryable error で error フェーズへ遷移',
         expectedPhase: 'error',
-        expectedEvents: ['change-queued', 'lock-rejected', 'retry-scheduled']
+        expectedEvents: ['autosave.schedule.requested', 'lock-rejected', 'retry-scheduled']
       }
     ]
   },
@@ -1192,7 +1223,7 @@ export function initAutoSave(
     })
   }
   const notifyOutputTelemetry = (
-    event: 'change-queued' | 'autosave.write.completed' | 'autosave.save.error',
+    event: 'autosave.schedule.requested' | 'autosave.write.completed' | 'autosave.save.error',
     phase: AutoSavePhase,
     slo: 'p99-success' | 'p95-latency',
     detail: Record<string, unknown>
@@ -1808,7 +1839,8 @@ export function initAutoSave(
         pendingBytes = normalized
       }
       const estimated = pendingBytes
-      pendingQueue.push({ ts: new Date().toISOString(), reason: 'change', estimatedBytes: estimated, retries: 0 })
+      const scheduledAt = new Date().toISOString()
+      pendingQueue.push({ ts: scheduledAt, reason: 'change', estimatedBytes: estimated, retries: 0 })
       trimPendingQueue()
       const backlog = Math.max(0, pendingQueue.length - inflightQueueCount)
       if (inflightGeneration != null) {
@@ -1841,8 +1873,19 @@ export function initAutoSave(
         flag_source: guard.featureFlag.source,
         retry_count: retryCount
       }
-      emitRunnerEvent('change-queued', changePhase, { payload: changeDetail })
-      notifyOutputTelemetry('change-queued', 'debouncing', 'p95-latency', changeDetail)
+      emitRunnerEvent('autosave.schedule.requested', changePhase, {
+        payload: changeDetail,
+        at: scheduledAt
+      })
+      notifyOutputTelemetry('autosave.schedule.requested', 'debouncing', 'p95-latency', changeDetail)
+      publishScheduleRequestedCollectorEvent({
+        guard,
+        ts: scheduledAt,
+        reason: 'change',
+        pendingBytes: estimated,
+        backlog,
+        retryCount
+      })
       if (phase === 'idle' || phase === 'debouncing') {
         phase = 'debouncing'
       }

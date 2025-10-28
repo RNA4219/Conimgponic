@@ -15,7 +15,7 @@ const createStoryboard = (): Storyboard => ({
   version: 1
 })
 
-scenario('AS-TEL-02: change→lock→gc 各イベントでテレメトリが同期する', async (t, ctx) => {
+scenario('AS-TEL-02: schedule→lock→gc 各イベントでテレメトリが同期する', async (t, ctx) => {
   const { initAutoSave, runnerTelemetry } = ctx
 
   const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
@@ -28,7 +28,7 @@ scenario('AS-TEL-02: change→lock→gc 各イベントでテレメトリが同�
   await runner.flushNow()
 
   const expectedTypes: Array<AutoSaveRunnerEvent['type']> = [
-    'change-queued',
+    'autosave.schedule.requested',
     'lock-acquired',
     'gc-completed'
   ]
