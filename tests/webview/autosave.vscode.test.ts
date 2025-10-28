@@ -1255,6 +1255,42 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledTelemetry.properties?.phase, 'A-1')
   })
 
+  it('handleNonRetryableError 経路の autosave.status disabled テレメトリで phase=A-1 を送信する', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const thrownError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'fatal write failure',
+      code: 'write-failed',
+      retryable: false
+    }
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        /* noop */
+      },
+      atomicWrite: async () => {
+        throw thrownError
+      },
+      telemetry: telemetry.push.bind(telemetry)
+    })
+
+    bridge.reportDirty(2048, guardEnabled)
+    const request = createRequest('req-handle-non-retryable', 'corr-handle-non-retryable', guardEnabled, 2048, 1)
+    await bridge.handleSnapshotRequest(request)
+
+    const disabledTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' &&
+        event.properties?.state === 'disabled' &&
+        event.properties?.correlationId === request.correlationId
+    )
+    assert.ok(disabledTelemetry, 'handleNonRetryableError must emit disabled autosave.status telemetry')
+    assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+  })
+
   it('keeps autosave disabled for queued request after fatal error', async () => {
     const sent: AutoSaveBridgeMessage[] = []
     let writeCount = 0
