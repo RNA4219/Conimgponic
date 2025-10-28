@@ -9,7 +9,7 @@ import type {
   MergeTrace,
 } from '../../../lib/merge'
 import { MergeError, PRECISION_THRESHOLD_CLAMP, attachAutoSaveLockEvents } from '../../../lib/merge'
-import { publishMergeResult } from '../../telemetry/day8Collector.js'
+import { publishMergeResult } from '../../../telemetry/day8Collector.js'
 
 export interface MergeBridgeDependencies {
   readonly engine: MergeEngine
