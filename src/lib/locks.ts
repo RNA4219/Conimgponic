@@ -60,6 +60,8 @@ export interface ProjectLockLease {
   readonly expiresAt: number;
   /** TTL negotiated at acquisition time. */
   readonly ttlMillis: number;
+  /** Interval used to schedule subsequent heartbeats for this lease. */
+  readonly heartbeatIntervalMs: number;
   /** Scheduling hint for the next renewal attempt. */
   readonly nextHeartbeatAt: number;
   /** Number of renew attempts completed for this lease. */
@@ -382,6 +384,7 @@ const buildLease = (
   acquiredAt = Date.now(),
   renewAttempt = 0
 ): ProjectLockLease => {
+  const heartbeatInterval = heartbeatMs > 0 ? heartbeatMs : LOCK_HEARTBEAT_INTERVAL_MS;
   const now = Date.now();
   return {
     leaseId: ctx.leaseId,
@@ -392,7 +395,8 @@ const buildLease = (
     acquiredAt,
     expiresAt: now + ttl,
     ttlMillis: ttl,
-    nextHeartbeatAt: now + heartbeatMs,
+    heartbeatIntervalMs: heartbeatInterval,
+    nextHeartbeatAt: now + heartbeatInterval,
     renewAttempt,
   };
 };
@@ -418,6 +422,7 @@ const fallbackRecordToLease = (
     acquiredAt: record.acquiredAt,
     expiresAt: record.expiresAt,
     ttlMillis,
+    heartbeatIntervalMs: effectiveHeartbeat,
     nextHeartbeatAt,
     renewAttempt,
   };
@@ -848,7 +853,7 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
     const refreshed: ProjectLockLease = {
       ...lease,
       expiresAt: nextExpires,
-      nextHeartbeatAt: now + LOCK_HEARTBEAT_INTERVAL_MS,
+      nextHeartbeatAt: now + (lease.heartbeatIntervalMs > 0 ? lease.heartbeatIntervalMs : LOCK_HEARTBEAT_INTERVAL_MS),
       renewAttempt: lease.renewAttempt + 1,
     };
     projectLockEvents.emit({ type: 'lock:renewed', lease: refreshed });
