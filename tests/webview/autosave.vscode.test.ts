@@ -5,6 +5,7 @@ import {
   AUTOSAVE_POLICY,
   type AutoSaveBridgeMessage,
   type AutoSaveBridgeBootstrapMessage,
+  type AutoSaveEnvelopePhase,
   type AutoSaveError,
   type AutoSavePhaseGuardSnapshot,
   type AutoSaveSnapshotRequestMessage,
@@ -1114,6 +1115,85 @@ describe('createVscodeAutoSaveBridge', () => {
         expectedLatency,
         `flush latency for ${correlationId} should match expectation`
       )
+    }
+  })
+
+  it('autosave.snapshot.result テレメトリは guard 無効化・非 retryable エラー・保存成功で phase を記録する', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const base = Date.parse('2024-01-01T00:00:00.000Z')
+    const createBridgeWithOffsets = (
+      offsets: readonly number[],
+      atomicWrite: AutoSaveHostBridgeOptions['atomicWrite']
+    ) => {
+      const queue = [...offsets]
+      const now = () => {
+        const offset = queue.shift()
+        assert.ok(offset !== undefined, 'now timeline should provide enough points')
+        return new Date(base + offset)
+      }
+      return createVscodeAutoSaveBridge({
+        policy: AUTOSAVE_POLICY,
+        initialGuard: guardEnabled,
+        flags: createDefaultFlags(),
+        now,
+        sendMessage: () => {},
+        atomicWrite,
+        telemetry: telemetry.push.bind(telemetry)
+      })
+    }
+
+    const guardBridge = createBridgeWithOffsets([0, 0], async () => {
+      assert.fail('guard disabled request must not call atomicWrite')
+    })
+    const guardRequest: AutoSaveSnapshotRequestMessage = {
+      ...createRequest('req-guard-phase', 'corr-guard-phase', guardReadonly, 512, 1),
+      phase: 'A-1' satisfies AutoSaveEnvelopePhase
+    }
+    await guardBridge.handleSnapshotRequest(guardRequest)
+
+    const fatalError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'non-retryable failure',
+      code: 'write-failed',
+      retryable: false
+    }
+    const fatalBridge = createBridgeWithOffsets([1000, 1000, 2500], async () => ({
+      ok: false as const,
+      error: fatalError
+    }))
+    const fatalRequest = createRequest('req-fatal-phase', 'corr-fatal-phase', guardEnabled, 1024, 2)
+    await fatalBridge.handleSnapshotRequest(fatalRequest)
+
+    const successBridge = createBridgeWithOffsets([4000, 4000, 4600], async ({ request }) => ({
+      ok: true as const,
+      bytes: 2048,
+      generation: request.payload.queuedGeneration ?? 1,
+      lastSuccessAt: new Date(base + 4600).toISOString(),
+      lockStrategy: 'web-lock' as const
+    }))
+    const successRequest = createRequest('req-success-phase', 'corr-success-phase', guardEnabled, 2048, 3)
+    await successBridge.handleSnapshotRequest(successRequest)
+
+    const findSnapshotResult = (correlationId: string) =>
+      telemetry.find(
+        (event) =>
+          event.name === 'autosave.snapshot.result' &&
+          event.properties?.correlationId === correlationId
+      )
+
+    const expectations = [
+      { correlationId: 'corr-guard-phase', request: guardRequest },
+      { correlationId: 'corr-fatal-phase', request: fatalRequest },
+      { correlationId: 'corr-success-phase', request: successRequest }
+    ] as const
+
+    for (const { correlationId, request } of expectations) {
+      const snapshotResult = findSnapshotResult(correlationId)
+      assert.ok(snapshotResult, `snapshot.result telemetry for ${correlationId} should exist`)
+      const properties = snapshotResult.properties ?? {}
+      assert.ok('phase' in properties, `phase property should exist for ${correlationId}`)
+      const phase = properties.phase as AutoSaveEnvelopePhase | undefined
+      assert.equal(phase, request.phase ?? 'A-2', `phase for ${correlationId} should match request phase`)
     }
   })
 
