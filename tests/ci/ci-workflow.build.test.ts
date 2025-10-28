@@ -31,9 +31,20 @@ describe('ci workflow build job', () => {
       const distCondition = distUpload.if;
       if (typeof distCondition !== 'string') throw new TypeError('dist artifact upload must configure if string');
       assert.equal(distCondition, 'always()', 'dist artifact upload must always run');
-      const distPath = distUpload.with?.path;
+      const distConfig = distUpload.with;
+      if (!distConfig || typeof distConfig !== 'object') throw new TypeError('dist artifact upload must configure with object');
+      const distPath = (distConfig as { path?: unknown }).path;
       if (typeof distPath !== 'string') throw new TypeError('dist artifact upload must configure path string');
       assert.ok(splitLines(distPath).includes('dist'), 'dist artifact path must include dist directory');
+      const distIfNoFilesFound = (distConfig as { 'if-no-files-found'?: unknown })['if-no-files-found'];
+      if (typeof distIfNoFilesFound !== 'string') {
+        throw new TypeError('dist artifact upload must configure if-no-files-found string');
+      }
+      assert.equal(
+        distIfNoFilesFound,
+        'error',
+        "dist artifact upload must configure if-no-files-found as 'error'",
+      );
       const logUpload = expectUploadStep(buildSteps, 'build-log', 'build job must upload build log artifact');
       const logCondition = logUpload.if;
       if (typeof logCondition !== 'string') throw new TypeError('build log artifact upload must configure if string');
