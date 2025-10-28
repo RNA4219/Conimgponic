@@ -3,7 +3,8 @@ import type {
   FeatureFlagName,
   FlagRolloutPhase,
   FlagSource,
-  FlagValidationError
+  FlagValidationError,
+  MergePrecision
 } from '../config/flags.js'
 import {
   COLLECT_METRICS_CONTRACT,
@@ -55,6 +56,7 @@ export interface FlagResolutionEventPayload {
   readonly phase: FlagRolloutPhase
   readonly evaluation_ms: number
   readonly errors: readonly FlagValidationError[]
+  readonly precision: MergePrecision | null
   readonly threshold: number | null
   readonly status: 'success' | 'failure'
   readonly detail: { readonly retryable: boolean; readonly default_used: boolean }
@@ -67,6 +69,7 @@ export type FlagResolutionContractPayload = {
   readonly phase: RolloutPhase
   readonly evaluation_ms: number
   readonly errors: readonly FlagValidationError[]
+  readonly precision: MergePrecision | null
   readonly threshold: number | null
   readonly status: 'success' | 'failure'
   readonly detail: { readonly retryable: boolean; readonly default_used: boolean }
@@ -505,6 +508,7 @@ export const publishFlagResolution = (
       phase: FLAG_PHASE_TO_CONTRACT_PHASE[payload.phase],
       evaluation_ms: payload.evaluation_ms,
       errors: payload.errors,
+      precision: payload.precision,
       threshold: payload.threshold,
       status: payload.status,
       detail: payload.detail

@@ -35,3 +35,7 @@
 - [ ] Plan / Patch / Tests / Commands / Notes セクションで進捗と検証ログを更新した。
 - [ ] 完了後に関連 PR・コミットリンクを追記し、後続作業の有無を明記した。
 - [ ] 既存ハンク選択・編集中に新規ハンクが追加されても `'Selected'` / `'Editing'` 状態が維持される検証ログを残した。
+
+## Toolbar Save Error Handling
+- [x] ツールバーの Save Project ボタンで `saveJSON` 例外時にアラートとログを保証するハンドラ追加。
+- [x] `tests/app/AppToolbar.spec.tsx` に RED テストを配置し、例外時のアラート・ログ呼び出しを検証。

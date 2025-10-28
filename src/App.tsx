@@ -61,6 +61,34 @@ export async function handleToolbarSaveProject(
   }
 }
 
+interface SaveProjectButtonHandlerOptions extends ToolbarNotifiers {
+  readonly getStoryboard: () => Storyboard
+  readonly saveJSONImpl?: (path: string, storyboard: Storyboard) => Promise<void>
+}
+
+export async function handleSaveProjectButtonClick({
+  getStoryboard,
+  alert,
+  consoleError,
+  saveJSONImpl = saveJSON
+}: SaveProjectButtonHandlerOptions): Promise<void> {
+  try {
+    await handleToolbarSaveProject({
+      storyboard: getStoryboard(),
+      save: saveJSONImpl,
+      alert,
+      consoleError
+    })
+  } catch (error) {
+    notifyOpfsFailure(
+      { alert, consoleError },
+      'OPFS 保存に失敗しました',
+      'Failed to save project to OPFS',
+      error
+    )
+  }
+}
+
 function isStoryboardPayload(candidate: unknown): candidate is Storyboard {
   if (!candidate || typeof candidate !== 'object') {
     return false
@@ -436,9 +464,8 @@ export default function App(){
         <button
           className="btn"
           onClick={() => {
-            void handleToolbarSaveProject({
-              storyboard: useSB.getState().sb,
-              save: saveJSON,
+            void handleSaveProjectButtonClick({
+              getStoryboard: () => useSB.getState().sb,
               ...toolbarNotifiers
             })
           }}

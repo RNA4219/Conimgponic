@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
@@ -365,6 +366,13 @@ describe('export bridge golden comparison', () => {
       assert.equal(markdownArtifact.uri ?? null, null)
       assert.equal(markdownArtifact.normalizedPath, 'runs/unit/export/markdown/storyboard.md')
       assert.equal(markdownArtifact.durationMs ?? null, null)
+      const markdownEntry = result.entries.find((entry) => entry.format === 'markdown')
+      assert.ok(markdownEntry)
+      const markdownBytes = Buffer.byteLength(
+        readFileSync(markdownEntry.actualPath, 'utf8'),
+        'utf8',
+      )
+      assert.equal(markdownArtifact.bytes, markdownBytes)
     } finally {
       ctx.cleanup()
     }

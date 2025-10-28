@@ -33,7 +33,10 @@ describe('TemplatesMenu OPFS exception handling (RED)', () => {
     assert.deepEqual(appliedLists, [])
     assert.deepEqual(alerts, ['テンプレートの読み込みに失敗しました'])
     assert.equal(consoleErrors.length, 1)
-    assert.equal(consoleErrors[0][0], 'Failed to load templates from OPFS')
+    assert.equal(
+      consoleErrors[0][0],
+      'TemplatesMenu: failed to load templates from OPFS'
+    )
     assert.equal(consoleErrors[0][1], failure)
   })
 
@@ -72,7 +75,10 @@ describe('TemplatesMenu OPFS exception handling (RED)', () => {
     assert.deepEqual(currentList, previousList)
     assert.deepEqual(alerts, ['テンプレートの保存に失敗しました'])
     assert.equal(consoleErrors.length, 1)
-    assert.equal(consoleErrors[0][0], 'Failed to save templates to OPFS')
+    assert.equal(
+      consoleErrors[0][0],
+      'TemplatesMenu: failed to save templates to OPFS'
+    )
     assert.equal(consoleErrors[0][1], failure)
   })
 })

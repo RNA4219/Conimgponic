@@ -6,7 +6,8 @@ import test from 'node:test'
 import {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
-  handleToolbarPackageExport
+  handleToolbarPackageExport,
+  handleSaveProjectButtonClick
 } from '../../src/App'
 import { useSB } from '../../src/store'
 import type { Storyboard } from '../../src/types'
@@ -110,4 +111,28 @@ test('Package Export ボタンが OPFS 例外を通知しダウンロードを�
   assert.match(alerts[0], /失敗/)
   assert.equal(logs.length, 1)
   assert.equal(logs[0]?.[0], 'Failed to export package')
+})
+
+test('Save Project ボタンハンドラが saveJSON 例外時にアラートとログを行う', async () => {
+  const storyboard = createStoryboard('Toolbar Save Button Handler Failure Test')
+  const alerts: string[] = []
+  const logs: unknown[][] = []
+
+  await handleSaveProjectButtonClick({
+    getStoryboard: () => storyboard,
+    alert(message) {
+      alerts.push(message)
+    },
+    consoleError(...args) {
+      logs.push(args)
+    },
+    saveJSONImpl: async () => {
+      throw new Error('OPFS write failure')
+    }
+  })
+
+  assert.equal(alerts.length, 1)
+  assert.match(alerts[0], /失敗/)
+  assert.equal(logs.length, 1)
+  assert.equal(logs[0]?.[0], 'Failed to save project to OPFS')
 })

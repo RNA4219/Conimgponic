@@ -197,6 +197,10 @@
                 "enum": ["A-0", "A-1", "A-2", "B-0", "B-1"]
               },
               "evaluation_ms": { "type": "number", "minimum": 0 },
+              "precision": {
+                "type": ["string", "null"],
+                "enum": ["legacy", "beta", "stable", null]
+              },
               "threshold": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
               "status": { "type": "string", "enum": ["success", "failure"] },
               "detail": {
@@ -219,6 +223,7 @@
               "source",
               "phase",
               "evaluation_ms",
+              "precision",
               "threshold",
               "status",
               "detail",
@@ -268,6 +273,61 @@
               "guardrail",
               "digest"
             ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": { "const": "export.success" }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runId": { "type": "string", "minLength": 1 },
+              "matchRate": { "type": "number" },
+              "formats": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "format": { "type": "string", "minLength": 1 },
+                    "name": { "type": ["string", "null"], "minLength": 1 },
+                    "status": {
+                      "type": "string",
+                      "enum": ["matched", "diff"]
+                    },
+                    "uri": { "type": ["string", "null"], "minLength": 1 },
+                    "normalizedPath": {
+                      "type": ["string", "null"],
+                      "minLength": 1
+                    },
+                    "durationMs": { "type": ["number", "null"], "minimum": 0 },
+                    "bytes": { "type": ["number", "null"], "minimum": 0 }
+                  },
+                  "required": [
+                    "format",
+                    "name",
+                    "status",
+                    "uri",
+                    "normalizedPath",
+                    "durationMs",
+                    "bytes"
+                  ]
+                }
+              }
+            },
+            "required": ["runId", "matchRate", "formats", "artifacts"]
           }
         }
       }

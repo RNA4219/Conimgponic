@@ -672,6 +672,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.source',
       'payload.phase',
       'payload.evaluation_ms',
+      'payload.precision',
       'payload.errors',
       'payload.threshold',
       'payload.status',
@@ -706,6 +707,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'source',
       'phase',
       'evaluation_ms',
+      'precision',
       'threshold',
       'status',
       'detail',
@@ -743,6 +745,7 @@ describe('vscode extension telemetry contract (RED)', () => {
         phase: 'phase-a0',
         evaluation_ms: 42,
         errors: [],
+        precision: null,
         threshold: null,
         status: 'success',
         detail: { retryable: false, default_used: false }
@@ -815,6 +818,7 @@ describe('vscode extension telemetry contract (RED)', () => {
             phase: 'phase-a0'
           }
         ],
+        precision: null,
         threshold: null,
         status: 'failure',
         detail: { retryable: false, default_used: true }
@@ -877,6 +881,7 @@ describe('vscode extension telemetry contract (RED)', () => {
         phase: 'phase-a0',
         evaluation_ms: 42,
         errors: [],
+        precision: null,
         threshold: null,
         status: 'success',
         detail: { retryable: false, default_used: false }
@@ -926,6 +931,7 @@ describe('vscode extension telemetry contract (RED)', () => {
         phase: 'phase-a2',
         evaluation_ms: 5,
         errors: [],
+        precision: null,
         threshold: null,
         status: 'success',
         detail: { retryable: false, default_used: false }
@@ -937,6 +943,7 @@ describe('vscode extension telemetry contract (RED)', () => {
         phase: 'phase-b1',
         evaluation_ms: 7,
         errors: [],
+        precision: null,
         threshold: null,
         status: 'success',
         detail: { retryable: false, default_used: false }
@@ -967,6 +974,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'source',
       'phase',
       'evaluation_ms',
+      'precision',
       'threshold',
       'status',
       'detail',
@@ -1024,17 +1032,18 @@ describe('vscode extension telemetry contract (RED)', () => {
     ]
 
     try {
-      const payload: FlagResolutionEventPayload = {
-        flag: 'autosave.enabled',
-        variant: 'false',
-        source: 'default',
-        phase: 'phase-a0',
-        evaluation_ms: 7,
-        errors,
-        threshold: 0.75,
-        status: 'failure',
-        detail: { retryable: false, default_used: true }
-      }
+    const payload: FlagResolutionEventPayload = {
+      flag: 'autosave.enabled',
+      variant: 'false',
+      source: 'default',
+      phase: 'phase-a0',
+      evaluation_ms: 7,
+      errors,
+      precision: null,
+      threshold: 0.75,
+      status: 'failure',
+      detail: { retryable: false, default_used: true }
+    }
       publishFlagResolution('app.autosave', 'bootstrap', [payload], 13)
     } finally {
       scope.Day8Collector = previousCollector
@@ -1046,6 +1055,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     deepStrictEqual(event.payload.errors, errors)
     deepStrictEqual(event.payload.threshold, 0.75)
     deepStrictEqual(event.payload.status, 'failure')
+    strictEqual(event.payload.precision, null)
     deepStrictEqual(event.payload.detail, {
       retryable: false,
       default_used: true
@@ -1061,6 +1071,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       phase: 'phase-a0',
       evaluation_ms: 5,
       errors: [],
+      precision: null,
       threshold: null,
       status: 'success',
       detail: { retryable: false, default_used: false }
@@ -1112,6 +1123,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       phase: 'phase-a0',
       evaluation_ms: 5,
       errors: [],
+      precision: null,
       threshold: null,
       status: 'success',
       detail: { retryable: false, default_used: false }
@@ -1146,6 +1158,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     const [event] = captured
     assertOk(event, 'flag_resolution event must be captured when workspace id env is set')
     strictEqual(event.workspace_id, workspaceId)
+    strictEqual(event.payload.precision, null)
   })
 
   test('collectFlagResolutionPayloads は workspace 設定の検証失敗で default threshold へフォールバックした場合に default_used=true を通知する', () => {
@@ -1185,6 +1198,44 @@ describe('vscode extension telemetry contract (RED)', () => {
     deepStrictEqual(mergePayload.detail.default_used, true)
   })
 
+  test('collectFlagResolutionPayloads は precision を payload.precision に設定する', () => {
+    const snapshot: FlagSnapshot = {
+      autosave: {
+        value: true,
+        source: 'env',
+        errors: [],
+        enabled: true
+      },
+      plugins: {
+        value: false,
+        source: 'localStorage',
+        errors: [],
+        enabled: false
+      },
+      merge: {
+        value: 'beta',
+        source: 'workspace',
+        errors: [],
+        precision: 'beta',
+        threshold: 0.65
+      },
+      updatedAt: new Date(0).toISOString()
+    }
+
+    const payloads = collectFlagResolutionPayloads(snapshot, [], 11)
+    const autosavePayload = payloads.find(
+      (payload) => payload.flag === 'autosave.enabled'
+    )
+    assertOk(autosavePayload, 'autosave flag payload must exist')
+    strictEqual(autosavePayload.precision, null)
+
+    const mergePayload = payloads.find(
+      (payload) => payload.flag === 'merge.precision'
+    )
+    assertOk(mergePayload, 'merge flag payload must exist')
+    strictEqual(mergePayload.precision, 'beta')
+  })
+
   test('collectFlagResolutionPayloads は phase-a2/b1 を JSONL 契約フェーズへ伝搬する', () => {
     const thenClause = findConditional(
       (entry) => entry.if?.properties?.event?.const === 'flag_resolution'
@@ -1195,6 +1246,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'source',
       'phase',
       'evaluation_ms',
+      'precision',
       'threshold',
       'status',
       'detail',
@@ -1395,6 +1447,63 @@ describe('vscode extension telemetry contract (RED)', () => {
         `merge.trace must require ${field} in Collector JSONL`
       )
     }
+  })
+  test('export.success telemetry は artifacts.bytes を Reporter JSONL に固定する', () => {
+    const spec = findTelemetrySpec('export.success')
+    assertOk(spec, 'export.success telemetry spec is missing')
+
+    deepStrictEqual(spec.jsonlFields, [
+      'payload.runId',
+      'payload.matchRate',
+      'payload.formats',
+      'payload.artifacts[].format',
+      'payload.artifacts[].name',
+      'payload.artifacts[].status',
+      'payload.artifacts[].normalizedPath',
+      'payload.artifacts[].uri',
+      'payload.artifacts[].durationMs',
+      'payload.artifacts[].bytes',
+    ])
+
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'export.success',
+    )
+
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'runId',
+      'matchRate',
+      'formats',
+      'artifacts',
+    ])
+
+    assertOk(payloadSchema.properties, 'export.success payload schema must define properties')
+    const artifactsSchema = resolveSchemaRef(payloadSchema.properties.artifacts)
+    assertOk(artifactsSchema, 'export.success payload must define artifacts schema')
+    deepStrictEqual(artifactsSchema.type, 'array')
+    const artifactsItems = resolveSchemaRef(artifactsSchema.items)
+    assertOk(artifactsItems, 'export.success payload artifacts must define item schema')
+    deepStrictEqual(artifactsItems.type, 'object')
+    deepStrictEqual(artifactsItems.additionalProperties, false)
+    assertOk(
+      artifactsItems.required,
+      'export.success payload artifact schema must define required fields',
+    )
+    deepStrictEqual(
+      Array.from(artifactsItems.required),
+      [
+        'format',
+        'name',
+        'status',
+        'uri',
+        'normalizedPath',
+        'durationMs',
+        'bytes',
+      ],
+    )
+    assertOk(artifactsItems.properties, 'export.success payload artifact schema must define properties')
+    const bytesSchema = resolveSchemaRef(artifactsItems.properties.bytes)
+    assertOk(bytesSchema, 'export.success payload artifact must define bytes schema')
+    deepStrictEqual(bytesSchema, { type: ['number', 'null'], minimum: 0 })
   })
   test('error telemetry は retryable/detail.error_code/tags を Collector JSONL へ固定する', () => {
     const spec = findTelemetrySpec('error')
