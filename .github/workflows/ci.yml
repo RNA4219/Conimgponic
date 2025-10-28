@@ -44,7 +44,6 @@ jobs:
           status=$?
           set -e
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          exit "$status"
 
       - name: Upload SBOM artifact
         if: "always()"
