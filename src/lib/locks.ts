@@ -305,6 +305,18 @@ type WebLockHandleEntry = {
 };
 
 const webLockHandles = new Map<string, WebLockHandleEntry>();
+const releaseFailures = new Map<string, ProjectLockError>();
+
+const captureReleaseFailure = (leaseId: string, error: ProjectLockError): ProjectLockError => {
+  if (!releaseFailures.has(leaseId)) {
+    releaseFailures.set(leaseId, error);
+  }
+  return releaseFailures.get(leaseId)!;
+};
+
+const clearReleaseFailure = (leaseId: string) => {
+  releaseFailures.delete(leaseId);
+};
 type AcquireContext = {
   readonly leaseId: string;
   readonly ownerId: string;
@@ -884,10 +896,16 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     throw aborted;
   }
 
+  const cachedFailure = releaseFailures.get(lease.leaseId);
+  if (cachedFailure) {
+    throw cachedFailure;
+  }
+
   const handle = lease.strategy === 'web-lock' ? webLockHandles.get(lease.leaseId) : undefined;
   const existingReleaseError = handle?.getReleaseError();
   if (existingReleaseError) {
-    throw existingReleaseError;
+    const remembered = captureReleaseFailure(lease.leaseId, existingReleaseError);
+    throw remembered;
   }
 
   projectLockEvents.emit({ type: 'lock:release-requested', lease });
@@ -900,15 +918,17 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     } else {
       await releaseFallbackLease(lease, options.force);
     }
+    clearReleaseFailure(lease.leaseId);
     projectLockEvents.emit({ type: 'lock:released', leaseId: lease.leaseId });
   } catch (error) {
     const projectError =
       error instanceof ProjectLockError
         ? error
         : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
-    emitError(projectError);
-    emitReadonly('release-failed', projectError, options.onReadonly);
-    throw projectError;
+    const remembered = captureReleaseFailure(lease.leaseId, projectError);
+    emitError(remembered);
+    emitReadonly('release-failed', remembered, options.onReadonly);
+    throw remembered;
   }
 };
 const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOptions, force: boolean) => {
@@ -919,11 +939,12 @@ const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOpti
       error instanceof ProjectLockError
         ? error
         : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
+    const remembered = captureReleaseFailure(lease.leaseId, projectError);
     if (!(error instanceof ProjectLockError)) {
-      emitError(projectError);
-      emitReadonly('release-failed', projectError, options.onReadonly);
+      emitError(remembered);
+      emitReadonly('release-failed', remembered, options.onReadonly);
     }
-    throw projectError;
+    throw remembered;
   }
 };
 export const withProjectLock: WithProjectLock = async (executor, options = {}) => {

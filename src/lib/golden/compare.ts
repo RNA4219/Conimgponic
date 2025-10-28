@@ -29,6 +29,10 @@ export interface GoldenComparisonResult {
   readonly error?: { message: string; retryable: boolean }
 }
 
+export interface ExportTelemetryDetail {
+  readonly duration_ms: number
+}
+
 type ScalarFormat = Exclude<ExportFormat, 'package'>
 
 const scalarFormats: readonly ScalarFormat[] = ['markdown', 'csv', 'jsonl']
@@ -155,6 +159,7 @@ export function formatComparisonSummary(entries: readonly GoldenComparisonEntry[
 export function createTelemetryEvent(
   comparison: GoldenComparisonResult,
   runId: string,
+  detail: ExportTelemetryDetail,
 ): { event: 'export.success' | 'export.failed'; payload: Record<string, unknown> } | null {
   if (!comparison.entries.length) {
     return null
@@ -166,10 +171,13 @@ export function createTelemetryEvent(
       ),
     ),
   )
+  const durationMs = Math.max(0, Math.round(detail.duration_ms))
+
   const basePayload: Record<string, unknown> = {
     runId,
     matchRate: comparison.matchRate,
     formats,
+    detail: { duration_ms: durationMs },
   }
   if (comparison.ok) {
     basePayload.artifacts = comparison.entries.map((entry) => ({

@@ -113,7 +113,7 @@ export function GoldenCompare({ telemetry }: GoldenCompareProps): JSX.Element {
       return
     }
     telemetrySummaryRef.current = summary
-    const event = createTelemetryEvent(comparison, 'ui-preview')
+    const event = createTelemetryEvent(comparison, 'ui-preview', { duration_ms: 0 })
     if (event) {
       telemetry.track(event.event, event.payload)
     }

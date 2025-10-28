@@ -6,11 +6,12 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 const DEFAULT_TEST_ROOT = 'tests';
-const DEFAULT_TEST_SUFFIXES = ['.test.ts', '.test.tsx', '.test.mjs', '.spec.tsx'] as const;
+const DEFAULT_TEST_SUFFIXES = ['.test.ts', '.test.tsx', '.test.mjs', '.spec.ts', '.spec.tsx'] as const;
 const DEFAULT_TEST_GLOBS = [
   'tests/**/*.test.ts',
   'tests/**/*.test.tsx',
   'tests/**/*.test.mjs',
+  'tests/**/*.spec.ts',
   'tests/**/*.spec.tsx',
 ] as const;
 const moduleLoader = createRequire(import.meta.url);
@@ -73,6 +74,16 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/views/*autosave*.test.tsx',
     'tests/webview/autosave.*.test.ts',
     'tests/webview/autosave.*.test.tsx',
+  ],
+  lib: [
+    'tests/lib/*.test.ts',
+    'tests/lib/*.test.tsx',
+    'tests/lib/*.spec.ts',
+    'tests/lib/*.spec.tsx',
+    'tests/lib/**/*.test.ts',
+    'tests/lib/**/*.test.tsx',
+    'tests/lib/**/*.spec.ts',
+    'tests/lib/**/*.spec.tsx',
   ],
   merge: [
     'tests/merge/*.test.ts',

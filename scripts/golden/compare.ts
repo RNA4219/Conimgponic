@@ -2,6 +2,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join, relative, sep } from 'node:path'
+import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 
 import type { Storyboard } from '../../src/types'
@@ -96,6 +97,8 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
   const runDirUrl = pathToFileURL(baseDir)
   const entries: CompareEntry[] = []
 
+  const exportStartedAt = performance.now()
+
   let storyboard: Storyboard
   try {
     const raw = await readFile(options.storyboardPath, 'utf8')
@@ -114,7 +117,20 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
         retryable: false,
       },
     }
-    options.telemetry?.track('export.failed', { stage: 'load', retryable: false })
+    const exportDurationMs = performance.now() - exportStartedAt
+    options.telemetry?.track('export.failed', {
+      runId,
+      matchRate: 0,
+      formats: [],
+      detail: { duration_ms: Math.max(0, Math.round(exportDurationMs)) },
+      error: {
+        code: 'golden.load_failed',
+        message: (error as Error).message ?? 'Storyboard load failed',
+        retryable: false,
+      },
+      entries: [],
+      next_backoff_ms: 0,
+    })
     return result
   }
 
@@ -207,7 +223,10 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
   const normalizedPath = comparison.ok ? normalizedPosix : ''
   const runUri = comparison.ok ? runDirUrl.href : ''
 
-  const telemetryEvent = toolkit.createTelemetryEvent(comparison, runId)
+  const exportDurationMs = performance.now() - exportStartedAt
+  const telemetryEvent = toolkit.createTelemetryEvent(comparison, runId, {
+    duration_ms: exportDurationMs,
+  })
   if (telemetryEvent) {
     options.telemetry?.track(telemetryEvent.event, telemetryEvent.payload)
   }

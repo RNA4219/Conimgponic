@@ -84,10 +84,17 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
 const require = createRequire(import.meta.url);
-const autosaveSuffixModuleGlobs = ['src/**/*autosave*.ts', 'src/**/*autosave*.tsx'] as const;
+const autosaveSuffixModuleGlobs = [
+  'src/**/*autosave*.ts',
+  'src/**/*autosave*.tsx',
+  'src/**/*[Aa]uto[Ss]ave*.tsx',
+] as const;
+
 const autosaveTsxTestGlobs = [
   'tests/**/*[Aa]uto[Ss]ave*.test.tsx',
   'tests/**/*[Aa]uto[Ss]ave*.spec.tsx',
+];
+
 ] as const;
 const vscodeFlagsHandshakeSpecPath = 'tests/extensions/vscode/flags-handshake.spec.ts';
 
