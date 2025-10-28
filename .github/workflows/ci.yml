@@ -230,7 +230,7 @@ jobs:
         with:
           name: build-log
           path: build.log
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   quality:
     needs:
