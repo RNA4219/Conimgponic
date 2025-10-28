@@ -409,15 +409,15 @@ test('stable precision keeps diff merge preference locked while guarded', () => 
   })
 
   assert.equal(plan.diff.enabled, false)
-  assert.equal(getDefaultPreference('stable', plan.diff.enabled), 'manual-first')
-  assert.equal(sanitizePreference('diff-merge', 'stable', plan.diff.enabled), 'manual-first')
+  assert.equal(getDefaultPreference('stable', plan.diff.enabled), 'diff-merge')
+  assert.equal(sanitizePreference('diff-merge', 'stable', plan.diff.enabled), 'diff-merge')
 })
 
-test('sanitizePreference falls back to legacy preference when stable diff is disabled', () => {
-  assert.equal(sanitizePreference('diff-merge', 'stable', false), 'manual-first')
+test('sanitizePreference preserves diff merge preference when stable diff is disabled', () => {
+  assert.equal(sanitizePreference('diff-merge', 'stable', false), 'diff-merge')
 })
 
-test('stable precision diff guard fallback resolves manual preference', () => {
+test('stable precision diff guard fallback retains diff merge preference', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.82,
@@ -425,7 +425,7 @@ test('stable precision diff guard fallback resolves manual preference', () => {
 
   assert.equal(plan.diff.enabled, false)
 
-  assert.equal(sanitizePreference('diff-merge', 'stable', plan.diff.enabled), 'manual-first')
+  assert.equal(sanitizePreference('diff-merge', 'stable', plan.diff.enabled), 'diff-merge')
 
   const preference = resolvePreferenceSelection({
     precision: 'stable',
@@ -436,7 +436,7 @@ test('stable precision diff guard fallback resolves manual preference', () => {
     defaultPreference: getDefaultPreference('stable', plan.diff.enabled),
   })
 
-  assert.equal(preference, 'manual-first')
+  assert.equal(preference, 'diff-merge')
 })
 
 test('stable precision respects manual preference selection immediately after guard unlocks', () => {
@@ -472,7 +472,7 @@ test('stable precision respects user preference across guard transitions', () =>
   })
 
   assert.equal(guardedPlan.diff.enabled, false)
-  assert.equal(getDefaultPreference('stable', guardedPlan.diff.enabled), 'manual-first')
+  assert.equal(getDefaultPreference('stable', guardedPlan.diff.enabled), 'diff-merge')
   assert.equal(sanitizePreference('manual-first', 'stable', guardedPlan.diff.enabled), 'manual-first')
 
   const unlockedPlan = resolveMergeDockPhasePlan({
@@ -520,7 +520,7 @@ test('stable precision guard unlock restores manual fallback but honors opt-in o
   assert.equal(guardedPlan.diff.enabled, false)
   assert.equal(unlockedPlan.diff.enabled, true)
 
-  assert.equal(sanitizePreference('diff-merge', 'stable', guardedPlan.diff.enabled), 'manual-first')
+  assert.equal(sanitizePreference('diff-merge', 'stable', guardedPlan.diff.enabled), 'diff-merge')
 
   const nextPreference = resolvePreferenceSelection({
     precision: 'stable',
@@ -632,7 +632,7 @@ test('stable precision preserves manual fallback when guard unlocks before manua
   const guardedDefault = getDefaultPreference('stable', guardedPlan.diff.enabled)
   const unlockedDefault = getDefaultPreference('stable', unlockedPlan.diff.enabled)
 
-  assert.equal(guardedDefault, 'manual-first')
+  assert.equal(guardedDefault, 'diff-merge')
   assert.equal(unlockedDefault, 'diff-merge')
 
   const restoredPreference = resolvePreferenceSelection({
@@ -699,7 +699,7 @@ test('stable precision clamps threshold upper bound and keeps diff initial tab w
   assert.equal(plan.autoApplied.meetsTarget, true)
 })
 
-test('stable precision sourced from workspace threshold stays opt-in without review bands', () => {
+test('stable precision sourced from workspace threshold keeps diff visible but opt-in without review bands', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.88,
@@ -708,7 +708,7 @@ test('stable precision sourced from workspace threshold stays opt-in without rev
 
   assert.equal(plan.threshold.request, 0.88)
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.visible, false)
+  assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.guard.phaseBRequired, false)
 })
@@ -736,7 +736,7 @@ test('stable precision tab planning restores stored merge.lastTab preference', (
   })
 
   assert.equal(phasePlan.tabs.initialTab, 'compiled')
-  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
+  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'opt-in' })
   assert.deepEqual(
     phasePlan.tabs.tabs.map((entry) => entry.id),
     ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
