@@ -190,11 +190,11 @@ export const getDefaultPreference = (
   precision: MergePrecision,
   diffEnabled: boolean,
 ): MergeDockPreference => {
-  if (!diffEnabled) {
-    return 'manual-first'
-  }
   if (precision === 'stable') {
     return 'diff-merge'
+  }
+  if (!diffEnabled) {
+    return 'manual-first'
   }
   return precision === 'legacy' ? 'manual-first' : 'diff-merge'
 }
@@ -205,6 +205,9 @@ export const sanitizePreference = (
   diffEnabled: boolean,
 ): MergeDockPreference => {
   if (!diffEnabled) {
+    if (precision === 'stable' && preference === 'diff-merge') {
+      return 'diff-merge'
+    }
     return 'manual-first'
   }
   return preference
@@ -222,14 +225,25 @@ export const resolvePreferenceSelection = (input: {
     precision,
     previousPrecision,
     diffEnabled,
+    previousDiffEnabled,
     preference,
     defaultPreference,
   } = input
   const precisionChanged = previousPrecision !== precision
+  const diffStateChanged = previousDiffEnabled !== diffEnabled
   const sanitizedDefault = sanitizePreference(defaultPreference, precision, diffEnabled)
   const sanitizedPreference = sanitizePreference(preference, precision, diffEnabled)
 
   if (precisionChanged) {
+    return sanitizedDefault
+  }
+  if (diffStateChanged) {
+    if (!diffEnabled) {
+      return sanitizedPreference
+    }
+    if (!previousDiffEnabled && sanitizedPreference !== sanitizedDefault) {
+      return sanitizedPreference
+    }
     return sanitizedDefault
   }
   return sanitizedPreference
