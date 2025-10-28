@@ -23,7 +23,8 @@ export type TelemetryEventName =
   | 'export.failed'
   | 'plugins.invoked'
   | 'plugins.completed'
-  | 'plugins.failed';
+  | 'plugins.failed'
+  | 'error';
 
 export const TELEMETRY_FEATURES = [
   'autosave-diff-merge',
@@ -242,6 +243,17 @@ export interface PluginFailedPayload extends PluginEventPayload {
   readonly next_backoff_ms: number;
 }
 
+export interface TelemetryErrorDetailPayload {
+  readonly error_code: string;
+  readonly retryable: boolean;
+  readonly message?: string;
+}
+
+export interface TelemetryErrorPayload {
+  readonly detail: TelemetryErrorDetailPayload;
+  readonly tags: ReadonlyArray<string>;
+}
+
 const PLUGIN_RESULT_JSONL_FIELDS = [
   'payload.pluginId',
   'payload.action',
@@ -259,6 +271,7 @@ export interface TelemetryPayloads {
   readonly 'plugins.invoked': PluginEventPayload;
   readonly 'plugins.completed': PluginEventPayload;
   readonly 'plugins.failed': PluginFailedPayload;
+  readonly error: TelemetryErrorPayload;
 }
 
 export interface TelemetryEventSpec<E extends TelemetryEventName = TelemetryEventName> {
@@ -800,6 +813,22 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           metric: 'merge_auto_success_rate',
           rollbackTo: 'B-0',
         },
+      },
+      {
+        event: 'error',
+        description:
+          'UI/Bridge の回復不能エラーを Incident 集約・Phase ロールバック検知へ送出する。',
+        jsonlFields: [
+          'feature',
+          'component',
+          'kind',
+          'source',
+          'payload.detail.error_code',
+          'payload.detail.retryable',
+          'payload.tags[]',
+        ],
+        retryable: false,
+        pipelineStage: 'collector',
       },
     ],
     retryPolicy: {

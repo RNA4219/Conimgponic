@@ -9,7 +9,9 @@ import {
   COLLECT_METRICS_CONTRACT,
   type MessageEnvelope,
   type TelemetryComponent,
+  type TelemetryFeature,
   type TelemetryKind,
+  type TelemetryPayloads,
   type TelemetrySource,
   type RolloutPhase
 } from '../../scripts/monitor/collect-metrics.js'
@@ -73,6 +75,10 @@ type CollectorTelemetryEnvelopeSeed = Omit<CollectorTelemetryEnvelope, 'phase'>
 type FlagResolutionComponent = Extract<TelemetryComponent, 'flags'>
 type FlagResolutionKind = Extract<TelemetryKind, 'flag_resolution'>
 
+type TelemetryErrorKind = Extract<TelemetryKind, 'error'>
+type TelemetryErrorPayload = TelemetryPayloads['error']
+type TelemetryErrorDetail = TelemetryErrorPayload['detail']
+
 export type Day8CollectorFlagResolutionEvent = CollectorTelemetryEnvelope & {
   readonly schema: 'vscode.telemetry.v1'
   readonly feature: 'config.flags'
@@ -84,9 +90,35 @@ export type Day8CollectorFlagResolutionEvent = CollectorTelemetryEnvelope & {
   readonly payload: FlagResolutionContractPayload
 }
 
+export type Day8CollectorErrorEvent = CollectorTelemetryEnvelope & {
+  readonly schema: 'vscode.telemetry.v1'
+  readonly feature: TelemetryFeature
+  readonly event: 'error'
+  readonly component: TelemetryComponent
+  readonly kind: TelemetryErrorKind
+  readonly source: TelemetrySource
+  readonly evaluation_ms: number
+  readonly payload: TelemetryErrorPayload
+}
+
+interface Day8CollectorErrorEventInput {
+  readonly feature: TelemetryFeature
+  readonly component: TelemetryComponent
+  readonly source: TelemetrySource
+  readonly phase: RolloutPhase
+  readonly evaluationMs: number
+  readonly detail: TelemetryErrorDetail
+  readonly tags: ReadonlyArray<string>
+}
+
+interface PublishCollectorErrorInput extends Day8CollectorErrorEventInput {
+  readonly overrides?: TelemetryEnvelopeOverrides
+}
+
 export type Day8CollectorEvent =
   | Day8CollectorAutoSaveGuardEvent
   | Day8CollectorFlagResolutionEvent
+  | Day8CollectorErrorEvent
 
 export interface Day8Collector {
   publish(event: Day8CollectorEvent): void
@@ -216,6 +248,73 @@ export const resetWorkspaceIdCacheForTests = (): void => {
   cachedWorkspaceId = undefined
 }
 
+const emitCollectorError = (
+  collector: Day8Collector,
+  envelopeSeed: CollectorTelemetryEnvelopeSeed,
+  input: Day8CollectorErrorEventInput
+): void => {
+  const normalizedErrorCode = input.detail.error_code.trim()
+  const detail: TelemetryErrorDetail = {
+    error_code: normalizedErrorCode ? normalizedErrorCode : 'unknown',
+    retryable: input.detail.retryable
+  }
+
+  if (typeof input.detail.message === 'string') {
+    const message = input.detail.message.trim()
+    if (message) {
+      detail.message = message
+    }
+  }
+
+  const tagSet = new Set<string>([
+    `component:${input.component}`,
+    `feature:${input.feature}`,
+    `phase:${input.phase}`
+  ])
+
+  for (const candidate of input.tags) {
+    if (typeof candidate !== 'string') {
+      continue
+    }
+    const normalized = candidate.trim()
+    if (normalized) {
+      tagSet.add(normalized)
+    }
+  }
+
+  const tags = Array.from(tagSet)
+  if (tags.length === 0) {
+    tags.push(`component:${input.component}`)
+  }
+
+  collector.publish({
+    ...applyPhaseToEnvelope(envelopeSeed, input.phase),
+    schema: 'vscode.telemetry.v1',
+    feature: input.feature,
+    component: input.component,
+    kind: 'error',
+    event: 'error',
+    source: input.source,
+    evaluation_ms: Math.max(0, input.evaluationMs),
+    payload: {
+      detail,
+      tags
+    }
+  })
+}
+
+export const publishCollectorError = (input: PublishCollectorErrorInput): void => {
+  const collector = getDay8Collector()
+  if (!collector) {
+    return
+  }
+  const envelopeSeed = createCollectorTelemetryEnvelopeSeed(
+    input.phase,
+    input.overrides
+  )
+  emitCollectorError(collector, envelopeSeed, input)
+}
+
 export const publishFlagResolution = (
   source: TelemetrySource,
   phase: string,
@@ -251,5 +350,30 @@ export const publishFlagResolution = (
       evaluation_ms: evaluationMs,
       payload: contractPayload
     })
+
+    if (payload.errors.length > 0) {
+      const primaryError = payload.errors[0]
+      const errorCode = primaryError
+        ? `flag_resolution.${primaryError.code}`
+        : 'flag_resolution.failure'
+      emitCollectorError(collector, envelopeSeed, {
+        feature: 'config.flags',
+        component: 'flags',
+        source,
+        phase: contractPayload.phase,
+        evaluationMs,
+        detail: {
+          error_code: errorCode,
+          retryable: payload.detail.retryable,
+          message: primaryError?.message
+        },
+        tags: [
+          `flag:${payload.flag}`,
+          `status:${payload.status}`,
+          `source:${payload.source}`,
+          `errors:${payload.errors.length}`
+        ]
+      })
+    }
   }
 }
