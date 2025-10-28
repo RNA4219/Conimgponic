@@ -29,6 +29,10 @@
   - Affected Paths と Local Commands が対象差分と一致しているか。
   - `status`・`next_review_due` が最新レビュー計画を反映しているか。
 
+### JSONL インポート検証観点とタスク粒度
+- 1 行 1 シーンの原則を守り、`id` 欠落・重複・型不整合などのデータ品質をテストで捕捉する。
+- 検証タスクは「不正行の無視」「既存シーン更新」「エラーログ記録」など独立性の高い単位へ分割し、各タスクで対象シナリオに対応する JSONL ケースと受入基準を明示する。
+
 ## フォローアップのチェックリスト
 - [ ] `docs/seeds/` への配置と命名規約 (`TASK.<slug>-YYYY-MM-DD.md`) を満たした。
 - [ ] Guardrails 変更時に [docs/UPSTREAM_WEEKLY_LOG.md](UPSTREAM_WEEKLY_LOG.md) を確認し、Seed へ必要な差分メモを追加した。
