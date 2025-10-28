@@ -16,6 +16,7 @@ export type MetricsKey =
 
 export type TelemetryEventName =
   | 'status.autosave'
+  | 'snapshot.result'
   | 'flag_resolution'
   | 'merge.trace'
   | 'export.started'
@@ -23,7 +24,8 @@ export type TelemetryEventName =
   | 'export.failed'
   | 'plugins.invoked'
   | 'plugins.completed'
-  | 'plugins.failed';
+  | 'plugins.failed'
+  | 'error';
 
 export const TELEMETRY_FEATURES = [
   'autosave-diff-merge',
@@ -242,6 +244,17 @@ export interface PluginFailedPayload extends PluginEventPayload {
   readonly next_backoff_ms: number;
 }
 
+export interface TelemetryErrorDetailPayload {
+  readonly error_code: string;
+  readonly retryable: boolean;
+  readonly message?: string;
+}
+
+export interface TelemetryErrorPayload {
+  readonly detail: TelemetryErrorDetailPayload;
+  readonly tags: ReadonlyArray<string>;
+}
+
 const PLUGIN_RESULT_JSONL_FIELDS = [
   'payload.pluginId',
   'payload.action',
@@ -249,8 +262,52 @@ const PLUGIN_RESULT_JSONL_FIELDS = [
   'payload.duration_ms',
 ] as const satisfies ReadonlyArray<string>;
 
+export interface SnapshotResultDetailBase {
+  readonly duration_ms: number;
+  readonly retry_count: number;
+  readonly retryable: boolean;
+  readonly error_code: string | null;
+  readonly error_message?: string;
+  readonly lag_seconds?: number;
+}
+
+export interface SnapshotResultSuccessDetail extends SnapshotResultDetailBase {
+  readonly retryable: false;
+  readonly error_code: null;
+}
+
+export interface SnapshotResultFailureDetail extends SnapshotResultDetailBase {
+  readonly retryable: boolean;
+  readonly error_code: string;
+  readonly error_message: string;
+}
+
+export interface SnapshotResultSnapshot {
+  readonly bytes: number;
+  readonly retained_bytes: number;
+  readonly generation: number;
+  readonly last_success_at: string;
+}
+
+export interface SnapshotResultSuccessPayload {
+  readonly status: 'success';
+  readonly detail: SnapshotResultSuccessDetail;
+  readonly snapshot: SnapshotResultSnapshot;
+}
+
+export interface SnapshotResultFailurePayload {
+  readonly status: 'failure';
+  readonly detail: SnapshotResultFailureDetail;
+  readonly snapshot?: SnapshotResultSnapshot;
+}
+
+export type SnapshotResultPayload =
+  | SnapshotResultSuccessPayload
+  | SnapshotResultFailurePayload;
+
 export interface TelemetryPayloads {
   readonly 'status.autosave': StatusAutosavePayload;
+  readonly 'snapshot.result': SnapshotResultPayload;
   readonly 'flag_resolution': FlagResolutionPayload;
   readonly 'merge.trace': MergeTracePayload;
   readonly 'export.started': ExportStartedPayload;
@@ -259,6 +316,7 @@ export interface TelemetryPayloads {
   readonly 'plugins.invoked': PluginEventPayload;
   readonly 'plugins.completed': PluginEventPayload;
   readonly 'plugins.failed': PluginFailedPayload;
+  readonly error: TelemetryErrorPayload;
 }
 
 export interface TelemetryEventSpec<E extends TelemetryEventName = TelemetryEventName> {
@@ -679,6 +737,28 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         },
       },
       {
+        event: 'snapshot.result',
+        description:
+          'AutoSave flush 成否と retryable/error_code を Collector が autosave_p95/成功率指標へ転記する。',
+        jsonlFields: [
+          'payload.status',
+          'payload.detail.duration_ms',
+          'payload.detail.retry_count',
+          'payload.detail.retryable',
+          'payload.detail.error_code',
+          'payload.snapshot.bytes',
+          'payload.snapshot.retained_bytes',
+          'payload.snapshot.generation',
+          'payload.snapshot.last_success_at',
+        ],
+        retryable: true,
+        pipelineStage: 'collector',
+        guardrail: {
+          metric: 'autosave_p95',
+          rollbackTo: 'A-0',
+        },
+      },
+      {
         event: 'flag_resolution',
         description: 'Feature flag の判定結果を Analyzer の restore_success_rate 推定に反映する。',
         jsonlFields: [
@@ -800,6 +880,22 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           metric: 'merge_auto_success_rate',
           rollbackTo: 'B-0',
         },
+      },
+      {
+        event: 'error',
+        description:
+          'UI/Bridge の回復不能エラーを Incident 集約・Phase ロールバック検知へ送出する。',
+        jsonlFields: [
+          'feature',
+          'component',
+          'kind',
+          'source',
+          'payload.detail.error_code',
+          'payload.detail.retryable',
+          'payload.tags[]',
+        ],
+        retryable: false,
+        pipelineStage: 'collector',
       },
     ],
     retryPolicy: {

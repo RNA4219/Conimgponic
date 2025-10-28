@@ -125,6 +125,57 @@
     {
       "if": {
         "properties": {
+          "event": { "const": "snapshot.result" }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["success", "failure"]
+              },
+              "detail": { "$ref": "#/definitions/snapshotResultDetailBase" },
+              "snapshot": { "$ref": "#/definitions/snapshotResultSnapshot" }
+            },
+            "required": ["status", "detail"],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": { "const": "success" }
+                  }
+                },
+                "then": {
+                  "required": ["snapshot"],
+                  "properties": {
+                    "detail": { "$ref": "#/definitions/snapshotResultSuccessDetail" }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": { "const": "failure" }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "detail": { "$ref": "#/definitions/snapshotResultFailureDetail" }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "event": { "const": "flag_resolution" }
         }
       },
@@ -282,6 +333,41 @@
     {
       "if": {
         "properties": {
+          "event": { "const": "error" }
+        }
+      },
+      "then": {
+        "properties": {
+          "component": { "$ref": "#/definitions/telemetryComponent" },
+          "kind": { "type": "string", "const": "error" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "detail": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "error_code": { "type": "string", "minLength": 1 },
+                  "retryable": { "type": "boolean" },
+                  "message": { "type": "string", "minLength": 1 }
+                },
+                "required": ["error_code", "retryable"]
+              },
+              "tags": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "minItems": 1
+              }
+            },
+            "required": ["detail", "tags"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "event": { "enum": [
             "plugins.invoked",
             "plugins.completed",
@@ -349,6 +435,7 @@
       "type": "string",
       "enum": [
         "status.autosave",
+        "snapshot.result",
         "flag_resolution",
         "merge.trace",
         "export.started",
@@ -356,7 +443,8 @@
         "export.failed",
         "plugins.invoked",
         "plugins.completed",
-        "plugins.failed"
+        "plugins.failed",
+        "error"
       ]
     },
     "flagResolutionSource": {
@@ -414,6 +502,64 @@
         "retryable",
         "source",
         "phase"
+      ]
+    },
+    "snapshotResultDetailBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "retry_count": { "type": "integer", "minimum": 0 },
+        "retryable": { "type": "boolean" },
+        "error_code": { "type": ["string", "null"], "minLength": 1 },
+        "error_message": { "type": "string", "minLength": 1 },
+        "lag_seconds": { "type": "number", "minimum": 0 }
+      },
+      "required": ["duration_ms", "retry_count", "retryable", "error_code"]
+    },
+    "snapshotResultSuccessDetail": {
+      "allOf": [
+        { "$ref": "#/definitions/snapshotResultDetailBase" },
+        {
+          "properties": {
+            "error_code": { "type": "null" },
+            "retryable": { "type": "boolean", "const": false }
+          }
+        }
+      ]
+    },
+    "snapshotResultFailureDetail": {
+      "allOf": [
+        { "$ref": "#/definitions/snapshotResultDetailBase" },
+        {
+          "properties": {
+            "error_code": { "type": "string", "minLength": 1 },
+            "error_message": { "type": "string", "minLength": 1 }
+          },
+          "required": [
+            "duration_ms",
+            "retry_count",
+            "retryable",
+            "error_code",
+            "error_message"
+          ]
+        }
+      ]
+    },
+    "snapshotResultSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0 },
+        "retained_bytes": { "type": "integer", "minimum": 0 },
+        "generation": { "type": "integer", "minimum": 0 },
+        "last_success_at": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "bytes",
+        "retained_bytes",
+        "generation",
+        "last_success_at"
       ]
     },
     "telemetryFeature": {

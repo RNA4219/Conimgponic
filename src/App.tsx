@@ -136,6 +136,74 @@ export function watchAutoSaveStoryboardDiffs(
   })
 }
 
+export interface ShortcutKeyEvent {
+  readonly key: string
+  readonly ctrlKey: boolean
+  readonly shiftKey: boolean
+  readonly altKey: boolean
+  preventDefault(): void
+}
+
+export interface KeyboardShortcutHandlerOptions {
+  readonly getStoryboard: () => Storyboard
+  readonly saveProject: (storyboard: Storyboard) => Promise<void>
+  readonly saveSnapshot: (storyboard: Storyboard) => Promise<void>
+  readonly addScene: () => void
+  readonly alert: (message: string) => void
+  readonly consoleError: (message: string, error: unknown) => void
+}
+
+export function createKeyboardShortcutHandler(
+  options: KeyboardShortcutHandlerOptions
+): (event: ShortcutKeyEvent) => Promise<void> | void {
+  const {
+    getStoryboard,
+    saveProject,
+    saveSnapshot,
+    addScene,
+    alert: alertUser,
+    consoleError
+  } = options
+
+  function notifyFailure(error: unknown): void {
+    const detail = error instanceof Error ? error.message : String(error)
+    alertUser(`保存に失敗しました: ${detail}`)
+    consoleError('Keyboard shortcut handler failed', error)
+  }
+
+  return (event) => {
+    try {
+      if (!event.ctrlKey) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      if (key === 's' && !event.shiftKey) {
+        event.preventDefault()
+        const storyboard = getStoryboard()
+        return saveProject(storyboard).catch((error) => {
+          notifyFailure(error)
+        })
+      }
+
+      if (key === 's' && event.shiftKey) {
+        event.preventDefault()
+        const storyboard = getStoryboard()
+        return saveSnapshot(storyboard).catch((error) => {
+          notifyFailure(error)
+        })
+      }
+
+      if (key === 'n' && event.altKey) {
+        event.preventDefault()
+        addScene()
+      }
+    } catch (error) {
+      notifyFailure(error)
+    }
+  }
+}
+
 export default function App(){
   const { sb, setSBTitle, addScene } = useSB()
   const [dockOpen, setDockOpen] = useState(()=> getDockOpenPreference())
@@ -146,29 +214,46 @@ export default function App(){
   const autoSaveRunner = useRef<AutoSaveInitResult | null>(null)
 
   useEffect(()=>{
-    function onKey(e: KeyboardEvent){
-      try{
-        if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase()==='s'){
-          e.preventDefault(); (async()=>{ await saveJSON('project/storyboard.json', useSB.getState().sb) })();
-        } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase()==='s'){
-          e.preventDefault(); (async()=>{
-            const { ensureDir, saveText } = await import('./lib/opfs');
-            const { toMarkdown, toCSV, toJSONL } = await import('./lib/exporters');
-            const { sha256Hex } = await import('./lib/hash');
-            const sb = useSB.getState().sb
-            const ts = new Date().toISOString().replace(/[:.]/g,'-'); const dir = `runs/${ts}`; await ensureDir(dir)
-            const md = toMarkdown(sb), csv = toCSV(sb), jsonl=toJSONL(sb), h = await sha256Hex(md + '\n' + csv + '\n' + jsonl)
-            await saveText(`${dir}/shotlist.md`, md); await saveText(`${dir}/shotlist.csv`, csv); await saveText(`${dir}/shotlist.jsonl`, jsonl); await saveText(`${dir}/meta.json`, JSON.stringify({hash:h,title:sb.title},null,2)); await saveText('runs/latest.txt', ts)
-          })();
-        } else if (e.ctrlKey && e.altKey && e.key.toLowerCase()==='n'){
-          e.preventDefault(); useSB.getState().addScene()
-        } else if (e.ctrlKey && e.key === 'Enter'){
-          // noop: LeftRight component handles generation
-        }
-      }catch (error){
-        console.error('Keyboard shortcut handler failed', error)
+    const handler = createKeyboardShortcutHandler({
+      getStoryboard: () => useSB.getState().sb,
+      async saveProject(storyboard) {
+        await saveJSON('project/storyboard.json', storyboard)
+      },
+      async saveSnapshot(storyboard) {
+        const { ensureDir, saveText } = await import('./lib/opfs')
+        const { toMarkdown, toCSV, toJSONL } = await import('./lib/exporters')
+        const { sha256Hex } = await import('./lib/hash')
+        const ts = new Date().toISOString().replace(/[:.]/g,'-')
+        const dir = `runs/${ts}`
+        await ensureDir(dir)
+        const md = toMarkdown(storyboard)
+        const csv = toCSV(storyboard)
+        const jsonl = toJSONL(storyboard)
+        const hash = await sha256Hex(`${md}\n${csv}\n${jsonl}`)
+        await saveText(`${dir}/shotlist.md`, md)
+        await saveText(`${dir}/shotlist.csv`, csv)
+        await saveText(`${dir}/shotlist.jsonl`, jsonl)
+        await saveText(
+          `${dir}/meta.json`,
+          JSON.stringify({ hash, title: storyboard.title }, null, 2)
+        )
+        await saveText('runs/latest.txt', ts)
+      },
+      addScene() {
+        useSB.getState().addScene()
+      },
+      alert(message) {
+        window.alert(message)
+      },
+      consoleError(message, error) {
+        console.error(message, error)
       }
+    })
+
+    function onKey(event: KeyboardEvent): void {
+      handler(event)
     }
+
     window.addEventListener('keydown', onKey)
     return ()=> window.removeEventListener('keydown', onKey)
   }, [])

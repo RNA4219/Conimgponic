@@ -52,6 +52,12 @@ function resolveNodeTestLoader(): LoaderResolution {
 const TEST_COVERAGE_FLAG = '--test-coverage';
 const TEST_COVERAGE_MINIMUM_MAJOR_VERSION = 22;
 const FILTER_TARGETS: Record<string, readonly string[]> = {
+  app: [
+    'tests/app/app.*.test.ts',
+    'tests/app/app.*.test.tsx',
+    'tests/app/autosave.*.test.ts',
+    'tests/app/autosave.*.test.tsx'
+  ],
   autosave: [
     'tests/app/autosave.*.test.ts',
     'tests/app/autosave.*.test.tsx',
@@ -102,6 +108,11 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
   cli: ['tests/ci/test-commands.test.ts', 'tests/cli/*.test.ts', 'tests/cli/**/*.test.ts'],
   telemetry: ['tests/telemetry/*.test.ts'],
   'diff-merge-view-state': ['tests/components/DiffMergeView.test.tsx'],
+  components: [
+    'tests/components/*.test.ts',
+    'tests/components/*.test.tsx',
+    'tests/components/*.test.mjs',
+  ],
 };
 
 let cachedTestFiles: readonly string[] | undefined;

@@ -395,6 +395,44 @@ const buildLease = (
     renewAttempt,
   };
 };
+
+const fallbackRecordToLease = (
+  record: FallbackLockLeaseRecord,
+  heartbeatMs: number
+): ProjectLockLease => {
+  const ttlMillis = Math.max(0, Math.round(record.ttlSeconds * 1000));
+  const effectiveHeartbeat = heartbeatMs > 0 ? heartbeatMs : LOCK_HEARTBEAT_INTERVAL_MS;
+  const nextHeartbeatAt = Math.min(record.expiresAt, record.mtime + effectiveHeartbeat);
+  const renewAttempt =
+    effectiveHeartbeat > 0
+      ? Math.max(0, Math.floor(Math.max(0, record.mtime - record.acquiredAt) / effectiveHeartbeat))
+      : 0;
+
+  return {
+    leaseId: record.leaseId,
+    ownerId: record.ownerId,
+    strategy: 'file-lock',
+    viaFallback: true,
+    resource: FALLBACK_LOCK_PATH,
+    acquiredAt: record.acquiredAt,
+    expiresAt: record.expiresAt,
+    ttlMillis,
+    nextHeartbeatAt,
+    renewAttempt,
+  };
+};
+
+const readFallbackLeaseSnapshot = async (
+  heartbeatMs: number
+): Promise<ProjectLockLease | undefined> => {
+  try {
+    const record = (await loadJSON(FALLBACK_LOCK_PATH)) as FallbackLockLeaseRecord | null;
+    if (!record) return undefined;
+    return fallbackRecordToLease(record, heartbeatMs);
+  } catch {
+    return undefined;
+  }
+};
 const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease> => {
   const locks = (globalThis as typeof globalThis & { navigator?: Navigator }).navigator?.locks;
   if (!locks?.request)
@@ -624,16 +662,10 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
     throwIfAborted();
 
     if (record && record.leaseId !== ctx.leaseId && record.expiresAt > now) {
+      const lease = fallbackRecordToLease(record, ctx.heartbeatMs);
       projectLockEvents.emit({
         type: 'lock:warning',
-        lease: buildLease(
-          'file-lock',
-          FALLBACK_LOCK_PATH,
-          ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS,
-          ctx.heartbeatMs,
-          ctx,
-          record.acquiredAt
-        ),
+        lease,
         warning: 'fallback-degraded',
         detail: 'Existing fallback lease still active',
       });
@@ -737,9 +769,12 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
         }
 
         if (projectError.code === 'fallback-conflict') {
+          const lease =
+            (await readFallbackLeaseSnapshot(ctx.heartbeatMs)) ??
+            buildLease('file-lock', FALLBACK_LOCK_PATH, ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS, ctx.heartbeatMs, ctx);
           projectLockEvents.emit({
             type: 'lock:warning',
-            lease: buildLease('file-lock', FALLBACK_LOCK_PATH, ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS, ctx.heartbeatMs, ctx),
+            lease,
             warning: 'fallback-degraded',
             detail: 'Existing fallback lock is owned by another client',
           });

@@ -1685,6 +1685,7 @@ describe('createVscodeAutoSaveBridge', () => {
       (event) => event.name === 'autosave.status' && event.properties?.correlationId === 'corr-disabled'
     )
     assert.equal(statusTelemetry?.properties?.state, 'disabled')
+    assert.deepEqual(statusTelemetry?.properties?.performance, { flush_latency_ms: 0 })
   })
 
   it('guard disable short circuit で autosave.status テレメトリに A-1 phase を付与する', async () => {
@@ -1725,6 +1726,7 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(disabledTelemetry, 'guard 無効化テレメトリが必要')
     assert.equal(disabledTelemetry.properties?.state, 'disabled')
     assert.equal(disabledTelemetry.properties?.phase, 'A-1')
+    assert.deepEqual(disabledTelemetry.properties?.performance, { flush_latency_ms: 0 })
   })
 
   it('guard 無効化ショートサーキットで autosave.guard telemetry を 1 度送信する', async () => {
@@ -1786,6 +1788,11 @@ describe('createVscodeAutoSaveBridge', () => {
       'A-1',
       "guard 無効化 autosave.status telemetry は envelope phase 'A-1' を含む"
     )
+    assert.deepEqual(
+      disabledTelemetry.properties?.performance,
+      { flush_latency_ms: 0 },
+      'guard 無効化 autosave.status telemetry は flush_latency_ms=0 を含む'
+    )
 
     bridge.reportDirty(512, guardEnabled)
     const dirtyTelemetry = telemetry.find(
@@ -1796,6 +1803,38 @@ describe('createVscodeAutoSaveBridge', () => {
       dirtyTelemetry.properties?.phase,
       'A-1',
       "dirty autosave.status telemetry は envelope phase 'A-1' を含む"
+    )
+  })
+
+  it('reportDirty の autosave.status telemetry で flush latency を 0ms として送信する', () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        /* noop */
+      },
+      atomicWrite: async () => {
+        assert.fail('reportDirty テレメトリ検証では atomicWrite を呼ばない')
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(512, guardEnabled)
+
+    const dirtyTelemetry = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' &&
+        event.properties?.state === 'dirty' &&
+        event.properties?.pendingBytes === 512
+    )
+    assert.ok(dirtyTelemetry, 'dirty テレメトリが必要')
+    assert.equal(
+      dirtyTelemetry.properties?.performance?.flush_latency_ms,
+      0,
+      'reportDirty の autosave.status telemetry は flush_latency_ms=0 を送信する'
     )
   })
 
