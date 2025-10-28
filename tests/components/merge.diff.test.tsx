@@ -415,6 +415,49 @@ test('sanitizePreference preserves diff merge preference when stable diff is dis
   assert.equal(sanitizePreference('diff-merge', 'stable', false), 'diff-merge')
 })
 
+test('stable diff guard keeps diff merge default and restores manual override after unlock', () => {
+  const guardedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+  })
+  const unlockedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+  })
+
+  assert.equal(guardedPlan.diff.enabled, false)
+  assert.equal(unlockedPlan.diff.enabled, true)
+
+  const guardedDefault = getDefaultPreference('stable', guardedPlan.diff.enabled)
+  assert.equal(guardedDefault, 'diff-merge')
+  assert.equal(sanitizePreference(guardedDefault, 'stable', guardedPlan.diff.enabled), 'diff-merge')
+
+  const manualOverrideWhileGuarded = resolvePreferenceSelection({
+    precision: 'stable',
+    previousPrecision: 'stable',
+    diffEnabled: guardedPlan.diff.enabled,
+    previousDiffEnabled: guardedPlan.diff.enabled,
+    preference: 'manual-first',
+    defaultPreference: guardedDefault,
+  })
+
+  assert.equal(manualOverrideWhileGuarded, 'manual-first')
+
+  const unlockedDefault = getDefaultPreference('stable', unlockedPlan.diff.enabled)
+  const restoredPreference = resolvePreferenceSelection({
+    precision: 'stable',
+    previousPrecision: 'stable',
+    diffEnabled: unlockedPlan.diff.enabled,
+    previousDiffEnabled: guardedPlan.diff.enabled,
+    preference: manualOverrideWhileGuarded,
+    defaultPreference: unlockedDefault,
+  })
+
+  assert.equal(unlockedDefault, 'diff-merge')
+  assert.equal(restoredPreference, 'manual-first')
+})
+
 test('stable precision diff guard fallback retains diff merge preference', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
@@ -735,7 +778,7 @@ test('stable precision tab planning restores stored merge.lastTab preference', (
   })
 
   assert.equal(phasePlan.tabs.initialTab, 'compiled')
-  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'opt-in' })
+  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
   assert.deepEqual(
     phasePlan.tabs.tabs.map((entry) => entry.id),
     ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
