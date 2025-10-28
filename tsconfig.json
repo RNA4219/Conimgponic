@@ -17,7 +17,8 @@
     "skipLibCheck": true
   },
   "include": [
-    "src"
+    "src",
+    "scripts/monitor/collect-metrics.ts"
   ],
   "ts-node": {
     "experimentalSpecifierResolution": "node"

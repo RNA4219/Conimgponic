@@ -18,7 +18,7 @@ import {
   type SnapshotResultPayload,
   type SnapshotResultSnapshot,
   type SnapshotResultSuccessDetail
-} from '../../scripts/monitor/collect-metrics.js'
+} from '../../scripts/monitor/collect-metrics'
 
 type FlagPhaseToContractPhase = { readonly [Phase in FlagRolloutPhase]: RolloutPhase }
 
@@ -188,17 +188,16 @@ const normalizeLagSeconds = (value: number | undefined): number | undefined => {
 const normalizeSuccessDetail = (
   detail: SnapshotResultSuccessDetail
 ): SnapshotResultSuccessDetail => {
-  const normalized: SnapshotResultSuccessDetail = {
+  const lagSeconds = normalizeLagSeconds(detail.lag_seconds)
+  const normalizedBase = {
     duration_ms: clampDuration(detail.duration_ms),
     retry_count: clampRetryCount(detail.retry_count),
-    retryable: false,
+    retryable: false as const,
     error_code: null
   }
-  const lagSeconds = normalizeLagSeconds(detail.lag_seconds)
-  if (lagSeconds !== undefined) {
-    normalized.lag_seconds = lagSeconds
-  }
-  return normalized
+  return lagSeconds === undefined
+    ? normalizedBase
+    : { ...normalizedBase, lag_seconds: lagSeconds }
 }
 
 const normalizeFailureDetail = (
@@ -209,18 +208,17 @@ const normalizeFailureDetail = (
   const error_code = codeCandidate ? codeCandidate : 'unknown'
   const messageCandidate =
     typeof detail.error_message === 'string' ? detail.error_message.trim() : ''
-  const normalized: SnapshotResultFailureDetail = {
+  const lagSeconds = normalizeLagSeconds(detail.lag_seconds)
+  const normalizedBase = {
     duration_ms: clampDuration(detail.duration_ms),
     retry_count: clampRetryCount(detail.retry_count),
     retryable: Boolean(detail.retryable),
     error_code,
     error_message: messageCandidate ? messageCandidate : error_code
   }
-  const lagSeconds = normalizeLagSeconds(detail.lag_seconds)
-  if (lagSeconds !== undefined) {
-    normalized.lag_seconds = lagSeconds
-  }
-  return normalized
+  return lagSeconds === undefined
+    ? normalizedBase
+    : { ...normalizedBase, lag_seconds: lagSeconds }
 }
 
 const normalizeSnapshot = (
