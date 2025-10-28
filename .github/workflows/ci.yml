@@ -36,6 +36,7 @@ jobs:
         continue-on-error: true
         env:
           SYFT_CHECK_FOR_APP_UPDATE: 'false'
+          SYFT_LOG_FILE: sbom.log
         run: |
           set -euo pipefail
           set +e
@@ -60,7 +61,7 @@ jobs:
         with:
           name: sbom-log
           path: sbom.log
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       - name: Fail when syft exits non-zero
         if: steps.generate_sbom.outputs.exit_code != '0'
