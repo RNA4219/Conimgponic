@@ -1117,6 +1117,112 @@ describe('createVscodeAutoSaveBridge', () => {
     }
   })
 
+  it('autosave.snapshot.result テレメトリの detail.retry_count を guard 無効化・非 retryable エラー・保存成功で検証する', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const base = Date.parse('2024-01-01T00:00:00.000Z')
+    const createBridgeWithOffsets = (
+      offsets: readonly number[],
+      atomicWrite: AutoSaveHostBridgeOptions['atomicWrite']
+    ) => {
+      const queue = [...offsets]
+      const now = () => {
+        const offset = queue.shift()
+        assert.ok(offset !== undefined, 'now timeline should provide sufficient entries')
+        return new Date(base + offset)
+      }
+      return createVscodeAutoSaveBridge({
+        policy: AUTOSAVE_POLICY,
+        initialGuard: guardEnabled,
+        flags: createDefaultFlags(),
+        now,
+        sendMessage: () => {},
+        atomicWrite,
+        telemetry: telemetry.push.bind(telemetry)
+      })
+    }
+
+    const expectRetryCount = (correlationId: string, expected: number) => {
+      const snapshotResult = telemetry.find(
+        (event) =>
+          event.name === 'autosave.snapshot.result' &&
+          event.properties?.correlationId === correlationId
+      )
+      assert.ok(snapshotResult, `snapshot.result telemetry for ${correlationId} should exist`)
+      assert.equal(
+        snapshotResult.properties?.retryCount,
+        expected,
+        `retryCount for ${correlationId} should match expectation`
+      )
+      assert.equal(
+        snapshotResult.properties?.detail?.retry_count,
+        expected,
+        `detail.retry_count for ${correlationId} should match expectation`
+      )
+    }
+
+    const guardBridge = createBridgeWithOffsets([0], async () => {
+      assert.fail('guard disabled request must not call atomicWrite')
+    })
+    await guardBridge.handleSnapshotRequest(
+      createRequest('req-guard-detail', 'corr-guard-detail', guardReadonly, 256, 1)
+    )
+
+    const retryableError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'temporary failure',
+      code: 'write-failed',
+      retryable: true
+    }
+    const fatalError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'non-retryable failure',
+      code: 'write-failed',
+      retryable: false
+    }
+    let fatalAtomicWriteCalls = 0
+    const fatalBridge = createBridgeWithOffsets([1000, 1500, 2000, 2500, 2600, 2700], async () => {
+      fatalAtomicWriteCalls += 1
+      if (fatalAtomicWriteCalls === 1) {
+        return { ok: false as const, error: retryableError }
+      }
+      return { ok: false as const, error: fatalError }
+    })
+    await fatalBridge.handleSnapshotRequest(
+      createRequest('req-fatal-backoff', 'corr-fatal-backoff', guardEnabled, 512, 2)
+    )
+    await fatalBridge.handleSnapshotRequest(
+      createRequest('req-fatal-detail', 'corr-fatal-detail', guardEnabled, 1024, 3)
+    )
+
+    let successAtomicWriteCalls = 0
+    const successBridge = createBridgeWithOffsets(
+      [4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500],
+      async ({ request }) => {
+        successAtomicWriteCalls += 1
+        if (successAtomicWriteCalls === 1) {
+          return { ok: false as const, error: retryableError }
+        }
+        return {
+          ok: true as const,
+          bytes: request.payload.pendingBytes,
+          generation: request.payload.queuedGeneration ?? 1,
+          lastSuccessAt: new Date(base + 7500).toISOString(),
+          lockStrategy: 'web-lock' as const
+        }
+      }
+    )
+    await successBridge.handleSnapshotRequest(
+      createRequest('req-success-backoff', 'corr-success-backoff', guardEnabled, 768, 4)
+    )
+    await successBridge.handleSnapshotRequest(
+      createRequest('req-success-detail', 'corr-success-detail', guardEnabled, 1536, 5)
+    )
+
+    expectRetryCount('corr-guard-detail', 0)
+    expectRetryCount('corr-fatal-detail', 1)
+    expectRetryCount('corr-success-detail', 1)
+  })
+
   it('autosave.status テレメトリの phase を saving/backoff/saved と guard 無効化で検証する', async () => {
     const statusTelemetry: AutoSaveTelemetryEvent[] = []
     const start = Date.parse('2024-01-01T00:00:00.000Z')
