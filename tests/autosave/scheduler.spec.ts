@@ -72,17 +72,29 @@ scenario('AS-I-04: flushNow and timers drive expected phase transitions', async 
   assert.ok(opfs.files.has('project/autosave/index.json'))
 
   const eventTypes = events.map((event) => event.type)
-  assert.deepEqual(eventTypes.slice(0, 4), ['change-queued', 'lock-acquired', 'write-succeeded', 'gc-completed'])
-  assert.deepEqual(eventTypes.slice(4, 8), ['change-queued', 'lock-acquired', 'write-succeeded', 'gc-completed'])
+  assert.deepEqual(eventTypes.slice(0, 4), [
+    'autosave.schedule.requested',
+    'lock-acquired',
+    'write-succeeded',
+    'gc-completed'
+  ])
+  assert.deepEqual(eventTypes.slice(4, 8), [
+    'autosave.schedule.requested',
+    'lock-acquired',
+    'write-succeeded',
+    'gc-completed'
+  ])
   const changePayloads = events
-    .filter((event) => event.type === 'change-queued')
+    .filter((event) => event.type === 'autosave.schedule.requested')
     .map((event) => event.payload?.pendingBytes)
   assert.deepEqual(changePayloads, [128, 1024])
 
   await runner.dispose()
 })
 
-scenario('AS-TEL-01: change-queued telemetry exposes pending bytes during debouncing', async (t, ctx) => {
+scenario(
+  'AS-TEL-01: autosave.schedule.requested telemetry exposes pending bytes during debouncing',
+  async (t, ctx) => {
   const { initAutoSave, runnerTelemetry } = ctx
 
   const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
@@ -93,8 +105,8 @@ scenario('AS-TEL-01: change-queued telemetry exposes pending bytes during deboun
 
   runner.markDirty({ pendingBytes: 2048 })
 
-  const telemetry = runnerTelemetry.filter((event) => event.detail?.event === 'change-queued')
-  assert.ok(telemetry.length > 0, 'expected change-queued telemetry event')
+  const telemetry = runnerTelemetry.filter((event) => event.detail?.event === 'autosave.schedule.requested')
+  assert.ok(telemetry.length > 0, 'expected autosave.schedule.requested telemetry event')
 
   const last = telemetry.at(-1)!
   assert.equal(last.phase, 'debouncing')
@@ -104,9 +116,36 @@ scenario('AS-TEL-01: change-queued telemetry exposes pending bytes during deboun
   assert.equal(last.detail?.retry_count, 0)
   assert.equal(last.slo, 'p95-latency')
 
-  const changeEvent = events.filter((event) => event.type === 'change-queued').at(-1)
+  const changeEvent = events.filter((event) => event.type === 'autosave.schedule.requested').at(-1)
   assert.ok(changeEvent)
   assert.equal(changeEvent!.phase, 'idle')
   assert.equal(changeEvent!.payload?.pendingBytes, 2048)
   assert.equal(changeEvent!.payload?.backlog, 1)
 })
+
+scenario(
+  'AS-TEL-03: markDirty emits autosave.schedule.requested telemetry and collector events',
+  async (t, ctx) => {
+    const { initAutoSave, runnerTelemetry, collectorEvents } = ctx
+
+    const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
+    t.after(() => runner.dispose())
+
+    runner.markDirty({ pendingBytes: 4096 })
+
+    const telemetryEvent = runnerTelemetry.find(
+      (event) => event.detail?.event === 'autosave.schedule.requested'
+    )
+    assert.ok(telemetryEvent, 'runner telemetry should include autosave.schedule.requested event')
+    assert.equal(telemetryEvent.phase, 'debouncing')
+    assert.equal(telemetryEvent.detail?.flag_source, ENABLED_GUARD.featureFlag.source)
+    assert.equal(telemetryEvent.detail?.retry_count, 0)
+
+    const collectorEvent = collectorEvents.find(
+      (event) => event.event === 'autosave.schedule.requested'
+    )
+    assert.ok(collectorEvent, 'collector should receive autosave.schedule.requested event')
+    assert.equal(collectorEvent?.flag_source, ENABLED_GUARD.featureFlag.source)
+    assert.equal(collectorEvent?.retry_count, 0)
+  }
+)
