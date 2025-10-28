@@ -22,6 +22,7 @@ import {
   publishFlagResolution,
   resetWorkspaceIdCacheForTests,
   type Day8Collector,
+  type Day8CollectorErrorEvent,
   type Day8CollectorFlagResolutionEvent,
   type FlagResolutionEventPayload
 } from '../../src/telemetry/day8Collector.js'
@@ -580,6 +581,80 @@ describe('vscode extension telemetry contract (RED)', () => {
       retryable: false,
       default_used: false
     })
+  })
+
+  test('flag_resolution 失敗時は Incident タグと相関 ID を伴う error telemetry を publish する', () => {
+    const captured: Day8CollectorErrorEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        if (event.event === 'error') {
+          captured.push(event as Day8CollectorErrorEvent)
+        }
+      }
+    } as Day8Collector
+
+    try {
+      const payload: FlagResolutionEventPayload = {
+        flag: 'plugins.enable',
+        variant: 'disabled',
+        source: 'env',
+        phase: 'phase-a0',
+        evaluation_ms: 17,
+        errors: [
+          {
+            code: 'invalid-boolean',
+            flag: 'plugins.enable',
+            raw: 'maybe',
+            message: 'flag parse failed',
+            retryable: false,
+            source: 'env',
+            phase: 'phase-a0'
+          }
+        ],
+        threshold: null,
+        status: 'failure',
+        detail: { retryable: false, default_used: true }
+      }
+
+      publishFlagResolution('app.flags', 'snapshot', [payload], 33)
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    assertOk(captured.length > 0, 'error telemetry must be captured when flag resolution fails')
+    const [event] = captured
+    assertOk(event, 'error telemetry event must be captured')
+    assertOk(UUID_REGEX.test(event.reqId), 'error telemetry reqId must be uuid')
+    assertOk(UUID_REGEX.test(event.correlationId), 'error telemetry correlationId must be uuid')
+    strictEqual(event.correlationId, event.reqId, 'error telemetry correlationId must match reqId')
+    assertOk(Array.isArray(event.payload.tags), 'error telemetry must define tags array')
+    const tagSet = new Set(event.payload.tags)
+    const expectedTags = [
+      `component:${event.component}`,
+      'feature:config.flags',
+      'phase:A-0',
+      'flag:plugins.enable',
+      'status:failure',
+      'source:env',
+      'errors:1',
+      `correlation:${event.correlationId}`
+    ]
+    for (const tag of expectedTags) {
+      assertOk(tagSet.has(tag), `error telemetry must include ${tag}`)
+    }
+
+    deepStrictEqual(event.kind, 'error')
+    deepStrictEqual(event.feature, 'config.flags')
+    deepStrictEqual(event.component, 'flags')
+    strictEqual(event.source, 'app.flags')
+    strictEqual(event.evaluation_ms, 33)
+
+    const detail = event.payload.detail
+    deepStrictEqual(detail.error_code, 'flag_resolution.invalid-boolean')
+    deepStrictEqual(detail.retryable, false)
+    deepStrictEqual(detail.message, 'flag parse failed')
   })
 
   test('publishFlagResolution は overrides reqId/correlationId を UUID に正規化する', () => {

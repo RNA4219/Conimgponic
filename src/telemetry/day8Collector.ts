@@ -269,7 +269,8 @@ const emitCollectorError = (
   const tagSet = new Set<string>([
     `component:${input.component}`,
     `feature:${input.feature}`,
-    `phase:${input.phase}`
+    `phase:${input.phase}`,
+    `correlation:${envelopeSeed.correlationId}`
   ])
 
   for (const candidate of input.tags) {
