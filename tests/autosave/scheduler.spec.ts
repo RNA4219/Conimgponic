@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { ENABLED_GUARD, scenario } from '../lib/autosave/setup'
 import type { Storyboard } from '../../src/types'
 type AutoSavePhase = import('../../src/lib/autosave').AutoSavePhase
+type AutoSaveRunnerEvent = import('../../src/lib/autosave').AutoSaveRunnerEvent
 
 const createStoryboard = (): Storyboard => ({
   id: 'autosave-test',
@@ -27,6 +28,10 @@ scenario('AS-I-04: flushNow and timers drive expected phase transitions', async 
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'], now: 0 })
 
   const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
+  const events: AutoSaveRunnerEvent[] = []
+  const unsubscribe = runner.onEvent((event) => events.push(event))
+  t.after(() => unsubscribe())
+  t.after(() => runner.dispose())
   assert.equal(runner.snapshot().phase, 'idle')
 
   // ---- 自動debounceフェーズ ----
@@ -66,6 +71,14 @@ scenario('AS-I-04: flushNow and timers drive expected phase transitions', async 
   assert.ok(opfs.files.has('project/autosave/current.json'))
   assert.ok(opfs.files.has('project/autosave/index.json'))
 
+  const eventTypes = events.map((event) => event.type)
+  assert.deepEqual(eventTypes.slice(0, 4), ['change-queued', 'lock-acquired', 'write-succeeded', 'gc-completed'])
+  assert.deepEqual(eventTypes.slice(4, 8), ['change-queued', 'lock-acquired', 'write-succeeded', 'gc-completed'])
+  const changePayloads = events
+    .filter((event) => event.type === 'change-queued')
+    .map((event) => event.payload?.pendingBytes)
+  assert.deepEqual(changePayloads, [128, 1024])
+
   await runner.dispose()
 })
 
@@ -73,6 +86,9 @@ scenario('AS-TEL-01: change-queued telemetry exposes pending bytes during deboun
   const { initAutoSave, runnerTelemetry } = ctx
 
   const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
+  const events: AutoSaveRunnerEvent[] = []
+  const unsubscribe = runner.onEvent((event) => events.push(event))
+  t.after(() => unsubscribe())
   t.after(() => runner.dispose())
 
   runner.markDirty({ pendingBytes: 2048 })
@@ -85,4 +101,10 @@ scenario('AS-TEL-01: change-queued telemetry exposes pending bytes during deboun
   assert.equal(last.detail?.pendingBytes, 2048)
   assert.equal(last.detail?.backlog, 1)
   assert.equal(last.slo, 'p95-latency')
+
+  const changeEvent = events.filter((event) => event.type === 'change-queued').at(-1)
+  assert.ok(changeEvent)
+  assert.equal(changeEvent!.phase, 'idle')
+  assert.equal(changeEvent!.payload?.pendingBytes, 2048)
+  assert.equal(changeEvent!.payload?.backlog, 1)
 })

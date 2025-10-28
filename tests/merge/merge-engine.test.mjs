@@ -253,6 +253,21 @@ test('stable precision publishes autosave lock integration events (MG-I-02)', ()
     },
   }
 
+  const originalRunnerHost = scope.__AUTOSAVE_RUNNER_HOST__
+  const runnerEvents = []
+  scope.__AUTOSAVE_RUNNER_HOST__ = {
+    ...(typeof originalRunnerHost === 'object' && originalRunnerHost !== null ? originalRunnerHost : {}),
+    emit(event) {
+      runnerEvents.push(event)
+      if (originalRunnerHost && typeof originalRunnerHost === 'object') {
+        const legacy = originalRunnerHost.emit
+        if (typeof legacy === 'function') {
+          legacy.call(originalRunnerHost, event)
+        }
+      }
+    },
+  }
+
   const published = []
   const listeners = new Set()
   const eventHub = {
@@ -302,6 +317,18 @@ test('stable precision publishes autosave lock integration events (MG-I-02)', ()
       { type: 'merge:autosave:lock', stage: 'released', lease },
     ])
 
+    const autoLockEvents = runnerEvents.filter((event) => event.type === 'lock-acquired')
+    const autoGcEvents = runnerEvents.filter((event) => event.type === 'gc-completed')
+    assert.equal(autoLockEvents.length, 1)
+    assert.equal(autoGcEvents.length, 1)
+    assert.equal(autoLockEvents[0].payload?.lease?.leaseId, lease.leaseId)
+    assert.equal(autoGcEvents[0].payload?.leaseId, lease.leaseId)
+    assert.ok(autoLockEvents[0].at <= autoGcEvents[0].at)
+    const mergeAcquired = lockEvents.filter((event) => event.stage === 'acquired')
+    const mergeReleased = lockEvents.filter((event) => event.stage === 'released')
+    assert.equal(autoLockEvents.length, mergeAcquired.length)
+    assert.equal(autoGcEvents.length, mergeReleased.length)
+
     expectCollectorLockEvents(collectorEvents, lease)
   } finally {
     process.env.MERGE_PRECISION = originalPrecision
@@ -309,6 +336,11 @@ test('stable precision publishes autosave lock integration events (MG-I-02)', ()
       scope.Day8Collector = originalCollector
     } else {
       delete scope.Day8Collector
+    }
+    if (originalRunnerHost === undefined) {
+      delete scope.__AUTOSAVE_RUNNER_HOST__
+    } else {
+      scope.__AUTOSAVE_RUNNER_HOST__ = originalRunnerHost
     }
   }
 })
