@@ -118,11 +118,14 @@ export async function compareStoryboardToGolden(options: CompareOptions): Promis
       },
     }
     const exportDurationMs = performance.now() - exportStartedAt
-    options.telemetry?.track('export.failed', {
+    options.telemetry?.track('export.result', {
+      status: 'failure',
       runId,
       matchRate: 0,
       formats: [],
+      duration_ms: Math.max(0, Math.round(exportDurationMs)),
       detail: { duration_ms: Math.max(0, Math.round(exportDurationMs)) },
+      artifacts: [],
       error: {
         code: 'golden.load_failed',
         message: (error as Error).message ?? 'Storyboard load failed',

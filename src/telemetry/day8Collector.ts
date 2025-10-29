@@ -1,4 +1,4 @@
-import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
+import type { AutoSavePhase, AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
 import type {
   FeatureFlagName,
   FlagRolloutPhase,
@@ -15,6 +15,7 @@ import {
   type TelemetryPayloads,
   type TelemetrySource,
   type RolloutPhase,
+  type SnapshotResultDetailBase,
   type SnapshotResultFailureDetail,
   type SnapshotResultPayload,
   type SnapshotResultSnapshot,
@@ -214,9 +215,28 @@ const normalizeLagSeconds = (value: number | undefined): number | undefined => {
   return Math.max(0, normalized)
 }
 
+type SnapshotResultDetailPhaseCarrier = { readonly phase?: AutoSavePhase }
+
+const readDetailPhase = (
+  detail: SnapshotResultDetailBase
+): AutoSavePhase | undefined => {
+  const candidate = (detail as SnapshotResultDetailPhaseCarrier).phase
+  return typeof candidate === 'string' ? candidate : undefined
+}
+
+const withOptionalPhase = <T extends SnapshotResultDetailBase>(
+  base: T,
+  phase: AutoSavePhase | undefined
+): T & SnapshotResultDetailPhaseCarrier => {
+  if (phase === undefined) {
+    return base
+  }
+  return { ...base, phase }
+}
+
 const normalizeSuccessDetail = (
   detail: SnapshotResultSuccessDetail
-): SnapshotResultSuccessDetail => {
+): SnapshotResultSuccessDetail & SnapshotResultDetailPhaseCarrier => {
   const lagSeconds = normalizeLagSeconds(detail.lag_seconds)
   const normalizedBase = {
     duration_ms: clampDuration(detail.duration_ms),
@@ -224,14 +244,15 @@ const normalizeSuccessDetail = (
     retryable: false as const,
     error_code: null
   }
+  const withPhase = withOptionalPhase(normalizedBase, readDetailPhase(detail))
   return lagSeconds === undefined
-    ? normalizedBase
-    : { ...normalizedBase, lag_seconds: lagSeconds }
+    ? withPhase
+    : { ...withPhase, lag_seconds: lagSeconds }
 }
 
 const normalizeFailureDetail = (
   detail: SnapshotResultFailureDetail
-): SnapshotResultFailureDetail => {
+): SnapshotResultFailureDetail & SnapshotResultDetailPhaseCarrier => {
   const codeCandidate =
     typeof detail.error_code === 'string' ? detail.error_code.trim() : ''
   const error_code = codeCandidate ? codeCandidate : 'unknown'
@@ -245,9 +266,10 @@ const normalizeFailureDetail = (
     error_code,
     error_message: messageCandidate ? messageCandidate : error_code
   }
+  const withPhase = withOptionalPhase(normalizedBase, readDetailPhase(detail))
   return lagSeconds === undefined
-    ? normalizedBase
-    : { ...normalizedBase, lag_seconds: lagSeconds }
+    ? withPhase
+    : { ...withPhase, lag_seconds: lagSeconds }
 }
 
 const normalizeSnapshot = (

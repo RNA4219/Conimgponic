@@ -160,7 +160,7 @@ export function createTelemetryEvent(
   comparison: GoldenComparisonResult,
   runId: string,
   detail: ExportTelemetryDetail,
-): { event: 'export.success' | 'export.failed'; payload: Record<string, unknown> } | null {
+): { event: 'export.result'; payload: Record<string, unknown> } | null {
   if (!comparison.entries.length) {
     return null
   }
@@ -173,6 +173,16 @@ export function createTelemetryEvent(
   )
   const durationMs = Math.max(0, Math.round(detail.duration_ms))
 
+  const artifacts = comparison.entries.map((entry) => ({
+    format: entry.format,
+    name: entry.name ?? null,
+    status: entry.status,
+    uri: null,
+    normalizedPath: buildNormalizedPath(entry, runId),
+    durationMs: null,
+    bytes: entry.bytes ?? null,
+  }))
+
   const basePayload: Record<string, unknown> = {
     status: comparison.ok ? 'success' : 'failure',
     runId,
@@ -180,32 +190,26 @@ export function createTelemetryEvent(
     formats,
     duration_ms: durationMs,
     detail: { duration_ms: durationMs },
+    artifacts,
   }
-  if (comparison.ok) {
-    basePayload.artifacts = comparison.entries.map((entry) => ({
+
+  if (!comparison.ok) {
+    const retryable = comparison.error?.retryable ?? false
+    basePayload.error = {
+      code: 'golden.comparison_failed',
+      retryable,
+      message: comparison.error?.message ?? 'Golden comparison failed',
+    }
+    basePayload.entries = comparison.entries.map((entry) => ({
       format: entry.format,
       name: entry.name ?? null,
       status: entry.status,
-      uri: null,
-      normalizedPath: buildNormalizedPath(entry, runId),
-      durationMs: null,
-      bytes: entry.bytes ?? null,
+      diff: entry.diff ?? null,
     }))
-    return { event: 'export.success', payload: basePayload }
+    basePayload.next_backoff_ms = 0
   }
-  const retryable = comparison.error?.retryable ?? false
-  basePayload.error = {
-    code: 'golden.comparison_failed',
-    retryable,
-    message: comparison.error?.message ?? 'Golden comparison failed',
-  }
-  basePayload.entries = comparison.entries.map((entry) => ({
-    format: entry.format,
-    name: entry.name ?? null,
-    status: entry.status,
-    diff: entry.diff ?? null,
-  }))
-  return { event: 'export.failed', payload: basePayload }
+
+  return { event: 'export.result', payload: basePayload }
 }
 
 export type { GoldenComparisonEntry as ComparisonEntry }

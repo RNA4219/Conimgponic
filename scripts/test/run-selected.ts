@@ -85,6 +85,10 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/lib/**/*.spec.ts',
     'tests/lib/**/*.spec.tsx',
   ],
+  mergeJSONL: [
+    'tests/lib/importers/mergeJSONL*.spec.ts',
+    'tests/lib/importers/mergeJSONL*.test.ts',
+  ],
   merge: [
     'tests/merge/*.test.ts',
     'tests/merge/*.test.tsx',

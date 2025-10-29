@@ -20,6 +20,7 @@ import {
   type AutoSaveWarnEvent,
   type AutoSaveHostBridgeOptions
 } from '../../src/platform/vscode/autosave'
+import type { Day8CollectorSnapshotResultEvent } from '../../src/telemetry/day8Collector'
 import type { Storyboard } from '../../src/types'
 
 const createDefaultFlags = () =>
@@ -429,6 +430,67 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(resultEvent.properties?.phaseAfter, 'idle')
     assert.equal(resultEvent.properties?.flagSource, guardEnabled.featureFlag.source)
     assert.equal(resultEvent.properties?.lockStrategy, 'web-lock')
+  })
+
+  it('Collector snapshot.result detail に AutoSaveStatusSnapshot.phase を含める', async () => {
+    const published: Day8CollectorSnapshotResultEvent[] = []
+    const originalCollector = (globalThis as {
+      Day8Collector?: { publish: (event: Day8CollectorSnapshotResultEvent) => void }
+    }).Day8Collector
+    ;(globalThis as { Day8Collector?: { publish: (event: Day8CollectorSnapshotResultEvent) => void } }).Day8Collector = {
+      publish: (event) => {
+        if (event.event === 'snapshot.result') {
+          published.push(event)
+        }
+      }
+    }
+    try {
+      const writes: AutoSaveAtomicWriteResult[] = [
+        {
+          ok: true,
+          bytes: 1024,
+          generation: 1,
+          lastSuccessAt: new Date('2024-01-01T00:00:02.000Z').toISOString(),
+          lockStrategy: 'web-lock'
+        }
+      ]
+      const bridge = createVscodeAutoSaveBridge({
+        policy: AUTOSAVE_POLICY,
+        initialGuard: guardEnabled,
+        flags: createDefaultFlags(),
+        now: () => new Date('2024-01-01T00:00:00.000Z'),
+        sendMessage: () => {},
+        atomicWrite: async () => {
+          const next = writes.shift()
+          assert.ok(next, 'atomicWrite は期待回数のみ呼ばれる')
+          return next
+        }
+      })
+
+      bridge.reportDirty(1024, guardEnabled)
+      await bridge.handleSnapshotRequest(
+        createRequest('req-success-phase', 'corr-success-phase', guardEnabled, 1024, 1)
+      )
+
+      await bridge.handleSnapshotRequest(
+        createRequest('req-disabled-phase', 'corr-disabled-phase', guardReadonly, 512, 2)
+      )
+
+      const successEvent = published.find((event) => event.payload.status === 'success')
+      assert.ok(successEvent, '成功イベントの snapshot.result が必要')
+      assert.equal(successEvent.payload.detail.phase, 'idle')
+
+      const failureEvent = published.find((event) => event.payload.status === 'failure')
+      assert.ok(failureEvent, '失敗イベントの snapshot.result が必要')
+      assert.equal(failureEvent.payload.detail.phase, 'disabled')
+    } finally {
+      if (originalCollector) {
+        ;(globalThis as { Day8Collector?: { publish: (event: Day8CollectorSnapshotResultEvent) => void } }).Day8Collector =
+          originalCollector
+      } else {
+        delete (globalThis as { Day8Collector?: { publish: (event: Day8CollectorSnapshotResultEvent) => void } }).Day8Collector
+      }
+    }
   })
 
   it('reportDirty/handleSnapshotRequest telemetry carries phase metadata', async () => {

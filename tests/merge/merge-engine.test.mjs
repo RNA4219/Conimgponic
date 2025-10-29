@@ -22,7 +22,8 @@ const collectorLockEvent = (stage, lease) => ({
 })
 
 const expectCollectorLockEvents = (events, lease) => {
-  assert.deepEqual(events, [collectorLockEvent('acquired', lease), collectorLockEvent('released', lease)])
+  const lockEvents = events.filter((event) => event.event === 'autosave.lock')
+  assert.deepEqual(lockEvents, [collectorLockEvent('acquired', lease), collectorLockEvent('released', lease)])
 }
 
 function runMerge(input, options) {
