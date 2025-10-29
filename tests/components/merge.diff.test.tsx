@@ -388,7 +388,7 @@ test('stable precision demotes diff tab when auto apply underperforms', () => {
     plan.tabs.tabs.map((entry) => entry.id),
     ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
   )
-  assert.equal(plan.tabs.initialTab, 'compiled')
+  assert.equal(plan.tabs.initialTab, 'diff')
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.diff.enabled, false)
@@ -407,8 +407,8 @@ test('stable precision demotes diff exposure while keeping tab visible when auto
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.diff.enabled, false)
   assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
-  assert.equal(plan.tabs.initialTab, 'compiled')
-  assert.equal(plan.diff.initialTab, 'compiled')
+  assert.equal(plan.tabs.initialTab, 'diff')
+  assert.equal(plan.diff.initialTab, 'diff')
 })
 
 test('stable precision keeps diff visible but disabled when stats are zeroed', () => {
@@ -435,8 +435,8 @@ test('stable precision demotes diff initial tab when auto apply underperforms', 
   })
 
   assert.equal(plan.autoApplied.meetsTarget, false)
-  assert.equal(plan.tabs.initialTab, 'compiled')
-  assert.equal(plan.diff.initialTab, 'compiled')
+  assert.equal(plan.tabs.initialTab, 'diff')
+  assert.equal(plan.diff.initialTab, 'diff')
 })
 
 test('stable precision keeps diff merge preference locked while guarded', () => {

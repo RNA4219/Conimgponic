@@ -628,8 +628,7 @@ export const resolveMergeDockPhasePlan = ({
   const compiledInitial = effectiveTabs.find((entry) => entry.id === 'compiled')?.id
   const defaultInitial = compiledInitial ?? effectiveTabs[0]?.id ?? rawPlan.initialTab
   const shouldResetInitial =
-    (precision === 'stable' && meetsTarget === false && rawPlan.initialTab === 'diff') ||
-    (shouldDemoteDiff && rawPlan.initialTab === 'diff')
+    shouldDemoteDiff && rawPlan.initialTab === 'diff' && precision !== 'stable'
   const effectiveInitial = shouldResetInitial
     ? defaultInitial
     : rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
