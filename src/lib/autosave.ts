@@ -302,6 +302,9 @@ interface AutoSaveWriteCompletedEvent {
   readonly gcEvicted: number
 }
 
+const AUTOSAVE_SCHEDULE_REQUESTED_EVENT = 'autosave.schedule.requested' as const
+type AutoSaveScheduleRequestedEventName = typeof AUTOSAVE_SCHEDULE_REQUESTED_EVENT
+
 interface AutoSaveScheduleRequestedEvent {
   readonly guard: AutoSavePhaseGuardSnapshot
   readonly ts: string
@@ -341,7 +344,7 @@ const publishScheduleRequestedCollectorEvent = (event: AutoSaveScheduleRequested
   collector.publish({
     component: 'autosave',
     feature: 'autosave',
-    event: 'autosave.schedule.requested',
+    event: AUTOSAVE_SCHEDULE_REQUESTED_EVENT,
     phase: resolveCollectorPhase(event.guard),
     ts: event.ts,
     reason: event.reason,
@@ -582,7 +585,7 @@ export interface AutoSaveTelemetryEvent {
 }
 
 export type AutoSaveRunnerEventType =
-  | 'autosave.schedule.requested'
+  | AutoSaveScheduleRequestedEventName
   | 'lock-acquired'
   | 'lock-rejected'
   | 'retry-scheduled'
@@ -610,7 +613,7 @@ export interface AutoSaveRunnerEventSpec {
 
 export const AUTOSAVE_RUNNER_EVENT_SPECS: readonly AutoSaveRunnerEventSpec[] = Object.freeze([
   {
-    type: 'autosave.schedule.requested',
+    type: AUTOSAVE_SCHEDULE_REQUESTED_EVENT,
     summary: 'UI からの変更検知を保存キューへ登録しデバウンスを開始する',
     emittedFrom: ['idle'],
     telemetrySlo: 'p95-latency',
@@ -753,7 +756,7 @@ export const AUTOSAVE_RUNNER_TRANSITIONS: readonly AutoSaveRunnerTransitionSpec[
   {
     from: 'idle',
     to: 'debouncing',
-    via: 'autosave.schedule.requested',
+    via: AUTOSAVE_SCHEDULE_REQUESTED_EVENT,
     guard: 'autosave.enabled=true && options.disabled!=true',
     actions: ['デバウンスタイマー起動', 'pendingBytes を更新']
   },
@@ -843,7 +846,7 @@ export const AUTOSAVE_TDD_SCENARIOS: readonly AutoSaveScenarioSpec[] = Object.fr
         description: '書き込み成功で idle に復帰',
         expectedPhase: 'idle',
         expectedEvents: [
-          'autosave.schedule.requested',
+          AUTOSAVE_SCHEDULE_REQUESTED_EVENT,
           'lock-acquired',
           'write-succeeded',
           'gc-completed'
@@ -859,7 +862,7 @@ export const AUTOSAVE_TDD_SCENARIOS: readonly AutoSaveScenarioSpec[] = Object.fr
       {
         description: 'retryable error で error フェーズへ遷移',
         expectedPhase: 'error',
-        expectedEvents: ['autosave.schedule.requested', 'lock-rejected', 'retry-scheduled']
+        expectedEvents: [AUTOSAVE_SCHEDULE_REQUESTED_EVENT, 'lock-rejected', 'retry-scheduled']
       }
     ]
   },
@@ -1223,7 +1226,7 @@ export function initAutoSave(
     })
   }
   const notifyOutputTelemetry = (
-    event: 'autosave.schedule.requested' | 'autosave.write.completed' | 'autosave.save.error',
+    event: AutoSaveScheduleRequestedEventName | 'autosave.write.completed' | 'autosave.save.error',
     phase: AutoSavePhase,
     slo: 'p99-success' | 'p95-latency',
     detail: Record<string, unknown>
@@ -1873,11 +1876,11 @@ export function initAutoSave(
         flag_source: guard.featureFlag.source,
         retry_count: retryCount
       }
-      emitRunnerEvent('autosave.schedule.requested', changePhase, {
+      emitRunnerEvent(AUTOSAVE_SCHEDULE_REQUESTED_EVENT, changePhase, {
         payload: changeDetail,
         at: scheduledAt
       })
-      notifyOutputTelemetry('autosave.schedule.requested', 'debouncing', 'p95-latency', changeDetail)
+      notifyOutputTelemetry(AUTOSAVE_SCHEDULE_REQUESTED_EVENT, 'debouncing', 'p95-latency', changeDetail)
       publishScheduleRequestedCollectorEvent({
         guard,
         ts: scheduledAt,

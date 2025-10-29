@@ -84,10 +84,19 @@ scenario('AS-I-04: flushNow and timers drive expected phase transitions', async 
     'write-succeeded',
     'gc-completed'
   ])
-  const changePayloads = events
-    .filter((event) => event.type === 'autosave.schedule.requested')
-    .map((event) => event.payload?.pendingBytes)
-  assert.deepEqual(changePayloads, [128, 1024])
+  const scheduleEvents = events.filter((event) => event.type === 'autosave.schedule.requested')
+  assert.deepEqual(
+    scheduleEvents.map((event) => event.payload?.pendingBytes),
+    [128, 1024]
+  )
+  assert.deepEqual(
+    scheduleEvents.map((event) => event.payload?.reason),
+    ['change', 'change']
+  )
+  assert.deepEqual(
+    scheduleEvents.map((event) => event.payload?.backlog),
+    [1, 1]
+  )
 
   await runner.dispose()
 })
@@ -145,6 +154,9 @@ scenario(
       (event) => event.event === 'autosave.schedule.requested'
     )
     assert.ok(collectorEvent, 'collector should receive autosave.schedule.requested event')
+    assert.equal(collectorEvent?.reason, 'change')
+    assert.equal(collectorEvent?.pending_bytes, 4096)
+    assert.equal(collectorEvent?.backlog, 1)
     assert.equal(collectorEvent?.flag_source, ENABLED_GUARD.featureFlag.source)
     assert.equal(collectorEvent?.retry_count, 0)
   }
