@@ -308,9 +308,11 @@ jobs:
               - 'tests/**/autosave/**'
               - '.github/workflows/autosave*'
               - 'tests/**/*autosave*.test.ts'
+              - 'tests/**/*autosave*.test.tsx'
               - 'tests/**/*[Aa]uto[Ss]ave*.test.tsx'
               # Ensure autosave bridge specs trigger the autosave suite, including the flags handshake coverage
               - 'tests/**/*autosave*.spec.ts'
+              - 'tests/**/*autosave*.spec.tsx'
               - 'tests/**/*[Aa]uto[Ss]ave*.spec.tsx'
               - 'tests/extensions/vscode/flags-handshake.spec.ts'
 
