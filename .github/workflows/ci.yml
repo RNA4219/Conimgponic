@@ -454,7 +454,7 @@ jobs:
           set -euo pipefail
           mkdir -p reports
           rm -f reports/junit.xml
-          pnpm test -- --test-reporter=junit --test-reporter-destination=file=reports/junit.xml
+          pnpm test --test-reporter=junit --test-reporter-destination=file=reports/junit.xml
 
       - name: Upload coverage artifact
         if: always()
