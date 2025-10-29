@@ -145,7 +145,7 @@ const expectedRunSuiteStepIds = ['run_suite_autosave', 'run_suite_default'] as c
 const expectedCoverageCommand = 'pnpm -s test:coverage';
 const expectedCoverageCleanup = 'rm -rf coverage';
 const expectedJunitCommand =
-  'pnpm test -- --test-reporter junit --test-reporter-destination=file=reports/junit.xml';
+  'pnpm test -- --test-reporter=junit --test-reporter-destination=file=reports/junit.xml';
 const expectedSuiteFailureChecks = [
   "steps.run_suite_autosave.outcome == 'failure'",
   "steps.run_suite_default.outcome == 'failure'",
