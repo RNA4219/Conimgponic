@@ -1143,6 +1143,26 @@ export function initAutoSave(
     cause?: unknown,
     context?: Record<string, unknown>
   ): AutoSaveError => createAutoSaveError(code, message, retryable, cause, context)
+  const toTelemetryCause = (input: unknown): Record<string, unknown> | null => {
+    if (!input || typeof input !== 'object') {
+      return null
+    }
+    const candidate = input as { name?: unknown; message?: unknown; code?: unknown }
+    const detail: Record<string, unknown> = {}
+    if (typeof candidate.name === 'string' && candidate.name.length > 0) {
+      detail.name = candidate.name
+    }
+    if (typeof candidate.message === 'string' && candidate.message.length > 0) {
+      detail.message = candidate.message
+    }
+    if (
+      typeof candidate.code === 'string' ||
+      typeof candidate.code === 'number'
+    ) {
+      detail.code = candidate.code
+    }
+    return Object.keys(detail).length > 0 ? detail : null
+  }
   const disabledError = () => makeError('disabled', 'AutoSave is disabled', false)
   const removeFile = async (path: string) => {
     const segs = path.split('/').filter(Boolean)
@@ -1226,7 +1246,7 @@ export function initAutoSave(
     })
   }
   const notifyOutputTelemetry = (
-    event: AutoSaveScheduleRequestedEventName | 'autosave.write.completed' | 'autosave.save.error',
+    event: AutoSaveScheduleRequestedEventName | 'autosave.write.completed' | 'autosave.write.failed',
     phase: AutoSavePhase,
     slo: 'p99-success' | 'p95-latency',
     detail: Record<string, unknown>
@@ -1554,9 +1574,16 @@ export function initAutoSave(
           : error instanceof Error
           ? makeError('write-failed', error.message, true, error)
           : makeError('write-failed', 'Unexpected AutoSave failure', true, undefined, { value: error })
-      notifyOutputTelemetry('autosave.save.error', stage, 'p95-latency', {
-        code: autoError.code,
+      const failureDurationMs = Math.max(0, Date.now() - flushStartedAt)
+      const failureCauseDetail = toTelemetryCause(autoError.cause ?? autoError)
+      const failureTelemetryBase = {
+        duration_ms: failureDurationMs,
+        error_code: autoError.code,
         retryable: autoError.retryable,
+        cause: failureCauseDetail ?? null
+      }
+      notifyOutputTelemetry('autosave.write.failed', stage, 'p95-latency', {
+        ...failureTelemetryBase,
         retry_count: attempt + 1,
         source,
         reason: stage === 'awaiting-lock' ? 'lock' : 'write'
@@ -1594,9 +1621,8 @@ export function initAutoSave(
             error: autoError
           })
           phase = 'backoff'
-          notifyOutputTelemetry('autosave.save.error', 'error', 'p95-latency', {
-            code: autoError.code,
-            retryable: autoError.retryable,
+          notifyOutputTelemetry('autosave.write.failed', 'error', 'p95-latency', {
+            ...failureTelemetryBase,
             retry_count: nextAttempt,
             source,
             reason: 'retry-scheduled',
@@ -1648,12 +1674,11 @@ export function initAutoSave(
             error: autoError
           })
           notifyOutputTelemetry(
-            'autosave.save.error',
+            'autosave.write.failed',
             stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
             'p95-latency',
             {
-              code: autoError.code,
-              retryable: autoError.retryable,
+              ...failureTelemetryBase,
               retry_count: nextAttempt,
               source,
               reason: 'retry-exhausted'
@@ -1680,12 +1705,11 @@ export function initAutoSave(
           error: autoError
         })
         notifyOutputTelemetry(
-          'autosave.save.error',
+          'autosave.write.failed',
           stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
           'p95-latency',
           {
-            code: autoError.code,
-            retryable: autoError.retryable,
+            ...failureTelemetryBase,
             retry_count: attempt + 1,
             source,
             reason: 'retry-exhausted'
@@ -1822,7 +1846,12 @@ export function initAutoSave(
         inflightGeneration = null
         inflightQueueCount = 0
         eventHandlers.clear()
-        notifyOutputTelemetry('autosave.save.error', 'disabled', 'p95-latency', {
+        notifyOutputTelemetry('autosave.write.failed', 'disabled', 'p95-latency', {
+          duration_ms: 0,
+          error_code: 'disabled',
+          retryable: false,
+          retry_count: retryCount,
+          cause: null,
           reason: 'dispose'
         })
       })()
