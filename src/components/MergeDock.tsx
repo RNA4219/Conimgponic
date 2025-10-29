@@ -608,7 +608,7 @@ export const resolveMergeDockPhasePlan = ({
     : undefined
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
-  const shouldDemoteDiff = diffConfigured && (meetsTarget === false || !phaseBRequired)
+  const shouldDemoteDiff = diffConfigured && meetsTarget === false
 
   if (!shouldHideDiff && shouldDemoteDiff) {
     if (precision === 'stable') {
