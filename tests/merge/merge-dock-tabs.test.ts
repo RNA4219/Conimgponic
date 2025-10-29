@@ -228,6 +228,7 @@ test('merge-ui: stable precision diff tab renders but keeps guard when stats mis
           ...stableFlags,
           merge: { ...stableFlags.merge, value: 'stable', precision: 'stable' },
         },
+        autoAppliedRate: 0.79,
       }),
     )
 
