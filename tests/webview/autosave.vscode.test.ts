@@ -14,6 +14,7 @@ import {
 import { resolveFlags } from '../../src/config'
 import {
   createVscodeAutoSaveBridge,
+  resolveCollectorPhase,
   type AutoSaveAtomicWriteResult,
   type AutoSaveTelemetryEvent,
   type AutoSaveTelemetryEventProperties,
@@ -490,6 +491,135 @@ describe('createVscodeAutoSaveBridge', () => {
       } else {
         delete (globalThis as { Day8Collector?: { publish: (event: Day8CollectorSnapshotResultEvent) => void } }).Day8Collector
       }
+    }
+  })
+
+  it('autosave.snapshot.result telemetry detail.phase は status.autosave の phase と一致する', async () => {
+    const scenarios = [
+      {
+        label: 'success',
+        guard: guardEnabled,
+        request: createRequest(
+          'req-detail-success',
+          'corr-detail-success',
+          guardEnabled,
+          1024,
+          1
+        ),
+        expectedState: 'saved' as const,
+        before: (bridge: ReturnType<typeof createVscodeAutoSaveBridge>) => {
+          bridge.reportDirty(1024, guardEnabled)
+        },
+        atomicWrite: async () => ({
+          ok: true as const,
+          bytes: 1536,
+          generation: 4,
+          lastSuccessAt: new Date('2024-01-01T00:00:02.000Z').toISOString(),
+          lockStrategy: 'web-lock'
+        })
+      },
+      {
+        label: 'retryable failure',
+        guard: guardEnabled,
+        request: createRequest(
+          'req-detail-retryable',
+          'corr-detail-retryable',
+          guardEnabled,
+          2048,
+          2
+        ),
+        expectedState: 'backoff' as const,
+        atomicWrite: async () => ({
+          ok: false as const,
+          error: {
+            name: 'AutoSaveError',
+            message: 'temporary failure',
+            code: 'write-failed',
+            retryable: true
+          }
+        })
+      },
+      {
+        label: 'non-retryable failure',
+        guard: guardEnabled,
+        request: createRequest(
+          'req-detail-fatal',
+          'corr-detail-fatal',
+          guardEnabled,
+          4096,
+          3
+        ),
+        expectedState: 'error' as const,
+        atomicWrite: async () => ({
+          ok: false as const,
+          error: {
+            name: 'AutoSaveError',
+            message: 'fatal failure',
+            code: 'data-corrupted',
+            retryable: false
+          }
+        })
+      },
+      {
+        label: 'guard disabled',
+        guard: guardReadonly,
+        request: createRequest(
+          'req-detail-disabled',
+          'corr-detail-disabled',
+          guardReadonly,
+          512,
+          4
+        ),
+        expectedState: 'disabled' as const,
+        atomicWrite: async () => {
+          assert.fail('guard disabled scenario should not reach atomicWrite')
+        }
+      }
+    ]
+
+    for (const scenario of scenarios) {
+      const sent: AutoSaveBridgeMessage[] = []
+      const telemetry: AutoSaveTelemetryEvent[] = []
+      const now = () => new Date('2024-01-01T00:00:00.000Z')
+      const bridge = createVscodeAutoSaveBridge({
+        policy: AUTOSAVE_POLICY,
+        initialGuard: guardEnabled,
+        flags: createDefaultFlags(),
+        now,
+        sendMessage: (message) => sent.push(message),
+        atomicWrite: scenario.atomicWrite,
+        telemetry: telemetry.push.bind(telemetry)
+      })
+
+      if (scenario.before) {
+        await scenario.before(bridge)
+      }
+
+      await bridge.handleSnapshotRequest(scenario.request)
+
+      const statusMessages = sent.filter(isStatusMessage)
+      const status = statusMessages.find(
+        (message) =>
+          message.correlationId === scenario.request.correlationId &&
+          message.payload.state === scenario.expectedState
+      )
+      assert.ok(status, `${scenario.label}: status.autosave(${scenario.expectedState}) が必要`)
+
+      const detailPhase = status.payload.phase
+      const resultEvent = telemetry.find(
+        (event) =>
+          event.name === 'autosave.snapshot.result' &&
+          event.properties?.correlationId === scenario.request.correlationId
+      )
+      assert.ok(resultEvent, `${scenario.label}: autosave.snapshot.result telemetry が必要`)
+
+      const detail = resultEvent.properties?.detail as { phase?: AutoSaveStatusSnapshot['phase'] } | undefined
+      assert.ok(detail, `${scenario.label}: snapshot.result telemetry detail が必要`)
+      assert.equal(
+        detail.phase,
+        detailPhase,
+        `${scenario.label}: detail.phase は status.autosave と一致 (guard=${resolveCollectorPhase(scenario.guard)})`
+      )
     }
   })
 

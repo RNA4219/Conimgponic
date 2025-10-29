@@ -135,7 +135,11 @@ export interface AutoSaveTelemetryEventProperties {
   readonly flagSource?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
   readonly lockStrategy?: AutoSaveTelemetryLockStrategy | 'none'
   readonly performance?: { readonly flush_latency_ms: number }
-  readonly detail?: { readonly retry_count: number }
+  readonly detail?: {
+    readonly retry_count?: number
+    readonly phase?: AutoSavePhase
+    readonly [key: string]: unknown
+  }
   readonly [key: string]: unknown
 }
 
@@ -357,9 +361,13 @@ const emitTelemetry = (
       ? (rawProperties as { retryCount: number }).retryCount
       : undefined
   const providedDetail = rawProperties.detail
-  const detailRetry =
+  const detailFromProperties =
     typeof providedDetail === 'object' && providedDetail !== null
-      ? (providedDetail as { retry_count?: unknown }).retry_count
+      ? { ...(providedDetail as Record<string, unknown>) }
+      : undefined
+  const detailRetry =
+    detailFromProperties && typeof (detailFromProperties as { retry_count?: unknown }).retry_count === 'number'
+      ? (detailFromProperties as { retry_count: number }).retry_count
       : undefined
   const normalizedDetail: AutoSaveTelemetryEventProperties['detail'] | undefined = (() => {
     const candidate =
@@ -368,10 +376,16 @@ const emitTelemetry = (
         : typeof providedRetryCount === 'number'
           ? providedRetryCount
           : undefined
-    if (typeof candidate !== 'number' || Number.isNaN(candidate)) {
+    if (!detailFromProperties && (typeof candidate !== 'number' || Number.isNaN(candidate))) {
       return undefined
     }
-    return { retry_count: Math.max(0, Math.trunc(candidate)) }
+    const detailPayload: Record<string, unknown> = detailFromProperties ? { ...detailFromProperties } : {}
+    if (typeof candidate === 'number' && !Number.isNaN(candidate)) {
+      detailPayload.retry_count = Math.max(0, Math.trunc(candidate))
+    }
+    return Object.keys(detailPayload).length > 0
+      ? (detailPayload as AutoSaveTelemetryEventProperties['detail'])
+      : undefined
   })()
   const properties: AutoSaveTelemetryEventProperties = {
     ...rawProperties,
@@ -445,7 +459,7 @@ const computeLagSeconds = (
   return Math.max(0, Math.floor(diffMs / 1000))
 }
 
-const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): RolloutPhase => {
+export const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): RolloutPhase => {
   if (!guard.featureFlag.value || guard.optionsDisabled) {
     return 'A-0'
   }
@@ -577,6 +591,7 @@ const handleNonRetryableError = (
   options.sendMessage(
     createSnapshotResultMessage(request, ts, { ok: false, error })
   )
+  const statusPhase = statusPhaseForState(state.status)
   publishCollectorSnapshotResult(request, guardForTelemetry, ts, {
     status: 'failure',
     detail: createSnapshotFailureDetail(
@@ -586,7 +601,7 @@ const handleNonRetryableError = (
       error.code,
       error.message,
       computeLagSeconds(state.lastSuccessAt, ts),
-      statusPhaseForState(state.status)
+      statusPhase
     )
   })
   emitTelemetry(
@@ -600,7 +615,8 @@ const handleNonRetryableError = (
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
         phase: errorEnvelopePhase,
-        performance: createFlushLatencyPerformance(flushLatencyMs)
+        performance: createFlushLatencyPerformance(flushLatencyMs),
+        detail: { phase: statusPhase }
       }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
@@ -800,6 +816,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       options.sendMessage(
         createSnapshotResultMessage(request, ts, { ok: false, error: disabledError })
       )
+      const statusPhase = statusPhaseForState(state.status)
       publishCollectorSnapshotResult(request, state.guard, ts, {
         status: 'failure',
         detail: createSnapshotFailureDetail(
@@ -809,7 +826,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           disabledError.code,
           disabledError.message,
           computeLagSeconds(state.lastSuccessAt, ts),
-          statusPhaseForState(state.status)
+          statusPhase
         )
       })
       emitTelemetry(
@@ -823,7 +840,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             correlationId: request.correlationId,
             retryCount: state.retryCount,
             phase: PHASE_STATUS,
-            performance: ZERO_FLUSH_LATENCY
+            performance: ZERO_FLUSH_LATENCY,
+            detail: { phase: statusPhase }
           }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
@@ -928,6 +946,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         state.flushStartedAtMs = undefined
         const retryTs = toIso(retryTimestamp)
         options.sendMessage(createSnapshotResultMessage(request, retryTs, writeResult))
+        const statusPhase = statusPhaseForState(state.status)
         publishCollectorSnapshotResult(request, state.guard, retryTs, {
           status: 'failure',
           detail: createSnapshotFailureDetail(
@@ -937,7 +956,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             writeResult.error.code,
             writeResult.error.message,
             computeLagSeconds(state.lastSuccessAt, retryTs),
-            statusPhaseForState(state.status)
+            statusPhase
           )
         })
         options.sendMessage(
@@ -973,15 +992,16 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             properties: {
               ok: false,
               code: writeResult.error.code,
-              retryable: true,
-              correlationId: request.correlationId,
-              retryCount: state.retryCount,
-              phase: requestEnvelopePhase,
-              performance: createFlushLatencyPerformance(retryLatency)
-            }
-          },
-          { before: statusBeforeBackoff, after: state.status, guard: state.guard }
-        )
+            retryable: true,
+            correlationId: request.correlationId,
+            retryCount: state.retryCount,
+            phase: requestEnvelopePhase,
+            performance: createFlushLatencyPerformance(retryLatency),
+            detail: { phase: statusPhase }
+          }
+        },
+        { before: statusBeforeBackoff, after: state.status, guard: state.guard }
+      )
         return
       }
       handleNonRetryableError(options, state, request, writeResult.error, state.status)
@@ -1016,11 +1036,12 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       retainedBytes: state.retainedBytes
     }
     options.sendMessage(createSnapshotResultMessage(request, successTs, payload))
+    const statusPhase = statusPhaseForState(state.status)
     const successDetail = createSnapshotSuccessDetail(
       successLatency,
       retryCountForSnapshot,
       computeLagSeconds(previousLastSuccessAt, successTs),
-      statusPhaseForState(state.status)
+      statusPhase
     )
     const collectorSnapshot = createSnapshotPayload(
       writeResult.bytes,
@@ -1045,7 +1066,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           correlationId: request.correlationId,
           retryCount: retryCountForSnapshot,
           phase: requestEnvelopePhase,
-          performance: createFlushLatencyPerformance(successLatency)
+          performance: createFlushLatencyPerformance(successLatency),
+          detail: { phase: statusPhase }
         }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }
