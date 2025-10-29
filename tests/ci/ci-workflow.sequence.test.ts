@@ -91,10 +91,21 @@ const autosaveSuffixModuleGlobs = [
   'src/**/*[Aa]uto[Ss]ave*.tsx',
 ] as const;
 
+const autosaveSuffixTestGlobs = [
+  'tests/**/*autosave*.test.ts',
+  'tests/**/*autosave*.spec.ts',
+] as const;
+
+const autosaveSuffixTsxTestGlobs = [
+  'tests/**/*autosave*.test.tsx',
+  'tests/**/*autosave*.spec.tsx',
+] as const;
+
 const autosaveTsxTestGlobs = [
   'tests/**/*[Aa]uto[Ss]ave*.test.tsx',
   'tests/**/*[Aa]uto[Ss]ave*.spec.tsx',
 ] as const;
+
 const vscodeFlagsHandshakeSpecPath = 'tests/extensions/vscode/flags-handshake.spec.ts';
 
 const requiredAutosaveFilterGlobs = [
@@ -103,8 +114,8 @@ const requiredAutosaveFilterGlobs = [
   'tests/**/autosave.*.test.ts',
   'tests/**/autosave/**',
   '.github/workflows/autosave*',
-  'tests/**/*autosave*.test.ts',
-  'tests/**/*autosave*.spec.ts',
+  ...autosaveSuffixTestGlobs,
+  ...autosaveSuffixTsxTestGlobs,
   ...autosaveTsxTestGlobs,
   vscodeFlagsHandshakeSpecPath,
 ];
@@ -343,14 +354,20 @@ describe('ci workflow build job', () => {
       '"Detect autosave changes" step must configure autosave filters',
     );
 
-    assert(
-      globs.includes('tests/**/*autosave*.test.ts'),
-      '"Detect autosave changes" filters.autosave must monitor suffix-based autosave tests',
-    );
-    assert(
-      globs.includes('tests/**/*autosave*.spec.ts'),
-      '"Detect autosave changes" filters.autosave must monitor suffix-based autosave specs',
-    );
+    for (const glob of autosaveSuffixTestGlobs) {
+      assert(
+        globs.includes(glob),
+        `"Detect autosave changes" filters.autosave must monitor suffix-based autosave tests via glob "${glob}"`,
+      );
+    }
+
+    for (const glob of autosaveSuffixTsxTestGlobs) {
+      assert(
+        globs.includes(glob),
+        `"Detect autosave changes" filters.autosave must monitor TSX autosave tests via glob "${glob}"`,
+      );
+    }
+
     for (const glob of autosaveTsxTestGlobs) {
       assert(
         globs.includes(glob),
