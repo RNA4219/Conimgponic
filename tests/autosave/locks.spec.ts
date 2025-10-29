@@ -460,6 +460,73 @@ scenario(
 )
 
 scenario(
+  'AS-LK-24: Fallback conflict warning preserves custom heartbeat metadata',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    const heartbeatIntervalMs = 17_500
+    const nextHeartbeatAt = 58_750
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 41_250 })
+
+    const existingRecord = {
+      leaseId: 'custom-heartbeat-lease',
+      ownerId: 'custom-heartbeat-owner',
+      acquiredAt: 11_250,
+      expiresAt: 71_250,
+      ttlSeconds: FALLBACK_LOCK_TTL_MS / 1000,
+      mtime: 41_250,
+      heartbeatIntervalMs,
+      nextHeartbeatAt,
+    }
+    ctx.opfs.files.set(FALLBACK_LOCK_PATH, JSON.stringify(existingRecord))
+
+    const uuids = ['custom-heartbeat-request', 'custom-heartbeat-owner-request']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const warnings: Array<{
+      type: 'lock:warning'
+      warning: 'fallback-degraded'
+      lease: Pick<
+        ProjectLockEvent & { type: 'lock:warning'; warning: 'fallback-degraded' }['lease'],
+        'heartbeatIntervalMs' | 'nextHeartbeatAt'
+      >
+    }> = []
+
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      if (event.type === 'lock:warning' && event.warning === 'fallback-degraded') {
+        warnings.push({
+          type: event.type,
+          warning: event.warning,
+          lease: {
+            heartbeatIntervalMs: event.lease.heartbeatIntervalMs,
+            nextHeartbeatAt: event.lease.nextHeartbeatAt,
+          },
+        })
+      }
+    })
+    t.after(unsubscribe)
+
+    await assert.rejects(async () => {
+      await projectLockApi.acquire({ preferredStrategy: 'file-lock', retry: false })
+    }, (error: unknown) => {
+      assert.ok(error instanceof ProjectLockError)
+      assert.equal(error.code, 'fallback-conflict')
+      return true
+    })
+
+    const warning = warnings.at(0)
+    assert.ok(warning, 'fallback conflict warning must be emitted')
+    assert.equal(warning.lease.heartbeatIntervalMs, heartbeatIntervalMs)
+    assert.equal(warning.lease.nextHeartbeatAt, nextHeartbeatAt)
+  }
+)
+
+scenario(
   'AS-LK-15: Web Lock acquisition abort skips fallback and enters readonly immediately',
   {
     locks: {
