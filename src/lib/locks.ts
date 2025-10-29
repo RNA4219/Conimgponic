@@ -421,22 +421,12 @@ const buildLease = (
   };
 };
 
-const fallbackRecordToLease = (
-  record: FallbackLockLeaseRecord,
-  heartbeatMs: number
-): ProjectLockLease => {
+const fallbackRecordToLease = (record: FallbackLockLeaseRecord): ProjectLockLease => {
   const ttlMillis = Math.max(0, Math.round(record.ttlSeconds * 1000));
   const storedHeartbeat = record.heartbeatIntervalMs ?? 0;
+  const effectiveHeartbeat = storedHeartbeat > 0 ? storedHeartbeat : LOCK_HEARTBEAT_INTERVAL_MS;
   const storedNextHeartbeat = record.nextHeartbeatAt ?? 0;
-  const fallbackHeartbeat =
-    storedHeartbeat > 0
-      ? storedHeartbeat
-      : heartbeatMs > 0
-      ? heartbeatMs
-      : LOCK_HEARTBEAT_INTERVAL_MS;
-  const effectiveHeartbeat = fallbackHeartbeat > 0 ? fallbackHeartbeat : LOCK_HEARTBEAT_INTERVAL_MS;
-  const computedNextHeartbeat = storedNextHeartbeat > 0 ? storedNextHeartbeat : record.mtime + effectiveHeartbeat;
-  const nextHeartbeatAt = Math.min(record.expiresAt, computedNextHeartbeat);
+  const nextHeartbeatAt = storedNextHeartbeat > 0 ? storedNextHeartbeat : record.mtime + effectiveHeartbeat;
   const renewAttempt =
     effectiveHeartbeat > 0
       ? Math.max(0, Math.floor(Math.max(0, record.mtime - record.acquiredAt) / effectiveHeartbeat))
@@ -461,18 +451,16 @@ const captureFallbackConflictLease = (
   record: FallbackLockLeaseRecord,
   ctx: AcquireContext
 ): ProjectLockLease => {
-  const lease = fallbackRecordToLease(record, ctx.heartbeatMs);
+  const lease = fallbackRecordToLease(record);
   ctx.conflictLease = lease;
   return lease;
 };
 
-const readFallbackLeaseSnapshot = async (
-  heartbeatMs: number
-): Promise<ProjectLockLease | undefined> => {
+const readFallbackLeaseSnapshot = async (): Promise<ProjectLockLease | undefined> => {
   try {
     const record = (await loadJSON(FALLBACK_LOCK_PATH)) as FallbackLockLeaseRecord | null;
     if (!record) return undefined;
-    return fallbackRecordToLease(record, heartbeatMs);
+    return fallbackRecordToLease(record);
   } catch {
     return undefined;
   }
@@ -819,7 +807,7 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
         if (projectError.code === 'fallback-conflict') {
           const lease =
             ctx.conflictLease ??
-            (await readFallbackLeaseSnapshot(ctx.heartbeatMs)) ??
+            (await readFallbackLeaseSnapshot()) ??
             buildLease('file-lock', FALLBACK_LOCK_PATH, ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS, ctx.heartbeatMs, ctx);
           ctx.conflictLease = undefined;
           projectLockEvents.emit({
