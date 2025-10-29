@@ -5,6 +5,20 @@ import type { Storyboard } from '../../src/types'
 type AutoSavePhase = import('../../src/lib/autosave').AutoSavePhase
 type AutoSaveRunnerEvent = import('../../src/lib/autosave').AutoSaveRunnerEvent
 
+const TEST_BUILD_SHA = 'test-build-sha'
+
+const withTestBuildSha = (t: import('node:test').TestContext): void => {
+  const previous = process.env.BUILD_SHA
+  process.env.BUILD_SHA = TEST_BUILD_SHA
+  t.after(() => {
+    if (previous === undefined) {
+      delete process.env.BUILD_SHA
+    } else {
+      process.env.BUILD_SHA = previous
+    }
+  })
+}
+
 const createStoryboard = (): Storyboard => ({
   id: 'autosave-test',
   title: 'AutoSave Test',
@@ -26,6 +40,8 @@ scenario('AS-I-04: flushNow and timers drive expected phase transitions', async 
 
   // モックタイマー有効化
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'], now: 0 })
+
+  withTestBuildSha(t)
 
   const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
   const events: AutoSaveRunnerEvent[] = []
@@ -106,6 +122,8 @@ scenario(
   async (t, ctx) => {
   const { initAutoSave, runnerTelemetry } = ctx
 
+  withTestBuildSha(t)
+
   const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
   const events: AutoSaveRunnerEvent[] = []
   const unsubscribe = runner.onEvent((event) => events.push(event))
@@ -123,6 +141,7 @@ scenario(
   assert.equal(last.detail?.backlog, 1)
   assert.equal(last.detail?.flag_source, ENABLED_GUARD.featureFlag.source)
   assert.equal(last.detail?.retry_count, 0)
+  assert.equal(last.detail?.build_sha, TEST_BUILD_SHA)
   assert.equal(last.slo, 'p95-latency')
 
   const changeEvent = events.filter((event) => event.type === 'autosave.schedule.requested').at(-1)
@@ -137,6 +156,8 @@ scenario(
   async (t, ctx) => {
     const { initAutoSave, runnerTelemetry, collectorEvents } = ctx
 
+    withTestBuildSha(t)
+
     const runner = initAutoSave(() => createStoryboard(), { disabled: false }, ENABLED_GUARD)
     t.after(() => runner.dispose())
 
@@ -149,6 +170,7 @@ scenario(
     assert.equal(telemetryEvent.phase, 'debouncing')
     assert.equal(telemetryEvent.detail?.flag_source, ENABLED_GUARD.featureFlag.source)
     assert.equal(telemetryEvent.detail?.retry_count, 0)
+    assert.equal(telemetryEvent.detail?.build_sha, TEST_BUILD_SHA)
 
     const collectorEvent = collectorEvents.find(
       (event) => event.event === 'autosave.schedule.requested'
@@ -158,6 +180,7 @@ scenario(
     assert.equal(collectorEvent?.pending_bytes, 4096)
     assert.equal(collectorEvent?.backlog, 1)
     assert.equal(collectorEvent?.flag_source, ENABLED_GUARD.featureFlag.source)
+    assert.equal(collectorEvent?.build_sha, TEST_BUILD_SHA)
     assert.equal(collectorEvent?.retry_count, 0)
   }
 )
