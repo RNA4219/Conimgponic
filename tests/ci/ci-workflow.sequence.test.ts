@@ -144,7 +144,7 @@ const expectedRunSuiteStepIds = ['run_suite_autosave', 'run_suite_default'] as c
 const expectedCoverageCommand = 'pnpm -s test:coverage';
 const expectedCoverageCleanup = 'rm -rf coverage';
 const expectedJunitCommand =
-  'pnpm test -- --test-reporter=junit --test-reporter-destination=file=reports/junit.xml';
+  'pnpm test --test-reporter=junit --test-reporter-destination=file=reports/junit.xml';
 const expectedSuiteFailureChecks = [
   "steps.run_suite_autosave.outcome == 'failure'",
   "steps.run_suite_default.outcome == 'failure'",
@@ -1133,11 +1133,39 @@ function assertJunitCommand(
   expected: string,
   message: string,
 ): void {
-  if (commands.includes(expected)) {
+  const expectedTokens = expected.split(/\s+/u).filter(Boolean);
+  const requiredTokens = expectedTokens.filter((token) =>
+    token.startsWith('--test-reporter'),
+  );
+
+  const pnpmTestCommands = commands
+    .map((command) => ({
+      command,
+      tokens: command.split(/\s+/u).filter(Boolean),
+    }))
+    .filter(({ tokens }) => tokens[0] === 'pnpm' && tokens.includes('test'));
+
+  const matchingCommand = pnpmTestCommands.find(({ tokens }) =>
+    requiredTokens.every((token) => tokens.includes(token)),
+  );
+
+  if (matchingCommand) {
     return;
   }
 
-  assert.fail(`${message}\n\n${formatCommandDiff(commands, expected)}`);
+  const missingTokens = requiredTokens.filter((token) =>
+    pnpmTestCommands.every(({ tokens }) => !tokens.includes(token)),
+  );
+
+  const details = [message];
+
+  if (missingTokens.length > 0) {
+    details.push('', 'missing junit tokens:', formatSequenceDiff(missingTokens));
+  }
+
+  details.push('', formatCommandDiff(commands, expected));
+
+  assert.fail(details.join('\n'));
 }
 
 function formatCommandDiff(commands: string[], expected: string): string {

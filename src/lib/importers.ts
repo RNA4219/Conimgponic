@@ -85,7 +85,7 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
       patch[mode] = text
       next.scenes[j] = { ...sc, ...patch }
     }else{
-      next.scenes.push({ id, manual: mode==='manual'? text:'', ai: mode==='ai'? text:'', status:'idle', seed: (Number.isFinite(seed)? seed: undefined), tone, assets: [], slate, shot, take })
+      next.scenes.push({ id, manual: mode==='manual'? text:'', ai: mode==='ai'? text:'', status:'idle', seed: (Number.isFinite(seed)? seed: undefined), tone, assets: [], slate, shot, take: Number.isFinite(take)? take: undefined })
       idx.set(id, next.scenes.length - 1)
     }
   }

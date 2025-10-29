@@ -205,8 +205,23 @@ export function collectExplicitTargets(args: readonly string[]): string[] {
   const targets: string[] = [];
   const targetPattern = /[\\\/*\.]/;
   let inExplicitSection = false;
+  let skipNextArgument = false;
 
   for (const arg of args) {
+    if (skipNextArgument) {
+      skipNextArgument = false;
+      continue;
+    }
+
+    if (arg === '--test-name-pattern') {
+      skipNextArgument = true;
+      continue;
+    }
+
+    if (arg.startsWith('--test-name-pattern=')) {
+      continue;
+    }
+
     if (inExplicitSection) {
       if (!arg.startsWith('-') || targetPattern.test(arg)) {
         targets.push(arg);

@@ -2342,6 +2342,54 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.deepEqual(disabledTelemetry.properties?.performance, { flush_latency_ms: 0 })
   })
 
+  it("RED ケース: reportDirty の autosave.status telemetry に guard メタデータを付与する", () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        /* noop */
+      },
+      atomicWrite: async () => {
+        assert.fail('reportDirty テレメトリ検証では atomicWrite を呼ばない')
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(128, { featureFlag: { value: false, source: 'env' }, optionsDisabled: true })
+    bridge.reportDirty(256, guardEnabled)
+
+    const expectGuard = (
+      event: AutoSaveTelemetryEvent | undefined,
+      expected: { current: string; rollbackTo: string },
+      message: string
+    ) => {
+      assert.ok(event, message)
+      assert.equal(event.properties?.guard?.current, expected.current)
+      assert.equal(event.properties?.guard?.rollbackTo, expected.rollbackTo)
+    }
+
+    const disabledTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'disabled'
+    )
+    expectGuard(
+      disabledTelemetry,
+      { current: 'A-0', rollbackTo: 'A-0' },
+      'guard 無効化 autosave.status telemetry が必要'
+    )
+
+    const dirtyTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'dirty'
+    )
+    expectGuard(
+      dirtyTelemetry,
+      { current: 'A-1', rollbackTo: 'A-0' },
+      'dirty autosave.status telemetry が必要'
+    )
+  })
+
   it('guard 無効化ショートサーキットで autosave.guard telemetry を 1 度送信する', async () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     const bridge = createVscodeAutoSaveBridge({
@@ -2373,6 +2421,71 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(guardEvent?.properties?.blocked, true)
     assert.equal(guardEvent?.properties?.reason, 'feature-flag-disabled')
     assert.equal(guardEvent?.properties?.correlationId, request.correlationId)
+  })
+
+  it("RED ケース: handleSnapshotRequest の autosave.status telemetry に guard メタデータを付与する", async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const atomicResults: AutoSaveAtomicWriteResult[] = [
+      { ok: false, error: { name: 'AutoSaveError', message: 'retryable', code: 'retry', retryable: true } },
+      {
+        ok: true,
+        bytes: 512,
+        generation: 1,
+        lastSuccessAt: new Date('2024-01-01T00:00:02.000Z').toISOString(),
+        lockStrategy: 'web-lock'
+      },
+      { ok: false, error: { name: 'AutoSaveError', message: 'fatal', code: 'fatal', retryable: false } }
+    ]
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        /* noop */
+      },
+      atomicWrite: async () => {
+        const next = atomicResults.shift()
+        assert.ok(next, 'unexpected atomicWrite invocation')
+        return next
+      },
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    bridge.reportDirty(256, guardEnabled)
+
+    await bridge.handleSnapshotRequest(
+      createRequest('req-guard-snapshot-retry', 'corr-guard-snapshot-retry', guardEnabled, 256, 0)
+    )
+    await bridge.handleSnapshotRequest(
+      createRequest('req-guard-snapshot-success', 'corr-guard-snapshot-success', guardEnabled, 256, 1)
+    )
+    await bridge.handleSnapshotRequest(
+      createRequest('req-guard-snapshot-fatal', 'corr-guard-snapshot-fatal', guardEnabled, 256, 2)
+    )
+
+    const expectGuard = (
+      state: AutoSaveStatusMessage['payload']['state'],
+      correlationId: string,
+      expected: { current: string; rollbackTo: string }
+    ) => {
+      const event = telemetry.find(
+        (candidate) =>
+          candidate.name === 'autosave.status' &&
+          candidate.properties?.state === state &&
+          candidate.properties?.correlationId === correlationId
+      )
+      assert.ok(event, `${state} autosave.status telemetry が必要`)
+      assert.equal(event.properties?.guard?.current, expected.current)
+      assert.equal(event.properties?.guard?.rollbackTo, expected.rollbackTo)
+    }
+
+    expectGuard('saving', 'corr-guard-snapshot-retry', { current: 'A-1', rollbackTo: 'A-0' })
+    expectGuard('backoff', 'corr-guard-snapshot-retry', { current: 'A-1', rollbackTo: 'A-0' })
+    expectGuard('saving', 'corr-guard-snapshot-success', { current: 'A-1', rollbackTo: 'A-0' })
+    expectGuard('saved', 'corr-guard-snapshot-success', { current: 'A-1', rollbackTo: 'A-0' })
+    expectGuard('error', 'corr-guard-snapshot-fatal', { current: 'A-1', rollbackTo: 'A-0' })
+    expectGuard('disabled', 'corr-guard-snapshot-fatal', { current: 'A-0', rollbackTo: 'A-0' })
   })
 
   it('reportDirty の autosave.status telemetry で guard 無効化と dirty 遷移の phase を付与する', () => {

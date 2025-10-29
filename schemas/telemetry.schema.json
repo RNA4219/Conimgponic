@@ -614,7 +614,6 @@
         "flag_resolution",
         "merge.result",
         "merge.trace",
-        "export.started",
         "export.result",
         "plugins.invoked",
         "plugins.completed",

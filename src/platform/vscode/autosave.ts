@@ -125,6 +125,11 @@ type AutoSaveTelemetryLockStrategy = Extract<
   { readonly ok: true }
 >['lockStrategy']
 
+interface AutoSaveTelemetryGuardProperties {
+  readonly current: RolloutPhase
+  readonly rollbackTo: RolloutPhase
+}
+
 /**
  * Collector テレメトリに付与される拡張プロパティ。
  * Bridge 側で state 遷移の `phaseBefore`/`phaseAfter` と Guard/Lock メタデータを注入する。
@@ -133,6 +138,7 @@ export interface AutoSaveTelemetryEventProperties {
   readonly phaseBefore?: AutoSavePhase
   readonly phaseAfter?: AutoSavePhase
   readonly flagSource?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
+  readonly guard?: AutoSaveTelemetryGuardProperties
   readonly lockStrategy?: AutoSaveTelemetryLockStrategy | 'none'
   readonly performance?: { readonly flush_latency_ms: number }
   readonly detail?: {
@@ -146,6 +152,42 @@ export interface AutoSaveTelemetryEventProperties {
 const ZERO_FLUSH_LATENCY: AutoSaveTelemetryEventProperties['performance'] = {
   flush_latency_ms: 0
 } as const
+
+const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): RolloutPhase => {
+  if (!guard.featureFlag.value || guard.optionsDisabled) {
+    return 'A-0'
+  }
+  switch (guard.featureFlag.source) {
+    case 'env':
+      return 'A-1'
+    case 'workspace':
+      return 'A-2'
+    default:
+      return 'A-0'
+  }
+}
+
+const resolveGuardRollbackPhase = (phase: RolloutPhase): RolloutPhase => {
+  switch (phase) {
+    case 'B-1':
+      return 'B-0'
+    case 'B-0':
+      return 'A-2'
+    case 'A-2':
+      return 'A-1'
+    case 'A-1':
+      return 'A-0'
+    default:
+      return phase
+  }
+}
+
+const encodeGuardTelemetry = (
+  guard: AutoSavePhaseGuardSnapshot
+): AutoSaveTelemetryGuardProperties => {
+  const current = resolveCollectorPhase(guard)
+  return { current, rollbackTo: resolveGuardRollbackPhase(current) }
+}
 
 const createFlushLatencyPerformance = (
   latencyMs: number
@@ -387,9 +429,14 @@ const emitTelemetry = (
       ? (detailPayload as AutoSaveTelemetryEventProperties['detail'])
       : undefined
   })()
+  const guardTelemetry =
+    event.name === 'autosave.status' || event.name === 'autosave.guard'
+      ? encodeGuardTelemetry(context.guard)
+      : undefined
   const properties: AutoSaveTelemetryEventProperties = {
     ...rawProperties,
     ...(normalizedDetail ? { detail: normalizedDetail } : {}),
+    ...(guardTelemetry ? { guard: guardTelemetry } : {}),
     phaseBefore,
     phaseAfter,
     flagSource: context.guard.featureFlag.source,
