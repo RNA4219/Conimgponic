@@ -89,7 +89,7 @@ const autosaveSuffixModuleGlobs = [
   'src/**/*autosave*.tsx',
   'src/**/*[Aa]uto[Ss]ave*.ts',
   'src/**/*[Aa]uto[Ss]ave*.tsx',
-] as const;
+] as const satisfies readonly string[];
 
 const autosaveSuffixTestGlobs = [
   'tests/**/*autosave*.test.ts',
@@ -104,8 +104,7 @@ const autosaveSuffixTsxTestGlobs = [
 const autosaveTsxTestGlobs = [
   'tests/**/*[Aa]uto[Ss]ave*.test.tsx',
   'tests/**/*[Aa]uto[Ss]ave*.spec.tsx',
-] as const;
-
+] as const satisfies readonly string[];
 const vscodeFlagsHandshakeSpecPath = 'tests/extensions/vscode/flags-handshake.spec.ts';
 
 const requiredAutosaveFilterGlobs = [
