@@ -319,7 +319,9 @@ test('stable precision without phase stats keeps diff tab visible but disabled',
 
   assert.equal(plan.diff.enabled, false)
   assert.equal(plan.diff.visible, true)
-  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.diff.exposure, 'default')
+  assert.equal(plan.tabs.diff?.exposure, 'default')
+  assert.deepEqual(plan.tabs.diff, { exposure: 'default', backupAfterMs: 300000 })
   assert.equal(plan.guard.phaseBRequired, false)
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
   assert.equal(plan.tabs.initialTab, 'diff')
@@ -422,8 +424,8 @@ test('stable precision keeps diff visible but disabled when stats are zeroed', (
 
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.enabled, false)
-  assert.equal(plan.diff.exposure, 'opt-in')
-  assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
+  assert.equal(plan.diff.exposure, 'default')
+  assert.deepEqual(plan.tabs.diff, { exposure: 'default', backupAfterMs: 300000 })
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
 })
 
@@ -809,7 +811,7 @@ test('stable precision clamps threshold upper bound and keeps diff initial tab w
   assert.equal(plan.autoApplied.meetsTarget, true)
 })
 
-test('stable precision sourced from workspace threshold keeps diff visible but opt-in without review bands', () => {
+test('stable precision sourced from workspace threshold keeps diff visible with default exposure when review bands are absent', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.88,
@@ -819,7 +821,7 @@ test('stable precision sourced from workspace threshold keeps diff visible but o
   assert.equal(plan.threshold.request, 0.88)
   assert.equal(plan.diff.enabled, false)
   assert.equal(plan.diff.visible, true)
-  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.diff.exposure, 'default')
   assert.equal(plan.guard.phaseBRequired, false)
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
 })
@@ -847,7 +849,7 @@ test('stable precision tab planning restores stored merge.lastTab preference', (
   })
 
   assert.equal(phasePlan.tabs.initialTab, 'compiled')
-  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
+  assert.deepEqual(phasePlan.tabs.diff, { exposure: 'default', backupAfterMs: 300000 })
   assert.deepEqual(
     phasePlan.tabs.tabs.map((entry) => entry.id),
     ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
@@ -855,7 +857,7 @@ test('stable precision tab planning restores stored merge.lastTab preference', (
   assert.equal(phasePlan.diff.initialTab, 'compiled')
   assert.equal(phasePlan.diff.visible, true)
   assert.equal(phasePlan.diff.enabled, false)
-  assert.equal(phasePlan.diff.exposure, 'opt-in')
+  assert.equal(phasePlan.diff.exposure, 'default')
 })
 
 test('stable precision preserves stored merge.lastTab across tab planners when diff demotes', () => {
