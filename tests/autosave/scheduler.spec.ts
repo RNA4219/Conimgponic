@@ -86,8 +86,15 @@ scenario('AS-I-04: flushNow and timers drive expected phase transitions', async 
   ])
   const changePayloads = events
     .filter((event) => event.type === 'autosave.schedule.requested')
-    .map((event) => event.payload?.pendingBytes)
-  assert.deepEqual(changePayloads, [128, 1024])
+    .map((event) => ({
+      pendingBytes: event.payload?.pendingBytes,
+      pending_bytes: event.payload?.pending_bytes,
+      build_sha: event.payload?.build_sha
+    }))
+  assert.deepEqual(changePayloads, [
+    { pendingBytes: 128, pending_bytes: 128, build_sha: 'test-build-sha' },
+    { pendingBytes: 1024, pending_bytes: 1024, build_sha: 'test-build-sha' }
+  ])
 
   await runner.dispose()
 })
@@ -111,16 +118,20 @@ scenario(
   const last = telemetry.at(-1)!
   assert.equal(last.phase, 'debouncing')
   assert.equal(last.detail?.pendingBytes, 2048)
+  assert.equal(last.detail?.pending_bytes, 2048)
   assert.equal(last.detail?.backlog, 1)
   assert.equal(last.detail?.flag_source, ENABLED_GUARD.featureFlag.source)
   assert.equal(last.detail?.retry_count, 0)
+  assert.equal(last.detail?.build_sha, 'test-build-sha')
   assert.equal(last.slo, 'p95-latency')
 
   const changeEvent = events.filter((event) => event.type === 'autosave.schedule.requested').at(-1)
   assert.ok(changeEvent)
   assert.equal(changeEvent!.phase, 'idle')
   assert.equal(changeEvent!.payload?.pendingBytes, 2048)
+  assert.equal(changeEvent!.payload?.pending_bytes, 2048)
   assert.equal(changeEvent!.payload?.backlog, 1)
+  assert.equal(changeEvent!.payload?.build_sha, 'test-build-sha')
 })
 
 scenario(
@@ -147,5 +158,8 @@ scenario(
     assert.ok(collectorEvent, 'collector should receive autosave.schedule.requested event')
     assert.equal(collectorEvent?.flag_source, ENABLED_GUARD.featureFlag.source)
     assert.equal(collectorEvent?.retry_count, 0)
+    assert.equal(collectorEvent?.pending_bytes, 4096)
+    assert.equal(collectorEvent?.build_sha, 'test-build-sha')
+    assert.equal(collectorEvent?.phase, 'A-1')
   }
 )

@@ -241,6 +241,7 @@ export interface AutoSavePhaseGuardSnapshot {
     readonly source: 'env' | 'workspace' | 'localStorage' | 'default'
   }
   readonly optionsDisabled: boolean
+  readonly buildSha?: string
 }
 
 interface Day8CollectorLike {
@@ -287,6 +288,32 @@ const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): AutoSaveEnvel
     default:
       return 'A-0'
   }
+}
+
+type BuildShaScope = typeof globalThis & {
+  __CONIMG_BUILD_SHA__?: unknown
+  process?: { env?: Record<string, unknown> }
+  import?: { meta?: { env?: Record<string, unknown> } }
+}
+
+const normalizeBuildSha = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
+const readBuildShaFromScope = (scope: BuildShaScope): string | undefined =>
+  normalizeBuildSha(scope.__CONIMG_BUILD_SHA__) ??
+  normalizeBuildSha(scope.process?.env?.VITE_BUILD_SHA) ??
+  normalizeBuildSha(scope.process?.env?.BUILD_SHA) ??
+  normalizeBuildSha(scope.import?.meta?.env?.VITE_BUILD_SHA) ??
+  normalizeBuildSha(scope.import?.meta?.env?.BUILD_SHA)
+
+const resolveBuildSha = (guard: AutoSavePhaseGuardSnapshot): string => {
+  const scope = globalThis as BuildShaScope
+  return normalizeBuildSha(guard.buildSha) ?? readBuildShaFromScope(scope) ?? 'unknown'
 }
 
 interface AutoSaveWriteCompletedEvent {
@@ -348,7 +375,8 @@ const publishScheduleRequestedCollectorEvent = (event: AutoSaveScheduleRequested
     pending_bytes: event.pendingBytes,
     backlog: event.backlog,
     flag_source: event.guard.featureFlag.source,
-    retry_count: event.retryCount
+    retry_count: event.retryCount,
+    build_sha: resolveBuildSha(event.guard)
   })
 }
 
@@ -1053,13 +1081,12 @@ export function initAutoSave(
   const resolveGuardFromEnvironment = (
     fallbackOptionsDisabled: boolean
   ): AutoSavePhaseGuardSnapshot => {
-    const scope = globalThis as typeof globalThis & {
+    const scope = globalThis as BuildShaScope & {
       __AUTOSAVE_ENABLED__?: boolean
       __AUTOSAVE_WORKSPACE__?: WorkspaceConfiguration | null
       localStorage?: { getItem?: (key: string) => string | null }
-      process?: { env?: Record<string, unknown> }
-      import?: { meta?: { env?: Record<string, unknown> } }
     }
+    const buildSha = readBuildShaFromScope(scope)
     const runtimeEnv =
       typeof scope.__AUTOSAVE_ENABLED__ === 'boolean' ? scope.__AUTOSAVE_ENABLED__ : null
     const envVar = asBool(
@@ -1069,7 +1096,8 @@ export function initAutoSave(
     if (env != null) {
       return {
         featureFlag: { value: env, source: 'env' },
-        optionsDisabled: fallbackOptionsDisabled
+        optionsDisabled: fallbackOptionsDisabled,
+        ...(buildSha ? { buildSha } : {})
       }
     }
     const workspaceValue = asBool(
@@ -1078,19 +1106,22 @@ export function initAutoSave(
     if (workspaceValue != null) {
       return {
         featureFlag: { value: workspaceValue, source: 'workspace' },
-        optionsDisabled: fallbackOptionsDisabled
+        optionsDisabled: fallbackOptionsDisabled,
+        ...(buildSha ? { buildSha } : {})
       }
     }
     const storage = asBool(scope.localStorage?.getItem?.('autosave.enabled'))
     if (storage != null) {
       return {
         featureFlag: { value: storage, source: 'localStorage' },
-        optionsDisabled: fallbackOptionsDisabled
+        optionsDisabled: fallbackOptionsDisabled,
+        ...(buildSha ? { buildSha } : {})
       }
     }
     return {
       featureFlag: { value: !policy.disabled, source: 'default' },
-      optionsDisabled: fallbackOptionsDisabled
+      optionsDisabled: fallbackOptionsDisabled,
+      ...(buildSha ? { buildSha } : {})
     }
   }
   const normalizeGuard = (
@@ -1101,12 +1132,14 @@ export function initAutoSave(
     if ('featureFlag' in candidate && candidate.featureFlag && typeof candidate.featureFlag === 'object') {
       const guard = candidate as AutoSavePhaseGuardSnapshot
       if (typeof guard.featureFlag?.value === 'boolean') {
+        const buildSha = normalizeBuildSha(guard.buildSha)
         return {
           featureFlag: {
             value: guard.featureFlag.value,
             source: guardSource(guard.featureFlag.source)
           },
-          optionsDisabled: !!guard.optionsDisabled
+          optionsDisabled: !!guard.optionsDisabled,
+          ...(buildSha ? { buildSha } : {})
         }
       }
     }
@@ -1866,12 +1899,15 @@ export function initAutoSave(
           .catch(() => undefined)
       }
       const changePhase: AutoSavePhase = phase === 'idle' ? 'idle' : 'debouncing'
+      const buildSha = resolveBuildSha(guard)
       const changeDetail = {
         reason: 'change',
         pendingBytes: estimated,
+        pending_bytes: estimated,
         backlog,
         flag_source: guard.featureFlag.source,
-        retry_count: retryCount
+        retry_count: retryCount,
+        build_sha: buildSha
       }
       emitRunnerEvent('autosave.schedule.requested', changePhase, {
         payload: changeDetail,

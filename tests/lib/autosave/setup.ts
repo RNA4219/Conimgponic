@@ -47,7 +47,8 @@ export interface SetupOverrides {
 
 export const ENABLED_GUARD: AutoSavePhaseGuardSnapshot = Object.freeze({
   featureFlag: { value: true, source: 'env' },
-  optionsDisabled: false
+  optionsDisabled: false,
+  buildSha: 'test-build-sha'
 })
 
 const root = resolve(fileURLToPath(new URL('../../../', import.meta.url)))
@@ -140,7 +141,9 @@ export const createOpfs = (): OpfsMock => {
             }
           },
           async getFile(){
-            if (!files.has(full)) throw new Error('missing file')
+            if (!files.has(full)) {
+              throw new DOMException('missing file', 'NotFoundError')
+            }
             const text = files.get(full)!
             return { async text(){ return text } }
           }
