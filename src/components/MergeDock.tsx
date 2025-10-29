@@ -267,6 +267,32 @@ const sanitizeActiveTab = (
   return tab
 }
 
+export const resolveActiveTabTransition = ({
+  precision,
+  previousPrecision,
+  plan,
+  activeTab,
+  diffVisible,
+  diffEnabled,
+  previousDiffEnabled,
+}: {
+  readonly precision: MergePrecision
+  readonly previousPrecision: MergePrecision
+  readonly plan: MergeDockPhasePlan['tabs']
+  readonly activeTab: MergeDockPhasePlan['tabs']['initialTab']
+  readonly diffVisible: boolean
+  readonly diffEnabled: boolean
+  readonly previousDiffEnabled: boolean
+}): MergeDockPhasePlan['tabs']['initialTab'] => {
+  if (previousPrecision !== precision) {
+    return plan.initialTab
+  }
+  if (!previousDiffEnabled && diffEnabled) {
+    return plan.initialTab
+  }
+  return sanitizeActiveTab(activeTab, plan, diffVisible)
+}
+
 interface MergeDockAutoSaveState {
   readonly flushNow?: () => void
   readonly lastSuccessAt?: string
@@ -781,10 +807,15 @@ export function MergeDock(props?: MergeDockProps){
   useEffect(() => {
     const previousPrecision = previousPrecisionRef.current
     const previousDiffEnabled = previousDiffEnabledRef.current
-    const precisionChanged = previousPrecision !== precision
-    const nextTab = precisionChanged
-      ? plan.initialTab
-      : sanitizeActiveTab(activeTab, plan, phasePlan.diff.visible)
+    const nextTab = resolveActiveTabTransition({
+      precision,
+      previousPrecision,
+      plan,
+      activeTab,
+      diffVisible: phasePlan.diff.visible,
+      diffEnabled: phasePlan.diff.enabled,
+      previousDiffEnabled,
+    })
     const nextPreference = resolvePreferenceSelection({
       precision,
       previousPrecision,

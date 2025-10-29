@@ -15,6 +15,7 @@ if (typeof globalThis.releaseMonitor === 'undefined') {
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createStore } from 'zustand/vanilla'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
 const mergeDockModule = await import('../../src/components/MergeDock')
@@ -30,6 +31,7 @@ const {
   getDefaultPreference,
   sanitizePreference,
   resolvePreferenceSelection,
+  resolveActiveTabTransition,
 } = mergeDockModule as typeof mergeDockModule & {
   readonly getDefaultPreference: (
     precision: FlagSnapshot['merge']['precision'],
@@ -48,6 +50,15 @@ const {
     readonly preference: 'manual-first' | 'ai-first' | 'diff-merge'
     readonly defaultPreference: 'manual-first' | 'ai-first' | 'diff-merge'
   }) => 'manual-first' | 'ai-first' | 'diff-merge'
+  readonly resolveActiveTabTransition: (input: {
+    readonly precision: FlagSnapshot['merge']['precision']
+    readonly previousPrecision: FlagSnapshot['merge']['precision']
+    readonly diffEnabled: boolean
+    readonly previousDiffEnabled: boolean
+    readonly plan: ReturnType<typeof resolveMergeDockPhasePlan>['tabs']
+    readonly activeTab: ReturnType<typeof resolveMergeDockPhasePlan>['tabs']['initialTab']
+    readonly diffVisible: boolean
+  }) => ReturnType<typeof resolveMergeDockPhasePlan>['tabs']['initialTab']
 }
 type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
 
@@ -506,6 +517,34 @@ test('stable precision diff guard fallback retains diff merge preference', () =>
   })
 
   assert.equal(preference, 'diff-merge')
+})
+
+test('stable precision diff guard unlock restores diff as active tab in store', () => {
+  const guardedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+  })
+  const unlockedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+  })
+
+  const viewStore = createStore<{ readonly activeTab: 'compiled' | 'shot' | 'diff' }>(() => ({ activeTab: 'shot' }))
+  const nextTab = resolveActiveTabTransition({
+    precision: unlockedPlan.precision,
+    previousPrecision: guardedPlan.precision,
+    diffEnabled: unlockedPlan.diff.enabled,
+    previousDiffEnabled: guardedPlan.diff.enabled,
+    plan: unlockedPlan.tabs,
+    activeTab: viewStore.getState().activeTab,
+    diffVisible: unlockedPlan.diff.visible,
+  })
+
+  viewStore.setState({ activeTab: nextTab })
+
+  assert.equal(nextTab, 'diff')
+  assert.equal(viewStore.getState().activeTab, 'diff')
 })
 
 test('stable precision respects manual preference selection immediately after guard unlocks', () => {
