@@ -8,6 +8,7 @@ import type {
   AutoSaveSnapshotResultMessage,
   AutoSaveSnapshotResultPayload,
   AutoSaveStatusMessage,
+  AutoSaveStatusSnapshot,
   AutoSaveStatusState,
   AutoSavePolicy,
   AutoSaveError
@@ -458,16 +459,28 @@ const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): RolloutPhase 
   }
 }
 
+type SnapshotResultDetailPhase = AutoSaveStatusSnapshot['phase']
+
+type SnapshotResultSuccessDetailWithPhase = SnapshotResultSuccessDetail & {
+  readonly phase: SnapshotResultDetailPhase
+}
+
+type SnapshotResultFailureDetailWithPhase = SnapshotResultFailureDetail & {
+  readonly phase: SnapshotResultDetailPhase
+}
+
 const createSnapshotSuccessDetail = (
   durationMs: number,
   retryCount: number,
-  lagSeconds: number | undefined
-): SnapshotResultSuccessDetail => {
+  lagSeconds: number | undefined,
+  phase: SnapshotResultDetailPhase
+): SnapshotResultSuccessDetailWithPhase => {
   const baseDetail = {
     duration_ms: clampMilliseconds(durationMs),
     retry_count: clampCount(retryCount),
     retryable: false as const,
-    error_code: null
+    error_code: null,
+    phase
   }
   if (lagSeconds === undefined) {
     return baseDetail
@@ -481,15 +494,17 @@ const createSnapshotFailureDetail = (
   retryable: boolean,
   errorCode: string,
   errorMessage: string,
-  lagSeconds: number | undefined
-): SnapshotResultFailureDetail => {
+  lagSeconds: number | undefined,
+  phase: SnapshotResultDetailPhase
+): SnapshotResultFailureDetailWithPhase => {
   const code = normalizeErrorCode(errorCode)
   const baseDetail = {
     duration_ms: clampMilliseconds(durationMs),
     retry_count: clampCount(retryCount),
     retryable,
     error_code: code,
-    error_message: normalizeErrorMessage(errorMessage, code)
+    error_message: normalizeErrorMessage(errorMessage, code),
+    phase
   }
   if (lagSeconds === undefined) {
     return baseDetail
@@ -570,7 +585,8 @@ const handleNonRetryableError = (
       error.retryable,
       error.code,
       error.message,
-      computeLagSeconds(state.lastSuccessAt, ts)
+      computeLagSeconds(state.lastSuccessAt, ts),
+      statusPhaseForState(state.status)
     )
   })
   emitTelemetry(
@@ -792,7 +808,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           disabledError.retryable,
           disabledError.code,
           disabledError.message,
-          computeLagSeconds(state.lastSuccessAt, ts)
+          computeLagSeconds(state.lastSuccessAt, ts),
+          statusPhaseForState(state.status)
         )
       })
       emitTelemetry(
@@ -919,7 +936,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             true,
             writeResult.error.code,
             writeResult.error.message,
-            computeLagSeconds(state.lastSuccessAt, retryTs)
+            computeLagSeconds(state.lastSuccessAt, retryTs),
+            statusPhaseForState(state.status)
           )
         })
         options.sendMessage(
@@ -1001,7 +1019,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const successDetail = createSnapshotSuccessDetail(
       successLatency,
       retryCountForSnapshot,
-      computeLagSeconds(previousLastSuccessAt, successTs)
+      computeLagSeconds(previousLastSuccessAt, successTs),
+      statusPhaseForState(state.status)
     )
     const collectorSnapshot = createSnapshotPayload(
       writeResult.bytes,
