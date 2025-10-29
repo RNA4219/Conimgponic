@@ -942,6 +942,81 @@ describe('createVscodeAutoSaveBridge', () => {
     expectPhase('disabled', 'A-1')
   })
 
+  it('autosave.snapshot.result telemetry は request phase を保持し guard 無効化時は A-1 を報告する', async () => {
+    const successTelemetry: AutoSaveTelemetryEvent[] = []
+    const successTimeline = [
+      new Date('2024-01-01T00:00:00.000Z'),
+      new Date('2024-01-01T00:00:01.000Z'),
+      new Date('2024-01-01T00:00:01.250Z')
+    ]
+    const successNow = () => {
+      const next = successTimeline.shift()
+      assert.ok(next, 'success timeline should provide enough timestamps')
+      return next
+    }
+    const successBridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: successNow,
+      sendMessage: () => {},
+      atomicWrite: async () => ({
+        ok: true as const,
+        bytes: 1024,
+        generation: 2,
+        lastSuccessAt: new Date('2024-01-01T00:00:01.250Z').toISOString(),
+        lockStrategy: 'web-lock'
+      }),
+      telemetry: successTelemetry.push.bind(successTelemetry)
+    })
+
+    await successBridge.handleSnapshotRequest({
+      ...createRequest('req-phase', 'corr-phase', guardEnabled, 1024, 2),
+      phase: 'B-0'
+    })
+
+    const successEvent = successTelemetry.find(
+      (event) =>
+        event.name === 'autosave.snapshot.result' && event.properties?.correlationId === 'corr-phase'
+    )
+    assert.ok(successEvent, 'snapshot.result telemetry should be recorded for successful saves')
+    assert.equal(successEvent.properties?.phase, 'B-0')
+
+    const disabledTelemetry: AutoSaveTelemetryEvent[] = []
+    const disabledTimeline = [
+      new Date('2024-01-01T02:00:00.000Z'),
+      new Date('2024-01-01T02:00:01.000Z')
+    ]
+    const disabledNow = () => {
+      const next = disabledTimeline.shift()
+      assert.ok(next, 'disabled timeline should provide enough timestamps')
+      return next
+    }
+    const disabledBridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: disabledNow,
+      sendMessage: () => {},
+      atomicWrite: async () => {
+        assert.fail('guard disabled request should not attempt atomicWrite')
+      },
+      telemetry: disabledTelemetry.push.bind(disabledTelemetry)
+    })
+
+    await disabledBridge.handleSnapshotRequest(
+      createRequest('req-disabled-phase', 'corr-disabled-phase', guardReadonly, 1024, 3)
+    )
+
+    const disabledEvent = disabledTelemetry.find(
+      (event) =>
+        event.name === 'autosave.snapshot.result' &&
+        event.properties?.correlationId === 'corr-disabled-phase'
+    )
+    assert.ok(disabledEvent, 'snapshot.result telemetry should be recorded for guard disabled requests')
+    assert.equal(disabledEvent.properties?.phase, 'A-1')
+  })
+
   it('autosave.snapshot.result telemetry records flush latency for non-retryable errors', async () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     const times = [
@@ -1160,7 +1235,7 @@ describe('createVscodeAutoSaveBridge', () => {
       )
     }
 
-    const guardBridge = createBridgeWithOffsets([0], async () => {
+    const guardBridge = createBridgeWithOffsets([0, 0], async () => {
       assert.fail('guard disabled request must not call atomicWrite')
     })
     await guardBridge.handleSnapshotRequest(
