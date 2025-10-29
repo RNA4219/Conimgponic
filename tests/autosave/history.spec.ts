@@ -268,6 +268,60 @@ scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, 
   assert.equal(exhaustedDetail.retryCount, AUTOSAVE_RETRY_POLICY.maxAttempts)
 })
 
+scenario('AS-I-07: write failure publishes collector telemetry with cause detail', async (t, ctx) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 3, 0, 0, 0) })
+
+  const failure = new Error('Mock OPFS failure')
+  failure.name = 'MockOpfsWriteError'
+
+  const opfsModule = await import('../../src/lib/opfs.ts')
+  const originalSaveText = opfsModule.saveText
+  const saveTextMock = t.mock.method(opfsModule, 'saveText', async (path: string, content: string) => {
+    if (path === 'project/autosave/current.json.tmp') {
+      throw failure
+    }
+    await originalSaveText(path, content)
+  })
+  t.after(() => {
+    saveTextMock.mock.restore()
+  })
+
+  const runner = ctx.initAutoSave(createStoryboard, { disabled: false }, ENABLED_GUARD)
+  t.after(async () => {
+    await runner.dispose()
+  })
+
+  ctx.opfs.files.set(
+    'project/autosave/index.json',
+    JSON.stringify({ current: null, history: [], generation: null }, null, 2)
+  )
+
+  runner.markDirty({ pendingBytes: 1024 })
+
+  await assert.rejects(async () => runner.flushNow(), (error: unknown) => {
+    assert.equal((error as { code?: unknown }).code, 'write-failed')
+    return true
+  })
+
+  const failureEvents = ctx.collectorEvents.filter((event) => event.event === 'autosave.write.failed')
+  assert.ok(failureEvents.length > 0, 'collector must record autosave.write.failed event')
+  const detail = failureEvents.at(-1)! as {
+    feature?: unknown
+    event?: unknown
+    duration_ms?: unknown
+    error_code?: unknown
+    retryable?: unknown
+    cause?: unknown
+  }
+  assert.equal(detail.feature, 'autosave')
+  assert.equal(detail.event, 'autosave.write.failed')
+  assert.equal(detail.error_code, 'write-failed')
+  assert.equal(detail.retryable, true)
+  assert.equal(detail.cause, failure.name)
+  assert.equal(typeof detail.duration_ms, 'number')
+  assert.ok((detail.duration_ms as number) >= 0)
+})
+
 let resumeLock: (() => Promise<void>) | null = null
 
 scenario(

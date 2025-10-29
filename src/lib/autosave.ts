@@ -302,6 +302,15 @@ interface AutoSaveWriteCompletedEvent {
   readonly gcEvicted: number
 }
 
+interface AutoSaveWriteFailedEvent {
+  readonly guard: AutoSavePhaseGuardSnapshot
+  readonly durationMs: number
+  readonly retryCount: number
+  readonly source: 'manual' | 'auto'
+  readonly ts: string
+  readonly error: AutoSaveError
+}
+
 interface AutoSaveScheduleRequestedEvent {
   readonly guard: AutoSavePhaseGuardSnapshot
   readonly ts: string
@@ -331,6 +340,29 @@ const publishWriteCompletedCollectorEvent = (event: AutoSaveWriteCompletedEvent)
   }
   if (event.leaseId) {
     payload.lease_id = event.leaseId
+  }
+  collector.publish(payload)
+}
+
+const publishWriteFailedCollectorEvent = (event: AutoSaveWriteFailedEvent): void => {
+  const collector = resolveDay8Collector()
+  if (!collector) return
+  const duration = Math.max(0, Math.round(event.durationMs))
+  const payload: Record<string, unknown> = {
+    component: 'autosave',
+    feature: 'autosave',
+    event: 'autosave.write.failed',
+    phase: resolveCollectorPhase(event.guard),
+    ts: event.ts,
+    duration_ms: duration,
+    error_code: event.error.code,
+    retryable: event.error.retryable,
+    retry_count: event.retryCount,
+    source: event.source
+  }
+  const causeName = event.error.cause?.name
+  if (causeName) {
+    payload.cause = causeName
   }
   collector.publish(payload)
 }
@@ -1537,6 +1569,7 @@ export function initAutoSave(
       if (disposed) throw disabledError()
       const stage = phase
       const telemetryAt = new Date().toISOString()
+      const failureDurationMs = Date.now() - flushStartedAt
       const autoError =
         isAutoSaveError(error)
           ? error
@@ -1565,6 +1598,14 @@ export function initAutoSave(
           error: autoError
         })
       } else if (stage === 'writing-current' || stage === 'updating-index') {
+        publishWriteFailedCollectorEvent({
+          guard,
+          durationMs: failureDurationMs,
+          retryCount: attempt + 1,
+          source,
+          ts: telemetryAt,
+          error: autoError
+        })
         emitRunnerEvent('write-failed', 'writing-current', {
           at: telemetryAt,
           payload: { code: autoError.code, retryable: autoError.retryable },
