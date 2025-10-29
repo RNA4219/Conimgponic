@@ -4,7 +4,11 @@ import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { MergeDock, planMergeDockTabs } from '../../src/components/MergeDock.tsx'
+import {
+  MergeDock,
+  planMergeDockTabs,
+  resolveMergeDockPhasePlan,
+} from '../../src/components/MergeDock.tsx'
 import type { FlagSnapshot } from '../../src/config/flags.ts'
 import { mergeCSV, mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'
@@ -48,11 +52,11 @@ const planTabsCases: readonly [
     },
   ],
   [
-    'merge: stable precision inserts diff before golden and selects it initially',
+    'merge: stable precision inserts diff before golden and preserves stored tab',
     'stable',
     'shot',
     ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
-    'diff',
+    'shot',
   ],
   [
     'merge: beta precision keeps diff when it was last tab',
@@ -94,6 +98,18 @@ test('merge: tab plan snapshot', async (t) => {
       verify?.(plan)
     })
   }
+})
+
+test('merge: stable precision demotes diff initial tab when auto applied rate is below target', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    lastTab: 'diff',
+    autoAppliedRate: 0.72,
+    phaseStats: { reviewBandCount: 1, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.tabs.initialTab, 'compiled')
+  assert.equal(plan.diff.initialTab, 'compiled')
 })
 
 test('merge-ui: diff exposure plan', async (t) => {

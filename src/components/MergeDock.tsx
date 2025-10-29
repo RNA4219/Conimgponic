@@ -659,10 +659,13 @@ export const resolveMergeDockPhasePlan = ({
   const effectiveTabs = diffVisible ? rawPlan.tabs : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
   const compiledInitial = effectiveTabs.find((entry) => entry.id === 'compiled')?.id
   const defaultInitial = compiledInitial ?? effectiveTabs[0]?.id ?? rawPlan.initialTab
+  const resetInitial =
+    shouldDemoteDiff && rawPlan.initialTab === 'diff' ? compiledInitial : undefined
   const effectiveInitial =
-    rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
+    resetInitial ??
+    (rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
       ? rawPlan.initialTab
-      : defaultInitial
+      : defaultInitial)
 
   return {
     precision,
