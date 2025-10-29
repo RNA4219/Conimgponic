@@ -27,11 +27,13 @@ import type {
 } from '../../src/config/flags.js'
 import {
   publishFlagResolution,
+  publishMergeResult,
   publishSnapshotResult,
   resetWorkspaceIdCacheForTests,
   type Day8Collector,
   type Day8CollectorErrorEvent,
   type Day8CollectorFlagResolutionEvent,
+  type Day8CollectorMergeResultEvent,
   type Day8CollectorSnapshotResultEvent,
   type FlagResolutionEventPayload
 } from '../../src/telemetry/day8Collector.js'
@@ -1484,6 +1486,95 @@ describe('vscode extension telemetry contract (RED)', () => {
     strictEqual(spec.pipelineStage, 'collector')
     assertOk(spec.guardrail, 'merge.result telemetry must define guardrail')
     deepStrictEqual(spec.guardrail.metric, 'merge_auto_success_rate')
+  })
+
+  test('publishMergeResult は merge.result イベントを Collector 契約通りに送信する', () => {
+    const captured: Day8CollectorMergeResultEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish(event) {
+        captured.push(event as Day8CollectorMergeResultEvent)
+      }
+    } as Day8Collector
+
+    const successOverrides = {
+      reqId: '00000000-0000-4000-8000-000000000101',
+      correlationId: '00000000-0000-4000-8000-000000000101',
+      workspace_id: '00000000-0000-4000-8000-000000000201',
+      ts: '2024-01-02T03:04:05.678Z'
+    } as const
+    const errorOverrides = {
+      reqId: '00000000-0000-4000-8000-000000000301',
+      correlationId: '00000000-0000-4000-8000-000000000302',
+      workspace_id: '00000000-0000-4000-8000-000000000303',
+      ts: '2024-01-02T04:05:06.789Z'
+    } as const
+
+    try {
+      publishMergeResult({
+        precision: 'beta',
+        processingMs: 123.6,
+        conflictSegments: 0,
+        status: 'success',
+        overrides: successOverrides
+      })
+
+      publishMergeResult({
+        precision: 'legacy',
+        processingMs: -5,
+        conflictSegments: -3,
+        status: 'error',
+        overrides: errorOverrides,
+        error: {}
+      })
+    } finally {
+      scope.Day8Collector = previousCollector
+    }
+
+    strictEqual(captured.length, 2, 'merge.result telemetry must be published twice')
+    const [successEvent, errorEvent] = captured
+
+    assertOk(successEvent, 'merge.result success event must be captured')
+    strictEqual(successEvent.event, 'merge.result')
+    strictEqual(successEvent.feature, 'autosave-diff-merge')
+    strictEqual(successEvent.component, 'merge')
+    strictEqual(successEvent.kind, 'merge')
+    strictEqual(successEvent.source, 'app.merge')
+    strictEqual(successEvent.phase, 'B-0')
+    strictEqual(successEvent.reqId, successOverrides.reqId)
+    strictEqual(successEvent.correlationId, successOverrides.correlationId)
+    strictEqual(successEvent.workspace_id, successOverrides.workspace_id)
+    strictEqual(successEvent.evaluation_ms, 124)
+    deepStrictEqual(successEvent.payload, {
+      status: 'success',
+      precision: 'beta',
+      processing_ms: 124,
+      conflict_segments: 0
+    })
+
+    assertOk(errorEvent, 'merge.result error event must be captured')
+    strictEqual(errorEvent.event, 'merge.result')
+    strictEqual(errorEvent.feature, 'autosave-diff-merge')
+    strictEqual(errorEvent.component, 'merge')
+    strictEqual(errorEvent.kind, 'merge')
+    strictEqual(errorEvent.source, 'app.merge')
+    strictEqual(errorEvent.phase, 'A-2')
+    strictEqual(errorEvent.reqId, errorOverrides.reqId)
+    strictEqual(errorEvent.correlationId, errorOverrides.correlationId)
+    strictEqual(errorEvent.workspace_id, errorOverrides.workspace_id)
+    strictEqual(errorEvent.evaluation_ms, 0)
+    deepStrictEqual(errorEvent.payload, {
+      status: 'error',
+      precision: 'legacy',
+      processing_ms: 0,
+      conflict_segments: 0,
+      error: {
+        code: 'unknown',
+        message: 'unknown',
+        retryable: false
+      }
+    })
   })
 
   test('merge.result telemetry は merge.trace と guardrail/digest 項目が重複しない', () => {
