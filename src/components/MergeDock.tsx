@@ -43,6 +43,37 @@ type MergeDockTabPlan = {
 
 type MergeDockPreference = 'manual-first' | 'ai-first' | 'diff-merge'
 
+type MergeDockPersistenceLogger = Pick<Console, 'warn'>
+
+interface PersistMergeDockActiveTabOptions {
+  readonly storage: Pick<Storage, 'setItem'>
+  readonly storageKey: string
+  readonly tab: MergeDockTabId
+  readonly logger?: MergeDockPersistenceLogger | null
+}
+
+export function persistMergeDockActiveTab({
+  storage,
+  storageKey,
+  tab,
+  logger,
+}: PersistMergeDockActiveTabOptions): boolean {
+  try {
+    storage.setItem(storageKey, tab)
+    return true
+  } catch (error) {
+    const resolvedLogger: MergeDockPersistenceLogger =
+      logger && typeof logger.warn === 'function' ? logger : console
+    resolvedLogger.warn(
+      'MergeDock: failed to persist active tab. Falling back without localStorage.',
+      storageKey,
+      tab,
+      error,
+    )
+    return false
+  }
+}
+
 interface MergeDockViewState {
   readonly activeTab: MergeDockTabId
   readonly preference: MergeDockPreference
@@ -843,7 +874,11 @@ export function MergeDock(props?: MergeDockProps){
   ])
   useEffect(() => {
     if (!storage) return
-    storage.setItem('merge.lastTab', activeTab)
+    persistMergeDockActiveTab({
+      storage,
+      storageKey: 'merge.lastTab',
+      tab: activeTab,
+    })
   }, [activeTab, storage])
 
   const [compiledOverride, setCompiledOverride] = useState<string | null>(null)
