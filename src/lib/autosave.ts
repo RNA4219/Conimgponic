@@ -257,6 +257,41 @@ const resolveDay8Collector = (): Day8CollectorLike | undefined => {
     : undefined
 }
 
+type BuildMetadataScope = {
+  __APP_BUILD_SHA__?: unknown
+  __APP_BUILD__?: { sha?: unknown }
+  process?: { env?: Record<string, unknown> }
+}
+
+const readImportMetaEnv = (): Record<string, unknown> | undefined => {
+  try {
+    const meta = import.meta as { env?: unknown }
+    const env = meta?.env
+    return typeof env === 'object' && env !== null ? (env as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const resolveBuildSha = (): string | undefined => {
+  const scope = globalThis as BuildMetadataScope
+  const importMetaEnv = readImportMetaEnv()
+  const candidates: readonly unknown[] = [
+    scope.__APP_BUILD_SHA__,
+    scope.__APP_BUILD__?.sha,
+    importMetaEnv?.VITE_BUILD_SHA,
+    scope.process?.env?.BUILD_SHA,
+    scope.process?.env?.GIT_COMMIT_SHA,
+    scope.process?.env?.VITE_BUILD_SHA
+  ]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate
+    }
+  }
+  return undefined
+}
+
 const publishGuardCollectorEvent = (
   guard: AutoSavePhaseGuardSnapshot,
   reason: AutoSaveDisabledReason
@@ -312,6 +347,7 @@ interface AutoSaveScheduleRequestedEvent {
   readonly pendingBytes: number
   readonly backlog: number
   readonly retryCount: number
+  readonly buildSha: string
 }
 
 const publishWriteCompletedCollectorEvent = (event: AutoSaveWriteCompletedEvent): void => {
@@ -347,6 +383,7 @@ const publishScheduleRequestedCollectorEvent = (event: AutoSaveScheduleRequested
     event: AUTOSAVE_SCHEDULE_REQUESTED_EVENT,
     phase: resolveCollectorPhase(event.guard),
     ts: event.ts,
+    build_sha: event.buildSha,
     reason: event.reason,
     pending_bytes: event.pendingBytes,
     backlog: event.backlog,
@@ -1251,6 +1288,14 @@ export function initAutoSave(
     slo: 'p99-success' | 'p95-latency',
     detail: Record<string, unknown>
   ): void => {
+    const buildSha = resolveBuildSha() ?? 'unknown'
+    const telemetryDetail: Record<string, unknown> = { ...detail }
+    if (
+      typeof telemetryDetail.build_sha !== 'string' ||
+      (telemetryDetail.build_sha as string).trim().length === 0
+    ) {
+      telemetryDetail.build_sha = buildSha
+    }
     runnerOutput.telemetry({
       feature: 'autosave',
       phase,
@@ -1260,7 +1305,7 @@ export function initAutoSave(
         event,
         flag_source: guard.featureFlag.source,
         retry_count: retryCount,
-        ...detail
+        ...telemetryDetail
       }
     })
   }
@@ -1910,13 +1955,15 @@ export function initAutoSave(
         at: scheduledAt
       })
       notifyOutputTelemetry(AUTOSAVE_SCHEDULE_REQUESTED_EVENT, 'debouncing', 'p95-latency', changeDetail)
+      const buildSha = resolveBuildSha() ?? 'unknown'
       publishScheduleRequestedCollectorEvent({
         guard,
         ts: scheduledAt,
         reason: 'change',
         pendingBytes: estimated,
         backlog,
-        retryCount
+        retryCount,
+        buildSha
       })
       if (phase === 'idle' || phase === 'debouncing') {
         phase = 'debouncing'
