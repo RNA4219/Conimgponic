@@ -776,6 +776,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const ts = toIso(requestStartedAt)
     const requestEnvelopePhase = request.phase ?? PHASE_SNAPSHOT
     if (!isGuardEnabled(state.guard)) {
+      const retryCountBeforeReset = state.retryCount
       state.status = 'disabled'
       state.retryCount = 0
       state.flushStartedAtMs = undefined
@@ -787,7 +788,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         status: 'failure',
         detail: createSnapshotFailureDetail(
           0,
-          state.retryCount,
+          retryCountBeforeReset,
           disabledError.retryable,
           disabledError.code,
           disabledError.message,
@@ -803,7 +804,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             code: 'disabled',
             retryable: false,
             correlationId: request.correlationId,
-            retryCount: state.retryCount,
+            retryCount: retryCountBeforeReset,
             performance: ZERO_FLUSH_LATENCY
           }
         },

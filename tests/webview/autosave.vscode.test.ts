@@ -1160,7 +1160,7 @@ describe('createVscodeAutoSaveBridge', () => {
       )
     }
 
-    const guardBridge = createBridgeWithOffsets([0], async () => {
+    const guardBridge = createBridgeWithOffsets([0, 1000], async () => {
       assert.fail('guard disabled request must not call atomicWrite')
     })
     await guardBridge.handleSnapshotRequest(
@@ -1221,6 +1221,112 @@ describe('createVscodeAutoSaveBridge', () => {
     expectRetryCount('corr-guard-detail', 0)
     expectRetryCount('corr-fatal-detail', 1)
     expectRetryCount('corr-success-detail', 1)
+  })
+
+  it('autosave.snapshot.result テレメトリは guard 無効化・非 retryable エラー・保存成功で retryCount を記録する', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const base = Date.parse('2024-01-01T00:00:00.000Z')
+    const createBridge = (
+      atomicWrite: AutoSaveHostBridgeOptions['atomicWrite']
+    ) => {
+      let ticks = 0
+      const now = () => new Date(base + ticks++ * 1000)
+      return createVscodeAutoSaveBridge({
+        policy: AUTOSAVE_POLICY,
+        initialGuard: guardEnabled,
+        flags: createDefaultFlags(),
+        now,
+        sendMessage: () => {},
+        atomicWrite,
+        telemetry: telemetry.push.bind(telemetry)
+      })
+    }
+
+    const retryableError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'temporary failure',
+      code: 'write-failed',
+      retryable: true
+    }
+    const fatalError: AutoSaveError = {
+      name: 'AutoSaveError',
+      message: 'non-retryable failure',
+      code: 'write-failed',
+      retryable: false
+    }
+
+    let guardAtomicWriteCalls = 0
+    const guardBridge = createBridge(async () => {
+      guardAtomicWriteCalls += 1
+      assert.equal(guardAtomicWriteCalls, 1, 'guard backoff scenario should call atomicWrite once')
+      return { ok: false as const, error: retryableError }
+    })
+    await guardBridge.handleSnapshotRequest(
+      createRequest('req-guard-backoff', 'corr-guard-backoff', guardEnabled, 256, 1)
+    )
+    await guardBridge.handleSnapshotRequest(
+      createRequest('req-guard-disabled', 'corr-guard-disabled', guardReadonly, 256, 1)
+    )
+
+    let fatalAtomicWriteCalls = 0
+    const fatalBridge = createBridge(async () => {
+      fatalAtomicWriteCalls += 1
+      if (fatalAtomicWriteCalls === 1) {
+        return { ok: false as const, error: retryableError }
+      }
+      assert.equal(fatalAtomicWriteCalls, 2, 'fatal scenario should attempt atomicWrite twice')
+      return { ok: false as const, error: fatalError }
+    })
+    await fatalBridge.handleSnapshotRequest(
+      createRequest('req-fatal-backoff', 'corr-fatal-backoff', guardEnabled, 512, 2)
+    )
+    await fatalBridge.handleSnapshotRequest(
+      createRequest('req-fatal-final', 'corr-fatal-final', guardEnabled, 512, 2)
+    )
+
+    let successAtomicWriteCalls = 0
+    const successBridge = createBridge(async ({ request }) => {
+      successAtomicWriteCalls += 1
+      if (successAtomicWriteCalls === 1) {
+        return { ok: false as const, error: retryableError }
+      }
+      assert.equal(successAtomicWriteCalls, 2, 'success scenario should retry once before succeeding')
+      return {
+        ok: true as const,
+        bytes: request.payload.pendingBytes,
+        generation: request.payload.queuedGeneration ?? 1,
+        lastSuccessAt: new Date(base + 3600 * 1000).toISOString(),
+        lockStrategy: 'web-lock' as const
+      }
+    })
+    await successBridge.handleSnapshotRequest(
+      createRequest('req-success-backoff', 'corr-success-backoff', guardEnabled, 768, 3)
+    )
+    await successBridge.handleSnapshotRequest(
+      createRequest('req-success-final', 'corr-success-final', guardEnabled, 768, 3)
+    )
+
+    const snapshotResults = telemetry.filter(
+      (event) => event.name === 'autosave.snapshot.result'
+    )
+    const expectRetryCount = (correlationId: string, expected: number) => {
+      const snapshotResult = snapshotResults.find(
+        (event) => event.properties?.correlationId === correlationId
+      )
+      assert.ok(
+        snapshotResult,
+        `snapshot.result telemetry for ${correlationId} should exist`
+      )
+      assert.equal(
+        snapshotResult.properties?.retryCount,
+        expected,
+        `retryCount for ${correlationId} should match expectation`
+      )
+    }
+
+    expectRetryCount('corr-guard-disabled', 1)
+    expectRetryCount('corr-fatal-final', 1)
+    expectRetryCount('corr-success-final', 1)
   })
 
   it('autosave.status テレメトリの phase を saving/backoff/saved と guard 無効化で検証する', async () => {
