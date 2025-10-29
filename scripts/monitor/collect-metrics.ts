@@ -20,7 +20,6 @@ export type TelemetryEventName =
   | 'flag_resolution'
   | 'merge.result'
   | 'merge.trace'
-  | 'export.started'
   | 'export.result'
   | 'plugins.invoked'
   | 'plugins.completed'
@@ -213,13 +212,6 @@ export interface MergeResultPayload {
 
 export type ExportFormat = 'md' | 'csv' | 'jsonl' | 'package';
 
-export interface ExportStartedPayload {
-  readonly stage: 'started';
-  readonly format: ExportFormat;
-  readonly runId: string;
-  readonly duration_ms?: number;
-}
-
 export interface ExportResultDetailTelemetry {
   readonly duration_ms: number;
 }
@@ -340,7 +332,6 @@ export interface TelemetryPayloads {
   readonly 'flag_resolution': FlagResolutionPayload;
   readonly 'merge.result': MergeResultPayload;
   readonly 'merge.trace': MergeTracePayload;
-  readonly 'export.started': ExportStartedPayload;
   readonly 'export.result': ExportResultPayload;
   readonly 'plugins.invoked': PluginEventPayload;
   readonly 'plugins.completed': PluginEventPayload;
@@ -857,13 +848,6 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           metric: 'merge_auto_success_rate',
           rollbackTo: 'A-2',
         },
-      },
-      {
-        event: 'export.started',
-        description: 'Export 開始時の format/runId を Reporter の進捗計測と合わせる。',
-        jsonlFields: ['payload.format', 'payload.runId', 'payload.stage'],
-        retryable: true,
-        pipelineStage: 'collector',
       },
       {
         event: 'export.result',

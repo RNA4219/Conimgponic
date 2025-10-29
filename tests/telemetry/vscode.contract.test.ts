@@ -1771,6 +1771,14 @@ describe('vscode extension telemetry contract (RED)', () => {
     )
     deepStrictEqual(failureErrorSchema.required, ['code', 'message', 'retryable'])
   })
+  test('export.result の単一イベント契約に統合し export.started を廃止する', () => {
+    const started = findTelemetrySpec('export.started')
+    strictEqual(
+      started,
+      undefined,
+      'export.started telemetry spec must be removed from the Collector contract',
+    )
+  })
   test('export.result payload は artifacts.bytes に実計測したバイト数を設定する', () => {
     const runId = 'run-telemetry'
     const durationMs = 42
