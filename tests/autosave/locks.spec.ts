@@ -14,10 +14,12 @@ import {
   FALLBACK_LOCK_PATH,
   FALLBACK_LOCK_TTL_MS,
   WEB_LOCK_TTL_MS,
+  ProjectLockError,
+  projectLockApi,
   type ProjectLockEvent,
   type ProjectLockLease
 } from '../../src/lib/locks'
-import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
+import { AUTOSAVE_RETRY_POLICY } from '../../src/lib/autosave'
 import {
   ENABLED_GUARD,
   scenario as baseScenario,
@@ -704,6 +706,63 @@ baseScenario(
     assert.equal(lease!.viaFallback, false)
     assert.equal(typeof lease!.ttlMillis, 'number')
     assert.equal(typeof lease!.resource, 'string')
+  }
+)
+
+baseScenario(
+  'AS-I-09: Lock acquisition failure emits autosave.write.failed telemetry',
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 3, 0, 0, 0) })
+
+    const failure = new ProjectLockError('acquire-denied', 'Mock failure', {
+      operation: 'acquire',
+      retryable: true
+    })
+    const withProjectLockMock = t.mock.method(projectLockApi, 'withProjectLock', async () => {
+      throw failure
+    })
+    t.after(() => {
+      withProjectLockMock.mock.restore()
+    })
+
+    const runner = ctx.initAutoSave(createStoryboard, { disabled: false }, ENABLED_GUARD)
+    t.after(async () => {
+      await runner.dispose()
+    })
+
+    runner.markDirty({ pendingBytes: 2048 })
+
+    const policy = ctx.AUTOSAVE_POLICY
+    t.mock.timers.tick(policy.debounceMs)
+    await Promise.resolve()
+    t.mock.timers.tick(policy.idleMs)
+
+    for (let attempt = 0; attempt < AUTOSAVE_RETRY_POLICY.maxAttempts; attempt += 1) {
+      const delay = Math.min(
+        AUTOSAVE_RETRY_POLICY.initialDelayMs * Math.pow(AUTOSAVE_RETRY_POLICY.multiplier, attempt),
+        AUTOSAVE_RETRY_POLICY.maxDelayMs
+      )
+      t.mock.timers.tick(delay)
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+
+    const failureEvents = ctx.runnerTelemetry.filter(
+      (event) => (event.detail as { event?: unknown } | undefined)?.event === 'autosave.write.failed'
+    )
+    assert.ok(
+      failureEvents.length > 0,
+      'autosave.write.failed telemetry should be recorded for lock acquisition failure'
+    )
+    const detail = failureEvents.at(-1)!.detail as Record<string, unknown>
+    assert.equal(detail.event, 'autosave.write.failed')
+    assert.equal(typeof detail.duration_ms, 'number')
+    assert.equal(detail.error_code, 'lock-unavailable')
+    assert.equal(detail.retryable, true)
+    const cause = detail.cause as Record<string, unknown> | undefined
+    assert.ok(cause, 'autosave.write.failed telemetry must include cause metadata')
+    assert.equal(cause!.name, 'ProjectLockError')
+    assert.equal(typeof cause!.message, 'string')
   }
 )
 

@@ -176,9 +176,9 @@ scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', 
   })
 
   const disposeEvents = runnerTelemetry.filter(
-    (event) => event.detail && (event.detail as { event?: unknown }).event === 'autosave.save.error'
+    (event) => event.detail && (event.detail as { event?: unknown }).event === 'autosave.write.failed'
   )
-  assert.ok(disposeEvents.length > 0, 'dispose should emit autosave.save.error telemetry')
+  assert.ok(disposeEvents.length > 0, 'dispose should emit autosave.write.failed telemetry')
   const disposeEvent = disposeEvents[disposeEvents.length - 1]!
   assert.equal(disposeEvent.phase, 'disabled')
   assert.equal(disposeEvent.slo, 'p95-latency')
@@ -266,6 +266,23 @@ scenario('AS-I-06: retry scheduling emits autosave runner telemetry', async (t, 
   assert.equal(exhaustedDetail.event, 'retry-exhausted')
   assert.equal(exhaustedDetail.code, 'lock-unavailable')
   assert.equal(exhaustedDetail.retryCount, AUTOSAVE_RETRY_POLICY.maxAttempts)
+
+  const writeFailedEvents = runnerTelemetry.filter(
+    (event) => event.detail && (event.detail as { event?: unknown }).event === 'autosave.write.failed'
+  )
+  assert.ok(
+    writeFailedEvents.length > 0,
+    'autosave.write.failed telemetry should be recorded for retry exhaustion'
+  )
+  const writeFailedDetail = writeFailedEvents.at(-1)!.detail as Record<string, unknown>
+  assert.equal(writeFailedDetail.event, 'autosave.write.failed')
+  assert.equal(typeof writeFailedDetail.duration_ms, 'number')
+  assert.equal(writeFailedDetail.error_code, 'lock-unavailable')
+  assert.equal(writeFailedDetail.retryable, true)
+  const cause = writeFailedDetail.cause as Record<string, unknown> | undefined
+  assert.ok(cause, 'autosave.write.failed telemetry must include cause metadata')
+  assert.equal(cause!.name, 'ProjectLockError')
+  assert.equal(typeof cause!.message, 'string')
 })
 
 let resumeLock: (() => Promise<void>) | null = null
