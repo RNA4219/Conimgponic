@@ -1554,9 +1554,11 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(spec, 'export.success telemetry spec is missing')
 
     deepStrictEqual(spec.jsonlFields, [
+      'payload.status',
       'payload.runId',
       'payload.matchRate',
       'payload.formats',
+      'payload.duration_ms',
       'payload.detail.duration_ms',
       'payload.artifacts[].format',
       'payload.artifacts[].name',
@@ -1572,14 +1574,22 @@ describe('vscode extension telemetry contract (RED)', () => {
     )
 
     const payloadSchema = assertPayloadSchema(thenClause, [
+      'status',
       'runId',
       'matchRate',
       'formats',
+      'duration_ms',
       'detail',
       'artifacts',
     ])
 
     assertOk(payloadSchema.properties, 'export.success payload schema must define properties')
+    const statusSchema = resolveSchemaRef(payloadSchema.properties.status)
+    assertOk(statusSchema, 'export.success payload must define status schema')
+    deepStrictEqual(statusSchema, { type: 'string', const: 'success' })
+    const durationSchemaTop = resolveSchemaRef(payloadSchema.properties.duration_ms)
+    assertOk(durationSchemaTop, 'export.success payload must define duration_ms schema')
+    deepStrictEqual(durationSchemaTop, { type: 'number', minimum: 0 })
     const artifactsSchema = resolveSchemaRef(payloadSchema.properties.artifacts)
     assertOk(artifactsSchema, 'export.success payload must define artifacts schema')
     deepStrictEqual(artifactsSchema.type, 'array')
@@ -1647,6 +1657,8 @@ describe('vscode extension telemetry contract (RED)', () => {
     strictEqual(telemetry.event, 'export.success')
 
     const payload = telemetry.payload as {
+      readonly status?: string
+      readonly duration_ms?: number
       readonly detail?: { readonly duration_ms: number }
       readonly artifacts?: ReadonlyArray<{
         readonly format: string
@@ -1722,6 +1734,8 @@ describe('vscode extension telemetry contract (RED)', () => {
     }))
 
     deepStrictEqual(actualArtifacts, expectedArtifacts)
+    strictEqual(payload.status, 'success')
+    strictEqual(payload.duration_ms, durationMs)
     assertOk(payload.detail, 'export.success payload must include detail')
     deepStrictEqual(payload.detail, { duration_ms: durationMs })
   })
@@ -1794,9 +1808,11 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(exportFailed, 'export.failed telemetry spec is missing')
 
     deepStrictEqual(exportFailed.jsonlFields, [
+      'payload.status',
       'payload.runId',
       'payload.matchRate',
       'payload.formats',
+      'payload.duration_ms',
       'payload.detail.duration_ms',
       'payload.error.code',
       'payload.error.message',
@@ -1812,9 +1828,11 @@ describe('vscode extension telemetry contract (RED)', () => {
       (entry) => entry.if?.properties?.event?.const === 'export.failed'
     )
     const exportPayloadSchema = assertPayloadSchema(exportThen, [
+      'status',
       'runId',
       'matchRate',
       'formats',
+      'duration_ms',
       'detail',
       'error',
       'entries',
@@ -1834,6 +1852,12 @@ describe('vscode extension telemetry contract (RED)', () => {
     )
     deepStrictEqual(exportBackoffSchema, { type: 'number', minimum: 0 })
 
+    const exportStatusSchema = resolveSchemaRef(exportPayloadSchema.properties.status)
+    assertOk(exportStatusSchema, 'export.failed payload must define status schema')
+    deepStrictEqual(exportStatusSchema, { type: 'string', const: 'failure' })
+    const exportDurationSchema = resolveSchemaRef(exportPayloadSchema.properties.duration_ms)
+    assertOk(exportDurationSchema, 'export.failed payload must define duration_ms schema')
+    deepStrictEqual(exportDurationSchema, { type: 'number', minimum: 0 })
     const exportDetailSchema = resolveSchemaRef(exportPayloadSchema.properties.detail)
     assertOk(exportDetailSchema, 'export.failed payload must define detail schema')
     deepStrictEqual(exportDetailSchema.type, 'object')

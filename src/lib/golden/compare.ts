@@ -174,9 +174,11 @@ export function createTelemetryEvent(
   const durationMs = Math.max(0, Math.round(detail.duration_ms))
 
   const basePayload: Record<string, unknown> = {
+    status: comparison.ok ? 'success' : 'failure',
     runId,
     matchRate: comparison.matchRate,
     formats,
+    duration_ms: durationMs,
     detail: { duration_ms: durationMs },
   }
   if (comparison.ok) {

@@ -237,9 +237,11 @@ export interface ExportArtifactTelemetry {
 }
 
 export interface ExportSuccessPayload {
+  readonly status: 'success';
   readonly runId: string;
   readonly matchRate: number;
   readonly formats: ReadonlyArray<string>;
+  readonly duration_ms: number;
   readonly detail: ExportResultDetailTelemetry;
   readonly artifacts: ReadonlyArray<ExportArtifactTelemetry>;
 }
@@ -252,9 +254,11 @@ export interface ExportFailureEntryTelemetry {
 }
 
 export interface ExportFailedPayload {
+  readonly status: 'failure';
   readonly runId: string;
   readonly matchRate: number;
   readonly formats: ReadonlyArray<string>;
+  readonly duration_ms: number;
   readonly detail: ExportResultDetailTelemetry;
   readonly error: {
     readonly code: string;
@@ -876,9 +880,11 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         event: 'export.success',
         description: 'Export 正常終了時の runId/matchRate/formats/成果物一覧を Reporter が通知テンプレートへ反映する。',
         jsonlFields: [
+          'payload.status',
           'payload.runId',
           'payload.matchRate',
           'payload.formats',
+          'payload.duration_ms',
           'payload.detail.duration_ms',
           'payload.artifacts[].format',
           'payload.artifacts[].name',
@@ -895,9 +901,11 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         event: 'export.failed',
         description: 'Export 失敗時に retryable と失敗エントリ一覧を記録しローリングバックログに登録する。',
         jsonlFields: [
+          'payload.status',
           'payload.runId',
           'payload.matchRate',
           'payload.formats',
+          'payload.duration_ms',
           'payload.detail.duration_ms',
           'payload.error.code',
           'payload.error.message',
