@@ -597,6 +597,48 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledEvent.properties?.performance?.flush_latency_ms, 0)
   })
 
+  it('status.autosave telemetry encodes guard phase metadata', async () => {
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardEnabled,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {},
+      atomicWrite: async () => ({
+        ok: true,
+        bytes: 1024,
+        generation: 1,
+        lastSuccessAt: new Date('2024-01-01T00:00:02.000Z').toISOString(),
+        lockStrategy: 'web-lock'
+      }),
+      telemetry: telemetry.push.bind(telemetry)
+    })
+
+    bridge.reportDirty(512, guardEnabled)
+
+    const dirtyTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'dirty'
+    )
+    assert.ok(dirtyTelemetry, 'dirty telemetry event is required')
+    assert.deepEqual(dirtyTelemetry.properties?.guard, { current: 'A-1', rollbackTo: 'A-0' })
+
+    const workspaceGuard: AutoSavePhaseGuardSnapshot = {
+      featureFlag: { value: true, source: 'workspace' },
+      optionsDisabled: false
+    }
+
+    await bridge.handleSnapshotRequest(
+      createRequest('req-guard', 'corr-guard', workspaceGuard, 512, 1)
+    )
+
+    const savedTelemetry = telemetry.find(
+      (event) => event.name === 'autosave.status' && event.properties?.state === 'saved'
+    )
+    assert.ok(savedTelemetry, 'saved telemetry event is required')
+    assert.deepEqual(savedTelemetry.properties?.guard, { current: 'A-2', rollbackTo: 'A-1' })
+  })
+
   it('autosave.snapshot.result telemetry reports zero flush latency when guard short-circuits request', async () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     const times = [

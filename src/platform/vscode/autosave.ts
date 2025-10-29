@@ -133,6 +133,7 @@ export interface AutoSaveTelemetryEventProperties {
   readonly phaseAfter?: AutoSavePhase
   readonly flagSource?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
   readonly lockStrategy?: AutoSaveTelemetryLockStrategy | 'none'
+  readonly guard?: { readonly current: RolloutPhase; readonly rollbackTo: RolloutPhase }
   readonly performance?: { readonly flush_latency_ms: number }
   readonly detail?: { readonly retry_count: number }
   readonly [key: string]: unknown
@@ -350,6 +351,8 @@ const emitTelemetry = (
 ): void => {
   const phaseBefore = statusPhaseForState(context.before)
   const phaseAfter = statusPhaseForState(context.after)
+  const guardCurrent = resolveCollectorPhase(context.guard)
+  const guardRollbackTo = resolveGuardRollbackPhase(guardCurrent)
   const rawProperties = event.properties ?? {}
   const providedRetryCount =
     typeof (rawProperties as { retryCount?: unknown }).retryCount === 'number'
@@ -378,7 +381,8 @@ const emitTelemetry = (
     phaseBefore,
     phaseAfter,
     flagSource: context.guard.featureFlag.source,
-    lockStrategy: context.lockStrategy ?? 'none'
+    lockStrategy: context.lockStrategy ?? 'none',
+    guard: { current: guardCurrent, rollbackTo: guardRollbackTo }
   }
   options.telemetry?.({ ...event, properties })
 }
@@ -453,6 +457,17 @@ const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): RolloutPhase 
       return 'A-1'
     case 'workspace':
       return 'A-2'
+    default:
+      return 'A-0'
+  }
+}
+
+const resolveGuardRollbackPhase = (phase: RolloutPhase): RolloutPhase => {
+  switch (phase) {
+    case 'A-2':
+      return 'A-1'
+    case 'A-1':
+      return 'A-0'
     default:
       return 'A-0'
   }
