@@ -358,7 +358,7 @@
     {
       "if": {
         "properties": {
-          "event": { "const": "export.success" }
+          "event": { "const": "export.result" }
         }
       },
       "then": {
@@ -367,7 +367,10 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "status": { "type": "string", "const": "success" },
+              "status": {
+                "type": "string",
+                "enum": ["success", "failure"]
+              },
               "runId": { "type": "string", "minLength": 1 },
               "matchRate": { "type": "number" },
               "formats": {
@@ -406,44 +409,9 @@
                     "bytes"
                   ]
                 }
-              }
-            },
-            "required": [
-              "status",
-              "runId",
-              "matchRate",
-              "formats",
-              "duration_ms",
-              "detail",
-              "artifacts"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event": { "const": "export.failed" }
-        }
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "status": { "type": "string", "const": "failure" },
-              "runId": { "type": "string", "minLength": 1 },
-              "matchRate": { "type": "number" },
-              "formats": {
-                "type": "array",
-                "items": { "type": "string", "minLength": 1 }
               },
-              "duration_ms": { "type": "number", "minimum": 0 },
-              "detail": { "$ref": "#/definitions/exportDetail" },
               "error": {
-                "type": "object",
+                "type": ["object", "null"],
                 "additionalProperties": false,
                 "properties": {
                   "code": { "type": "string", "minLength": 1 },
@@ -469,7 +437,7 @@
                   "required": ["format", "status"]
                 }
               },
-              "next_backoff_ms": { "type": "number", "minimum": 0 }
+              "next_backoff_ms": { "type": ["number", "null"], "minimum": 0 }
             },
             "required": [
               "status",
@@ -478,9 +446,60 @@
               "formats",
               "duration_ms",
               "detail",
-              "error",
-              "entries",
-              "next_backoff_ms"
+              "artifacts"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "status": { "const": "success" } }
+                },
+                "then": {
+                  "required": ["artifacts"],
+                  "properties": {
+                    "error": { "const": null },
+                    "entries": { "type": "array" },
+                    "next_backoff_ms": { "type": ["number", "null"], "minimum": 0 }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": { "status": { "const": "failure" } }
+                },
+                "then": {
+                  "required": ["error", "entries", "next_backoff_ms"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": { "type": "string", "minLength": 1 },
+                        "message": { "type": "string", "minLength": 1 },
+                        "retryable": { "type": "boolean" }
+                      },
+                      "required": ["code", "message", "retryable"]
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "format": { "type": "string", "minLength": 1 },
+                          "name": { "type": ["string", "null"], "minLength": 1 },
+                          "status": {
+                            "type": "string",
+                            "enum": ["matched", "diff"]
+                          },
+                          "diff": { "type": ["string", "null"], "minLength": 1 }
+                        },
+                        "required": ["format", "status"]
+                      }
+                    },
+                    "next_backoff_ms": { "type": "number", "minimum": 0 }
+                  }
+                }
+              }
             ]
           }
         }
@@ -596,8 +615,7 @@
         "merge.result",
         "merge.trace",
         "export.started",
-        "export.success",
-        "export.failed",
+        "export.result",
         "plugins.invoked",
         "plugins.completed",
         "plugins.failed",

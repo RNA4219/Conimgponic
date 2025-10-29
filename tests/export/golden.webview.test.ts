@@ -165,7 +165,7 @@ async function setupGolden(mutate?: Mutator): Promise<{
 
 function makeTelemetryCollector(): {
   events: Array<{ event: string; payload: Record<string, unknown> }>
-  track: (event: 'export.success' | 'export.failed', payload: Record<string, unknown>) => void
+  track: (event: 'export.result', payload: Record<string, unknown>) => void
 } {
   const events: Array<{ event: string; payload: Record<string, unknown> }> = []
   return {
@@ -343,7 +343,7 @@ describe('export bridge golden comparison', () => {
     }
   })
 
-  test('テレメトリに export.success の成果物情報が含まれる', async () => {
+  test('テレメトリに export.result の成果物情報が含まれる', async () => {
     const ctx = await setupGolden()
     const telemetry = makeTelemetryCollector()
     try {
@@ -356,8 +356,9 @@ describe('export bridge golden comparison', () => {
         telemetry,
       })
       assert.equal(result.ok, true)
-      const succeeded = telemetry.events.find((event) => event.event === 'export.success')
+      const succeeded = telemetry.events.find((event) => event.event === 'export.result')
       assert.ok(succeeded)
+      assert.equal(succeeded.payload.status, 'success')
       assert.equal(succeeded.payload.runId, 'unit')
       const artifacts = succeeded.payload.artifacts as Array<Record<string, unknown>> | undefined
       assert.ok(Array.isArray(artifacts), 'artifacts が配列であること')
@@ -378,7 +379,7 @@ describe('export bridge golden comparison', () => {
     }
   })
 
-  test('AutoSave ロック競合やフォーマット未対応時のエラーが Collector へ telemetry export.failed として送信される', async () => {
+  test('AutoSave ロック競合やフォーマット未対応時のエラーが Collector へ telemetry export.result failure として送信される', async () => {
     const ctx = await setupGolden((outputs) => {
       outputs.csv = `${outputs.csv},oops`
     })
@@ -393,8 +394,9 @@ describe('export bridge golden comparison', () => {
         telemetry,
       })
       assert.equal(result.ok, false)
-      const failed = telemetry.events.find((event) => event.event === 'export.failed')
+      const failed = telemetry.events.find((event) => event.event === 'export.result')
       assert.ok(failed)
+      assert.equal(failed.payload.status, 'failure')
       const error = failed.payload.error as Record<string, unknown>
       assert.ok(error)
       assert.equal(error.code, 'golden.comparison_failed')
