@@ -250,6 +250,7 @@ export interface FallbackLockLeaseRecord {
   readonly acquiredAt: number;
   readonly expiresAt: number;
   readonly ttlSeconds: number;
+  readonly ttlMillis?: number;
   readonly mtime: number;
 }
 
@@ -265,6 +266,7 @@ export const FALLBACK_LOCK_LEASE_SCHEMA = {
     acquiredAt: { type: 'integer', minimum: 0 },
     expiresAt: { type: 'integer', minimum: 0 },
     ttlSeconds: { type: 'number', minimum: 1 },
+    ttlMillis: { type: 'number', minimum: 1 },
     mtime: { type: 'integer', minimum: 0 },
   },
 } as const;
@@ -421,7 +423,19 @@ const fallbackRecordToLease = (
   record: FallbackLockLeaseRecord,
   heartbeatMs: number
 ): ProjectLockLease => {
-  const ttlMillis = Math.max(0, Math.round(record.ttlSeconds * 1000));
+  const normalizeCandidate = (candidate: number | undefined): number | undefined => {
+    if (candidate === undefined) return undefined;
+    if (!Number.isFinite(candidate)) return undefined;
+    if (candidate <= 0) return undefined;
+    return Math.round(candidate);
+  };
+  const ttlCandidates = [
+    normalizeCandidate(record.ttlMillis),
+    normalizeCandidate(record.expiresAt - record.mtime),
+    normalizeCandidate(record.expiresAt - record.acquiredAt),
+    normalizeCandidate(record.ttlSeconds * 1000),
+  ];
+  const ttlMillis = ttlCandidates.find((candidate) => candidate !== undefined) ?? FALLBACK_LOCK_TTL_MS;
   const effectiveHeartbeat = heartbeatMs > 0 ? heartbeatMs : LOCK_HEARTBEAT_INTERVAL_MS;
   const nextHeartbeatAt = Math.min(record.expiresAt, record.mtime + effectiveHeartbeat);
   const renewAttempt =
@@ -704,7 +718,7 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
     }
 
     const ttl = ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS;
-    const ttlSeconds = FALLBACK_LOCK_TTL_MS / 1000;
+    const ttlSeconds = ttl / 1000;
     const isReentrantActiveLease =
       record !== null && record.leaseId === ctx.leaseId && record.expiresAt > now;
     const acquiredAt = isReentrantActiveLease ? record.acquiredAt : now;
@@ -713,7 +727,8 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
       ownerId: ctx.ownerId,
       acquiredAt,
       expiresAt: now + ttl,
-      ttlSeconds, // ← ttlSecondsを正しく記録
+      ttlSeconds,
+      ttlMillis: ttl,
       mtime: now,
     };
 
@@ -868,7 +883,8 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
       await saveJSON(FALLBACK_LOCK_PATH, {
         ...record,
         expiresAt: now + lease.ttlMillis,
-        ttlSeconds: FALLBACK_LOCK_TTL_MS / 1000,
+        ttlSeconds: lease.ttlMillis / 1000,
+        ttlMillis: lease.ttlMillis,
         mtime: now,
       });
     }

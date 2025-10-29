@@ -460,6 +460,63 @@ scenario(
 )
 
 scenario(
+  'AS-LK-24: Fallback conflict warning exposes negotiated TTL from expiresAt delta',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10_000 })
+
+    const negotiatedTtlMs = 45_000
+    const existingRecord = {
+      leaseId: 'override-lease-id',
+      ownerId: 'override-owner-id',
+      acquiredAt: 1_000,
+      expiresAt: 1_000 + negotiatedTtlMs,
+      ttlSeconds: FALLBACK_LOCK_TTL_MS / 1000,
+      mtime: 5_000
+    }
+    ctx.opfs.files.set(FALLBACK_LOCK_PATH, JSON.stringify(existingRecord))
+
+    const warnings: Array<{
+      type: 'lock:warning'
+      warning: 'fallback-degraded'
+      lease: Pick<
+        ProjectLockEvent & { type: 'lock:warning'; warning: 'fallback-degraded' }['lease'],
+        'ttlMillis'
+      >
+    }> = []
+
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      if (event.type === 'lock:warning' && event.warning === 'fallback-degraded') {
+        warnings.push({
+          type: event.type,
+          warning: event.warning,
+          lease: {
+            ttlMillis: event.lease.ttlMillis
+          }
+        })
+      }
+    })
+    t.after(unsubscribe)
+
+    await assert.rejects(
+      async () => {
+        await projectLockApi.acquire({ preferredStrategy: 'file-lock', retry: false, ttlMs: negotiatedTtlMs })
+      },
+      (error: unknown) => {
+        assert.ok(error instanceof ProjectLockError)
+        assert.equal(error.code, 'fallback-conflict')
+        return true
+      }
+    )
+
+    assert.equal(warnings.length, 1, 'expected single fallback conflict warning')
+    assert.equal(warnings[0]?.lease.ttlMillis, negotiatedTtlMs)
+  }
+)
+
+scenario(
   'AS-LK-15: Web Lock acquisition abort skips fallback and enters readonly immediately',
   {
     locks: {
