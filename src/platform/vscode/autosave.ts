@@ -583,6 +583,7 @@ const handleNonRetryableError = (
         retryable: error.retryable,
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
+        phase: errorEnvelopePhase,
         performance: createFlushLatencyPerformance(flushLatencyMs)
       }
     },
@@ -804,6 +805,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             retryable: false,
             correlationId: request.correlationId,
             retryCount: state.retryCount,
+            phase: PHASE_STATUS,
             performance: ZERO_FLUSH_LATENCY
           }
         },
@@ -956,6 +958,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
               retryable: true,
               correlationId: request.correlationId,
               retryCount: state.retryCount,
+              phase: requestEnvelopePhase,
               performance: createFlushLatencyPerformance(retryLatency)
             }
           },
@@ -1022,6 +1025,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           retainedBytes: state.retainedBytes,
           correlationId: request.correlationId,
           retryCount: retryCountForSnapshot,
+          phase: requestEnvelopePhase,
           performance: createFlushLatencyPerformance(successLatency)
         }
       },
