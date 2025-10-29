@@ -367,12 +367,14 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "status": { "type": "string", "const": "success" },
               "runId": { "type": "string", "minLength": 1 },
               "matchRate": { "type": "number" },
               "formats": {
                 "type": "array",
                 "items": { "type": "string", "minLength": 1 }
               },
+              "duration_ms": { "type": "number", "minimum": 0 },
               "detail": { "$ref": "#/definitions/exportDetail" },
               "artifacts": {
                 "type": "array",
@@ -406,7 +408,15 @@
                 }
               }
             },
-            "required": ["runId", "matchRate", "formats", "detail", "artifacts"]
+            "required": [
+              "status",
+              "runId",
+              "matchRate",
+              "formats",
+              "duration_ms",
+              "detail",
+              "artifacts"
+            ]
           }
         }
       }
@@ -423,12 +433,14 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "status": { "type": "string", "const": "failure" },
               "runId": { "type": "string", "minLength": 1 },
               "matchRate": { "type": "number" },
               "formats": {
                 "type": "array",
                 "items": { "type": "string", "minLength": 1 }
               },
+              "duration_ms": { "type": "number", "minimum": 0 },
               "detail": { "$ref": "#/definitions/exportDetail" },
               "error": {
                 "type": "object",
@@ -460,9 +472,11 @@
               "next_backoff_ms": { "type": "number", "minimum": 0 }
             },
             "required": [
+              "status",
               "runId",
               "matchRate",
               "formats",
+              "duration_ms",
               "detail",
               "error",
               "entries",
