@@ -322,6 +322,8 @@ test('stable precision without phase stats keeps diff tab visible but disabled',
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.guard.phaseBRequired, false)
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
+  assert.equal(plan.tabs.initialTab, 'diff')
+  assert.equal(plan.diff.initialTab, 'diff')
 })
 
 test('stable precision keeps diff opt-in until auto apply meets target', () => {
