@@ -21,6 +21,7 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
       const i = idx.get(o.id)
       const seed = normalizeNumber(o.seed)
       const take = normalizeNumber(o.take)
+      const rating = normalizeSceneRating(o.rating)
       if (i != null){
         const sc = next.scenes[i]
         const patch: Partial<Scene> & Record<ImportMode, string> = {
@@ -29,13 +30,14 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
           slate: o.slate ?? sc.slate,
           shot: o.shot ?? sc.shot,
           take: take ?? sc.take,
+          rating: rating ?? sc.rating,
           manual: sc.manual,
           ai: sc.ai
         }
         patch[mode] = String(o.text||'')
         next.scenes[i] = { ...sc, ...patch }
       }else{
-        next.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed: seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take: take })
+        next.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed: seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take: take, rating })
         idx.set(o.id, next.scenes.length - 1)
       }
     }catch{ /* ignore bad line */ }
@@ -122,4 +124,12 @@ function normalizeNumber(value: unknown): number | undefined {
   }
 
   return undefined
+}
+
+function normalizeSceneRating(value: unknown): Scene['rating'] | undefined {
+  const normalized = normalizeNumber(value)
+  if (normalized === undefined) return undefined
+  if (!Number.isInteger(normalized)) return undefined
+  if (normalized < 1 || normalized > 5) return undefined
+  return normalized as Scene['rating']
 }
