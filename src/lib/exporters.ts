@@ -3,7 +3,7 @@ import type { Storyboard } from '../types'
 export type ExportFormat = 'markdown' | 'csv' | 'jsonl' | 'package'
 
 export interface TelemetryCollector {
-  track: (event: 'export.success' | 'export.failed', payload: Record<string, unknown>) => void
+  track: (event: 'export.result', payload: Record<string, unknown>) => void
 }
 
 export type PackageArtifacts = Record<string, string>

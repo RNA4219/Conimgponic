@@ -21,8 +21,7 @@ export type TelemetryEventName =
   | 'merge.result'
   | 'merge.trace'
   | 'export.started'
-  | 'export.success'
-  | 'export.failed'
+  | 'export.result'
   | 'plugins.invoked'
   | 'plugins.completed'
   | 'plugins.failed'
@@ -236,16 +235,6 @@ export interface ExportArtifactTelemetry {
   readonly bytes: number | null;
 }
 
-export interface ExportSuccessPayload {
-  readonly status: 'success';
-  readonly runId: string;
-  readonly matchRate: number;
-  readonly formats: ReadonlyArray<string>;
-  readonly duration_ms: number;
-  readonly detail: ExportResultDetailTelemetry;
-  readonly artifacts: ReadonlyArray<ExportArtifactTelemetry>;
-}
-
 export interface ExportFailureEntryTelemetry {
   readonly format: ExportFormat | `package:${string}`;
   readonly name: string | null;
@@ -253,20 +242,21 @@ export interface ExportFailureEntryTelemetry {
   readonly diff: string | null;
 }
 
-export interface ExportFailedPayload {
-  readonly status: 'failure';
+export interface ExportResultPayload {
+  readonly status: 'success' | 'failure';
   readonly runId: string;
   readonly matchRate: number;
   readonly formats: ReadonlyArray<string>;
   readonly duration_ms: number;
   readonly detail: ExportResultDetailTelemetry;
-  readonly error: {
+  readonly artifacts: ReadonlyArray<ExportArtifactTelemetry>;
+  readonly error?: {
     readonly code: string;
     readonly message: string;
     readonly retryable: boolean;
-  };
-  readonly entries: ReadonlyArray<ExportFailureEntryTelemetry>;
-  readonly next_backoff_ms: number;
+  } | null;
+  readonly entries?: ReadonlyArray<ExportFailureEntryTelemetry>;
+  readonly next_backoff_ms?: number | null;
 }
 
 export interface PluginEventPayload {
@@ -351,8 +341,7 @@ export interface TelemetryPayloads {
   readonly 'merge.result': MergeResultPayload;
   readonly 'merge.trace': MergeTracePayload;
   readonly 'export.started': ExportStartedPayload;
-  readonly 'export.success': ExportSuccessPayload;
-  readonly 'export.failed': ExportFailedPayload;
+  readonly 'export.result': ExportResultPayload;
   readonly 'plugins.invoked': PluginEventPayload;
   readonly 'plugins.completed': PluginEventPayload;
   readonly 'plugins.failed': PluginFailedPayload;
@@ -877,8 +866,9 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         pipelineStage: 'collector',
       },
       {
-        event: 'export.success',
-        description: 'Export 正常終了時の runId/matchRate/formats/成果物一覧を Reporter が通知テンプレートへ反映する。',
+        event: 'export.result',
+        description:
+          'Export 成否を単一イベントで集約し、成果物バイト数と失敗時の再試行情報を Reporter へ伝達する。',
         jsonlFields: [
           'payload.status',
           'payload.runId',
@@ -893,20 +883,6 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.artifacts[].uri',
           'payload.artifacts[].durationMs',
           'payload.artifacts[].bytes',
-        ],
-        retryable: false,
-        pipelineStage: 'reporter',
-      },
-      {
-        event: 'export.failed',
-        description: 'Export 失敗時に retryable と失敗エントリ一覧を記録しローリングバックログに登録する。',
-        jsonlFields: [
-          'payload.status',
-          'payload.runId',
-          'payload.matchRate',
-          'payload.formats',
-          'payload.duration_ms',
-          'payload.detail.duration_ms',
           'payload.error.code',
           'payload.error.message',
           'payload.error.retryable',
