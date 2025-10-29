@@ -34,7 +34,9 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
           manual: sc.manual,
           ai: sc.ai
         }
-        patch[mode] = String(o.text||'')
+        if (typeof o.text === 'string') {
+          patch[mode] = o.text
+        }
         next.scenes[i] = { ...sc, ...patch }
       }else{
         next.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed: seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take: take, rating })
