@@ -293,6 +293,21 @@ export const PROJECT_LOCK_TEST_CASES = Object.freeze({
 const defaultBackoff: BackoffPolicy = { initialDelayMs: 500, factor: 2, maxAttempts: MAX_LOCK_RETRIES };
 const listeners = new Set<ProjectLockEventListener>();
 
+const resolveTtlMillis = (candidate: number | undefined): number =>
+  typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0
+    ? candidate
+    : FALLBACK_LOCK_TTL_MS;
+
+const toRecordTtlSeconds = (ttlMillis: number): number => ttlMillis / 1000;
+
+const ttlMillisFromRecord = (ttlSeconds: number | undefined): number => {
+  if (typeof ttlSeconds === 'number' && Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
+    const derived = Math.round(ttlSeconds * 1000);
+    return derived > 0 ? derived : FALLBACK_LOCK_TTL_MS;
+  }
+  return FALLBACK_LOCK_TTL_MS;
+};
+
 export const projectLockEvents: ProjectLockEventTarget = {
   subscribe(listener) {
     listeners.add(listener);
@@ -425,7 +440,7 @@ const fallbackRecordToLease = (
   record: FallbackLockLeaseRecord,
   heartbeatMs: number
 ): ProjectLockLease => {
-  const ttlMillis = Math.max(0, Math.round(record.ttlSeconds * 1000));
+  const ttlMillis = ttlMillisFromRecord(record.ttlSeconds);
   const storedHeartbeat = record.heartbeatIntervalMs ?? 0;
   const storedNextHeartbeat = record.nextHeartbeatAt ?? 0;
   const fallbackHeartbeat =
@@ -716,8 +731,8 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
       throw makeError('fallback-conflict', 'Fallback lock already held', 'acquire', true);
     }
 
-    const ttl = ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS;
-    const ttlSeconds = ttl / 1000;
+    const ttl = resolveTtlMillis(ctx.ttlMs);
+    const ttlSeconds = toRecordTtlSeconds(ttl);
     const isReentrantActiveLease =
       record !== null && record.leaseId === ctx.leaseId && record.expiresAt > now;
     const acquiredAt = isReentrantActiveLease ? record.acquiredAt : now;
@@ -728,7 +743,7 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
       ownerId: ctx.ownerId,
       acquiredAt,
       expiresAt: now + ttl,
-      ttlSeconds, // ← ttlSecondsを正しく記録
+      ttlSeconds,
       mtime: now,
       heartbeatIntervalMs: heartbeatInterval,
       nextHeartbeatAt: scheduledHeartbeatAt,
@@ -820,7 +835,7 @@ export const acquireProjectLock: AcquireProjectLock = async (options = {}) => {
           const lease =
             ctx.conflictLease ??
             (await readFallbackLeaseSnapshot(ctx.heartbeatMs)) ??
-            buildLease('file-lock', FALLBACK_LOCK_PATH, ctx.ttlMs ?? FALLBACK_LOCK_TTL_MS, ctx.heartbeatMs, ctx);
+            buildLease('file-lock', FALLBACK_LOCK_PATH, resolveTtlMillis(ctx.ttlMs), ctx.heartbeatMs, ctx);
           ctx.conflictLease = undefined;
           projectLockEvents.emit({
             type: 'lock:warning',
@@ -859,6 +874,7 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
     throw makeError('renew-failed', 'Renew aborted by signal', 'renew', true, options.signal.reason);
 
   const now = Date.now();
+  const ttlMillis = resolveTtlMillis(lease.ttlMillis);
   const renewalAnchor = lease.expiresAt - lease.ttlMillis;
   const storedInterval = lease.heartbeatIntervalMs;
   const inferredInterval =
@@ -884,18 +900,19 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
         throw makeError('lease-stale', 'Fallback lease missing for renew', 'renew', false);
       await saveJSON(FALLBACK_LOCK_PATH, {
         ...record,
-        expiresAt: now + lease.ttlMillis,
-        ttlSeconds: lease.ttlMillis / 1000,
+        expiresAt: now + ttlMillis,
+        ttlSeconds: toRecordTtlSeconds(ttlMillis),
         mtime: now,
         heartbeatIntervalMs: heartbeatInterval,
         nextHeartbeatAt: now + heartbeatInterval,
       });
     }
 
-    const nextExpires = Math.max(lease.expiresAt + 1, now + lease.ttlMillis);
+    const nextExpires = Math.max(lease.expiresAt + 1, now + ttlMillis);
     const refreshed: ProjectLockLease = {
       ...lease,
       expiresAt: nextExpires,
+      ttlMillis,
       heartbeatIntervalMs: heartbeatInterval,
       nextHeartbeatAt: now + heartbeatInterval,
       renewAttempt: lease.renewAttempt + 1,

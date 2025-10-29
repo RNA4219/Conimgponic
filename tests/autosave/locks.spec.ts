@@ -527,6 +527,61 @@ scenario(
 )
 
 scenario(
+  'AS-LK-25: Fallback conflict warning retains overridden TTL metadata',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10_000 })
+
+    const customTtlMs = 45_678
+    const secondAttemptTtlMs = 12_345
+    const uuids = ['lease-existing', 'owner-existing', 'lease-contender', 'owner-contender']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const initialLease = await projectLockApi.acquire({
+      preferredStrategy: 'file-lock',
+      retry: false,
+      ttlMs: customTtlMs,
+    })
+
+    const warnings: Array<{
+      type: 'lock:warning'
+      warning: 'fallback-degraded'
+      lease: Pick<ProjectLockLease, 'ttlMillis'>
+    }> = []
+
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      if (event.type === 'lock:warning' && event.warning === 'fallback-degraded') {
+        warnings.push({
+          type: event.type,
+          warning: event.warning,
+          lease: { ttlMillis: event.lease.ttlMillis },
+        })
+      }
+    })
+    t.after(unsubscribe)
+
+    await assert.rejects(async () => {
+      await projectLockApi.acquire({ preferredStrategy: 'file-lock', retry: false, ttlMs: secondAttemptTtlMs })
+    }, (error: unknown) => {
+      assert.ok(error instanceof ProjectLockError)
+      assert.equal(error.code, 'fallback-conflict')
+      return true
+    })
+
+    assert.equal(warnings.length, 1, 'fallback conflict must emit a single degraded warning')
+    assert.equal(warnings[0]?.lease.ttlMillis, customTtlMs)
+
+    await projectLockApi.release(initialLease, { force: true })
+  }
+)
+
+scenario(
   'AS-LK-15: Web Lock acquisition abort skips fallback and enters readonly immediately',
   {
     locks: {
