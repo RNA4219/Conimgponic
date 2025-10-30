@@ -445,15 +445,14 @@ const reasonFromOperation = (operation: ProjectLockOperation): ProjectLockReadon
 
 const scheduleNextHeartbeat = (
   expiresAt: number,
-  referenceTime: number,
+  _referenceTime: number,
   ttl: number,
   acquiredAt: number
 ): number => {
   const effectiveTtl = Math.max(0, ttl);
   const lead = Math.min(HEARTBEAT_LEAD_MS, effectiveTtl);
-  const earliest = Math.max(referenceTime, acquiredAt);
-  const scheduled = expiresAt - lead;
-  return Math.min(expiresAt, Math.max(earliest, scheduled));
+  const scheduled = Math.min(expiresAt - lead, expiresAt);
+  return Math.max(acquiredAt, scheduled);
 };
 
 const buildLease = (
