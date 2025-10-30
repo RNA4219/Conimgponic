@@ -39,6 +39,11 @@ const guardReadonly: AutoSavePhaseGuardSnapshot = {
   optionsDisabled: true
 }
 
+const guardLocalStorage: AutoSavePhaseGuardSnapshot = {
+  featureFlag: { value: true, source: 'localStorage' },
+  optionsDisabled: false
+}
+
 const emptyStoryboard: Storyboard = {
   id: 'sb-empty',
   title: 'Empty Storyboard',
@@ -2700,6 +2705,40 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledTelemetry.properties?.state, 'disabled')
     assert.equal(disabledTelemetry.properties?.phase, 'A-1')
     assert.deepEqual(disabledTelemetry.properties?.performance, { flush_latency_ms: 0 })
+  })
+
+  it('localStorage フラグガードで current phase を A-1 として報告する', async () => {
+    assert.equal(resolveCollectorPhase(guardLocalStorage), 'A-1')
+
+    const telemetry: AutoSaveTelemetryEvent[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardLocalStorage,
+      flags: createDefaultFlags(),
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        /* noop */
+      },
+      atomicWrite: async () => ({
+        ok: true,
+        bytes: 128,
+        generation: 1,
+        lastSuccessAt: new Date('2024-01-01T00:00:01.000Z').toISOString(),
+        lockStrategy: 'web-lock'
+      }),
+      telemetry: (event) => telemetry.push(event)
+    })
+
+    await bridge.handleSnapshotRequest(
+      createRequest('req-guard-local-storage', 'corr-guard-local-storage', guardLocalStorage, 128, 0)
+    )
+
+    const status = telemetry.find(
+      (event) =>
+        event.name === 'autosave.status' && event.properties?.correlationId === 'corr-guard-local-storage'
+    )
+    assert.ok(status, 'localStorage ガードシナリオでは autosave.status telemetry が必要')
+    assert.equal(status.properties?.guard?.current, 'A-1')
   })
 
   it("RED ケース: reportDirty の autosave.status telemetry に guard メタデータを付与する", () => {

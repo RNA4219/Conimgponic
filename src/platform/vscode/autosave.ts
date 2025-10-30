@@ -511,6 +511,7 @@ export const resolveCollectorPhase = (
   }
   switch (guard.featureFlag.source) {
     case 'env':
+    case 'localStorage':
       return 'A-1'
     case 'workspace':
       return 'A-2'
