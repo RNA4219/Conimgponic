@@ -34,6 +34,9 @@ export const FALLBACK_LOCK_TTL_MS = 30_000;
  */
 export const LOCK_HEARTBEAT_INTERVAL_MS = 10_000;
 
+/** Lead time applied when scheduling heartbeats relative to the lease expiry. */
+const HEARTBEAT_LEAD_MS = 5_000;
+
 /**
  * Maximum acquisition retries per call to {@link AcquireProjectLock}. The
  * retry window is bounded to prevent unbounded contention between concurrent
@@ -395,6 +398,19 @@ const emitReadonly = (
 const reasonFromOperation = (operation: ProjectLockOperation): ProjectLockReadonlyReason =>
   operation === 'acquire' ? 'acquire-failed' : operation === 'renew' ? 'renew-failed' : 'release-failed';
 
+const scheduleNextHeartbeat = (
+  expiresAt: number,
+  referenceTime: number,
+  ttl: number,
+  acquiredAt: number
+): number => {
+  const effectiveTtl = Math.max(0, ttl);
+  const lead = Math.min(HEARTBEAT_LEAD_MS, effectiveTtl);
+  const earliest = Math.max(referenceTime, acquiredAt);
+  const scheduled = expiresAt - lead;
+  return Math.min(expiresAt, Math.max(earliest, scheduled));
+};
+
 const buildLease = (
   strategy: LockAcquisitionStrategy,
   resource: string,
@@ -407,7 +423,7 @@ const buildLease = (
   const heartbeatInterval = heartbeatMs > 0 ? heartbeatMs : LOCK_HEARTBEAT_INTERVAL_MS;
   const now = Date.now();
   const expiresAt = now + ttl;
-  const nextHeartbeatAt = Math.min(expiresAt, now + heartbeatInterval);
+  const nextHeartbeatAt = scheduleNextHeartbeat(expiresAt, now, ttl, acquiredAt);
   return {
     leaseId: ctx.leaseId,
     ownerId: ctx.ownerId,
@@ -428,7 +444,13 @@ const fallbackRecordToLease = (record: FallbackLockLeaseRecord): ProjectLockLeas
   const storedHeartbeat = record.heartbeatIntervalMs ?? 0;
   const effectiveHeartbeat = storedHeartbeat > 0 ? storedHeartbeat : LOCK_HEARTBEAT_INTERVAL_MS;
   const storedNextHeartbeat = record.nextHeartbeatAt ?? 0;
-  const nextHeartbeatAt = storedNextHeartbeat > 0 ? storedNextHeartbeat : record.mtime + effectiveHeartbeat;
+  const computedNextHeartbeat = scheduleNextHeartbeat(
+    record.expiresAt,
+    record.mtime,
+    ttlMillis,
+    record.acquiredAt
+  );
+  const nextHeartbeatAt = storedNextHeartbeat > 0 ? storedNextHeartbeat : computedNextHeartbeat;
   const renewAttempt =
     effectiveHeartbeat > 0
       ? Math.max(0, Math.floor(Math.max(0, record.mtime - record.acquiredAt) / effectiveHeartbeat))
@@ -708,7 +730,7 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
     const acquiredAt = isReentrantActiveLease ? record.acquiredAt : now;
     const heartbeatInterval = ctx.heartbeatMs > 0 ? ctx.heartbeatMs : LOCK_HEARTBEAT_INTERVAL_MS;
     const expiresAt = now + ttl;
-    const scheduledHeartbeatAt = Math.min(expiresAt, now + heartbeatInterval);
+    const scheduledHeartbeatAt = scheduleNextHeartbeat(expiresAt, now, ttl, acquiredAt);
     const next: FallbackLockLeaseRecord = {
       leaseId: ctx.leaseId,
       ownerId: ctx.ownerId,
@@ -874,16 +896,22 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
         ttlSeconds: lease.ttlMillis / 1000,
         mtime: now,
         heartbeatIntervalMs: heartbeatInterval,
-        nextHeartbeatAt: now + heartbeatInterval,
+        nextHeartbeatAt: scheduleNextHeartbeat(now + lease.ttlMillis, now, lease.ttlMillis, lease.acquiredAt),
       });
     }
 
     const nextExpires = Math.max(lease.expiresAt + 1, now + lease.ttlMillis);
+    const refreshedNextHeartbeat = scheduleNextHeartbeat(
+      nextExpires,
+      now,
+      lease.ttlMillis,
+      lease.acquiredAt
+    );
     const refreshed: ProjectLockLease = {
       ...lease,
       expiresAt: nextExpires,
       heartbeatIntervalMs: heartbeatInterval,
-      nextHeartbeatAt: now + heartbeatInterval,
+      nextHeartbeatAt: refreshedNextHeartbeat,
       renewAttempt: lease.renewAttempt + 1,
     };
     projectLockEvents.emit({ type: 'lock:renewed', lease: refreshed });
