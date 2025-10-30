@@ -9,7 +9,8 @@ import {
   type AutoSavePhaseGuardSnapshot,
   type AutoSaveSnapshotRequestMessage,
   type AutoSaveSnapshotResultMessage,
-  type AutoSaveStatusMessage
+  type AutoSaveStatusMessage,
+  type AutoSaveStatusState
 } from '../../src/lib/autosave'
 import { resolveFlags } from '../../src/config'
 import {
@@ -19,7 +20,8 @@ import {
   type AutoSaveTelemetryEvent,
   type AutoSaveTelemetryEventProperties,
   type AutoSaveWarnEvent,
-  type AutoSaveHostBridgeOptions
+  type AutoSaveHostBridgeOptions,
+  statusPhaseForState
 } from '../../src/platform/vscode/autosave'
 import type { Day8CollectorSnapshotResultEvent } from '../../src/telemetry/day8Collector'
 import type { Storyboard } from '../../src/types'
@@ -1620,13 +1622,18 @@ describe('createVscodeAutoSaveBridge', () => {
     await bridge.handleSnapshotRequest(successRequest)
 
     const statusEvents = statusTelemetry.filter((event) => event.name === 'autosave.status')
-    const expectStatusPhase = (correlationId: string, state: string, expectedPhase: string) => {
+    const expectStatusPhase = (
+      correlationId: string,
+      state: AutoSaveStatusState,
+      expectedPhase: string
+    ) => {
       const event = statusEvents.find(
         (candidate) =>
           candidate.properties?.correlationId === correlationId && candidate.properties?.state === state
       )
       assert.ok(event, `${state} autosave.status telemetry が必要`)
       assert.equal(event.properties?.phase, expectedPhase)
+      assert.equal(event.properties?.detail?.phase, statusPhaseForState(state))
     }
 
     expectStatusPhase(retryRequest.correlationId, 'saving', retryRequest.phase ?? 'A-2')
@@ -1667,6 +1674,7 @@ describe('createVscodeAutoSaveBridge', () => {
     )
     assert.ok(guardStatus, 'guard 無効化 autosave.status テレメトリが必要')
     assert.equal(guardStatus.properties?.phase, 'A-1')
+    assert.equal(guardStatus.properties?.detail?.phase, statusPhaseForState('disabled'))
   })
 
   it('maintains retryCount when retrying after backoff', async () => {

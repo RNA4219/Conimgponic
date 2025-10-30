@@ -429,13 +429,17 @@ const emitTelemetry = (
       ? (detailPayload as AutoSaveTelemetryEventProperties['detail'])
       : undefined
   })()
+  const detailWithPhase: AutoSaveTelemetryEventProperties['detail'] | undefined =
+    event.name === 'autosave.status'
+      ? ({ ...(normalizedDetail ?? {}), phase: phaseAfter } as AutoSaveTelemetryEventProperties['detail'])
+      : normalizedDetail
   const guardTelemetry =
     event.name === 'autosave.status' || event.name === 'autosave.guard'
       ? encodeGuardTelemetry(context.guard)
       : undefined
   const properties: AutoSaveTelemetryEventProperties = {
     ...rawProperties,
-    ...(normalizedDetail ? { detail: normalizedDetail } : {}),
+    ...(detailWithPhase ? { detail: detailWithPhase } : {}),
     ...(guardTelemetry ? { guard: guardTelemetry } : {}),
     phaseBefore,
     phaseAfter,
