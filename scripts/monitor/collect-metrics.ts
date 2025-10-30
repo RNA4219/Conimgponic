@@ -12,7 +12,8 @@ export type RolloutPhase = 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1';
 export type MetricsKey =
   | 'autosave_p95'
   | 'restore_success_rate'
-  | 'merge_auto_success_rate';
+  | 'merge_auto_success_rate'
+  | 'export_latency_p95';
 
 export type TelemetryEventName =
   | 'status.autosave'
@@ -377,6 +378,8 @@ export interface MetricsInputRecord {
   readonly restore_success_rate: number;
   /** 自動マージ成功率（0〜1） */
   readonly merge_auto_success_rate: number;
+  /** Export 処理の P95 遅延（ミリ秒）。1200ms 未満で安定稼働。 */
+  readonly export_latency_p95: number;
   /** フラグソース（env/localStorage/default）の追跡情報 */
   readonly flag_snapshot?: string;
   /** Collector 内の再試行情報。Analyzer のノイズ除去で利用。 */
@@ -511,6 +514,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     autosave_p95: 2300,
     restore_success_rate: 0.999,
     merge_auto_success_rate: 0.0,
+    export_latency_p95: 1180,
     flag_snapshot: 'env:canary',
     retryable: false,
   },
@@ -522,6 +526,15 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       metric: 'autosave_p95',
       value: 3200,
       threshold: 2500,
+      template: 'templates/alerts/rollout-monitor.md',
+    },
+    {
+      channelType: 'slack',
+      destination: '#launch-autosave',
+      severity: 'warning',
+      metric: 'export_latency_p95',
+      value: 1350,
+      threshold: 1200,
       template: 'templates/alerts/rollout-monitor.md',
     },
     {
@@ -548,6 +561,22 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           metric: 'autosave_p95',
           comparator: 'lte',
           threshold: 2500,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#launch-autosave',
+              severity: 'warning',
+            },
+          ],
+          rollbackTo: 'A-0',
+          rollbackCommand: 'pnpm run flags:rollback --phase A-0',
+        },
+        {
+          metric: 'export_latency_p95',
+          comparator: 'lte',
+          threshold: 1200,
           violationWindowMinutes: 15,
           notifyChannels: ['slack'],
           notifyDestinations: [
@@ -879,7 +908,8 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         retryable: true,
         pipelineStage: 'reporter',
         guardrail: {
-          metric: 'autosave_p95',
+          /** Export P95 遅延（1200ms 未満） */
+          metric: 'export_latency_p95',
           rollbackTo: 'A-0',
         },
       },

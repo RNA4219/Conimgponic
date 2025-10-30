@@ -1644,6 +1644,9 @@ describe('vscode extension telemetry contract (RED)', () => {
     const spec = findTelemetrySpec('export.result')
     assertOk(spec, 'export.result telemetry spec is missing')
 
+    assertOk(spec.guardrail, 'export.result telemetry spec must define guardrail')
+    deepStrictEqual(spec.guardrail.metric, 'export_latency_p95')
+
     deepStrictEqual(spec.jsonlFields, [
       'payload.status',
       'payload.runId',
