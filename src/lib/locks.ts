@@ -632,9 +632,9 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
 
     webLockHandles.set(ctx.leaseId, {
       release: async () => {
-        if (releaseInvoked && !lastReleaseError) return;
+        if (releaseInvoked && !lastReleaseError && !releaseError) return;
         releaseInvoked = true;
-        const previousError = lastReleaseError;
+        const previousError = lastReleaseError ?? releaseError;
         let releaseFailure: ProjectLockError | undefined;
         releaseError = undefined;
         if (releaseMethod) {
@@ -664,7 +664,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
         releaseError = undefined;
         lastReleaseError = undefined;
       },
-      getReleaseError: () => lastReleaseError,
+      getReleaseError: () => lastReleaseError ?? releaseError,
     });
 
     ready.resolve();
