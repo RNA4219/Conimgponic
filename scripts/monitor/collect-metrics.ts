@@ -123,7 +123,13 @@ export interface StatusAutosaveGuardSnapshot {
 }
 
 export interface StatusAutosavePayload {
-  readonly state: 'idle' | 'dirty' | 'saving' | 'saved';
+  readonly state:
+    | 'dirty'
+    | 'saving'
+    | 'saved'
+    | 'backoff'
+    | 'error'
+    | 'disabled';
   readonly debounce_ms: number;
   readonly latency_ms: number;
   readonly attempt: number;
