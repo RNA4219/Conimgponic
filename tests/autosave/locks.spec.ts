@@ -2426,6 +2426,134 @@ scenario(
   }
 )
 
+type ReleaseOutcome = 'fail' | 'success'
+type ReleaseRetryPlan = { outcomes: ReleaseOutcome[]; calls: number }
+const releaseRetryPlansForWebLocks: ReleaseRetryPlan[] = [
+  { outcomes: ['fail', 'fail', 'success'], calls: 0 },
+  { outcomes: ['fail', 'fail', 'fail'], calls: 0 },
+]
+let releaseRetryPlanCursor = 0
+
+scenario(
+  'AS-LK-09i: Web Lock release retries invoke handle.release until success or readonly',
+  {
+    locks: {
+      async request(_key: string, optionsOrCallback: unknown, callback?: unknown) {
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+
+        const plan = releaseRetryPlansForWebLocks[releaseRetryPlanCursor++]
+        if (!plan) throw new Error('Unexpected lock request count')
+
+        const handle: LockHandleLike & { released: Promise<void> } = {
+          async release() {
+            const outcome = plan.outcomes[plan.calls] ?? 'success'
+            plan.calls += 1
+            if (outcome === 'fail') {
+              throw new DOMException(`Release blocked (${plan.calls})`, 'InvalidStateError')
+            }
+          },
+          released: Promise.resolve(),
+        }
+
+        await handler(handle)
+      },
+    },
+  },
+  async (t) => {
+    releaseRetryPlanCursor = 0
+    for (const plan of releaseRetryPlansForWebLocks) plan.calls = 0
+
+    t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
+    const uuids = ['lease-retry-success', 'owner-retry-success', 'lease-retry-fail', 'owner-retry-fail']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const lease = await acquireProjectLock({ preferredStrategy: 'web-lock', retry: false })
+    const firstPlan = releaseRetryPlansForWebLocks[0]
+
+    const expectReleaseFailure = async (expectedCalls: number, delayMs?: number) => {
+      const attempt = releaseProjectLock(lease)
+      if (delayMs && delayMs > 0) {
+        await Promise.resolve()
+        t.mock.timers.tick(delayMs)
+      }
+      const error = (await assert.rejects(async () => attempt)) as ProjectLockError
+      assert.equal(error.code, 'release-failed')
+      assert.equal(firstPlan.calls, expectedCalls, `release must be invoked ${expectedCalls} time(s) after retry`)
+    }
+
+    await expectReleaseFailure(1)
+    await expectReleaseFailure(2, 500)
+
+    const thirdAttempt = releaseProjectLock(lease)
+    await Promise.resolve()
+    t.mock.timers.tick(1000)
+    await thirdAttempt
+
+    assert.equal(firstPlan.calls, 3, 'third attempt must call handle.release a third time')
+
+    const releaseEventsFirst = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:released' }>
+        => event.type === 'lock:released' && event.leaseId === lease.leaseId
+    )
+    assert.equal(releaseEventsFirst.length, 1, 'lock:released must emit once after successful retry')
+
+    const readonlyEventsFirst = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
+        => event.type === 'lock:readonly-entered'
+    )
+    assert.equal(readonlyEventsFirst.length, 0, 'readonly must not trigger when release eventually succeeds')
+
+    events.length = 0
+
+    const secondLease = await acquireProjectLock({ preferredStrategy: 'web-lock', retry: false })
+    const secondPlan = releaseRetryPlansForWebLocks[1]
+
+    const expectReleaseRetry = async (expectedCalls: number, delayMs?: number) => {
+      const attempt = releaseProjectLock(secondLease)
+      if (delayMs && delayMs > 0) {
+        await Promise.resolve()
+        t.mock.timers.tick(delayMs)
+      }
+      const error = (await assert.rejects(async () => attempt)) as ProjectLockError
+      assert.equal(error.code, 'release-failed')
+      assert.equal(secondPlan.calls, expectedCalls, `release must be invoked ${expectedCalls} time(s) after retry`)
+    }
+
+    await expectReleaseRetry(1)
+    await expectReleaseRetry(2, 500)
+    await expectReleaseRetry(3, 1000)
+
+    const releaseEventsSecond = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:released' }>
+        => event.type === 'lock:released' && event.leaseId === secondLease.leaseId
+    )
+    assert.equal(releaseEventsSecond.length, 0, 'lock:released must not emit after three consecutive failures')
+
+    const readonlyEventsSecond = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
+        => event.type === 'lock:readonly-entered' && event.reason === 'release-failed'
+    )
+    assert.equal(readonlyEventsSecond.length, 1, 'readonly downgrade must occur after third consecutive failure')
+
+    const errorEventsSecond = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }>
+        => event.type === 'lock:error' && event.operation === 'release'
+    )
+    assert.equal(errorEventsSecond.length, 3, 'three failures must emit three lock:error events')
+  }
+)
+
 scenario(
   'AS-I-03: Web Lock handle without release resolves via released promise',
   {
