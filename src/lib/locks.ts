@@ -431,6 +431,9 @@ const computeReleaseDelay = (attemptNumber: number): number => {
   return releaseBackoff.initialDelayMs * releaseBackoff.factor ** exponent;
 };
 
+const shouldDeferReadonlyForRelease = (error: ProjectLockError, attempts: number): boolean =>
+  error.code === 'release-failed' && error.retryable && attempts < releaseBackoff.maxAttempts;
+
 const emitReadonly = (
   reason: ProjectLockReadonlyReason,
   error: ProjectLockError,
@@ -1002,8 +1005,7 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     const previous = getReleaseFailure(lease.leaseId);
     const attempts = (previous?.attempts ?? 0) + 1;
     const alreadyReadonly = previous?.readonlyNotified ?? false;
-    const isDeferredReadonly =
-      error.code === 'release-failed' && error.retryable && attempts < releaseBackoff.maxAttempts;
+    const isDeferredReadonly = shouldDeferReadonlyForRelease(error, attempts);
     const shouldEmitReadonly = !alreadyReadonly && !isDeferredReadonly;
     const nextDelay = attempts < releaseBackoff.maxAttempts ? computeReleaseDelay(attempts + 1) : 0;
     const state = rememberReleaseFailure(
@@ -1054,7 +1056,8 @@ const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOpti
     const previous = getReleaseFailure(lease.leaseId);
     const attempts = (previous?.attempts ?? 0) + 1;
     const alreadyReadonly = previous?.readonlyNotified ?? false;
-    const shouldEmitReadonly = !alreadyReadonly;
+    const isDeferredReadonly = shouldDeferReadonlyForRelease(projectError, attempts);
+    const shouldEmitReadonly = !alreadyReadonly && !isDeferredReadonly;
     const nextDelay = attempts < releaseBackoff.maxAttempts ? computeReleaseDelay(attempts + 1) : 0;
     rememberReleaseFailure(lease.leaseId, projectError, attempts, alreadyReadonly || shouldEmitReadonly, nextDelay);
     emitError(projectError);
