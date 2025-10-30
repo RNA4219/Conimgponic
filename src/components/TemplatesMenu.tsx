@@ -131,8 +131,25 @@ export function TemplatesMenu({
       <button className="btn" onClick={()=>setOpen(v=>!v)}>テンプレ</button>
       {open && (
         <div style={{position:'absolute', top:'120%', right:0, zIndex:20, background:'#fff', border:'1px solid #e5e5e5', borderRadius:8, minWidth:240, padding:6, boxShadow:'0 6px 24px rgba(0,0,0,.08)'}}>
-          {list.map(t=> (
-            <div key={t.id} style={{padding:'6px 8px', cursor:'pointer'}} onClick={()=>{ onInsert(t); setOpen(false) }}>{t.name}</div>
+          {list.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              style={{
+                padding: '6px 8px',
+                cursor: 'pointer',
+                width: '100%',
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+              }}
+              onClick={() => {
+                onInsert(t)
+                setOpen(false)
+              }}
+            >
+              {t.name}
+            </button>
           ))}
           <hr />
           <button className="btn" onClick={async()=>{
