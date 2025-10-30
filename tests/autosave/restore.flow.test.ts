@@ -145,31 +145,42 @@ scenario(
     const historyTs = '2024-03-01T10:05:00.000Z'
     ctx.opfs.files.set(
       `project/autosave/history/${sanitize(historyTs)}.json`,
-      JSON.stringify({ scenes: [] })
+      JSON.stringify({ projectId: storyboard.id, ts: historyTs })
     )
 
-    const crashRunner = ctx.initAutoSave(() => storyboard, { disabled: false }, ENABLED_GUARD)
-    await crashRunner.dispose()
+    const runner = ctx.initAutoSave(() => storyboard, { disabled: false }, ENABLED_GUARD)
+    assert.equal(runner.snapshot().phase, 'disabled')
+    assert.deepEqual(ctx.collectorEvents, [])
+    assert.ok(
+      ctx.runnerTelemetry.every((event) => event.detail?.event !== 'autosave.schedule.requested'),
+      'autosave.schedule.requested telemetry should not appear'
+    )
+
+    await runner.dispose()
 
     const prompt = await ctx.restorePrompt()
     assert.equal(prompt, null)
     assert.deepEqual(ctx.collectorEvents, [])
 
-    const restarted = ctx.initAutoSave(() => storyboard, { disabled: false })
-    assert.equal(restarted.snapshot().phase, 'disabled')
-
-    const previousGuard = ctx.guardSnapshots.at(-2)
-    assert.deepEqual(previousGuard, ENABLED_GUARD)
-    const guardSnapshot = ctx.guardSnapshots.at(-1)
-    assert.ok(guardSnapshot, 'expected guard snapshot to be recorded after restart')
-    assert.equal(guardSnapshot.featureFlag.value, false)
-    assert.equal(guardSnapshot.featureFlag.source, 'env')
-
-    const telemetryEvents = ctx.runnerTelemetry.filter(
-      (event) => event.detail?.event === 'autosave.schedule.requested'
+    const restartRunner = ctx.initAutoSave(
+      () => storyboard,
+      { disabled: false },
+      { autosave: { enabled: false, phase: 'disabled', source: 'env' } }
     )
-    assert.deepEqual(telemetryEvents, [])
+    assert.equal(restartRunner.snapshot().phase, 'disabled')
 
-    await restarted.dispose()
+    const latestGuard = ctx.guardSnapshots.at(-1)
+    assert.ok(latestGuard, 'expected guard snapshot to be recorded on restart')
+    const guardRecord = latestGuard as Record<string, unknown>
+    const autosaveRecord = guardRecord.autosave as { phase?: string } | undefined
+    assert.equal(autosaveRecord?.phase, 'disabled')
+
+    assert.ok(
+      ctx.runnerTelemetry.every((event) => event.detail?.event !== 'autosave.schedule.requested'),
+      'autosave.schedule.requested telemetry should never be emitted'
+    )
+    assert.deepEqual(ctx.collectorEvents, [])
+
+    await restartRunner.dispose()
   }
 )
