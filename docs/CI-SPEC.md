@@ -6,10 +6,10 @@
 - 失敗時は**原因が一目で分かるログ**を出す。
 
 ## 2. 必須ジョブ
-1. **build**: `pnpm i && pnpm -s build`（型チェック込み）
+1. **sbom**: Syft or CycloneDX で SBOM 生成（`sbom.json` をアーティファクト化）
 2. **audit**: `pnpm audit --audit-level=moderate` + `osv-scanner`（推奨）
-3. **sbom**: Syft or CycloneDX で SBOM 生成（`sbom.json` をアーティファクト化）
-4. **license**: ライセンス収集（allowlist: MIT/BSD/Apache-2.0 など）
+3. **license**: ライセンス収集（allowlist: MIT/BSD/Apache-2.0 など）
+4. **build**: `pnpm i && pnpm -s build`（型チェック込み）
 5. **golden**: コンパイル→フィクスチャと比較（正規化ルールを適用）
 
 ## 3. 成否判定
