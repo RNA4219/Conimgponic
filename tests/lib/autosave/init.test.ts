@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import type { TestContext } from 'node:test'
 
-import { ENABLED_GUARD, scenario } from './setup'
+import {
+  ENABLED_GUARD,
+  createLocalStorageStub,
+  type LocalStorageStub,
+  scenario
+} from './setup'
 
 import type { AutoSaveError } from '../../../src/lib/autosave'
 import type { Storyboard } from '../../../src/types'
@@ -100,6 +105,39 @@ scenario(
     assert.ok(telemetry.length > 0)
     const last = telemetry.at(-1)!
     assert.equal(last.detail?.flag_source, 'env')
+  }
+)
+
+scenario(
+  'legacy localStorage key enables guard resolution from storage',
+  async (t: TestContext, { initAutoSave, runnerTelemetry }) => {
+    const storage = createLocalStorageStub({ 'flag:autoSave.enabled': 'true' })
+    const scope = globalThis as typeof globalThis & { localStorage?: LocalStorageStub }
+    const previousDescriptor = Object.getOwnPropertyDescriptor(scope, 'localStorage')
+    Object.defineProperty(scope, 'localStorage', {
+      value: storage,
+      configurable: true,
+      writable: true
+    })
+    t.after(() => {
+      storage.clear()
+      if (previousDescriptor) {
+        Object.defineProperty(scope, 'localStorage', previousDescriptor)
+      } else {
+        delete scope.localStorage
+      }
+    })
+
+    const runner = initAutoSave(() => makeStoryboard(['legacy-storage']), { disabled: false })
+    assert.notEqual(runner.snapshot().phase, 'disabled')
+    runner.markDirty({ pendingBytes: 256 })
+
+    const telemetry = runnerTelemetry.filter(
+      (event) => event.detail?.event === 'autosave.schedule.requested'
+    )
+    assert.ok(telemetry.length > 0)
+    const last = telemetry.at(-1)!
+    assert.equal(last.detail?.flag_source, 'localStorage')
   }
 )
 

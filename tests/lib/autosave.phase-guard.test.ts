@@ -1,7 +1,7 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'; import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'; import { createRequire } from 'node:module'
-import vm from 'node:vm'; import ts from 'typescript'
+import vm from 'node:vm'; import ts from 'typescript'; import { setup as createAutoSaveTestSetup } from './autosave/setup'
 import type { AutoSavePhaseGuardSnapshot } from '../../src/lib/autosave'
 
 type SetupOverrides = { navigator?: any; locks?: any; opfs?: { beforeWrite?: (path: string) => void } }
@@ -285,6 +285,49 @@ scenario(
     assert.equal(guard?.featureFlag?.source, 'workspace')
     assert.equal(guard?.featureFlag?.value, false)
     assert.doesNotThrow(() => runner.dispose())
+  }
+)
+
+test(
+  'fallback guard enables autosave when import.meta env flag set',
+  async (t) => {
+    const { initAutoSave } = await createAutoSaveTestSetup(t, {
+      importMetaEnv: { VITE_AUTOSAVE_ENABLED: 'true' }
+    })
+    const scope = globalThis as typeof globalThis & {
+      __AUTOSAVE_ENABLED__?: boolean
+      process?: { env?: Record<string, unknown> }
+    }
+    const hadRuntimeFlag = Object.prototype.hasOwnProperty.call(scope, '__AUTOSAVE_ENABLED__')
+    const previousRuntimeFlag = scope.__AUTOSAVE_ENABLED__
+    delete scope.__AUTOSAVE_ENABLED__
+    t.after(() => {
+      if (hadRuntimeFlag) {
+        scope.__AUTOSAVE_ENABLED__ = previousRuntimeFlag!
+      } else {
+        delete scope.__AUTOSAVE_ENABLED__
+      }
+    })
+    const processEnv = scope.process?.env as Record<string, unknown> | undefined
+    const hadProcessFlag =
+      processEnv != null && Object.prototype.hasOwnProperty.call(processEnv, 'VITE_AUTOSAVE_ENABLED')
+    const previousProcessFlag = hadProcessFlag ? processEnv!.VITE_AUTOSAVE_ENABLED : undefined
+    if (processEnv) {
+      delete processEnv.VITE_AUTOSAVE_ENABLED
+    }
+    t.after(() => {
+      if (!processEnv) return
+      if (hadProcessFlag) {
+        processEnv.VITE_AUTOSAVE_ENABLED = previousProcessFlag
+      } else {
+        delete processEnv.VITE_AUTOSAVE_ENABLED
+      }
+    })
+
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false })
+
+    assert.equal(runner.snapshot().phase, 'idle')
+    await assert.doesNotReject(async () => runner.dispose())
   }
 )
 
