@@ -75,6 +75,40 @@ test('beta precision renders uniform layout sections', () => {
   assert.doesNotMatch(html, /data-block="edit-modal"/)
 })
 
+test('legacy precision navigation retains review tab order for arrow keys', () => {
+  const plan = planDiffMergeView('legacy')
+  const tabs = plan.tabs.map((tab) => tab.key)
+  assert.deepEqual(tabs, ['review'])
+
+  let active: DiffMergeSubTabKey = plan.initialTab
+  const selected: DiffMergeSubTabKey[] = []
+  const handler = createDiffMergeNavigationKeyHandler({
+    tabs,
+    resolveActive: () => active,
+    onSelect: (key) => {
+      selected.push(key)
+      active = key
+    },
+  })
+
+  const simulate = (key: 'ArrowLeft' | 'ArrowRight') => {
+    let prevented = false
+    handler({
+      key,
+      preventDefault: () => {
+        prevented = true
+      },
+    } as unknown as React.KeyboardEvent<HTMLDivElement>)
+    return prevented
+  }
+
+  assert.equal(active, 'review')
+  assert.equal(simulate('ArrowRight'), true)
+  assert.equal(simulate('ArrowLeft'), true)
+  assert.deepEqual(selected, [])
+  assert.equal(active, 'review')
+})
+
 test('stable precision navigation cycles tabs with arrow keys', () => {
   // Guardrails: HUB.codex.md と TASKS.md の TDD 要求を引用し、ArrowLeft/Right の
   // キー操作シミュレーションで DiffMergeSubTabKey が循環することを赤テストで
@@ -133,6 +167,50 @@ test('stable precision navigation cycles tabs with arrow keys', () => {
   assert.equal(prevented, undefined)
   assert.deepEqual(selected, ['merged', 'review', 'diff', 'review', 'merged'])
   assert.equal(active, 'merged')
+})
+
+test('beta precision diff tab preserves navigation shortcuts and controls', () => {
+  const plan = planDiffMergeView('beta')
+  const tabs = plan.tabs.map((tab) => tab.key)
+  assert.deepEqual(tabs, ['review', 'diff', 'merged'])
+
+  let active: DiffMergeSubTabKey = plan.initialTab
+  const selected: DiffMergeSubTabKey[] = []
+  const handler = createDiffMergeNavigationKeyHandler({
+    tabs,
+    resolveActive: () => active,
+    onSelect: (key) => {
+      selected.push(key)
+      active = key
+    },
+  })
+
+  const simulate = (key: 'ArrowLeft' | 'ArrowRight') => {
+    let prevented = false
+    handler({
+      key,
+      preventDefault: () => {
+        prevented = true
+      },
+    } as unknown as React.KeyboardEvent<HTMLDivElement>)
+    return prevented
+  }
+
+  assert.equal(active, 'review')
+  assert.equal(simulate('ArrowRight'), true)
+  assert.deepEqual(selected, ['diff'])
+  assert.equal(active, 'diff')
+
+  assert.equal(simulate('ArrowLeft'), true)
+  assert.deepEqual(selected, ['diff', 'review'])
+  assert.equal(active, 'review')
+
+  const html = render('beta')
+  assert.match(html, /aria-keyshortcuts="ArrowLeft ArrowRight"/)
+  assert.match(html, /data-testid="diff-merge-tab-review"/)
+  assert.match(html, /data-testid="diff-merge-tab-diff"/)
+  assert.match(html, /data-testid="diff-merge-hunk-h1-toggle"/)
+  assert.match(html, /data-testid="diff-merge-queue-selected"/)
 })
 
 const storageKeyFor = (precision: 'legacy' | 'beta' | 'stable') => `diff-merge.lastTab.${precision}`
