@@ -37,6 +37,29 @@ test('test:coverage script prepares coverage directory and writes into it', () =
   );
 });
 
+test('test:coverage script collects files for all default suffixes', () => {
+  const script = resolveScript('test:coverage');
+
+  const runSelectedPath = fileURLToPath(new URL('../../scripts/test/run-selected.ts', import.meta.url));
+  const runSelectedSource = readFileSync(runSelectedPath, 'utf8');
+  const suffixesMatch = runSelectedSource.match(
+    /const DEFAULT_TEST_SUFFIXES = \[(?<items>[\s\S]*?)\] as const;/,
+  );
+
+  assert.ok(suffixesMatch?.groups?.items, 'DEFAULT_TEST_SUFFIXES definition must exist');
+
+  const suffixes = JSON.parse(
+    `[${suffixesMatch.groups.items.replace(/'/g, '"')}]`,
+  ) as string[];
+
+  for (const suffix of suffixes) {
+    assert.ok(
+      script.includes(suffix),
+      `test:coverage script must reference default suffix ${suffix}`,
+    );
+  }
+});
+
 test('test:junit script prepares reports directory before writing junit report', () => {
   const script = resolveScript('test:junit');
   assert.match(
