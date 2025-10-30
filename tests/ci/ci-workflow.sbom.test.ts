@@ -96,6 +96,16 @@ describe('ci workflow sbom job', () => {
     }
   });
 
+  test('configures sbom log upload conditional on syft failure output', async () => {
+    const workflow = await loadWorkflow();
+    const sbomSteps = expectJobSteps(workflow.jobs?.sbom, 'sbom job must exist');
+
+    expectUploadStep(sbomSteps, 'sbom-log', 'sbom log upload step must exist', {
+      stepName: 'Upload SBOM log on failure',
+      ifCondition: "steps.generate_sbom.outputs.exit_code != '0'",
+    });
+  });
+
   test('uploads sbom log artifact only on failure', async () => {
     const workflow = await loadWorkflow();
     const sbomSteps = expectJobSteps(workflow.jobs?.sbom, 'sbom job must exist');
@@ -105,7 +115,6 @@ describe('ci workflow sbom job', () => {
       'sbom job must upload sbom log artifact on failure',
       {
         stepName: 'Upload SBOM log on failure',
-        ifCondition: "steps.generate_sbom.outputs.exit_code != '0'",
       },
     );
 
