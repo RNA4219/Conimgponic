@@ -1,0 +1,29 @@
+{
+  "id": "src/components/DiffMergeView.tsx",
+  "role": "ui",
+  "public_api": [
+    "DiffMergeView",
+    "createDiffMergeController",
+    "planDiffMergeView",
+    "resolveDiffMergeStoredTab"
+  ],
+  "summary": "DiffMerge のビュー層。lib 層の diffMergePlan.ts から計画情報とキーボード操作ハンドラを受け取り、diffMergeState.js が提供するコントローラと結合してタブ/ハンク UI を描画する。",
+  "deps_out": [
+    "src/components/diffMergeState.js",
+    "src/lib/merge/diffMergePlan.ts"
+  ],
+  "deps_in": [
+    "src/components/MergeDock.tsx",
+    "tests/components/DiffMergeView.test.tsx",
+    "tests/components/DiffMergeView.localStorage-read.spec.tsx",
+    "tests/components/DiffMergeView.localStorage-remove.spec.tsx",
+    "tests/merge/diff-merge-view-state.test.ts",
+    "tests/merge/merge-dock-tabs.test.ts"
+  ],
+  "risks": ["lib 層のプラン仕様がズレると UI とテレメトリの契約が破綻する"],
+  "tests": [
+    "tests/components/DiffMergeView.test.tsx",
+    "tests/merge/diff-merge-view-state.test.ts"
+  ],
+  "generated_at": "2025-10-21T12:15:00Z"
+}

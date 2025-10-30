@@ -134,6 +134,13 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/platform/vscode/*reload*.test.ts',
     'tests/platform/vscode/**/*reload*.test.ts',
   ],
+  'diff-merge': [
+    'tests/lib/merge/diffMergeViewPlan.spec.ts',
+    'tests/merge/diff-merge-view-state.test.ts',
+    'tests/merge/merge-dock-tabs.test.ts',
+    'tests/components/DiffMergeView.test.tsx',
+    'tests/components/DiffMergeView.*.spec.tsx'
+  ],
   ci: ['tests/ci/ci-*.test.ts', 'tests/ci/security-*.test.ts'],
   cli: ['tests/ci/test-commands.test.ts', 'tests/cli/*.test.ts', 'tests/cli/**/*.test.ts'],
   telemetry: ['tests/telemetry/*.test.ts'],
