@@ -64,28 +64,47 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
     const cols = parseCSVLine(lines[i])
     const id = cols[idIdx]?.replace(/^"|"$/g,'')
     const text = cols[textIdx]?.replace(/^"|"$/g,'').replace(/\\n/g,'\n') || ''
-    const seed = cols[seedIdx] ? Number(cols[seedIdx]) : undefined
+    const seed = seedIdx >= 0 ? normalizeNumber(cols[seedIdx]) : undefined
     const tone = cols[toneIdx]?.replace(/^"|"$/g,'') || undefined
     const slate = slateIdx>=0? (cols[slateIdx]?.replace(/^"|"$/g,'') || undefined): undefined
     const shot = shotIdx>=0? (cols[shotIdx]?.replace(/^"|"$/g,'') || undefined): undefined
-    const take = takeIdx>=0? (cols[takeIdx]? Number(cols[takeIdx]): undefined): undefined
+    const take = takeIdx >= 0 ? normalizeNumber(cols[takeIdx]) : undefined
     if (!id) continue
     const j = idx.get(id)
     if (j != null){
       const sc = next.scenes[j]
       const patch: Partial<Scene> & Record<ImportMode, string> = {
-        seed: Number.isFinite(seed)? seed: sc.seed,
+        seed: seed ?? sc.seed,
         tone: tone ?? sc.tone,
         slate: slate ?? sc.slate,
         shot: shot ?? sc.shot,
-        take: Number.isFinite(take)? take: sc.take,
+        take: take ?? sc.take,
         manual: sc.manual,
         ai: sc.ai
       }
       patch[mode] = text
       next.scenes[j] = { ...sc, ...patch }
     }else{
-      next.scenes.push({ id, manual: mode==='manual'? text:'', ai: mode==='ai'? text:'', status:'idle', seed: (Number.isFinite(seed)? seed: undefined), tone, assets: [], slate, shot, take: Number.isFinite(take)? take: undefined })
+      const scene: Scene = {
+        id,
+        manual: mode === 'manual' ? text : '',
+        ai: mode === 'ai' ? text : '',
+        status: 'idle',
+        tone,
+        assets: [],
+        slate,
+        shot,
+      }
+
+      if (seed !== undefined) {
+        scene.seed = seed
+      }
+
+      if (take !== undefined) {
+        scene.take = take
+      }
+
+      next.scenes.push(scene)
       idx.set(id, next.scenes.length - 1)
     }
   }
