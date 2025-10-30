@@ -422,7 +422,7 @@ test('stable precision demotes diff tab when auto apply underperforms', () => {
   assert.equal(plan.diff.enabled, false)
 })
 
-test('stable precision demotion reorders diff tab to beta layout when auto rate misses target', () => {
+test('stable precision demotion swaps to beta tab layout with Diff (Beta) badge when auto rate misses target', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.9,
@@ -432,18 +432,17 @@ test('stable precision demotion reorders diff tab to beta layout when auto rate 
 
   assert.equal(plan.autoApplied.rate, 0.84)
   assert.equal(plan.threshold.autoTarget > (plan.autoApplied.rate ?? 0), true)
-  const tabs = plan.tabs.tabs
-  assert.deepEqual(
-    tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
-  )
-  const diffEntry = tabs.at(-1)
+
+  const betaTabs = planMergeDockTabs('beta').tabs
+  assert.deepEqual(plan.tabs.tabs, betaTabs)
+
+  const diffEntry = plan.tabs.tabs.at(-1)
   assert.equal(diffEntry?.id, 'diff')
   assert.equal(diffEntry?.label, 'Diff (Beta)')
   assert.equal(diffEntry?.badge, 'Beta')
 })
 
-test('stable precision demotion shouldDemoteDiff swaps to beta tab layout with Diff (Beta) badge', () => {
+test('stable precision demotion shouldDemoteDiff always yields beta tab order and diff badge', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.88,
@@ -452,10 +451,10 @@ test('stable precision demotion shouldDemoteDiff swaps to beta tab layout with D
   })
 
   assert.equal(plan.autoApplied.meetsTarget, false)
-  assert.deepEqual(
-    plan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
-  )
+
+  const betaTabs = planMergeDockTabs('beta').tabs
+  assert.deepEqual(plan.tabs.tabs, betaTabs)
+
   const diffEntry = plan.tabs.tabs.at(-1)
   assert.equal(diffEntry?.id, 'diff')
   assert.equal(diffEntry?.label, 'Diff (Beta)')
@@ -474,6 +473,21 @@ test('stable precision auto apply demotion resets initial tab to compiled', () =
   assert.equal(phasePlan.autoApplied.meetsTarget, false)
   assert.equal(phasePlan.tabs.initialTab, 'compiled')
   assert.equal(phasePlan.diff.initialTab, 'compiled')
+})
+
+test('stable precision demotion restores compiled initial tabs with beta layout when diff was last active', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    autoAppliedRate: 0.84,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+    lastTab: 'diff',
+  })
+
+  const betaTabs = planMergeDockTabs('beta').tabs
+  assert.deepEqual(plan.tabs.tabs, betaTabs)
+  assert.equal(plan.tabs.initialTab, 'compiled')
+  assert.equal(plan.diff.initialTab, 'compiled')
 })
 
 test('stable precision demotes diff exposure while keeping tab visible when auto rate misses target', () => {

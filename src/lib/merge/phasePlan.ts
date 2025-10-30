@@ -223,33 +223,35 @@ export const resolveMergeDockPhasePlan = ({
         : false
   const diffConfigured = !!baseTabPlan.diff && precision !== 'legacy'
   const shouldHideDiff = !diffConfigured
-  let diffVisible = !shouldHideDiff
-  let diffExposure: 'hidden' | 'opt-in' | 'default' = diffVisible
-    ? baseTabPlan.diff?.exposure ?? 'hidden'
-    : 'hidden'
-  let diffTabsPlan = diffVisible && baseTabPlan.diff
-    ? {
-        exposure: baseTabPlan.diff.exposure,
-        ...(baseTabPlan.diff.backupAfterMs ? { backupAfterMs: baseTabPlan.diff.backupAfterMs } : {}),
-      }
-    : undefined
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
   const shouldDemoteDiff =
     diffConfigured && meetsTarget === false && (precision !== 'stable' || phaseBRequired)
 
   let tabPlanSource: MergeDockTabPlan = baseTabPlan
-
   if (shouldDemoteDiff && precision === 'stable') {
-    const demotedPlan = planMergeDockTabs('beta', lastTab)
-    tabPlanSource = demotedPlan
+    tabPlanSource = planMergeDockTabs('beta', lastTab)
   }
 
+  let diffVisible = !shouldHideDiff
+  if (shouldDemoteDiff) {
+    diffVisible = true
+  }
+
+  let diffTabsPlan = diffVisible && tabPlanSource.diff
+    ? {
+        ...tabPlanSource.diff,
+      }
+    : undefined
+  let diffExposure: 'hidden' | 'opt-in' | 'default' = diffVisible
+    ? diffTabsPlan?.exposure ?? tabPlanSource.diff?.exposure ?? 'hidden'
+    : 'hidden'
+
   if (!shouldHideDiff && shouldDemoteDiff) {
-    if (precision === 'stable') {
-      diffVisible = true
+    diffTabsPlan = {
+      ...(diffTabsPlan ?? {}),
+      exposure: 'opt-in',
     }
-    diffTabsPlan = { exposure: 'opt-in' }
     diffExposure = 'opt-in'
   }
 
