@@ -318,11 +318,13 @@ export const resolveActiveTabTransition = ({
   if (previousPrecision !== precision) {
     return plan.initialTab
   }
-  if (!previousDiffEnabled && diffEnabled) {
-    return plan.initialTab
-  }
-  if (previousDiffEnabled && !diffEnabled) {
-    return plan.initialTab
+  if (previousDiffEnabled !== diffEnabled) {
+    if (!diffEnabled) {
+      return plan.initialTab
+    }
+    if (!previousDiffEnabled) {
+      return plan.initialTab
+    }
   }
   return sanitizeActiveTab(activeTab, plan, diffVisible)
 }
