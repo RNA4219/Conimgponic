@@ -17,7 +17,8 @@ import {
   ProjectLockError,
   projectLockApi,
   type ProjectLockEvent,
-  type ProjectLockLease
+  type ProjectLockLease,
+  type LockAcquisitionStrategy
 } from '../../src/lib/locks'
 import { AUTOSAVE_RETRY_POLICY } from '../../src/lib/autosave'
 import {
@@ -393,6 +394,30 @@ scenario('AS-HB-04: TTL override schedules heartbeat five seconds before expiry'
   assert.equal(lease.nextHeartbeatAt - now, ttlMs - 5_000)
 
   await releaseProjectLock(lease)
+})
+
+scenario('AS-HB-05: Acquire schedules renew event five seconds before ttl expiry per strategy', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+
+  const scheduled: Array<{ strategy: LockAcquisitionStrategy; nextIn: number }> = []
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    if (event.type === 'lock:renew-scheduled') {
+      scheduled.push({ strategy: event.lease.strategy, nextIn: event.nextHeartbeatInMs })
+    }
+  })
+  t.after(unsubscribe)
+
+  const webLease = await acquireProjectLock({ preferredStrategy: 'web-lock' })
+  const webScheduled = scheduled.findLast((entry) => entry.strategy === 'web-lock')
+  assert.ok(webScheduled, 'web-lock acquisition must emit lock:renew-scheduled')
+  assert.equal(webScheduled.nextIn, WEB_LOCK_TTL_MS - 5_000)
+  await releaseProjectLock(webLease)
+
+  const fallbackLease = await acquireProjectLock({ preferredStrategy: 'file-lock' })
+  const fallbackScheduled = scheduled.findLast((entry) => entry.strategy === 'file-lock')
+  assert.ok(fallbackScheduled, 'file-lock acquisition must emit lock:renew-scheduled')
+  assert.equal(fallbackScheduled.nextIn, FALLBACK_LOCK_TTL_MS - 5_000)
+  await releaseProjectLock(fallbackLease)
 })
 
 scenario(
