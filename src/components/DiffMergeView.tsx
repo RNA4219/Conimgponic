@@ -199,18 +199,34 @@ export const resolveDiffMergeStoredTab = ({
   const isAllowed = (key: DiffMergeSubTabKey | null | undefined): key is DiffMergeSubTabKey =>
     !!key && plan.tabs.some((tab) => tab.key === key)
 
+  let resetToInitialTab = false
+
   if (stored && !isAllowed(stored as DiffMergeSubTabKey)) {
-    storage?.removeItem?.(storageKey)
+    if (storage?.removeItem) {
+      try {
+        storage.removeItem(storageKey)
+      } catch (error) {
+        resetToInitialTab = true
+        console.warn(
+          `DiffMergeView: failed to clear stored tab selection for ${storageKey}`,
+          error,
+        )
+      }
+    }
+    stored = null
   }
 
   if (isAllowed(stored as DiffMergeSubTabKey | null)) {
     return stored as DiffMergeSubTabKey
   }
 
-  const resolvedFallback = isAllowed(fallback ?? null) ? (fallback as DiffMergeSubTabKey) : null
+  const resolvedFallback =
+    resetToInitialTab || !isAllowed(fallback ?? null)
+      ? null
+      : (fallback as DiffMergeSubTabKey)
   const resolved = resolvedFallback ?? plan.initialTab
 
-  if (storage && resolved !== stored) {
+  if (storage && resolved !== stored && !resetToInitialTab) {
     try {
       storage.setItem(storageKey, resolved)
     } catch (error) {
