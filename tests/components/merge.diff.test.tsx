@@ -455,6 +455,27 @@ test('stable precision demotes diff tab when auto apply underperforms', () => {
   assert.equal(plan.diff.enabled, false)
 })
 
+test('stable precision demotion reorders diff tab to beta layout when auto rate misses target', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    autoAppliedRate: 0.84,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.autoApplied.rate, 0.84)
+  assert.equal(plan.threshold.autoTarget > (plan.autoApplied.rate ?? 0), true)
+  const tabs = plan.tabs.tabs
+  assert.deepEqual(
+    tabs.map((entry) => entry.id),
+    ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
+  )
+  const diffEntry = tabs.at(-1)
+  assert.equal(diffEntry?.id, 'diff')
+  assert.equal(diffEntry?.label, 'Diff (Beta)')
+  assert.equal(diffEntry?.badge, 'Beta')
+})
+
 test('stable precision demotion shouldDemoteDiff swaps to beta tab layout with Diff (Beta) badge', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
