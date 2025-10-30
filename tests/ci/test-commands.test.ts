@@ -40,24 +40,29 @@ test('test:coverage script prepares coverage directory and writes into it', () =
 test('test:coverage script collects files for all default suffixes', () => {
   const script = resolveScript('test:coverage');
 
-  const runSelectedPath = fileURLToPath(new URL('../../scripts/test/run-selected.ts', import.meta.url));
-  const runSelectedSource = readFileSync(runSelectedPath, 'utf8');
-  const suffixesMatch = runSelectedSource.match(
-    /const DEFAULT_TEST_SUFFIXES = \[(?<items>[\s\S]*?)\] as const;/,
+  assert.ok(
+    script.includes('const defaultSuffixes = [...DEFAULT_TEST_SUFFIXES];'),
+    'test:coverage script must derive suffix list from DEFAULT_TEST_SUFFIXES',
   );
 
-  assert.ok(suffixesMatch?.groups?.items, 'DEFAULT_TEST_SUFFIXES definition must exist');
+  assert.ok(
+    script.includes("defaultSuffixes.some((suffix) => full.endsWith(suffix))"),
+    'test:coverage script must iterate over every default suffix when matching files',
+  );
+});
 
-  const suffixes = JSON.parse(
-    `[${suffixesMatch.groups.items.replace(/'/g, '"')}]`,
-  ) as string[];
+test('test:junit script collects files for all default suffixes', () => {
+  const script = resolveScript('test:junit');
 
-  for (const suffix of suffixes) {
-    assert.ok(
-      script.includes(suffix),
-      `test:coverage script must reference default suffix ${suffix}`,
-    );
-  }
+  assert.ok(
+    script.includes('const defaultSuffixes = [...DEFAULT_TEST_SUFFIXES];'),
+    'test:junit script must derive suffix list from DEFAULT_TEST_SUFFIXES',
+  );
+
+  assert.ok(
+    script.includes("defaultSuffixes.some((suffix) => full.endsWith(suffix))"),
+    'test:junit script must iterate over every default suffix when matching files',
+  );
 });
 
 test('test:junit script prepares reports directory before writing junit report', () => {
