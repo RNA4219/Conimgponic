@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
+import type { AutoSaveStatusSnapshot } from '../../src/lib/autosave'
 import {
   deriveAutoSaveIndicatorViewModel,
   type AutoSaveHistorySummary,
   type AutoSaveIndicatorLockState
-} from '../../src/components/AutoSaveIndicator'
-import type { AutoSaveStatusSnapshot } from '../../src/lib/autosave'
+} from '../../src/lib/autosave/indicatorViewModel'
 
 const HISTORY_BASELINE: AutoSaveHistorySummary = {
   totalGenerations: 2,

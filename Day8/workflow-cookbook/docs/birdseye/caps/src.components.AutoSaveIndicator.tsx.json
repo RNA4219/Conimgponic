@@ -1,0 +1,15 @@
+{
+  "id": "src/components/AutoSaveIndicator.tsx",
+  "role": "ui",
+  "public_api": ["AutoSaveIndicator"],
+  "summary": "AutoSave 状態を描画する React コンポーネント。ビューモデル生成ロジックを src/lib/autosave/indicatorViewModel.ts へ委譲し、UI レイヤは表示とハンドラ配線のみに責務を限定する。",
+  "deps_out": [
+    "src/lib/autosave/indicatorViewModel.ts"
+  ],
+  "deps_in": [
+    "tests/components/AutoSaveIndicator.test.tsx"
+  ],
+  "risks": ["ビューとロジックの境界が崩れると再利用性が低下する"],
+  "tests": ["tests/components/AutoSaveIndicator.test.tsx"],
+  "generated_at": "2025-10-21T09:30:00Z"
+}

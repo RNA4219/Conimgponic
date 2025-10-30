@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-10-21T08:51:14Z",
+  "generated_at": "2025-10-21T09:30:00Z",
   "nodes": {
     "README.md": {
       "role": "overview",
@@ -95,6 +95,31 @@
       "role": "template",
       "caps": "docs/birdseye/caps/docs.INCIDENT_TEMPLATE.md.json",
       "mtime": "2025-10-16T12:00:00Z"
+    },
+    "src/components/AutoSaveIndicator.tsx": {
+      "role": "ui",
+      "caps": "docs/birdseye/caps/src.components.AutoSaveIndicator.tsx.json",
+      "mtime": "2025-10-21T09:30:00Z"
+    },
+    "src/lib/autosave/indicatorViewModel.ts": {
+      "role": "application",
+      "caps": "docs/birdseye/caps/src.lib.autosave.indicatorViewModel.ts.json",
+      "mtime": "2025-10-21T09:30:00Z"
+    },
+    "src/lib/autosave/indicatorController.ts": {
+      "role": "application",
+      "caps": "docs/birdseye/caps/src.lib.autosave.indicatorController.ts.json",
+      "mtime": "2025-10-21T09:30:00Z"
+    },
+    "tests/lib/autosave/indicatorViewModel.spec.ts": {
+      "role": "test",
+      "caps": "docs/birdseye/caps/tests.lib.autosave.indicatorViewModel.spec.ts.json",
+      "mtime": "2025-10-21T09:30:00Z"
+    },
+    "tests/lib/autosave/indicatorController.spec.ts": {
+      "role": "test",
+      "caps": "docs/birdseye/caps/tests.lib.autosave.indicatorController.spec.ts.json",
+      "mtime": "2025-10-21T09:30:00Z"
     }
   },
   "edges": [
@@ -381,6 +406,42 @@
     [
       "governance/prioritization.yaml",
       "TASK.codex.md"
+    ],
+    [
+      "src/components/AutoSaveIndicator.tsx",
+      "src/lib/autosave/indicatorViewModel.ts"
+    ],
+    [
+      "src/components/AutoSaveIndicator.tsx",
+      "src/lib/autosave/indicatorController.ts"
+    ],
+    [
+      "src/lib/autosave/indicatorController.ts",
+      "src/lib/autosave/indicatorViewModel.ts"
+    ],
+    [
+      "src/lib/autosave/indicatorController.ts",
+      "src/lib/autosave.ts"
+    ],
+    [
+      "src/lib/autosave/indicatorController.ts",
+      "src/config/flags.ts"
+    ],
+    [
+      "src/lib/autosave/indicatorController.ts",
+      "src/lib/locks.ts"
+    ],
+    [
+      "tests/lib/autosave/indicatorViewModel.spec.ts",
+      "src/lib/autosave/indicatorViewModel.ts"
+    ],
+    [
+      "tests/lib/autosave/indicatorController.spec.ts",
+      "src/lib/autosave/indicatorController.ts"
+    ],
+    [
+      "tests/components/AutoSaveIndicator.test.tsx",
+      "src/lib/autosave/indicatorViewModel.ts"
     ]
   ]
 }

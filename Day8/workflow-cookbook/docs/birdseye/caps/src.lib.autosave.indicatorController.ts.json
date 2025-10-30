@@ -1,0 +1,21 @@
+{
+  "id": "src/lib/autosave/indicatorController.ts",
+  "role": "application",
+  "public_api": [
+    "createAutoSaveIndicatorController",
+    "AutoSaveIndicatorTelemetryEvent"
+  ],
+  "summary": "AutoSave ビューモデルをポーリング・ロックイベント購読で更新しつつ telemetry を集約する Zustand ベースのステート管理レイヤ。表示有無の判定や flushTelemetry ハンドルを UI へ提供する。",
+  "deps_out": [
+    "src/lib/autosave/indicatorViewModel.ts",
+    "src/lib/autosave.ts",
+    "src/lib/locks.ts",
+    "src/config/flags.ts"
+  ],
+  "deps_in": [
+    "tests/lib/autosave/indicatorController.spec.ts"
+  ],
+  "risks": ["ポーリング間隔設定を誤ると描画更新と telemetry が遅延する"],
+  "tests": ["tests/lib/autosave/indicatorController.spec.ts"],
+  "generated_at": "2025-10-21T09:30:00Z"
+}
