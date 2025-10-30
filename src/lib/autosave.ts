@@ -1104,7 +1104,7 @@ export function initAutoSave(
       typeof scope.__AUTOSAVE_ENABLED__ === 'boolean' ? scope.__AUTOSAVE_ENABLED__ : null
     const importMetaEnv = readImportMetaEnv()
     const envVar = asBool(
-      scope.process?.env?.VITE_AUTOSAVE_ENABLED ?? importMetaEnv?.VITE_AUTOSAVE_ENABLED
+      importMetaEnv?.VITE_AUTOSAVE_ENABLED ?? scope.process?.env?.VITE_AUTOSAVE_ENABLED
     )
     const env = runtimeEnv ?? envVar
     if (env != null) {
