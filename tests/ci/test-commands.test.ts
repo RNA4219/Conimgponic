@@ -5,6 +5,7 @@ process.env.TS_NODE_COMPILER_OPTIONS ??= JSON.stringify({ moduleResolution: 'bun
 import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -41,6 +42,18 @@ const resolveScript = (name: string): string => {
   const script = scripts[name];
   assert.ok(script, `script ${name} is missing`);
   return script;
+};
+
+const extractEvalSource = (script: string): string => {
+  const match = /--eval\s+"(?<code>.*)"/s.exec(script);
+  assert.ok(match?.groups?.code, 'script must include an eval payload');
+  return match.groups.code;
+};
+
+const extractDefaultSuffixesExpression = (source: string): string => {
+  const match = /const\s+defaultSuffixes\s*=\s*(?<expr>[^;]+);/s.exec(source);
+  assert.ok(match?.groups?.expr, 'script must assign defaultSuffixes from DEFAULT_TEST_SUFFIXES');
+  return match.groups.expr.trim();
 };
 
 test('test:coverage script prepares coverage directory and writes into it', () => {
@@ -84,13 +97,30 @@ test('test:junit script collects files for all default suffixes', () => {
   const script = resolveScript('test:junit');
 
   assert.ok(
-    script.includes('const defaultSuffixes = [...DEFAULT_TEST_SUFFIXES];'),
+    script.includes('const defaultSuffixes = DEFAULT_TEST_SUFFIXES;'),
     'test:junit script must derive suffix list from DEFAULT_TEST_SUFFIXES',
   );
 
   assert.ok(
     script.includes("defaultSuffixes.some((suffix) => full.endsWith(suffix))"),
     'test:junit script must iterate over every default suffix when matching files',
+  );
+});
+
+test('test:junit script references DEFAULT_TEST_SUFFIXES without copying', async () => {
+  const script = resolveScript('test:junit');
+  const evalSource = extractEvalSource(script);
+  const expression = extractDefaultSuffixesExpression(evalSource);
+
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const { DEFAULT_TEST_SUFFIXES } = await import(moduleUrl);
+
+  const evaluated = runInNewContext(expression, { DEFAULT_TEST_SUFFIXES });
+
+  assert.strictEqual(
+    evaluated,
+    DEFAULT_TEST_SUFFIXES,
+    'test:junit script must reference DEFAULT_TEST_SUFFIXES directly to include all suffixes',
   );
 });
 
