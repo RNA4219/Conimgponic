@@ -17,6 +17,46 @@ const expectAutoSaveError = (
 
 const sanitize = (ts: string): string => ts.replace(/[:.]/g, '-')
 
+const EMPTY_INDEX = JSON.stringify({ current: null, history: [], generation: null })
+
+scenario(
+  'AS-TDD-03: corrupted autosave payloads do not surface guard or telemetry side effects',
+  async (_t, ctx) => {
+    const {
+      opfs,
+      restoreFromCurrent,
+      restoreFrom,
+      restorePrompt,
+      guardSnapshots,
+      collectorEvents,
+      runnerTelemetry
+    } = ctx
+
+    const ts = '2024-04-05T06:07:08.009Z'
+    const sanitized = sanitize(ts)
+
+    opfs.files.set('project/autosave/index.json', EMPTY_INDEX)
+    opfs.files.set('project/autosave/current.json', '{ invalid json }')
+    opfs.files.set(`project/autosave/history/${sanitized}.json`, '{ invalid history json }')
+
+    await assert.rejects(
+      () => restoreFromCurrent(),
+      expectAutoSaveError({ code: 'data-corrupted', retryable: false })
+    )
+
+    await assert.rejects(
+      () => restoreFrom(ts),
+      expectAutoSaveError({ code: 'data-corrupted', retryable: false })
+    )
+
+    const prompt = await restorePrompt()
+    assert.equal(prompt, null)
+    assert.deepEqual(guardSnapshots, [])
+    assert.deepEqual(collectorEvents, [])
+    assert.deepEqual(runnerTelemetry, [])
+  }
+)
+
 scenario(
   'restoreFrom surfaces lock acquisition failure as AutoSaveError(lock-unavailable)',
   {
