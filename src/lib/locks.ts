@@ -912,15 +912,16 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     throw aborted;
   }
 
-  const cachedFailure = releaseFailures.get(lease.leaseId);
-  if (cachedFailure) {
-    throw cachedFailure;
-  }
+  const hadCachedFailure = releaseFailures.has(lease.leaseId);
 
   const handle = lease.strategy === 'web-lock' ? webLockHandles.get(lease.leaseId) : undefined;
   const existingReleaseError = handle?.getReleaseError();
   if (existingReleaseError) {
     const remembered = captureReleaseFailure(lease.leaseId, existingReleaseError);
+    if (!hadCachedFailure) {
+      emitError(remembered);
+      emitReadonly('release-failed', remembered, options.onReadonly);
+    }
     throw remembered;
   }
 
@@ -943,7 +944,7 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
         : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
     const remembered = captureReleaseFailure(lease.leaseId, projectError);
     emitError(remembered);
-    emitReadonly('release-failed', remembered, options.onReadonly);
+    if (!hadCachedFailure) emitReadonly('release-failed', remembered, options.onReadonly);
     throw remembered;
   }
 };
@@ -951,15 +952,11 @@ const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOpti
   try {
     await releaseProjectLock(lease, { signal: options.signal, force, onReadonly: options.onReadonly });
   } catch (error) {
-    const projectError =
-      error instanceof ProjectLockError
-        ? error
-        : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
+    if (error instanceof ProjectLockError) throw error;
+    const projectError = makeError('release-failed', 'Failed to release project lock', 'release', true, error);
     const remembered = captureReleaseFailure(lease.leaseId, projectError);
-    if (!(error instanceof ProjectLockError)) {
-      emitError(remembered);
-      emitReadonly('release-failed', remembered, options.onReadonly);
-    }
+    emitError(remembered);
+    emitReadonly('release-failed', remembered, options.onReadonly);
     throw remembered;
   }
 };
