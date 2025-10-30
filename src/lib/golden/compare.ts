@@ -1,5 +1,7 @@
 import { firstLineDiff, normalizeJson, normalizeJsonl, trimLines } from '../exporters'
 
+import { COLLECT_METRICS_CONTRACT } from '../../../scripts/monitor/collect-metrics'
+
 import type { ExportFormat, NormalizedOutputs } from '../exporters'
 
 const textEncoder = new TextEncoder()
@@ -36,6 +38,30 @@ export interface ExportTelemetryDetail {
 type ScalarFormat = Exclude<ExportFormat, 'package'>
 
 const scalarFormats: readonly ScalarFormat[] = ['markdown', 'csv', 'jsonl']
+
+const clampAttempt = (value: number | undefined): number => {
+  const retryPolicy = COLLECT_METRICS_CONTRACT.telemetry.retryPolicy
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 1
+  }
+  const normalized = Math.floor(value)
+  const clamped = Math.max(1, normalized)
+  return Math.min(clamped, retryPolicy.maxAttempts)
+}
+
+const resolveNextBackoffMs = (attempt: number | undefined): number => {
+  const retryPolicy = COLLECT_METRICS_CONTRACT.telemetry.retryPolicy
+  const schedule = retryPolicy.backoffMs
+  if (!schedule.length) {
+    return 0
+  }
+  const index = Math.min(clampAttempt(attempt) - 1, schedule.length - 1)
+  const candidate = schedule[index]
+  if (typeof candidate !== 'number' || Number.isNaN(candidate) || candidate < 0) {
+    return 0
+  }
+  return candidate
+}
 
 function buildNormalizedPath(entry: GoldenComparisonEntry, runId: string): string | null {
   const base = `runs/${runId}/export`
@@ -160,6 +186,7 @@ export function createTelemetryEvent(
   comparison: GoldenComparisonResult,
   runId: string,
   detail: ExportTelemetryDetail,
+  attempt?: number,
 ): { event: 'export.result'; payload: Record<string, unknown> } | null {
   if (!comparison.entries.length) {
     return null
@@ -206,7 +233,7 @@ export function createTelemetryEvent(
       status: entry.status,
       diff: entry.diff ?? null,
     }))
-    basePayload.next_backoff_ms = 0
+    basePayload.next_backoff_ms = resolveNextBackoffMs(attempt)
   }
 
   return { event: 'export.result', payload: basePayload }
