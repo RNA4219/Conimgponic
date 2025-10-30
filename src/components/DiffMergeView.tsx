@@ -178,25 +178,24 @@ export interface DiffMergeViewProps {
   readonly autoApplied?: DiffMergeAutoAppliedState
   readonly disabled?: boolean
 }
-export const DiffMergeView: React.FC<DiffMergeViewProps> = ({
+interface DiffMergeViewContentProps extends Omit<DiffMergeViewProps, 'disabled'> {}
+
+const DiffMergeViewDisabled: React.FC<Pick<DiffMergeViewProps, 'precision'>> = ({ precision }) => (
+  <section
+    data-component="diff-merge-view"
+    data-block="diff-merge-disabled"
+    data-precision={precision}
+    data-testid="diff-merge-disabled"
+    aria-disabled="true"
+  />
+)
+
+const DiffMergeViewContent: React.FC<DiffMergeViewContentProps> = ({
   precision,
   hunks,
   queueMergeCommand,
   autoApplied,
-  disabled = false,
 }) => {
-  if (disabled) {
-    return (
-      <section
-        data-component="diff-merge-view"
-        data-block="diff-merge-disabled"
-        data-precision={precision}
-        data-testid="diff-merge-disabled"
-        aria-disabled="true"
-      />
-    )
-  }
-
   const plan = useMemo(() => planDiffMergeView(precision), [precision])
   const storage = (globalThis as { localStorage?: DiffMergeTabStorage }).localStorage
   const storedTabManager = useMemo(
@@ -350,4 +349,11 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({
       {editModal}
     </section>
   )
+}
+
+export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ disabled = false, ...props }) => {
+  if (disabled) {
+    return <DiffMergeViewDisabled precision={props.precision} />
+  }
+  return <DiffMergeViewContent {...props} />
 }
