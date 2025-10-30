@@ -70,6 +70,16 @@ test('test:coverage script collects files for all default suffixes', () => {
   );
 });
 
+test('DEFAULT_TEST_SUFFIXES includes .spec.mjs files', async () => {
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const { DEFAULT_TEST_SUFFIXES } = await import(moduleUrl);
+
+  assert.ok(
+    DEFAULT_TEST_SUFFIXES.includes('.spec.mjs'),
+    'DEFAULT_TEST_SUFFIXES must include .spec.mjs to ensure spec modules run under coverage',
+  );
+});
+
 test('test:junit script collects files for all default suffixes', () => {
   const script = resolveScript('test:junit');
 
