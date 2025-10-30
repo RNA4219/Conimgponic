@@ -2087,7 +2087,7 @@ scenario(
 )
 
 scenario(
-  'AS-LK-09f: fallback release retries until success and clears readonly downgrade',
+  'AS-LK-09f: fallback release retries until success without readonly downgrade',
   { navigator: { locks: undefined } },
   async (t, ctx) => {
     t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
@@ -2174,7 +2174,11 @@ scenario(
       (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
         => event.type === 'lock:readonly-entered' && event.reason === 'release-failed'
     )
-    assert.equal(readonlyEvents.length, 1, 'lock:readonly-entered must emit once on initial failure')
+    assert.equal(
+      readonlyEvents.length,
+      0,
+      'retryable fallback release failures must not emit lock:readonly-entered before exhausting retries'
+    )
   }
 )
 
@@ -2247,6 +2251,84 @@ scenario(
     assert.equal(readonlyEvents().length, 1, 'readonly must emit exactly once on third failure')
     assert.equal(readonlyEvents()[0]?.reason, 'release-failed')
     assert.equal(errorEvents().length, 3, 'third release failure must emit lock:error thrice')
+  }
+)
+
+scenario(
+  'AS-LK-09g-api: projectLockApi.release defers readonly until third failure',
+  { navigator: { locks: undefined } },
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const originalGetDirectory = ctx.opfs.storage.getDirectory
+    const wrapDirectory = (
+      directory: Awaited<ReturnType<typeof originalGetDirectory>>
+    ): Awaited<ReturnType<typeof originalGetDirectory>> => {
+      const getDirectoryHandle = directory.getDirectoryHandle.bind(directory)
+      return {
+        ...directory,
+        async getDirectoryHandle(name: string, options?: { create?: boolean }) {
+          const next = await getDirectoryHandle(name, options as { create?: boolean })
+          return wrapDirectory(next)
+        },
+        async removeEntry(name: string) {
+          throw new DOMException(`Remove blocked for ${name}`, 'InvalidStateError')
+        }
+      }
+    }
+    ctx.opfs.storage.getDirectory = async () => wrapDirectory(await originalGetDirectory())
+    t.after(() => {
+      ctx.opfs.storage.getDirectory = originalGetDirectory
+    })
+
+    const lease = await acquireProjectLock({ preferredStrategy: 'file-lock', retry: false })
+    assert.equal(lease.strategy, 'file-lock')
+
+    const onReadonly = t.mock.fn<(error: ProjectLockError) => void>()
+
+    const readonlyEvents = () =>
+      events.filter(
+        (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
+          => event.type === 'lock:readonly-entered' && event.reason === 'release-failed'
+      )
+    const errorEvents = () =>
+      events.filter(
+        (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }>
+          => event.type === 'lock:error' && event.operation === 'release'
+      )
+
+    const expectReleaseFailure = async (expectedDelayMs?: number) => {
+      const releasePromise = projectLockApi.release(lease, { onReadonly })
+      if (expectedDelayMs && expectedDelayMs > 0) {
+        await Promise.resolve()
+        t.mock.timers.tick(expectedDelayMs)
+      }
+      const error = (await assert.rejects(async () => releasePromise)) as ProjectLockError
+      assert.equal(error.code, 'release-failed')
+      assert.equal(error.retryable, true)
+    }
+
+    await expectReleaseFailure()
+    assert.equal(onReadonly.mock.calls.length, 0, 'onReadonly must not fire on first retryable failure')
+    assert.equal(readonlyEvents().length, 0, 'lock:readonly-entered must not emit on first retryable failure')
+    assert.equal(errorEvents().length, 1, 'first failure must emit lock:error once')
+
+    await expectReleaseFailure(500)
+    assert.equal(onReadonly.mock.calls.length, 0, 'onReadonly must not fire on second retryable failure')
+    assert.equal(readonlyEvents().length, 0, 'lock:readonly-entered must not emit on second retryable failure')
+    assert.equal(errorEvents().length, 2, 'second failure must emit lock:error twice')
+
+    await expectReleaseFailure(1000)
+    assert.equal(onReadonly.mock.calls.length, 1, 'onReadonly must fire on third retryable failure')
+    const readonly = readonlyEvents()
+    assert.equal(readonly.length, 1, 'third retryable failure must emit lock:readonly-entered once')
+    assert.equal(readonly[0]?.reason, 'release-failed')
+    assert.equal(errorEvents().length, 3, 'third failure must emit lock:error thrice')
   }
 )
 
