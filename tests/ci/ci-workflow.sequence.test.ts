@@ -152,6 +152,8 @@ const expectedSuiteFailureChecks = [
 const expectedAuditReportRedirection =
   'pnpm audit --audit-level=moderate --json > audit-report.json';
 const expectedOsvReportOutputFlag = '--output osv-report.json';
+const expectedOsvPackageSpecifier = '@google/osv-scanner@1.7.3';
+const expectedOsvDlxPrefix = `pnpm dlx --package ${expectedOsvPackageSpecifier}`;
 const expectedPnpmAuditStepId = 'pnpm_audit';
 const expectedPnpmAuditExitCodeExport = 'echo "exit_code=$status" >> "$GITHUB_OUTPUT"';
 const expectedAuditFailureStepName = 'Fail when pnpm audit reports vulnerabilities';
@@ -625,8 +627,13 @@ describe('ci workflow build job', () => {
 
     assertLineIncludes(
       auditRunLines,
-      'https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64',
-      'audit job must install osv-scanner from official release',
+      expectedOsvDlxPrefix,
+      'audit job must install osv-scanner via pnpm dlx with a pinned version',
+    );
+
+    assert.ok(
+      auditRunLines.every((line) => !line.includes('curl ')),
+      'audit job must not rely on curl-based installers for osv-scanner',
     );
 
     assertLineIncludes(
@@ -694,6 +701,12 @@ describe('ci workflow build job', () => {
       steps,
       'Run osv-scanner',
       'audit job must run osv-scanner',
+    );
+
+    assertStepRunIncludesLine(
+      osvScannerStep,
+      expectedOsvDlxPrefix,
+      'audit job must run osv-scanner via pnpm dlx with a pinned version',
     );
 
     const failureStep = assertStepWithName(
