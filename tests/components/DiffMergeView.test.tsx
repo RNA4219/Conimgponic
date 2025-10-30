@@ -59,6 +59,12 @@ test('stable precision renders hunk selection controls per hunk', () => {
   assert.match(html, /data-hunk="h1"[^>]*aria-pressed="false"/)
 })
 
+test('beta precision renders manual hunk selection controls with pressed state', () => {
+  const html = render('beta')
+  assert.match(html, /data-testid="diff-merge-hunk-h1-toggle"/)
+  assert.match(html, /data-hunk="h1"[^>]*aria-pressed="false"/)
+})
+
 test('beta precision surfaces queueMergeCommand action payloads', () => {
   const html = render('beta')
   assert.match(html, /data-testid="diff-merge-queue-selected"/)
@@ -211,6 +217,13 @@ test('beta precision diff tab preserves navigation shortcuts and controls', () =
   assert.match(html, /data-testid="diff-merge-tab-diff"/)
   assert.match(html, /data-testid="diff-merge-hunk-h1-toggle"/)
   assert.match(html, /data-testid="diff-merge-queue-selected"/)
+})
+
+test('diff merge navigation exposes arrow key shortcuts across precisions', () => {
+  for (const precision of ['legacy', 'beta', 'stable'] as const) {
+    const html = render(precision)
+    assert.match(html, /role="tablist"[^>]*aria-keyshortcuts="ArrowLeft ArrowRight"/)
+  }
 })
 
 const storageKeyFor = (precision: 'legacy' | 'beta' | 'stable') => `diff-merge.lastTab.${precision}`
