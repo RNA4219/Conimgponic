@@ -1122,11 +1122,16 @@ export function initAutoSave(
         optionsDisabled: fallbackOptionsDisabled
       }
     }
-    const storage = asBool(scope.localStorage?.getItem?.('autosave.enabled'))
-    if (storage != null) {
-      return {
-        featureFlag: { value: storage, source: 'localStorage' },
-        optionsDisabled: fallbackOptionsDisabled
+    const localStorageKeys = ['autosave.enabled', 'flag:autoSave.enabled'] as const
+    if (scope.localStorage && typeof scope.localStorage.getItem === 'function') {
+      for (const key of localStorageKeys) {
+        const storage = asBool(scope.localStorage.getItem(key))
+        if (storage != null) {
+          return {
+            featureFlag: { value: storage, source: 'localStorage' },
+            optionsDisabled: fallbackOptionsDisabled
+          }
+        }
       }
     }
     return {
