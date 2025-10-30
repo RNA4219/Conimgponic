@@ -1105,7 +1105,7 @@ export function initAutoSave(
       typeof scope.__AUTOSAVE_ENABLED__ === 'boolean' ? scope.__AUTOSAVE_ENABLED__ : null
     const importMetaEnv = readImportMetaEnv()
     const envVar = asBool(
-      scope.process?.env?.VITE_AUTOSAVE_ENABLED ?? importMetaEnv?.VITE_AUTOSAVE_ENABLED
+      importMetaEnv?.VITE_AUTOSAVE_ENABLED ?? scope.process?.env?.VITE_AUTOSAVE_ENABLED
     )
     const env = runtimeEnv ?? envVar
     if (env != null) {
@@ -1123,11 +1123,16 @@ export function initAutoSave(
         optionsDisabled: fallbackOptionsDisabled
       }
     }
-    const storage = asBool(scope.localStorage?.getItem?.('autosave.enabled'))
-    if (storage != null) {
-      return {
-        featureFlag: { value: storage, source: 'localStorage' },
-        optionsDisabled: fallbackOptionsDisabled
+    const localStorageKeys = ['autosave.enabled', 'flag:autoSave.enabled'] as const
+    if (scope.localStorage && typeof scope.localStorage.getItem === 'function') {
+      for (const key of localStorageKeys) {
+        const storage = asBool(scope.localStorage.getItem(key))
+        if (storage != null) {
+          return {
+            featureFlag: { value: storage, source: 'localStorage' },
+            optionsDisabled: fallbackOptionsDisabled
+          }
+        }
       }
     }
     return {

@@ -546,18 +546,25 @@ export const FEATURE_FLAG_DEFINITIONS = {
   readonly 'merge.precision': FlagDefinition<MergePrecision>
 }
 
-export type FeatureFlagName = keyof typeof FEATURE_FLAG_DEFINITIONS
+type FeatureFlagDefinitionMap = typeof FEATURE_FLAG_DEFINITIONS
 
-export type FeatureFlagValue<Name extends FeatureFlagName> =
-  (typeof FEATURE_FLAG_DEFINITIONS)[Name]['defaultValue']
+export type FeatureFlagName = keyof FeatureFlagDefinitionMap
+
+type FeatureFlagDefinition<Name extends FeatureFlagName> =
+  FeatureFlagDefinitionMap[Name]
+
+export type FeatureFlagValue<Name extends FeatureFlagName> = FeatureFlagDefinition<
+  Name
+> extends FlagDefinition<infer Value>
+  ? Value
+  : never
 
 export function resolveFeatureFlag<Name extends FeatureFlagName>(
   name: Name,
   options?: ResolveOptions
 ): FlagResolution<FeatureFlagValue<Name>> {
-  const definition = FEATURE_FLAG_DEFINITIONS[name] as FlagDefinition<
-    FeatureFlagValue<Name>
-  >
+  const definition =
+    FEATURE_FLAG_DEFINITIONS[name] as FlagDefinition<FeatureFlagValue<Name>>
   return resolveFlag(definition, options)
 }
 

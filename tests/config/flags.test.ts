@@ -7,6 +7,8 @@ import {
   DEFAULT_FLAG_SNAPSHOT,
   FEATURE_FLAG_DEFINITIONS,
   FlagResolutionError,
+  MergePrecision,
+  resolveFeatureFlag,
   resolveFlags
 } from '../../src/config/flags'
 
@@ -23,6 +25,14 @@ function createStorage(values: Record<string, string | undefined>): StorageStub 
     }
   }
 }
+
+// TypeScript 型アサーション: resolveFeatureFlag がフラグ固有の型を返すことを確認する。
+const _mergePrecisionValue: MergePrecision = resolveFeatureFlag(
+  'merge.precision'
+).value
+const _autosaveEnabledValue: boolean = resolveFeatureFlag(
+  'autosave.enabled'
+).value
 
 test('resolveFlags skips default storage when storage is null', () => {
   const moduleUrl = new URL('../../src/config/flags.ts', import.meta.url)
