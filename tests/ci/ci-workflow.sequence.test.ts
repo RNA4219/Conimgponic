@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { describe, test } from 'node:test';
 
+import { loadTestStrategyExpectations } from './test-strategy-autosave-merge.ts';
+
 type WorkflowYaml = {
   jobs?: {
     quality?: QualityJobConfig;
@@ -83,6 +85,7 @@ type JsYamlModule = {
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
+const testStrategyPath = resolve(repoRoot, 'tests', 'TEST_STRATEGY_AUTOSAVE_MERGE.md');
 const require = createRequire(import.meta.url);
 const autosaveSuffixModuleGlobs = [
   'src/**/*autosave*.ts',
@@ -119,32 +122,15 @@ const requiredAutosaveFilterGlobs = [
   vscodeFlagsHandshakeSpecPath,
 ];
 
-const expectedQualitySequence = [
-  'pnpm -s lint',
-  'pnpm -s typecheck',
-  'pnpm -s test:autosave',
-  'pnpm -s test:merge',
-  'pnpm -s test:cli',
-  'pnpm -s test:collector',
-  'pnpm -s test:telemetry',
-];
-
-const expectedQualitySuites = [
-  'lint',
-  'typecheck',
-  'autosave',
-  'merge',
-  'cli',
-  'collector',
-  'telemetry',
-];
-
 const expectedRunSuiteStepIds = ['run_suite_autosave', 'run_suite_default'] as const;
 
-const expectedCoverageCommand = 'pnpm -s test:coverage';
+const {
+  qualityCommands: expectedQualitySequence,
+  qualitySuites: expectedQualitySuites,
+  coverageCommand: expectedCoverageCommand,
+  junitCommand: expectedJunitCommand,
+} = await loadTestStrategyExpectations(testStrategyPath);
 const expectedCoverageCleanup = 'rm -rf coverage';
-const expectedJunitCommand =
-  'pnpm test --test-reporter=junit --test-reporter-destination=file=reports/junit.xml';
 const expectedSuiteFailureChecks = [
   "steps.run_suite_autosave.outcome == 'failure'",
   "steps.run_suite_default.outcome == 'failure'",
