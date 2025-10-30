@@ -14,6 +14,7 @@ export type MetricsKey =
   | 'ui_saved_rate'
   | 'restore_success_rate'
   | 'merge_auto_success_rate'
+  | 'merge_processing_p95'
   | 'export_latency_p95'
   | 'export_success_rate';
 
@@ -390,6 +391,8 @@ export interface MetricsInputRecord {
   readonly restore_success_rate: number;
   /** 自動マージ成功率（0〜1） */
   readonly merge_auto_success_rate: number;
+  /** 精緻マージ処理時間の P95（ミリ秒） */
+  readonly merge_processing_p95: number;
   /** Export 実行レイテンシの P95（ミリ秒） */
   readonly export_latency_p95: number;
   /** Export 成功率（0〜1） */
@@ -529,6 +532,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     ui_saved_rate: 0.962,
     restore_success_rate: 0.999,
     merge_auto_success_rate: 0.0,
+    merge_processing_p95: 4800,
     export_latency_p95: 42000,
     export_success_rate: 0.992,
     flag_snapshot: 'env:canary',
@@ -779,6 +783,27 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           rollbackTo: 'A-2',
           rollbackCommand: 'pnpm run flags:rollback --phase A-2',
         },
+        {
+          metric: 'merge_processing_p95',
+          comparator: 'lte',
+          threshold: 5000,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#merge-ops',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Merge Duty',
+              severity: 'critical',
+            },
+          ],
+          rollbackTo: 'A-2',
+          rollbackCommand: 'pnpm run flags:rollback --phase A-2',
+        },
       ],
     },
     {
@@ -810,6 +835,27 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           metric: 'merge_auto_success_rate',
           comparator: 'gte',
           threshold: 0.85,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#merge-ops',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Merge Duty',
+              severity: 'critical',
+            },
+          ],
+          rollbackTo: 'B-0',
+          rollbackCommand: 'pnpm run flags:rollback --phase B-0',
+        },
+        {
+          metric: 'merge_processing_p95',
+          comparator: 'lte',
+          threshold: 5000,
           violationWindowMinutes: 15,
           notifyChannels: ['slack', 'pagerduty'],
           notifyDestinations: [
@@ -961,7 +1007,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'merge.result',
         description:
-          'Diff Merge 自動適用の成功率と処理時間を Collector が集計する。',
+          'Diff Merge 自動適用の成功率と処理時間 (merge_processing_p95) を Collector が集計する。',
         jsonlFields: [
           'payload.status',
           'payload.precision',

@@ -1486,6 +1486,36 @@ describe('vscode extension telemetry contract (RED)', () => {
     strictEqual(spec.pipelineStage, 'collector')
     assertOk(spec.guardrail, 'merge.result telemetry must define guardrail')
     deepStrictEqual(spec.guardrail.metric, 'merge_auto_success_rate')
+    assertOk(
+      spec.description.includes('merge_processing_p95'),
+      'merge.result telemetry description must mention merge_processing_p95 metric for processing aggregation'
+    )
+  })
+
+  test('collect-metrics 契約は merge_processing_p95 指標を Phase B ガードで監視する', () => {
+    const { inputRecord, phaseGates, telemetry } = COLLECT_METRICS_CONTRACT
+
+    strictEqual(
+      typeof inputRecord.merge_processing_p95,
+      'number',
+      'input record must define merge_processing_p95 metric'
+    )
+
+    const phaseBGuardrails = phaseGates
+      .filter((phase) => phase.phase === 'B-0' || phase.phase === 'B-1')
+      .flatMap((phase) => phase.guardrails)
+
+    assertOk(
+      phaseBGuardrails.some((guard) => guard.metric === 'merge_processing_p95'),
+      'Phase B guardrails must monitor merge_processing_p95 threshold'
+    )
+
+    const mergeResultSpec = telemetry.events.find((event) => event.event === 'merge.result')
+    assertOk(mergeResultSpec, 'merge.result telemetry spec must exist for merge_processing_p95 aggregation')
+    assertOk(
+      mergeResultSpec.jsonlFields.includes('payload.processing_ms'),
+      'merge.result telemetry must expose processing_ms for merge_processing_p95 aggregation'
+    )
   })
 
   test('publishMergeResult は merge.result イベントを Collector 契約通りに送信する', () => {
