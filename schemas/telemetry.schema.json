@@ -379,6 +379,19 @@
               },
               "duration_ms": { "type": "number", "minimum": 0 },
               "detail": { "$ref": "#/definitions/exportDetail" },
+              "summary": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "export_latency_p95": { "type": "number", "minimum": 0 },
+                  "export_success_rate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": ["export_latency_p95", "export_success_rate"]
+              },
               "artifacts": {
                 "type": "array",
                 "items": {
@@ -446,6 +459,7 @@
               "formats",
               "duration_ms",
               "detail",
+              "summary",
               "artifacts"
             ],
             "allOf": [

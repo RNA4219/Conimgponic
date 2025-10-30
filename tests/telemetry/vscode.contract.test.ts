@@ -1761,6 +1761,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'formats',
       'duration_ms',
       'detail',
+      'summary',
       'artifacts',
     ])
 
@@ -2108,6 +2109,92 @@ describe('vscode extension telemetry contract (RED)', () => {
     })
     strictEqual(payload.error, undefined)
   })
+  test('telemetry schema は createTelemetryEvent 成功ペイロードの summary 指標を検証する', () => {
+    const runId = 'schema-summary-success'
+    const durationMs = 180
+    const packageArtifacts = {
+      'storyboard.json': JSON.stringify({ title: 'Demo Storyboard', version: 1 }, null, 2),
+      'export-info.json': JSON.stringify({ formats: ['markdown', 'csv', 'jsonl'] }, null, 2),
+    }
+    const actualOutputs: NormalizedOutputs = {
+      markdown: '# Demo Storyboard',
+      csv: 'id,text\n1,Hello',
+      jsonl: '{"id":1,"text":"Hello"}',
+      package: packageArtifacts,
+    }
+    const goldenArtifacts = {
+      markdown: actualOutputs.markdown,
+      csv: actualOutputs.csv,
+      jsonl: actualOutputs.jsonl,
+      package: packageArtifacts,
+    } satisfies GoldenArtifacts
+
+    const comparison = compareNormalizedOutputs(actualOutputs, goldenArtifacts)
+    assertOk(comparison.ok, 'telemetry schema validation expects golden comparison to succeed')
+
+    const telemetry = createTelemetryEvent(comparison, runId, { duration_ms: durationMs })
+    assertOk(telemetry, 'createTelemetryEvent must produce export.result when comparison succeeds')
+
+    const exportThen = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'export.result',
+    )
+    const exportPayloadSchema = assertPayloadSchema(exportThen, [
+      'status',
+      'runId',
+      'matchRate',
+      'formats',
+      'duration_ms',
+      'detail',
+      'summary',
+      'artifacts',
+    ])
+
+    const summarySchema = resolveSchemaRef(exportPayloadSchema.properties?.summary)
+    assertOk(summarySchema, 'export.result payload must define summary schema')
+    strictEqual(summarySchema.type, 'object')
+    strictEqual(summarySchema.additionalProperties, false)
+    assertOk(summarySchema.required, 'export.result summary must define required fields')
+    deepStrictEqual(
+      Array.from(summarySchema.required).sort(),
+      ['export_latency_p95', 'export_success_rate'].sort(),
+    )
+    assertOk(summarySchema.properties, 'export.result summary must define properties')
+    const summaryProperties = summarySchema.properties
+
+    const latencySchema = resolveSchemaRef(summaryProperties.export_latency_p95)
+    assertOk(latencySchema, 'export.result summary must define export_latency_p95 schema')
+    strictEqual(latencySchema.type, 'number')
+    strictEqual(latencySchema.minimum, 0)
+
+    const successRateSchema = resolveSchemaRef(summaryProperties.export_success_rate)
+    assertOk(successRateSchema, 'export.result summary must define export_success_rate schema')
+    strictEqual(successRateSchema.type, 'number')
+    strictEqual(successRateSchema.minimum, 0)
+    strictEqual(successRateSchema.maximum, 1)
+
+    const payload = telemetry.payload as {
+      readonly summary?: {
+        readonly export_latency_p95: number
+        readonly export_success_rate: number
+      }
+    }
+    assertOk(payload.summary, 'createTelemetryEvent payload must include summary metrics')
+    strictEqual(typeof payload.summary.export_latency_p95, 'number')
+    strictEqual(typeof payload.summary.export_success_rate, 'number')
+    assertOk(
+      payload.summary.export_latency_p95 >= (latencySchema.minimum ?? 0),
+      'export_latency_p95 must satisfy schema minimum',
+    )
+    assertOk(
+      payload.summary.export_success_rate >= (successRateSchema.minimum ?? 0) &&
+        payload.summary.export_success_rate <= (successRateSchema.maximum ?? 1),
+      'export_success_rate must satisfy schema bounds',
+    )
+    deepStrictEqual(
+      Object.keys(payload.summary).sort(),
+      ['export_latency_p95', 'export_success_rate'].sort(),
+    )
+  })
   test('export.result failure payload は error/entries/backoff を Collector へ送信する', () => {
     const runId = 'run-telemetry-failure'
     const durationMs = 120.4
@@ -2280,6 +2367,7 @@ describe('vscode extension telemetry contract (RED)', () => {
       'formats',
       'duration_ms',
       'detail',
+      'summary',
       'artifacts',
     ])
 
