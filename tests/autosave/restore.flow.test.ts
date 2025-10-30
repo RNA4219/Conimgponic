@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { scenario } from '../lib/autosave/setup'
 
 import type { AutoSaveError } from '../../src/lib/autosave'
+import type { Storyboard } from '../../src/types'
 import { ProjectLockError } from '../../src/lib/locks'
 
 const expectAutoSaveError = (
@@ -115,3 +116,84 @@ scenario('restoreFrom throws history-overflow when history payload is missing', 
     }
   )
 }
+
+scenario(
+  'AS-I-01: restart with autosave disabled suppresses restore flow activation',
+  async (t, ctx) => {
+    const restoreFromCurrentMock = t.mock.method(ctx, 'restoreFromCurrent')
+    const restoreFromMock = t.mock.method(ctx, 'restoreFrom')
+    t.after(() => {
+      restoreFromCurrentMock.mock.restore()
+      restoreFromMock.mock.restore()
+    })
+
+    const previousFlag = process.env.VITE_AUTOSAVE_ENABLED
+    process.env.VITE_AUTOSAVE_ENABLED = '0'
+    t.after(() => {
+      if (previousFlag === undefined) {
+        delete process.env.VITE_AUTOSAVE_ENABLED
+      } else {
+        process.env.VITE_AUTOSAVE_ENABLED = previousFlag
+      }
+    })
+
+    const storyboard: Storyboard = {
+      id: 'autosave-as-i-01',
+      title: 'AS-I-01 Baseline',
+      scenes: [
+        { id: 'intro', manual: '', ai: '', status: 'idle', assets: [] },
+        { id: 'conflict', manual: '', ai: '', status: 'idle', assets: [] },
+        { id: 'resolve', manual: '', ai: '', status: 'idle', assets: [] }
+      ],
+      selection: [],
+      version: 1
+    }
+
+    const mockStoryboard = {
+      projectId: storyboard.id,
+      scenes: [
+        { id: 'intro', updatedAt: '2024-03-01T10:00:00.000Z', frames: 12 },
+        { id: 'conflict', updatedAt: '2024-03-01T10:01:00.000Z', frames: 18 },
+        { id: 'resolve', updatedAt: '2024-03-01T10:02:00.000Z', frames: 9 }
+      ]
+    }
+    const historyTs = '2024-03-01T10:05:00.000Z'
+    const historyPayload = JSON.stringify(mockStoryboard)
+    const bytes = historyPayload.length
+    ctx.opfs.files.set('project/autosave/current.json', historyPayload)
+    ctx.opfs.files.set(
+      'project/autosave/index.json',
+      JSON.stringify({
+        current: { ts: historyTs, bytes, location: 'current', retained: true },
+        history: [
+          { ts: historyTs, bytes, location: 'history', retained: true }
+        ],
+        generation: 1
+      })
+    )
+    ctx.opfs.files.set(
+      `project/autosave/history/${sanitize(historyTs)}.json`,
+      historyPayload
+    )
+
+    const runner = ctx.initAutoSave(
+      () => storyboard,
+      { disabled: false },
+      { featureFlag: { value: false, source: 'env' }, optionsDisabled: false }
+    )
+
+    assert.equal(runner.snapshot().phase, 'disabled')
+    assert.equal(restoreFromCurrentMock.mock.calls.length, 0)
+    assert.equal(restoreFromMock.mock.calls.length, 0)
+    const nonGuardEvents = ctx.collectorEvents.filter((event) => event.event !== 'autosave.guard')
+    assert.deepEqual(nonGuardEvents, [])
+    assert.deepEqual(ctx.runnerTelemetry, [])
+
+    const guardSnapshot = ctx.guardSnapshots.at(-1)
+    assert.ok(guardSnapshot, 'expected guard snapshot to be recorded')
+    assert.equal(guardSnapshot.featureFlag.value, false)
+    assert.equal(guardSnapshot.featureFlag.source, 'env')
+
+    await runner.dispose()
+  }
+)
