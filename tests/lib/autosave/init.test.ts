@@ -57,6 +57,52 @@ scenario('history rotation keeps at most 20 generations', async (_t, { initAutoS
   assert.ok(historyCount <= 20)
 })
 
+scenario(
+  'import.meta env enables guard resolution from environment',
+  { importMetaEnv: { VITE_AUTOSAVE_ENABLED: 'true' } },
+  async (t: TestContext, { initAutoSave, runnerTelemetry }) => {
+    const scope = globalThis as typeof globalThis & {
+      __AUTOSAVE_ENABLED__?: boolean
+      process?: { env?: Record<string, unknown> }
+    }
+    const hadRuntimeFlag = Object.prototype.hasOwnProperty.call(scope, '__AUTOSAVE_ENABLED__')
+    const previousRuntimeFlag = scope.__AUTOSAVE_ENABLED__
+    delete scope.__AUTOSAVE_ENABLED__
+    t.after(() => {
+      if (hadRuntimeFlag) {
+        scope.__AUTOSAVE_ENABLED__ = previousRuntimeFlag!
+      } else {
+        delete scope.__AUTOSAVE_ENABLED__
+      }
+    })
+    const processEnv = scope.process?.env as Record<string, unknown> | undefined
+    const hadProcessFlag =
+      processEnv != null && Object.prototype.hasOwnProperty.call(processEnv, 'VITE_AUTOSAVE_ENABLED')
+    const previousProcessFlag = hadProcessFlag ? processEnv!.VITE_AUTOSAVE_ENABLED : undefined
+    if (processEnv) {
+      delete processEnv.VITE_AUTOSAVE_ENABLED
+    }
+    t.after(() => {
+      if (!processEnv) return
+      if (hadProcessFlag) {
+        processEnv.VITE_AUTOSAVE_ENABLED = previousProcessFlag
+      } else {
+        delete processEnv.VITE_AUTOSAVE_ENABLED
+      }
+    })
+
+    const runner = initAutoSave(() => makeStoryboard(['import-meta-env']), { disabled: false })
+    assert.notEqual(runner.snapshot().phase, 'disabled')
+    runner.markDirty({ pendingBytes: 1024 })
+    const telemetry = runnerTelemetry.filter(
+      (event) => event.detail?.event === 'autosave.schedule.requested'
+    )
+    assert.ok(telemetry.length > 0)
+    const last = telemetry.at(-1)!
+    assert.equal(last.detail?.flag_source, 'env')
+  }
+)
+
 scenario('disabled guard returns no-op handle', async (t: TestContext, { initAutoSave }) => {
   const scope = globalThis as typeof globalThis & {
     __AUTOSAVE_ENABLED__?: boolean

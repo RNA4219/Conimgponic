@@ -1099,12 +1099,12 @@ export function initAutoSave(
       __AUTOSAVE_WORKSPACE__?: WorkspaceConfiguration | null
       localStorage?: { getItem?: (key: string) => string | null }
       process?: { env?: Record<string, unknown> }
-      import?: { meta?: { env?: Record<string, unknown> } }
     }
     const runtimeEnv =
       typeof scope.__AUTOSAVE_ENABLED__ === 'boolean' ? scope.__AUTOSAVE_ENABLED__ : null
+    const importMetaEnv = readImportMetaEnv()
     const envVar = asBool(
-      scope.process?.env?.VITE_AUTOSAVE_ENABLED ?? scope.import?.meta?.env?.VITE_AUTOSAVE_ENABLED
+      scope.process?.env?.VITE_AUTOSAVE_ENABLED ?? importMetaEnv?.VITE_AUTOSAVE_ENABLED
     )
     const env = runtimeEnv ?? envVar
     if (env != null) {

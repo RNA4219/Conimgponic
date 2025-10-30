@@ -43,6 +43,7 @@ interface NavigatorOverrides {
 export interface SetupOverrides {
   readonly navigator?: NavigatorOverrides
   readonly locks?: Partial<LockManagerLike>
+  readonly importMetaEnv?: Record<string, unknown>
 }
 
 export const ENABLED_GUARD: AutoSavePhaseGuardSnapshot = Object.freeze({
@@ -83,7 +84,13 @@ const loadModule = async (path: string): Promise<vm.SourceTextModule> => {
   })
   const mod = new vm.SourceTextModule(outputText, {
     identifier: path,
-    initializeImportMeta(meta){ meta.url = pathToFileURL(path).href },
+    initializeImportMeta(meta){
+      meta.url = pathToFileURL(path).href
+      const scope = globalThis as { __IMPORT_META_ENV__?: Record<string, unknown> }
+      if (scope.__IMPORT_META_ENV__ && typeof scope.__IMPORT_META_ENV__ === 'object') {
+        meta.env = scope.__IMPORT_META_ENV__
+      }
+    },
     async importModuleDynamically(spec){
       return { namespace: await importTs(resolveImport(spec, path)) }
     }
@@ -176,6 +183,18 @@ type AutoSaveTestModule = AutoSaveModule & {
 
 export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Promise<AutoSaveTestModule> => {
   cache.clear()
+  const importMetaScope = globalThis as { __IMPORT_META_ENV__?: Record<string, unknown> }
+  const previousImportMetaEnv = importMetaScope.__IMPORT_META_ENV__
+  if (overrides.importMetaEnv !== undefined) {
+    importMetaScope.__IMPORT_META_ENV__ = overrides.importMetaEnv
+    t.after(() => {
+      if (previousImportMetaEnv === undefined) {
+        delete importMetaScope.__IMPORT_META_ENV__
+      } else {
+        importMetaScope.__IMPORT_META_ENV__ = previousImportMetaEnv
+      }
+    })
+  }
   const opfs = createOpfs()
   const collectorEvents: Array<Record<string, unknown>> = []
   const runnerTelemetry: RunnerTelemetryEvent[] = []
