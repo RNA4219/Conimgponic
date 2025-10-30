@@ -562,6 +562,15 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       channelType: 'pagerduty',
       destination: 'Export Duty',
       severity: 'critical',
+      metric: 'export_latency_p95',
+      value: 42000,
+      threshold: 30000,
+      template: 'templates/alerts/rollout-monitor.md',
+    },
+    {
+      channelType: 'pagerduty',
+      destination: 'Export Duty',
+      severity: 'critical',
       metric: 'export_success_rate',
       value: 0.96,
       threshold: 0.98,
@@ -669,12 +678,17 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           comparator: 'lte',
           threshold: 30000,
           violationWindowMinutes: 15,
-          notifyChannels: ['slack'],
+          notifyChannels: ['slack', 'pagerduty'],
           notifyDestinations: [
             {
               channelType: 'slack',
               destination: '#export-ops',
               severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Export Duty',
+              severity: 'critical',
             },
           ],
           rollbackTo: 'A-2',
@@ -923,7 +937,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'export.result',
         description:
-          'Export 成否を単一イベントで集約し、成果物バイト数・P95 レイテンシ・失敗時の再試行情報を Reporter へ伝達する。',
+          'Export 成否を単一イベントで集約し、export_latency_p95 ガード用の P95 レイテンシと失敗時の再試行情報を Reporter へ伝達する。',
         jsonlFields: [
           'payload.status',
           'payload.runId',
