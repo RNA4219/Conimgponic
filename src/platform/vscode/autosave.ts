@@ -657,6 +657,7 @@ const handleNonRetryableError = (
       name: 'autosave.snapshot.result',
       properties: {
         ok: false,
+        status: 'failure',
         code: error.code,
         retryable: error.retryable,
         correlationId: request.correlationId,
@@ -882,6 +883,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           name: 'autosave.snapshot.result',
           properties: {
             ok: false,
+            status: 'failure',
             code: 'disabled',
             retryable: false,
             correlationId: request.correlationId,
@@ -1038,17 +1040,18 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             name: 'autosave.snapshot.result',
             properties: {
               ok: false,
+              status: 'failure',
               code: writeResult.error.code,
-            retryable: true,
-            correlationId: request.correlationId,
-            retryCount: state.retryCount,
-            phase: requestEnvelopePhase,
-            performance: createFlushLatencyPerformance(retryLatency),
-            detail: { phase: statusPhase }
-          }
-        },
-        { before: statusBeforeBackoff, after: state.status, guard: state.guard }
-      )
+              retryable: true,
+              correlationId: request.correlationId,
+              retryCount: state.retryCount,
+              phase: requestEnvelopePhase,
+              performance: createFlushLatencyPerformance(retryLatency),
+              detail: { phase: statusPhase }
+            }
+          },
+          { before: statusBeforeBackoff, after: state.status, guard: state.guard }
+        )
         return
       }
       handleNonRetryableError(options, state, request, writeResult.error, state.status)
@@ -1108,6 +1111,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         name: 'autosave.snapshot.result',
         properties: {
           ok: true,
+          status: 'success',
           generation: writeResult.generation,
           retainedBytes: state.retainedBytes,
           correlationId: request.correlationId,
