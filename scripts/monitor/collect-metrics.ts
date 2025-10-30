@@ -11,6 +11,7 @@ export type RolloutPhase = 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1';
 
 export type MetricsKey =
   | 'autosave_p95'
+  | 'ui_saved_rate'
   | 'restore_success_rate'
   | 'merge_auto_success_rate'
   | 'export_latency_p95'
@@ -383,6 +384,8 @@ export interface MetricsInputRecord {
   readonly phase: RolloutPhase;
   /** AutoSave 保存遅延の P95（ミリ秒） */
   readonly autosave_p95: number;
+  /** AutoSave UI の保存完了率（0〜1） */
+  readonly ui_saved_rate: number;
   /** 復元成功率（0〜1） */
   readonly restore_success_rate: number;
   /** 自動マージ成功率（0〜1） */
@@ -523,6 +526,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     window_minutes: 15,
     phase: 'A-1',
     autosave_p95: 2300,
+    ui_saved_rate: 0.962,
     restore_success_rate: 0.999,
     merge_auto_success_rate: 0.0,
     export_latency_p95: 42000,
@@ -538,6 +542,24 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       metric: 'autosave_p95',
       value: 3200,
       threshold: 2500,
+      template: 'templates/alerts/rollout-monitor.md',
+    },
+    {
+      channelType: 'slack',
+      destination: '#launch-autosave',
+      severity: 'warning',
+      metric: 'ui_saved_rate',
+      value: 0.93,
+      threshold: 0.95,
+      template: 'templates/alerts/rollout-monitor.md',
+    },
+    {
+      channelType: 'pagerduty',
+      destination: 'Autosave & Precision Merge',
+      severity: 'critical',
+      metric: 'ui_saved_rate',
+      value: 0.93,
+      threshold: 0.95,
       template: 'templates/alerts/rollout-monitor.md',
     },
     {
@@ -604,6 +626,27 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           rollbackCommand: 'pnpm run flags:rollback --phase A-0',
         },
         {
+          metric: 'ui_saved_rate',
+          comparator: 'gte',
+          threshold: 0.95,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#launch-autosave',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Autosave & Precision Merge',
+              severity: 'critical',
+            },
+          ],
+          rollbackTo: 'A-0',
+          rollbackCommand: 'pnpm run flags:rollback --phase A-0',
+        },
+        {
           metric: 'restore_success_rate',
           comparator: 'gte',
           threshold: 0.995,
@@ -641,6 +684,27 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
               channelType: 'slack',
               destination: '#launch-autosave',
               severity: 'warning',
+            },
+          ],
+          rollbackTo: 'A-1',
+          rollbackCommand: 'pnpm run flags:rollback --phase A-1',
+        },
+        {
+          metric: 'ui_saved_rate',
+          comparator: 'gte',
+          threshold: 0.97,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#launch-autosave',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Autosave & Precision Merge',
+              severity: 'critical',
             },
           ],
           rollbackTo: 'A-1',
@@ -822,7 +886,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     events: [
       {
         event: 'status.autosave',
-        description: 'AutoSave 状態遷移と遅延を Phase ガード autosave_p95 と同期させる。',
+        description: 'AutoSave 状態遷移と UI 保存率を Phase ガード autosave_p95 / ui_saved_rate と同期させる。',
         jsonlFields: [
           'payload.state',
           'payload.debounce_ms',
@@ -837,7 +901,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         retryable: true,
         pipelineStage: 'collector',
         guardrail: {
-          metric: 'autosave_p95',
+          metric: 'ui_saved_rate',
           rollbackTo: 'A-0',
         },
       },

@@ -1651,6 +1651,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.formats',
       'payload.duration_ms',
       'payload.detail.duration_ms',
+      'payload.summary.export_latency_p95',
+      'payload.summary.export_success_rate',
       'payload.artifacts[].format',
       'payload.artifacts[].name',
       'payload.artifacts[].status',
@@ -1824,6 +1826,44 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(
       exportResult.jsonlFields.includes('payload.summary.export_success_rate'),
       'export.result telemetry must expose summary.export_success_rate',
+    )
+  })
+
+  test('collect-metrics 契約は ui_saved_rate を Phase A ガードと telemetry guardrail に配線する', () => {
+    const { inputRecord, notifications, phaseGates, telemetry } = COLLECT_METRICS_CONTRACT
+
+    strictEqual(
+      typeof inputRecord.ui_saved_rate,
+      'number',
+      'input record must define ui_saved_rate metric',
+    )
+
+    const uiSavedNotifications = notifications.filter((notification) => notification.metric === 'ui_saved_rate')
+    assertOk(uiSavedNotifications.length >= 1, 'notifications must monitor ui_saved_rate breaches')
+    assertOk(
+      uiSavedNotifications.some((notification) => notification.channelType === 'slack'),
+      'ui_saved_rate notifications must include slack channel',
+    )
+    assertOk(
+      uiSavedNotifications.some((notification) => notification.channelType === 'pagerduty'),
+      'ui_saved_rate notifications must include pagerduty channel',
+    )
+
+    const phaseAGuardrails = phaseGates
+      .filter((phase) => phase.phase === 'A-1' || phase.phase === 'A-2')
+      .flatMap((phase) => phase.guardrails)
+    assertOk(phaseAGuardrails.length > 0, 'phase gates must define guardrails for Phase A rollout')
+    assertOk(
+      phaseAGuardrails.some((guard) => guard.metric === 'ui_saved_rate' && guard.comparator === 'gte'),
+      'Phase A guardrails must require ui_saved_rate >= threshold',
+    )
+
+    const statusAutosaveSpec = findTelemetrySpec('status.autosave')
+    assertOk(statusAutosaveSpec, 'status.autosave telemetry spec must exist')
+    strictEqual(
+      statusAutosaveSpec.guardrail?.metric,
+      'ui_saved_rate',
+      'status.autosave telemetry must guard ui_saved_rate breaches',
     )
   })
 
@@ -2090,6 +2130,8 @@ describe('vscode extension telemetry contract (RED)', () => {
       'payload.formats',
       'payload.duration_ms',
       'payload.detail.duration_ms',
+      'payload.summary.export_latency_p95',
+      'payload.summary.export_success_rate',
       'payload.artifacts[].format',
       'payload.artifacts[].name',
       'payload.artifacts[].status',
