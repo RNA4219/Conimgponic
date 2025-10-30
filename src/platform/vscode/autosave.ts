@@ -137,6 +137,7 @@ interface AutoSaveTelemetryGuardProperties {
 export interface AutoSaveTelemetryEventProperties {
   readonly phaseBefore?: AutoSavePhase
   readonly phaseAfter?: AutoSavePhase
+  readonly phase_step?: AutoSavePhase
   readonly flagSource?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
   readonly guard?: AutoSaveTelemetryGuardProperties
   readonly lockStrategy?: AutoSaveTelemetryLockStrategy | 'none'
@@ -423,10 +424,13 @@ const emitTelemetry = (
     event.name === 'autosave.status' || event.name === 'autosave.guard'
       ? encodeGuardTelemetry(context.guard)
       : undefined
+  const phaseStep =
+    event.name === 'autosave.status' ? statusPhaseForState(context.after) : undefined
   const properties: AutoSaveTelemetryEventProperties = {
     ...rawProperties,
     ...(detailWithPhase ? { detail: detailWithPhase } : {}),
     ...(guardTelemetry ? { guard: guardTelemetry } : {}),
+    ...(phaseStep ? { phase_step: phaseStep } : {}),
     phaseBefore,
     phaseAfter,
     flagSource: context.guard.featureFlag.source,
