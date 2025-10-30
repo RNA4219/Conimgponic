@@ -4,7 +4,8 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import { STABLE_THRESHOLD_DEFAULT } from '../../src/config/flags.ts'
-import { MergeDock, resolveMergeThresholdSnapshot } from '../../src/components/MergeDock.tsx'
+import { MergeDock } from '../../src/components/MergeDock.tsx'
+import { resolveMergeThresholdSnapshot } from '../../src/lib/merge/threshold.ts'
 
 const createFlags = () => ({
   merge: {

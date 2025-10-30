@@ -19,59 +19,26 @@ import { createStore } from 'zustand/vanilla'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
 const mergeDockModule = await import('../../src/components/MergeDock')
+const mergePreferencesModule = await import('../../src/lib/merge/preferences.ts')
+const mergeThresholdModule = await import('../../src/lib/merge/threshold.ts')
 const {
   resolveMergeDockPhasePlan,
   planMergeDockTabs,
   resolveMergeThresholdPlan,
-  resolveMergeThresholdSnapshot,
   diffBackupPolicy,
   shouldRenderDiffBackupCTA,
   shouldShowDiffBackupCTA,
   isDiffBackupCTAEligible,
+  shouldEnableDiffInteraction,
+} = mergeDockModule as typeof mergeDockModule
+const {
   getDefaultPreference,
   sanitizePreference,
   resolvePreferenceSelection,
   resolveActiveTabTransition,
-  shouldEnableDiffInteraction,
   sanitizeMergeDockActiveTab,
-} = mergeDockModule as typeof mergeDockModule & {
-  readonly getDefaultPreference: (
-    precision: FlagSnapshot['merge']['precision'],
-    diffEnabled: boolean,
-  ) => 'manual-first' | 'ai-first' | 'diff-merge'
-  readonly sanitizePreference: (
-    preference: 'manual-first' | 'ai-first' | 'diff-merge',
-    precision: FlagSnapshot['merge']['precision'],
-    diffEnabled: boolean,
-  ) => 'manual-first' | 'ai-first' | 'diff-merge'
-  readonly resolvePreferenceSelection: (input: {
-    readonly precision: FlagSnapshot['merge']['precision']
-    readonly previousPrecision: FlagSnapshot['merge']['precision']
-    readonly diffEnabled: boolean
-    readonly previousDiffEnabled: boolean
-    readonly preference: 'manual-first' | 'ai-first' | 'diff-merge'
-    readonly defaultPreference: 'manual-first' | 'ai-first' | 'diff-merge'
-  }) => 'manual-first' | 'ai-first' | 'diff-merge'
-  readonly resolveActiveTabTransition: (input: {
-    readonly precision: FlagSnapshot['merge']['precision']
-    readonly previousPrecision: FlagSnapshot['merge']['precision']
-    readonly diffEnabled: boolean
-    readonly previousDiffEnabled: boolean
-    readonly plan: ReturnType<typeof resolveMergeDockPhasePlan>['tabs']
-    readonly activeTab: ReturnType<typeof resolveMergeDockPhasePlan>['tabs']['initialTab']
-    readonly diffVisible: boolean
-  }) => ReturnType<typeof resolveMergeDockPhasePlan>['tabs']['initialTab']
-  readonly shouldEnableDiffInteraction: (input: {
-    readonly diffPlan: MergeDockPhasePlan['diff']
-    readonly guard: MergeDockPhasePlan['guard']
-  }) => boolean
-  readonly sanitizeMergeDockActiveTab: (
-    tab: MergeDockPhasePlan['tabs']['initialTab'],
-    plan: MergeDockPhasePlan['tabs'],
-    diffVisible: boolean,
-    diffEnabled: boolean,
-  ) => MergeDockPhasePlan['tabs']['initialTab']
-}
+} = mergePreferencesModule
+const { resolveMergeThresholdSnapshot } = mergeThresholdModule
 type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
 
 test('resolveMergeThresholdSnapshot falls back to default threshold', () => {

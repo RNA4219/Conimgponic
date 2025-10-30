@@ -1,0 +1,15 @@
+{
+  "id": "tests/lib/merge/mergeThreshold.spec.ts",
+  "role": "test",
+  "public_api": [],
+  "summary": "MergeDock threshold.ts のしきい値解決・hook を RED テストで固定化し、workspace/storage/env 優先順位と React hook のメモ化を検証する。",
+  "deps_out": [
+    "src/lib/merge/threshold.ts",
+    "src/lib/merge/phasePlan.ts",
+    "src/config/flags.ts"
+  ],
+  "deps_in": [],
+  "risks": [],
+  "tests": [],
+  "generated_at": "2025-10-21T12:30:00Z"
+}
