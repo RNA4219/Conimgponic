@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { persistMergeDockActiveTab } from '../../src/components/MergeDock.tsx'
+import { persistMergeDockActiveTab } from '../../src/lib/merge/mergeDockPreference.ts'
 
 test('persistMergeDockActiveTab warns and falls back when storage quota is exceeded', () => {
   const quotaError = Object.assign(new Error('quota exceeded'), { name: 'QuotaExceededError' })

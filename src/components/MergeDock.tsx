@@ -23,12 +23,13 @@ import {
 import type { MergePrecision } from '../lib/merge'
 import {
   getDefaultPreference,
+  persistMergeDockActiveTab,
   resolveActiveTabTransition,
   resolvePreferenceSelection,
   sanitizeMergeDockActiveTab,
   sanitizePreference,
   type MergeDockPreference,
-} from '../lib/merge/preferences'
+} from '../lib/merge/mergeDockPreference'
 import {
   useMergeThreshold,
   type WorkspaceConfiguration,
@@ -47,37 +48,6 @@ import {
   type MergeHunk,
   type QueueMergeCommand,
 } from './DiffMergeView'
-
-type MergeDockPersistenceLogger = Pick<Console, 'warn'>
-
-interface PersistMergeDockActiveTabOptions {
-  readonly storage: Pick<Storage, 'setItem'>
-  readonly storageKey: string
-  readonly tab: MergeDockTabId
-  readonly logger?: MergeDockPersistenceLogger | null
-}
-
-export function persistMergeDockActiveTab({
-  storage,
-  storageKey,
-  tab,
-  logger,
-}: PersistMergeDockActiveTabOptions): boolean {
-  try {
-    storage.setItem(storageKey, tab)
-    return true
-  } catch (error) {
-    const resolvedLogger: MergeDockPersistenceLogger =
-      logger && typeof logger.warn === 'function' ? logger : console
-    resolvedLogger.warn(
-      'MergeDock: failed to persist active tab. Falling back without localStorage.',
-      storageKey,
-      tab,
-      error,
-    )
-    return false
-  }
-}
 
 interface MergeDockViewState {
   readonly activeTab: MergeDockTabId
