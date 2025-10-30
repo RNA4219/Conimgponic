@@ -30,9 +30,11 @@ type JsYamlModule = { load: (input: string) => unknown };
 const require = createRequire(import.meta.url);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
+const expectedSyftPackageSpecifier = '@anchore/syft@1.16.0';
+const expectedSyftDlxPrefix = `pnpm dlx --package ${expectedSyftPackageSpecifier}`;
 
 describe('ci workflow sbom job', () => {
-  test('installs syft exactly once and prepares PATH', async () => {
+  test('installs syft via pnpm dlx exactly once', async () => {
     const workflow = await loadWorkflow();
     const sbomSteps = expectJobSteps(workflow.jobs?.sbom, 'sbom job must exist');
 
@@ -50,12 +52,12 @@ describe('ci workflow sbom job', () => {
 
     const installScript = installSteps[0].run;
     assert(
-      installScript.includes('mkdir -p "$HOME/.local/bin"'),
-      'Install Syft step must create the local bin directory',
+      installScript.includes(expectedSyftDlxPrefix),
+      'Install Syft step must execute pnpm dlx for @anchore/syft with a pinned version',
     );
     assert(
-      installScript.includes('echo "$HOME/.local/bin" >> "$GITHUB_PATH"'),
-      'Install Syft step must append the local bin directory to GITHUB_PATH',
+      !installScript.includes('curl '),
+      'Install Syft step must not rely on curl-based installers',
     );
   });
 
@@ -151,7 +153,10 @@ describe('ci workflow sbom job', () => {
     );
 
     const runScript = generateStep.run;
-    assert.ok(runScript.includes('syft '), 'Generate SBOM step must invoke syft CLI');
+    assert.ok(
+      runScript.includes(`${expectedSyftDlxPrefix} syft `),
+      'Generate SBOM step must invoke syft CLI via pnpm dlx with a pinned version',
+    );
     assert.ok(
       runScript.includes('status=$?'),
       'Generate SBOM step must capture syft exit status for later evaluation',

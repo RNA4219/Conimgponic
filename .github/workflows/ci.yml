@@ -24,13 +24,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@9.12.3 --activate
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install Syft
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.local/bin"
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pnpm dlx --package @anchore/syft@1.16.0 syft --version
       - name: Generate SBOM
         id: generate_sbom
         continue-on-error: true
@@ -40,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          syft packages . -o spdx-json=sbom.json |& tee sbom.log
+          pnpm dlx --package @anchore/syft@1.16.0 syft packages . -o spdx-json=sbom.json |& tee sbom.log
           status=$?
           set -e
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
@@ -109,14 +115,10 @@ jobs:
       - name: Install osv-scanner
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.local/bin"
-          curl -sSfL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 \
-            -o "$HOME/.local/bin/osv-scanner"
-          chmod +x "$HOME/.local/bin/osv-scanner"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pnpm dlx --package @google/osv-scanner@1.7.3 osv-scanner --version
 
       - name: Run osv-scanner
-        run: osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
+        run: pnpm dlx --package @google/osv-scanner@1.7.3 osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
 
       - name: Upload audit report
         if: always()
