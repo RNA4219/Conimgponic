@@ -308,6 +308,25 @@ test('diff exposure falls back to opt-in when auto applied underperforms', () =>
   assert.equal(plan.diff.exposure, 'opt-in')
 })
 
+test('stable precision demotes diff exposure when auto applied underperforms without phase stats', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.81,
+  })
+
+  assert.ok(plan.threshold.autoTarget > (plan.autoApplied.rate ?? 0))
+  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in' })
+  assert.equal(plan.tabs.initialTab, 'compiled')
+  assert.equal(
+    shouldEnableDiffInteraction({ diffPlan: plan.diff, guard: plan.guard }),
+    false,
+  )
+})
+
 test('beta precision diff plan triggers backup CTA when diff is enabled', () => {
   const phasePlan = resolveMergeDockPhasePlan({
     precision: 'beta',

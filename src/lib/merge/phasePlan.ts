@@ -222,36 +222,26 @@ export const resolveMergeDockPhasePlan = ({
           : hasReviewSignals || hasConflictSignals
         : false
   const diffConfigured = !!baseTabPlan.diff && precision !== 'legacy'
-  const shouldHideDiff = !diffConfigured
-  let diffVisible = !shouldHideDiff
-  let diffExposure: 'hidden' | 'opt-in' | 'default' = diffVisible
-    ? baseTabPlan.diff?.exposure ?? 'hidden'
-    : 'hidden'
-  let diffTabsPlan = diffVisible && baseTabPlan.diff
-    ? {
-        exposure: baseTabPlan.diff.exposure,
-        ...(baseTabPlan.diff.backupAfterMs ? { backupAfterMs: baseTabPlan.diff.backupAfterMs } : {}),
-      }
-    : undefined
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
-  const shouldDemoteDiff =
-    diffConfigured && meetsTarget === false && (precision !== 'stable' || phaseBRequired)
+  const shouldDemoteDiff = diffConfigured && meetsTarget === false
 
-  let tabPlanSource: MergeDockTabPlan = baseTabPlan
+  const tabPlanSource: MergeDockTabPlan =
+    precision === 'stable' && shouldDemoteDiff ? planMergeDockTabs('beta', lastTab) : baseTabPlan
 
-  if (shouldDemoteDiff && precision === 'stable') {
-    const demotedPlan = planMergeDockTabs('beta', lastTab)
-    tabPlanSource = demotedPlan
-  }
-
-  if (!shouldHideDiff && shouldDemoteDiff) {
-    if (precision === 'stable') {
-      diffVisible = true
-    }
-    diffTabsPlan = { exposure: 'opt-in' }
-    diffExposure = 'opt-in'
-  }
+  const diffPlanConfig =
+    tabPlanSource.diff && precision !== 'legacy' ? tabPlanSource.diff : undefined
+  const shouldHideDiff = !diffPlanConfig
+  const diffVisible = !shouldHideDiff
+  const diffExposure: 'hidden' | 'opt-in' | 'default' = diffVisible
+    ? diffPlanConfig?.exposure ?? 'hidden'
+    : 'hidden'
+  const diffTabsPlan = diffVisible && diffPlanConfig
+    ? {
+        exposure: diffPlanConfig.exposure,
+        ...(diffPlanConfig.backupAfterMs ? { backupAfterMs: diffPlanConfig.backupAfterMs } : {}),
+      }
+    : undefined
 
   const diffEnabled = diffVisible && phaseBRequired && !shouldDemoteDiff
 
