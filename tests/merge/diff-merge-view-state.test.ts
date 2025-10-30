@@ -11,7 +11,12 @@ import {
   DiffMergeState,
   MergeDecisionEvent,
 } from '../../src/components/diffMergeState'
-import { DiffMergeView, planDiffMergeView, resolveDiffMergeStoredTab } from '../../src/components/DiffMergeView'
+import {
+  DiffMergeView,
+  createDiffMergeNavigationKeyHandler,
+  planDiffMergeView,
+  resolveDiffMergeStoredTab,
+} from '../../src/components/DiffMergeView'
 import type {
   DiffMergeQueueCommandPayload,
   DiffMergeSubTabKey,
@@ -357,6 +362,97 @@ test('planDiffMergeView legacy restricts panes to review hunk list', () => {
 test('planDiffMergeView stable exposes diff workflow panes',()=>{const plan=planDiffMergeView('stable');assert.deepEqual(plan.tabs.map((tab)=>tab.key),['diff','merged','review']);assert.equal(plan.initialTab,'diff');const diffTab=plan.tabs[0];if(!diffTab)throw new Error('diff tab missing');assert.deepEqual(diffTab.panes,['hunk-list']);const review=plan.tabs.find((tab)=>tab.key==='review');if(!review)throw new Error('review tab missing');assert.deepEqual(review.panes,['hunk-list','operation-pane']);assert.equal(plan.navigationBadge,undefined);assert.equal(plan.phase,'phase-b')})
 
 test('planDiffMergeView beta orders review, diff, merged with beta badges',()=>{const plan=planDiffMergeView('beta');assert.deepEqual(plan.tabs.map((tab)=>tab.key),['review','diff','merged']);assert.equal(plan.initialTab,'review');assert.equal(plan.navigationBadge,'beta');const diffTab=plan.tabs.find((tab)=>tab.key==='diff');if(!diffTab)throw new Error('diff tab missing');assert.equal(diffTab.badge,'beta');assert.deepEqual(diffTab.panes,['hunk-list']);const mergedTab=plan.tabs.find((tab)=>tab.key==='merged');if(!mergedTab)throw new Error('merged tab missing');assert.deepEqual(mergedTab.panes,['operation-pane'])})
+
+test('createDiffMergeNavigationKeyHandler cycles legacy tabs without exposing diff', () => {
+  const plan = planDiffMergeView('legacy')
+  assert.deepEqual(
+    plan.tabs.map((tab) => tab.key),
+    ['review'],
+    'legacy precision must not expose diff tab',
+  )
+
+  let active: DiffMergeSubTabKey = plan.initialTab
+  const selected: DiffMergeSubTabKey[] = []
+  const handler = createDiffMergeNavigationKeyHandler({
+    tabs: plan.tabs.map((tab) => tab.key),
+    resolveActive: () => active,
+    onSelect: (key) => {
+      selected.push(key)
+      active = key
+    },
+  })
+
+  const simulate = (key: 'ArrowLeft' | 'ArrowRight') => {
+    let prevented = false
+    handler({
+      key,
+      preventDefault: () => {
+        prevented = true
+      },
+    } as Parameters<typeof handler>[0])
+    return prevented
+  }
+
+  assert.equal(active, 'review')
+  assert.equal(simulate('ArrowRight'), true)
+  assert.equal(simulate('ArrowLeft'), true)
+  assert.deepEqual(selected, [])
+  assert.equal(active, 'review')
+})
+
+test('createDiffMergeNavigationKeyHandler cycles diff-enabled tabs per precision plan', async (t) => {
+  const cases: ReadonlyArray<[
+    precision: MergePrecision,
+    expectedOrder: readonly DiffMergeSubTabKey[],
+    sequence: readonly ('ArrowLeft' | 'ArrowRight')[],
+    expectedSelections: readonly DiffMergeSubTabKey[],
+  ]> = [
+    [
+      'beta',
+      ['review', 'diff', 'merged'],
+      ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft'],
+      ['diff', 'merged', 'review', 'merged'],
+    ],
+    [
+      'stable',
+      ['diff', 'merged', 'review'],
+      ['ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowLeft'],
+      ['merged', 'review', 'merged', 'diff'],
+    ],
+  ]
+
+  for (const [precision, expectedOrder, keys, expectedSelections] of cases) {
+    await t.test(`precision ${precision}`, () => {
+      const plan = planDiffMergeView(precision)
+      assert.deepEqual(plan.tabs.map((tab) => tab.key), expectedOrder)
+
+      let active: DiffMergeSubTabKey = plan.initialTab
+      const selected: DiffMergeSubTabKey[] = []
+      const handler = createDiffMergeNavigationKeyHandler({
+        tabs: expectedOrder,
+        resolveActive: () => active,
+        onSelect: (key) => {
+          selected.push(key)
+          active = key
+        },
+      })
+
+      for (const key of keys) {
+        let prevented = false
+        handler({
+          key,
+          preventDefault: () => {
+            prevented = true
+          },
+        } as Parameters<typeof handler>[0])
+        assert.equal(prevented, true, `preventDefault should fire for ${key}`)
+      }
+
+      assert.deepEqual(selected, expectedSelections)
+      assert.equal(active, expectedSelections[expectedSelections.length - 1])
+    })
+  }
+})
 
 const sampleHunks:readonly MergeHunk[]=[createMergeHunk('h1')]
 const renderView=(precision:MergePrecision)=>renderToStaticMarkup(createElement(DiffMergeView,{precision,hunks:sampleHunks,queueMergeCommand:async()=>({status:'success',hunkIds:[],telemetry:{collectorSurface:'diff-merge.hunk-list',analyzerSurface:'diff-merge.queue',retryable:false}})}))

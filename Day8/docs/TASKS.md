@@ -29,6 +29,7 @@
   - Affected Paths と Local Commands が対象差分と一致しているか。
   - `status`・`next_review_due` が最新レビュー計画を反映しているか。
   - JSONL 数値フィールド正規化タスクでは、`src/lib/importers.ts` の JSONL マージ処理のみを対象にし、`pnpm test --filter lib -- --test-name-pattern mergeJSONL` の実行ログと文字列数値のサンプル入力/期待出力を記録する。
+  - StoryboardList 数値バリデーション改善タスクでは、`tests/components/StoryboardList.numeric-input.spec.tsx` を用いた `pnpm test --filter components -- --test-name-pattern StoryboardList.numeric-input` のログと、`take` / `seed` フィールドで非数値入力時に旧値が保持されることを確認したメモを残す。
 
 ## フォローアップのチェックリスト
 - [ ] `docs/seeds/` への配置と命名規約 (`TASK.<slug>-YYYY-MM-DD.md`) を満たした。

@@ -321,6 +321,9 @@ export const resolveActiveTabTransition = ({
   if (!previousDiffEnabled && diffEnabled) {
     return plan.initialTab
   }
+  if (previousDiffEnabled && !diffEnabled) {
+    return plan.initialTab
+  }
   return sanitizeActiveTab(activeTab, plan, diffVisible)
 }
 
@@ -645,12 +648,8 @@ export const resolveMergeDockPhasePlan = ({
   if (!shouldHideDiff && shouldDemoteDiff) {
     if (precision === 'stable') {
       diffVisible = true
-      diffTabsPlan = diffTabsPlan
-        ? { ...diffTabsPlan, exposure: 'opt-in' }
-        : { exposure: 'opt-in' }
-    } else if (diffTabsPlan) {
-      diffTabsPlan = { ...diffTabsPlan, exposure: 'opt-in' }
     }
+    diffTabsPlan = { exposure: 'opt-in' }
     diffExposure = 'opt-in'
   }
 
@@ -659,13 +658,12 @@ export const resolveMergeDockPhasePlan = ({
   const effectiveTabs = diffVisible ? rawPlan.tabs : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
   const compiledInitial = effectiveTabs.find((entry) => entry.id === 'compiled')?.id
   const defaultInitial = compiledInitial ?? effectiveTabs[0]?.id ?? rawPlan.initialTab
+  const demotedInitial = shouldDemoteDiff && compiledInitial ? compiledInitial : undefined
   const resetInitial =
-    shouldDemoteDiff && rawPlan.initialTab === 'diff' ? compiledInitial : undefined
-  const effectiveInitial =
-    resetInitial ??
-    (rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
+    !demotedInitial && rawPlan.initialTab && effectiveTabs.some((entry) => entry.id === rawPlan.initialTab)
       ? rawPlan.initialTab
-      : defaultInitial)
+      : undefined
+  const effectiveInitial = demotedInitial ?? resetInitial ?? defaultInitial
 
   return {
     precision,

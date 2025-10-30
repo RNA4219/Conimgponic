@@ -360,7 +360,7 @@ test('stable tab plan restores last compiled tab selection', () => {
   assert.equal(phasePlan.diff.initialTab, 'compiled')
 })
 
-test('stable tab plan preserves last base tab when diff is demoted', () => {
+test('stable tab plan preserves last base tab when diff remains enabled', () => {
   const tabPlan = planMergeDockTabs('stable', 'shot')
 
   assert.equal(tabPlan.initialTab, 'shot')
@@ -368,12 +368,12 @@ test('stable tab plan preserves last base tab when diff is demoted', () => {
   const phasePlan = resolveMergeDockPhasePlan({
     precision: 'stable',
     threshold: 0.9,
-    autoAppliedRate: 0.84,
+    autoAppliedRate: 0.95,
     phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
     lastTab: 'shot',
   })
 
-  assert.equal(phasePlan.autoApplied.meetsTarget, false)
+  assert.equal(phasePlan.autoApplied.meetsTarget, true)
   assert.equal(phasePlan.diff.visible, true)
   assert.equal(phasePlan.tabs.initialTab, 'shot')
   assert.equal(phasePlan.diff.initialTab, 'shot')
@@ -398,6 +398,20 @@ test('stable precision demotes diff tab when auto apply underperforms', () => {
   assert.equal(plan.diff.enabled, false)
 })
 
+test('stable precision auto apply demotion resets initial tab to compiled', () => {
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    autoAppliedRate: 0.84,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+    lastTab: 'shot',
+  })
+
+  assert.equal(phasePlan.autoApplied.meetsTarget, false)
+  assert.equal(phasePlan.tabs.initialTab, 'compiled')
+  assert.equal(phasePlan.diff.initialTab, 'compiled')
+})
+
 test('stable precision demotes diff exposure while keeping tab visible when auto rate misses target', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
@@ -410,7 +424,7 @@ test('stable precision demotes diff exposure while keeping tab visible when auto
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.diff.enabled, false)
-  assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in', backupAfterMs: 300000 })
+  assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in' })
   assert.equal(plan.tabs.initialTab, 'compiled')
   assert.equal(plan.diff.initialTab, 'compiled')
 })
@@ -549,6 +563,39 @@ test('stable precision diff guard unlock restores diff as active tab in store', 
 
   assert.equal(nextTab, 'diff')
   assert.equal(viewStore.getState().activeTab, 'diff')
+})
+
+test('resolveActiveTabTransition falls back to plan initial tab when diff disables', () => {
+  const unlockedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.9,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+  const demotedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.81,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(unlockedPlan.diff.enabled, true)
+  assert.equal(demotedPlan.diff.enabled, false)
+  assert.equal(demotedPlan.tabs.initialTab, 'compiled')
+
+  const viewStore = createStore<{ readonly activeTab: 'compiled' | 'diff' }>(() => ({ activeTab: 'diff' }))
+  const nextTab = resolveActiveTabTransition({
+    precision: demotedPlan.precision,
+    previousPrecision: unlockedPlan.precision,
+    diffEnabled: demotedPlan.diff.enabled,
+    previousDiffEnabled: unlockedPlan.diff.enabled,
+    plan: demotedPlan.tabs,
+    activeTab: viewStore.getState().activeTab,
+    diffVisible: demotedPlan.diff.visible,
+  })
+
+  assert.equal(nextTab, demotedPlan.tabs.initialTab)
+  assert.equal(nextTab, 'compiled')
 })
 
 test('stable precision respects manual preference selection immediately after guard unlocks', () => {
@@ -860,7 +907,7 @@ test('stable precision tab planning restores stored merge.lastTab preference', (
   assert.equal(phasePlan.diff.exposure, 'default')
 })
 
-test('stable precision preserves stored merge.lastTab across tab planners when diff demotes', () => {
+test('stable precision resets stored merge.lastTab when diff demotes', () => {
   const lastTabs = ['compiled', 'shot', 'assets'] as const
 
   for (const lastTab of lastTabs) {
@@ -876,7 +923,8 @@ test('stable precision preserves stored merge.lastTab across tab planners when d
       lastTab,
     })
 
-    assert.equal(phasePlan.tabs.initialTab, lastTab)
+    assert.equal(phasePlan.autoApplied.meetsTarget, false)
+    assert.equal(phasePlan.tabs.initialTab, 'compiled')
   }
 })
 
