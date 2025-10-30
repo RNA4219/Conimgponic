@@ -1781,6 +1781,15 @@ describe('vscode extension telemetry contract (RED)', () => {
       'export_latency_p95',
       'export.result telemetry must guard export_latency_p95',
     )
+    strictEqual(
+      spec.guardrail.rollbackTo,
+      'A-2',
+      'export.result telemetry must rollback export rollout to A-2 on latency breaches',
+    )
+    assertOk(
+      spec.description.includes('export_latency_p95'),
+      'export.result telemetry description must document export_latency_p95 guardrail',
+    )
     assertOk(
       spec.jsonlFields.includes('payload.duration_ms'),
       'export.result telemetry must emit payload.duration_ms for latency aggregation',
