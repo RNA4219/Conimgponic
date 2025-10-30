@@ -33,6 +33,7 @@ const {
   resolvePreferenceSelection,
   resolveActiveTabTransition,
   shouldEnableDiffInteraction,
+  sanitizeMergeDockActiveTab,
 } = mergeDockModule as typeof mergeDockModule & {
   readonly getDefaultPreference: (
     precision: FlagSnapshot['merge']['precision'],
@@ -64,6 +65,12 @@ const {
     readonly diffPlan: MergeDockPhasePlan['diff']
     readonly guard: MergeDockPhasePlan['guard']
   }) => boolean
+  readonly sanitizeMergeDockActiveTab: (
+    tab: MergeDockPhasePlan['tabs']['initialTab'],
+    plan: MergeDockPhasePlan['tabs'],
+    diffVisible: boolean,
+    diffEnabled: boolean,
+  ) => MergeDockPhasePlan['tabs']['initialTab']
 }
 type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
 
@@ -247,6 +254,41 @@ test('data-merge-diff-enabled guard blocks diff interaction until enabled', () =
   const phasePlan = resolveMergeDockPhasePlan({ precision: 'stable', threshold: 0.82 })
 
   assert.equal(phasePlan.diff.enabled, false)
+  assert.equal(
+    shouldEnableDiffInteraction({ diffPlan: phasePlan.diff, guard: phasePlan.guard }),
+    false,
+  )
+})
+
+test('data-merge-diff-enabled guard keeps diff tab inactive while disabled', () => {
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    autoAppliedRate: 0.84,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(phasePlan.diff.enabled, false)
+  assert.equal(phasePlan.diff.visible, true)
+  assert.equal(phasePlan.tabs.initialTab, 'compiled')
+  assert.equal(
+    sanitizeMergeDockActiveTab(
+      'diff',
+      phasePlan.tabs,
+      phasePlan.diff.visible,
+      phasePlan.diff.enabled,
+    ),
+    'compiled',
+  )
+  assert.equal(
+    sanitizeMergeDockActiveTab(
+      'shot',
+      phasePlan.tabs,
+      phasePlan.diff.visible,
+      phasePlan.diff.enabled,
+    ),
+    'shot',
+  )
   assert.equal(
     shouldEnableDiffInteraction({ diffPlan: phasePlan.diff, guard: phasePlan.guard }),
     false,
