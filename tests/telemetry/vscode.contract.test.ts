@@ -1991,6 +1991,10 @@ describe('vscode extension telemetry contract (RED)', () => {
       readonly status?: string
       readonly duration_ms?: number
       readonly detail?: { readonly duration_ms: number }
+      readonly summary?: {
+        readonly export_latency_p95: number
+        readonly export_success_rate: number
+      }
       readonly artifacts?: ReadonlyArray<{
         readonly format: string
         readonly name: string | null
@@ -2070,6 +2074,11 @@ describe('vscode extension telemetry contract (RED)', () => {
     strictEqual(payload.duration_ms, durationMs)
     assertOk(payload.detail, 'export.result payload must include detail')
     deepStrictEqual(payload.detail, { duration_ms: durationMs })
+    assertOk(payload.summary, 'export.result payload must include summary metrics')
+    deepStrictEqual(payload.summary, {
+      export_latency_p95: durationMs,
+      export_success_rate: 1,
+    })
     strictEqual(payload.error, undefined)
   })
   test('export.result failure payload は error/entries/backoff を Collector へ送信する', () => {
@@ -2102,6 +2111,10 @@ describe('vscode extension telemetry contract (RED)', () => {
       readonly duration_ms?: number
       readonly detail?: { readonly duration_ms: number }
       readonly error?: { readonly code: string; readonly message: string; readonly retryable: boolean }
+      readonly summary?: {
+        readonly export_latency_p95: number
+        readonly export_success_rate: number
+      }
       readonly artifacts?: ReadonlyArray<{ readonly bytes: number | null }>
       readonly entries?: ReadonlyArray<{ readonly format: string; readonly status: string; readonly diff: string | null }>
       readonly next_backoff_ms?: number | null
@@ -2115,6 +2128,11 @@ describe('vscode extension telemetry contract (RED)', () => {
       code: 'golden.comparison_failed',
       message: 'Golden comparison failed',
       retryable: false,
+    })
+    assertOk(payload.summary, 'export.result failure payload must include summary metrics')
+    deepStrictEqual(payload.summary, {
+      export_latency_p95: Math.round(durationMs),
+      export_success_rate: 0,
     })
     assertOk(payload.entries && payload.entries.length >= 1, 'export.result failure payload must include diff entries')
     const csvEntry = payload.entries.find((entry) => entry.format === 'csv')

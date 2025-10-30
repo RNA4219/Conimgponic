@@ -3,6 +3,7 @@ import { firstLineDiff, normalizeJson, normalizeJsonl, trimLines } from '../expo
 import { COLLECT_METRICS_CONTRACT } from '../../../scripts/monitor/collect-metrics'
 
 import type { ExportFormat, NormalizedOutputs } from '../exporters'
+import type { ExportResultSummaryTelemetry } from '../../../scripts/monitor/collect-metrics'
 
 const textEncoder = new TextEncoder()
 
@@ -199,6 +200,10 @@ export function createTelemetryEvent(
     ),
   )
   const durationMs = Math.max(0, Math.round(detail.duration_ms))
+  const summary: ExportResultSummaryTelemetry = {
+    export_latency_p95: durationMs,
+    export_success_rate: comparison.ok ? 1 : 0,
+  }
 
   const artifacts = comparison.entries.map((entry) => ({
     format: entry.format,
@@ -217,6 +222,7 @@ export function createTelemetryEvent(
     formats,
     duration_ms: durationMs,
     detail: { duration_ms: durationMs },
+    summary,
     artifacts,
   }
 

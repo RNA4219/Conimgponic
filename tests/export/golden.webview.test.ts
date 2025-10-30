@@ -360,6 +360,10 @@ describe('export bridge golden comparison', () => {
       assert.ok(succeeded)
       assert.equal(succeeded.payload.status, 'success')
       assert.equal(succeeded.payload.runId, 'unit')
+      const successSummary = succeeded.payload.summary as { export_latency_p95: number; export_success_rate: number } | undefined
+      assert.ok(successSummary, 'success summary が記録されること')
+      assert.equal(successSummary.export_success_rate, 1)
+      assert.equal(successSummary.export_latency_p95, succeeded.payload.duration_ms)
       const artifacts = succeeded.payload.artifacts as Array<Record<string, unknown>> | undefined
       assert.ok(Array.isArray(artifacts), 'artifacts が配列であること')
       const markdownArtifact = artifacts.find((artifact) => artifact.format === 'markdown')
@@ -397,6 +401,10 @@ describe('export bridge golden comparison', () => {
       const failed = telemetry.events.find((event) => event.event === 'export.result')
       assert.ok(failed)
       assert.equal(failed.payload.status, 'failure')
+      const failureSummary = failed.payload.summary as { export_latency_p95: number; export_success_rate: number } | undefined
+      assert.ok(failureSummary, 'failure summary が記録されること')
+      assert.equal(failureSummary.export_success_rate, 0)
+      assert.equal(failureSummary.export_latency_p95, failed.payload.duration_ms)
       const error = failed.payload.error as Record<string, unknown>
       assert.ok(error)
       assert.equal(error.code, 'golden.comparison_failed')
