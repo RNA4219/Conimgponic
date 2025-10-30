@@ -33,6 +33,23 @@ export const collectAutoSaveWrites = (opfs: OpfsMock): readonly AutoSaveWriteSna
     .map(([path, payload]) => ({ path, payload: parsePayload(payload), bytes: recordSize(path, payload) }))
 }
 
+export const failWriteOnce = (opfs: OpfsMock, path: string): (() => void) => {
+  const { files } = opfs
+  const original = files.set
+  let remaining = 1
+  const patched: typeof original = function patchedSet(this: Map<string, string>, key, value) {
+    if (remaining > 0 && key === path) {
+      remaining -= 1
+      throw new DOMException('Lock denied', 'NotAllowedError')
+    }
+    return original.call(this, key, value)
+  }
+  files.set = patched as typeof files.set
+  return () => {
+    files.set = original
+  }
+}
+
 export const collectHistoryFiles = (opfs: OpfsMock): readonly string[] => {
   return [...opfs.files.keys()]
     .filter((path) => path.startsWith('project/autosave/history/'))
