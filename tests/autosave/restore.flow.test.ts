@@ -19,6 +19,40 @@ const sanitize = (ts: string): string => ts.replace(/[:.]/g, '-')
 
 const EMPTY_INDEX = JSON.stringify({ current: null, history: [], generation: null })
 
+scenario('AS-TDD-03: restorePrompt surfaces latest history entry', async (_t, ctx) => {
+  const { opfs, restorePrompt, guardSnapshots, collectorEvents } = ctx
+
+  const latestTs = '2024-04-05T06:07:08.009Z'
+  const previousTs = '2024-03-04T05:06:07.008Z'
+  const latestSanitized = sanitize(latestTs)
+  const previousSanitized = sanitize(previousTs)
+
+  opfs.files.set(
+    'project/autosave/index.json',
+    JSON.stringify({
+      current: null,
+      history: [
+        { ts: previousTs, bytes: 128, location: 'history', retained: true },
+        { ts: latestTs, bytes: 256, location: 'history', retained: true }
+      ],
+      generation: 2
+    })
+  )
+
+  opfs.files.set(`project/autosave/history/${previousSanitized}.json`, JSON.stringify({ ts: previousTs }))
+  opfs.files.set(`project/autosave/history/${latestSanitized}.json`, JSON.stringify({ ts: latestTs }))
+
+  const prompt = await restorePrompt()
+  assert.deepEqual(prompt, {
+    ts: latestTs,
+    bytes: 256,
+    source: 'history',
+    location: `project/autosave/history/${latestSanitized}.json`
+  })
+  assert.deepEqual(guardSnapshots, [])
+  assert.deepEqual(collectorEvents, [])
+})
+
 scenario(
   'AS-TDD-03: corrupted autosave payloads do not surface guard or telemetry side effects',
   async (_t, ctx) => {
