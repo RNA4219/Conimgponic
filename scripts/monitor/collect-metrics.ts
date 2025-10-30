@@ -12,7 +12,9 @@ export type RolloutPhase = 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1';
 export type MetricsKey =
   | 'autosave_p95'
   | 'restore_success_rate'
-  | 'merge_auto_success_rate';
+  | 'merge_auto_success_rate'
+  | 'export_latency_p95'
+  | 'export_success_rate';
 
 export type TelemetryEventName =
   | 'status.autosave'
@@ -377,6 +379,10 @@ export interface MetricsInputRecord {
   readonly restore_success_rate: number;
   /** 自動マージ成功率（0〜1） */
   readonly merge_auto_success_rate: number;
+  /** Export 実行レイテンシの P95（ミリ秒） */
+  readonly export_latency_p95: number;
+  /** Export 成功率（0〜1） */
+  readonly export_success_rate: number;
   /** フラグソース（env/localStorage/default）の追跡情報 */
   readonly flag_snapshot?: string;
   /** Collector 内の再試行情報。Analyzer のノイズ除去で利用。 */
@@ -511,6 +517,8 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     autosave_p95: 2300,
     restore_success_rate: 0.999,
     merge_auto_success_rate: 0.0,
+    export_latency_p95: 42000,
+    export_success_rate: 0.992,
     flag_snapshot: 'env:canary',
     retryable: false,
   },
@@ -531,6 +539,24 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       metric: 'merge_auto_success_rate',
       value: 0.75,
       threshold: 0.8,
+      template: 'templates/alerts/rollout-monitor.md',
+    },
+    {
+      channelType: 'slack',
+      destination: '#export-ops',
+      severity: 'warning',
+      metric: 'export_latency_p95',
+      value: 42000,
+      threshold: 30000,
+      template: 'templates/alerts/rollout-monitor.md',
+    },
+    {
+      channelType: 'pagerduty',
+      destination: 'Export Duty',
+      severity: 'critical',
+      metric: 'export_success_rate',
+      value: 0.96,
+      threshold: 0.98,
       template: 'templates/alerts/rollout-monitor.md',
     },
   ],
@@ -631,6 +657,22 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       previousPhase: 'A-2',
       guardrails: [
         {
+          metric: 'export_latency_p95',
+          comparator: 'lte',
+          threshold: 30000,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#export-ops',
+              severity: 'warning',
+            },
+          ],
+          rollbackTo: 'A-2',
+          rollbackCommand: 'pnpm run flags:rollback --phase A-2',
+        },
+        {
           metric: 'merge_auto_success_rate',
           comparator: 'gte',
           threshold: 0.8,
@@ -657,6 +699,27 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       phase: 'B-1',
       previousPhase: 'B-0',
       guardrails: [
+        {
+          metric: 'export_success_rate',
+          comparator: 'gte',
+          threshold: 0.99,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#export-ops',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Export Duty',
+              severity: 'critical',
+            },
+          ],
+          rollbackTo: 'B-0',
+          rollbackCommand: 'pnpm run flags:rollback --phase B-0',
+        },
         {
           metric: 'merge_auto_success_rate',
           comparator: 'gte',
@@ -852,7 +915,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'export.result',
         description:
-          'Export 成否を単一イベントで集約し、成果物バイト数と失敗時の再試行情報を Reporter へ伝達する。',
+          'Export 成否を単一イベントで集約し、成果物バイト数・P95 レイテンシ・失敗時の再試行情報を Reporter へ伝達する。',
         jsonlFields: [
           'payload.status',
           'payload.runId',
@@ -879,8 +942,8 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         retryable: true,
         pipelineStage: 'reporter',
         guardrail: {
-          metric: 'autosave_p95',
-          rollbackTo: 'A-0',
+          metric: 'export_latency_p95',
+          rollbackTo: 'A-2',
         },
       },
       {

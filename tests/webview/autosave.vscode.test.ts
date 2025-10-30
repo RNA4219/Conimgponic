@@ -623,6 +623,91 @@ describe('createVscodeAutoSaveBridge', () => {
     }
   })
 
+  it('autosave.snapshot.result telemetry status は snapshot.result payload の成否と一致する', async () => {
+    const scenarios = [
+      {
+        label: 'success',
+        request: createRequest('req-status-success', 'corr-status-success', guardEnabled, 1024, 1),
+        atomicWrite: async () => ({
+          ok: true as const,
+          bytes: 1024,
+          generation: 2,
+          lastSuccessAt: new Date('2024-01-01T00:00:02.000Z').toISOString(),
+          lockStrategy: 'web-lock' as const
+        }),
+        expectedStatus: 'success' as const
+      },
+      {
+        label: 'retryable failure',
+        request: createRequest('req-status-retryable', 'corr-status-retryable', guardEnabled, 2048, 2),
+        atomicWrite: async () => ({
+          ok: false as const,
+          error: {
+            name: 'AutoSaveError',
+            message: 'temporary failure',
+            code: 'write-failed',
+            retryable: true
+          }
+        }),
+        expectedStatus: 'failure' as const
+      },
+      {
+        label: 'non-retryable failure',
+        request: createRequest('req-status-fatal', 'corr-status-fatal', guardEnabled, 4096, 3),
+        atomicWrite: async () => ({
+          ok: false as const,
+          error: {
+            name: 'AutoSaveError',
+            message: 'fatal failure',
+            code: 'data-corrupted',
+            retryable: false
+          }
+        }),
+        expectedStatus: 'failure' as const
+      }
+    ]
+
+    for (const scenario of scenarios) {
+      const sent: AutoSaveBridgeMessage[] = []
+      const telemetry: AutoSaveTelemetryEvent[] = []
+      const bridge = createVscodeAutoSaveBridge({
+        policy: AUTOSAVE_POLICY,
+        initialGuard: guardEnabled,
+        flags: createDefaultFlags(),
+        now: () => new Date('2024-01-01T00:00:00.000Z'),
+        sendMessage: (message) => sent.push(message),
+        atomicWrite: scenario.atomicWrite,
+        telemetry: telemetry.push.bind(telemetry)
+      })
+
+      await bridge.handleSnapshotRequest(scenario.request)
+
+      const snapshotMessage = sent
+        .filter(isSnapshotResultMessage)
+        .find((message) => message.correlationId === scenario.request.correlationId)
+      assert.ok(snapshotMessage, `${scenario.label}: snapshot.result message が必要`)
+
+      const expectedOk = scenario.expectedStatus === 'success'
+      assert.equal(
+        snapshotMessage.payload.ok,
+        expectedOk,
+        `${scenario.label}: snapshot.result payload.ok が期待する成否と一致する`
+      )
+
+      const resultEvent = telemetry.find(
+        (event) =>
+          event.name === 'autosave.snapshot.result' &&
+          event.properties?.correlationId === scenario.request.correlationId
+      )
+      assert.ok(resultEvent, `${scenario.label}: autosave.snapshot.result telemetry が必要`)
+      assert.equal(
+        resultEvent.properties?.status,
+        scenario.expectedStatus,
+        `${scenario.label}: autosave.snapshot.result telemetry status が期待する成否と一致する`
+      )
+    }
+  })
+
   it('reportDirty/handleSnapshotRequest telemetry carries phase metadata', async () => {
     const telemetry: AutoSaveTelemetryEvent[] = []
     let tick = 0

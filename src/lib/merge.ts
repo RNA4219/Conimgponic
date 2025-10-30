@@ -793,9 +793,9 @@ function decideSection(section: MergeSection, metrics: MergeScoringMetrics, prof
       band = 'review';
     }
   }
-  const prefer = section.locked ? (profile.lockPolicy === 'strict' ? section.prefer : section.prefer) : section.prefer;
+  const prefer = section.prefer;
   const merged = decision === 'auto'
-    ? (prefer === 'ai' ? section.ai : prefer === 'manual' ? section.manual : section.manual)
+    ? (prefer === 'ai' ? section.ai : section.manual)
     : section.base;
   const hunk: MergeHunk = {
     id: section.id,
