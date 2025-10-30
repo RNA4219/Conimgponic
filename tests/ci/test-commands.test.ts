@@ -9,15 +9,34 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 const packageJsonPath = fileURLToPath(new URL('../../package.json', import.meta.url));
-const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+const packageJsonSource = readFileSync(packageJsonPath, 'utf8');
+
+type PackageJson = {
   scripts?: Record<string, string>;
+};
+
+let cachedPackageJson: PackageJson | undefined;
+
+const parsePackageJson = (): PackageJson => JSON.parse(packageJsonSource) as PackageJson;
+
+const getPackageJson = (): PackageJson => {
+  if (!cachedPackageJson) {
+    cachedPackageJson = parsePackageJson();
+  }
+
+  return cachedPackageJson;
 };
 
 const ensureCommand =
   "node --input-type=module --eval \"import { mkdirSync } from 'node:fs'; const dir = process.argv.at(-1); if (!dir) throw new Error('missing dir'); mkdirSync(dir, { recursive: true });\"";
 
+test('package.json scripts are valid JSON', () => {
+  cachedPackageJson = undefined;
+  assert.doesNotThrow(() => getPackageJson());
+});
+
 const resolveScript = (name: string): string => {
-  const scripts = packageJson.scripts;
+  const scripts = getPackageJson().scripts;
   assert.ok(scripts, 'package.json.scripts is missing');
   const script = scripts[name];
   assert.ok(script, `script ${name} is missing`);
