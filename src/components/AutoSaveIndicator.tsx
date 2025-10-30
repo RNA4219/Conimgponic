@@ -42,7 +42,7 @@ function AutoSaveIndicatorComponent({
     }
   }, [onToast, viewModel.toast])
 
-  const historyButtonDisabled = viewModel.history.access !== 'available'
+  const historyButtonDisabled = !viewModel.history.canOpen
 
   return (
     <div

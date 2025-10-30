@@ -10,8 +10,10 @@ describe('createAutoSaveIndicatorController', () => {
   const createController = (initial: AutoSaveStatusSnapshot) => {
     let current = initial
     const listeners = new Set<(event: ProjectLockEvent) => void>()
+    let subscribeCalls = 0
     const snapshot = () => current
     const subscribeLockEvents = (listener: (event: ProjectLockEvent) => void) => {
+      subscribeCalls += 1
       listeners.add(listener)
       return () => {
         listeners.delete(listener)
@@ -32,6 +34,9 @@ describe('createAutoSaveIndicatorController', () => {
         for (const listener of listeners) {
           listener(event)
         }
+      },
+      getSubscribeCalls() {
+        return subscribeCalls
       }
     }
   }
@@ -46,6 +51,7 @@ describe('createAutoSaveIndicatorController', () => {
     const awaitingLock: AutoSaveStatusSnapshot = { ...idle, phase: 'awaiting-lock', retryCount: 0 }
     const { controller, setSnapshot } = createController(idle)
 
+    controller.start()
     setSnapshot(awaitingLock)
     await wait(15)
 
@@ -76,6 +82,7 @@ describe('createAutoSaveIndicatorController', () => {
     }
     const { controller, setSnapshot } = createController(base)
 
+    controller.start()
     setSnapshot({ ...base, retryCount: 1 })
     await wait(10)
     setSnapshot({ ...base, retryCount: 2 })
@@ -99,6 +106,7 @@ describe('createAutoSaveIndicatorController', () => {
     }
     const { controller, setSnapshot, emitLock } = createController(idle)
 
+    controller.start()
     setSnapshot({
       ...idle,
       phase: 'error',
@@ -128,6 +136,33 @@ describe('createAutoSaveIndicatorController', () => {
     const state = controller.store.getState()
     assert.equal(state.viewModel.isReadOnly, true)
     assert.equal(state.viewModel.history.access, 'disabled')
+
+    controller.dispose()
+  })
+
+  test('start を呼ぶまでポーリングもロック購読も開始しない', async () => {
+    const idle: AutoSaveStatusSnapshot = {
+      phase: 'idle',
+      retryCount: 0,
+      pendingBytes: 0,
+      lastSuccessAt: '2024-05-01T00:00:00Z'
+    }
+    const awaitingLock: AutoSaveStatusSnapshot = { ...idle, phase: 'awaiting-lock', retryCount: 1 }
+    const { controller, setSnapshot, getSubscribeCalls } = createController(idle)
+
+    assert.equal(getSubscribeCalls(), 0)
+
+    setSnapshot(awaitingLock)
+    await wait(20)
+
+    assert.equal(controller.store.getState().snapshot.phase, 'idle')
+    assert.equal(getSubscribeCalls(), 0)
+
+    controller.start()
+    await wait(20)
+
+    assert.equal(controller.store.getState().snapshot.phase, 'awaiting-lock')
+    assert.equal(getSubscribeCalls(), 1)
 
     controller.dispose()
   })
