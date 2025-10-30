@@ -1771,6 +1771,35 @@ describe('vscode extension telemetry contract (RED)', () => {
     )
     deepStrictEqual(failureErrorSchema.required, ['code', 'message', 'retryable'])
   })
+
+  test('export.result telemetry は export_latency_p95 ガードで latency を監視する', () => {
+    const spec = findTelemetrySpec('export.result')
+    assertOk(spec, 'export.result telemetry spec is missing')
+    assertOk(spec.guardrail, 'export.result telemetry must define guardrail for export latency')
+    strictEqual(
+      spec.guardrail.metric,
+      'export_latency_p95',
+      'export.result telemetry must guard export_latency_p95',
+    )
+    assertOk(
+      spec.jsonlFields.includes('payload.duration_ms'),
+      'export.result telemetry must emit payload.duration_ms for latency aggregation',
+    )
+  })
+
+  test('export guardrail の違反ウィンドウが telemetry.retryPolicy と同期している', () => {
+    const exportGuard = COLLECT_METRICS_CONTRACT.phaseGates
+      .flatMap((phase) => phase.guardrails)
+      .find((guard) => guard.metric === 'export_latency_p95')
+
+    assertOk(exportGuard, 'phase gates must define guardrail for export_latency_p95')
+
+    strictEqual(
+      COLLECT_METRICS_CONTRACT.telemetry.retryPolicy.flushWindowMinutes,
+      exportGuard.violationWindowMinutes,
+      'telemetry retry policy window must align with export guardrail window',
+    )
+  })
   test('export.result の単一イベント契約に統合し export.started を廃止する', () => {
     const started = findTelemetrySpec('export.started')
     strictEqual(
