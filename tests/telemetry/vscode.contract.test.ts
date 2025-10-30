@@ -1869,41 +1869,60 @@ describe('vscode extension telemetry contract (RED)', () => {
     )
   })
 
-  test('collect-metrics 契約は ui_saved_rate を Phase A ガードと telemetry guardrail に配線する', () => {
+  test('collect-metrics 契約は ui_saved_rate 欠落を RED で検知し status.autosave guardrail を固定する', () => {
     const { inputRecord, notifications, phaseGates, telemetry } = COLLECT_METRICS_CONTRACT
 
+    assertOk('ui_saved_rate' in inputRecord, 'input record must define ui_saved_rate metric')
     strictEqual(
       typeof inputRecord.ui_saved_rate,
       'number',
-      'input record must define ui_saved_rate metric',
+      'input record must expose ui_saved_rate as numeric metric',
     )
 
     const uiSavedNotifications = notifications.filter((notification) => notification.metric === 'ui_saved_rate')
     assertOk(uiSavedNotifications.length >= 1, 'notifications must monitor ui_saved_rate breaches')
-    assertOk(
-      uiSavedNotifications.some((notification) => notification.channelType === 'slack'),
-      'ui_saved_rate notifications must include slack channel',
-    )
-    assertOk(
-      uiSavedNotifications.some((notification) => notification.channelType === 'pagerduty'),
-      'ui_saved_rate notifications must include pagerduty channel',
+    deepStrictEqual(
+      Array.from(new Set(uiSavedNotifications.map((notification) => notification.channelType))).sort(),
+      ['pagerduty', 'slack'],
+      'ui_saved_rate notifications must include slack and pagerduty channels',
     )
 
-    const phaseAGuardrails = phaseGates
+    const phaseAGuardsByPhase = phaseGates
       .filter((phase) => phase.phase === 'A-1' || phase.phase === 'A-2')
-      .flatMap((phase) => phase.guardrails)
-    assertOk(phaseAGuardrails.length > 0, 'phase gates must define guardrails for Phase A rollout')
-    assertOk(
-      phaseAGuardrails.some((guard) => guard.metric === 'ui_saved_rate' && guard.comparator === 'gte'),
-      'Phase A guardrails must require ui_saved_rate >= threshold',
+      .map((phase) => ({
+        phase: phase.phase,
+        guardrails: phase.guardrails.filter(
+          (guard) => guard.metric === 'ui_saved_rate' && guard.comparator === 'gte',
+        ),
+      }))
+    deepStrictEqual(
+      phaseAGuardsByPhase.map(({ phase }) => phase).sort(),
+      ['A-1', 'A-2'],
+      'Phase gates must define Phase A guardrails for ui_saved_rate',
     )
+    phaseAGuardsByPhase.forEach(({ phase, guardrails }) => {
+      assertOk(guardrails.length >= 1, `Phase ${phase} must guard ui_saved_rate >= threshold`)
+    })
 
     const statusAutosaveSpec = findTelemetrySpec('status.autosave')
     assertOk(statusAutosaveSpec, 'status.autosave telemetry spec must exist')
+    assertOk(
+      statusAutosaveSpec.description.includes('ui_saved_rate'),
+      'status.autosave telemetry description must document ui_saved_rate guardrail',
+    )
     strictEqual(
       statusAutosaveSpec.guardrail?.metric,
       'ui_saved_rate',
       'status.autosave telemetry must guard ui_saved_rate breaches',
+    )
+    strictEqual(
+      statusAutosaveSpec.guardrail?.rollbackTo,
+      'A-0',
+      'status.autosave telemetry must rollback to Phase A-0 on ui_saved_rate breaches',
+    )
+    assertOk(
+      telemetry.events.some((event) => event.event === 'status.autosave' && event.guardrail?.metric === 'ui_saved_rate'),
+      'telemetry events must explicitly guard ui_saved_rate for status.autosave',
     )
   })
 
