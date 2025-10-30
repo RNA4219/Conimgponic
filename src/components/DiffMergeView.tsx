@@ -182,19 +182,17 @@ export const resolveDiffMergeStoredTab = ({
 }): DiffMergeSubTabKey => {
   const storageKey = `${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`
   let stored: string | null = null
-  let readFailed = false
 
   if (storage) {
     try {
       stored = storage.getItem(storageKey)
     } catch (error) {
-      readFailed = true
-      console.warn('DiffMergeView: failed to read stored tab selection', error)
+      console.warn(
+        `DiffMergeView: failed to read stored tab selection for ${storageKey}`,
+        error,
+      )
+      return plan.initialTab
     }
-  }
-
-  if (readFailed) {
-    return plan.initialTab
   }
 
   stored = stored ?? null
