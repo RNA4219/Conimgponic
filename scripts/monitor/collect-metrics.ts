@@ -932,7 +932,27 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     events: [
       {
         event: 'status.autosave',
-        description: 'AutoSave 状態遷移と UI 保存率を Phase ガード autosave_p95 / ui_saved_rate と同期させる。',
+        description:
+          'AutoSave 状態遷移と UI 保存率 (ui_saved_rate) を Phase ガード autosave_p95 / ui_saved_rate と同期させる。',
+        // JSONL 例 (ui_saved_rate 集計):
+        // {
+        //   "schema": "vscode.telemetry.v1",
+        //   "event": "status.autosave",
+        //   "phase": "A-1",
+        //   "attempt": 1,
+        //   "maxAttempts": 3,
+        //   "backoffMs": [100, 300, 900],
+        //   "payload": {
+        //     "state": "saving",
+        //     "debounce_ms": 500,
+        //     "latency_ms": 1200,
+        //     "attempt": 1,
+        //     "phase_step": "awaiting-lock",
+        //     "guard": { "current": "A-1", "rollbackTo": "A-0" },
+        //     "detail": { "retry_count": 0 },
+        //     "performance": { "flush_latency_ms": 820 }
+        //   }
+        // }
         jsonlFields: [
           'payload.state',
           'payload.debounce_ms',
