@@ -1002,7 +1002,9 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     const previous = getReleaseFailure(lease.leaseId);
     const attempts = (previous?.attempts ?? 0) + 1;
     const alreadyReadonly = previous?.readonlyNotified ?? false;
-    const shouldEmitReadonly = !alreadyReadonly;
+    const isDeferredReadonly =
+      error.code === 'release-failed' && error.retryable && attempts < releaseBackoff.maxAttempts;
+    const shouldEmitReadonly = !alreadyReadonly && !isDeferredReadonly;
     const nextDelay = attempts < releaseBackoff.maxAttempts ? computeReleaseDelay(attempts + 1) : 0;
     const state = rememberReleaseFailure(
       lease.leaseId,

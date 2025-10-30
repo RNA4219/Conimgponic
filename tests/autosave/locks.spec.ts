@@ -2179,6 +2179,78 @@ scenario(
 )
 
 scenario(
+  'AS-LK-09g: release retries emit readonly only after third failure',
+  { navigator: { locks: undefined } },
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const originalGetDirectory = ctx.opfs.storage.getDirectory
+    const wrapDirectory = (
+      directory: Awaited<ReturnType<typeof originalGetDirectory>>
+    ): Awaited<ReturnType<typeof originalGetDirectory>> => {
+      const getDirectoryHandle = directory.getDirectoryHandle.bind(directory)
+      return {
+        ...directory,
+        async getDirectoryHandle(name: string, options?: { create?: boolean }) {
+          const next = await getDirectoryHandle(name, options as { create?: boolean })
+          return wrapDirectory(next)
+        },
+        async removeEntry(name: string) {
+          throw new DOMException(`Remove blocked for ${name}`, 'InvalidStateError')
+        }
+      }
+    }
+    ctx.opfs.storage.getDirectory = async () => wrapDirectory(await originalGetDirectory())
+    t.after(() => {
+      ctx.opfs.storage.getDirectory = originalGetDirectory
+    })
+
+    const lease = await acquireProjectLock({ preferredStrategy: 'file-lock', retry: false })
+    assert.equal(lease.strategy, 'file-lock')
+
+    const readonlyEvents = () =>
+      events.filter(
+        (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
+        => event.type === 'lock:readonly-entered'
+      )
+
+    const errorEvents = () =>
+      events.filter(
+        (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }> => event.type === 'lock:error'
+      )
+
+    const expectReleaseFailure = async (expectedDelayMs?: number) => {
+      const releasePromise = releaseProjectLock(lease)
+      if (expectedDelayMs && expectedDelayMs > 0) {
+        await Promise.resolve()
+        t.mock.timers.tick(expectedDelayMs)
+      }
+      const error = (await assert.rejects(async () => releasePromise)) as ProjectLockError
+      assert.equal(error.code, 'release-failed')
+      assert.equal(error.retryable, true)
+    }
+
+    await expectReleaseFailure()
+    assert.equal(readonlyEvents().length, 0, 'first release failure must not trigger readonly')
+    assert.equal(errorEvents().length, 1, 'first release failure must emit lock:error once')
+
+    await expectReleaseFailure(500)
+    assert.equal(readonlyEvents().length, 0, 'second release failure must not trigger readonly')
+    assert.equal(errorEvents().length, 2, 'second release failure must emit lock:error twice')
+
+    await expectReleaseFailure(1000)
+    assert.equal(readonlyEvents().length, 1, 'readonly must emit exactly once on third failure')
+    assert.equal(readonlyEvents()[0]?.reason, 'release-failed')
+    assert.equal(errorEvents().length, 3, 'third release failure must emit lock:error thrice')
+  }
+)
+
+scenario(
   'AS-LK-09g: fallback release waits for two retries before succeeding',
   { navigator: { locks: undefined } },
   async (t, ctx) => {
