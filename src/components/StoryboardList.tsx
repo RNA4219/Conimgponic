@@ -37,9 +37,7 @@ export function applyNumericFieldChange({
     return
   }
 
-  warnImpl(`StoryboardList: ${field} requires a finite number (received "${rawValue}")`)
-  patch[field] = undefined
-  updateScene(sceneId, patch as Partial<Scene>)
+  warnImpl(`StoryboardList: ${field} requires a finite number (received "${rawValue}"); preserving previous value`)
 }
 
 export function StoryboardList(){

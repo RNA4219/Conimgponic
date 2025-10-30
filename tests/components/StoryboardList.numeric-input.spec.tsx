@@ -5,27 +5,53 @@ import type { Scene } from '../../src/types'
 import { applyNumericFieldChange } from '../../src/components/StoryboardList'
 
 describe('StoryboardList.numeric-input validation (RED)', () => {
-  it('StoryboardList.numeric-input warns and clears seed when input is not a finite number', () => {
+  it('非数値入力時は updateScene を呼ばず旧値を保持する (seed)', () => {
     const warnings: string[] = []
-    const updateSceneCalls: Array<{ id: string; patch: Partial<Scene> }> = []
+    let currentScene: Pick<Scene, 'seed'> = { seed: 123 }
+    let updateSceneCalls = 0
 
     applyNumericFieldChange({
       field: 'seed',
       rawValue: 'not-a-number',
       sceneId: 'scene-123',
-      updateScene: (id, patch) => {
-        updateSceneCalls.push({ id, patch })
+      updateScene: (_id, patch) => {
+        updateSceneCalls += 1
+        currentScene = { ...currentScene, ...patch }
       },
       warn: (message) => {
         warnings.push(message)
       },
     })
 
-    assert.deepEqual(updateSceneCalls, [
-      { id: 'scene-123', patch: { seed: undefined } },
-    ])
+    assert.equal(updateSceneCalls, 0)
+    assert.equal(currentScene.seed, 123)
     assert.deepEqual(warnings, [
-      'StoryboardList: seed requires a finite number (received "not-a-number")',
+      'StoryboardList: seed requires a finite number (received "not-a-number"); preserving previous value',
+    ])
+  })
+
+  it('非数値入力時は updateScene を呼ばず旧値を保持する (take)', () => {
+    const warnings: string[] = []
+    let currentScene: Pick<Scene, 'take'> = { take: 5 }
+    let updateSceneCalls = 0
+
+    applyNumericFieldChange({
+      field: 'take',
+      rawValue: 'NaN',
+      sceneId: 'scene-456',
+      updateScene: (_id, patch) => {
+        updateSceneCalls += 1
+        currentScene = { ...currentScene, ...patch }
+      },
+      warn: (message) => {
+        warnings.push(message)
+      },
+    })
+
+    assert.equal(updateSceneCalls, 0)
+    assert.equal(currentScene.take, 5)
+    assert.deepEqual(warnings, [
+      'StoryboardList: take requires a finite number (received "NaN"); preserving previous value',
     ])
   })
 })
