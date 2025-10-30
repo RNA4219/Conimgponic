@@ -3,17 +3,17 @@ import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import { DiffMergeView } from '../../src/components/DiffMergeView.tsx'
 import {
-  DiffMergeView,
-  createDiffMergeController,
+  createDiffMergeNavigationKeyHandler,
   planDiffMergeView,
   resolveDiffMergeStoredTab,
-  createDiffMergeNavigationKeyHandler,
   type DiffMergeQueueCommandPayload,
   type DiffMergeSubTabKey,
   type DiffMergeTabStorage,
   type MergeHunk,
-} from '../../src/components/DiffMergeView.tsx'
+} from '../../src/components/diffMergeTypes.ts'
+import { createDiffMergeController } from '../../src/components/diffMergeState'
 
 const sampleHunks: readonly MergeHunk[] = [
   {

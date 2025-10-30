@@ -9,10 +9,8 @@ import {
   planMergeDockTabs,
   resolveMergeDockPhasePlan,
 } from '../../src/components/MergeDock.tsx'
-import {
-  DiffMergeView,
-  type MergeHunk,
-} from '../../src/components/DiffMergeView.tsx'
+import { DiffMergeView } from '../../src/components/DiffMergeView.tsx'
+import type { MergeHunk } from '../../src/components/diffMergeTypes.ts'
 import type { FlagSnapshot } from '../../src/config/flags.ts'
 import { mergeCSV, mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'

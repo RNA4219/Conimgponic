@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { planDiffMergeView, resolveDiffMergeStoredTab, type DiffMergeTabStorage } from '../../src/components/DiffMergeView.tsx'
+import {
+  planDiffMergeView,
+  resolveDiffMergeStoredTab,
+  type DiffMergeTabStorage,
+} from '../../src/components/diffMergeTypes.ts'
 
 test('DiffMergeView.localStorage-read recovers when storage.getItem throws by returning plan initial tab', () => {
   const precision = 'stable' as const

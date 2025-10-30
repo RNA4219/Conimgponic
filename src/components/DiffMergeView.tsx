@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
-import type { MergeHunk, MergePrecision } from '../lib/merge'
 import {
   DIFF_MERGE_TAB_STORAGE_PREFIX,
   createDiffMergeNavigationKeyHandler,
+  isDiffMergeDevelopmentEnvironment as isDevelopmentEnvironment,
   planDiffMergeView,
   resolveDiffMergeStoredTab,
-  type DiffMergeSubTabKey,
-  type DiffMergeTabStorage,
-  type DiffMergeViewPlan,
-  type QueueMergeCommand,
-  isDiffMergeDevelopmentEnvironment as isDevelopmentEnvironment,
-} from '../lib/merge/diffMergePlan'
+} from './diffMergeTypes.js'
+import type {
+  DiffMergeSubTabKey,
+  DiffMergeTabStorage,
+  DiffMergeViewPlan,
+  MergeHunk,
+  MergePrecision,
+  QueueMergeCommand,
+} from './diffMergeTypes.js'
 
 import {
   createDiffMergeController,
@@ -21,37 +24,6 @@ import {
   type DiffMergeAutoAppliedState,
   type DiffMergeState,
 } from './diffMergeState.js'
-
-export { createDiffMergeController } from './diffMergeState.js'
-export type { MergeHunk, MergePrecision } from '../lib/merge'
-export {
-  DIFF_MERGE_TAB_STORAGE_PREFIX,
-  PRECISION_PHASE_GUARD,
-  SUB_TAB_LABELS,
-  createDiffMergeNavigationKeyHandler,
-  planDiffMergeView,
-  resolveDiffMergeStoredTab,
-  diffMergeComponentResponsibilities,
-  diffMergeViewDesign,
-  planDiffMergeSubTabs,
-} from '../lib/merge/diffMergePlan'
-export type {
-  DiffMergeNavigationKeyEvent,
-  DiffMergeNavigationKeyHandler,
-  DiffMergeNavigationKeyHandlerOptions,
-  DiffMergePaneSpec,
-  DiffMergePaneTransition,
-  DiffMergeQueueCommandPayload,
-  DiffMergeSubTabPlan,
-  DiffMergeTabKey,
-  DiffMergeTabSpec,
-  DiffMergeTabStorage,
-  DiffMergeViewDesign,
-  DiffMergeViewPlan,
-  MergeDecisionEvent,
-  QueueMergeCommand,
-  PrecisionPhaseGuard,
-} from '../lib/merge/diffMergePlan'
 
 type DiffMergeController = ReturnType<typeof createDiffMergeController>
 
