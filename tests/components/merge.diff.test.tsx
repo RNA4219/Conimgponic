@@ -455,6 +455,18 @@ test('stable precision demotes diff tab when auto apply underperforms', () => {
   assert.equal(plan.diff.enabled, false)
 })
 
+test('stable precision demotes diff even without phase stats when auto apply underperforms', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    autoAppliedRate: 0.84,
+  })
+
+  assert.ok(plan.threshold.autoTarget > (plan.autoApplied.rate ?? 0))
+  assert.equal(plan.diff.exposure, 'opt-in')
+  assert.equal(plan.diff.enabled, false)
+})
+
 test('stable precision demotion shouldDemoteDiff swaps to beta tab layout with Diff (Beta) badge', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',

@@ -236,7 +236,7 @@ export const resolveMergeDockPhasePlan = ({
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
   const shouldDemoteDiff =
-    diffConfigured && meetsTarget === false && (precision !== 'stable' || phaseBRequired)
+    diffConfigured && meetsTarget === false && (precision === 'stable' || phaseBRequired)
 
   if (!shouldHideDiff && shouldDemoteDiff) {
     if (precision === 'stable') {
@@ -248,7 +248,10 @@ export const resolveMergeDockPhasePlan = ({
 
   const diffEnabled = diffVisible && phaseBRequired && !shouldDemoteDiff
 
-  const effectiveTabs = diffVisible ? rawPlan.tabs : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
+  const demotedTabs = diffVisible && shouldDemoteDiff ? planMergeDockTabs('beta').tabs : undefined
+  const effectiveTabs = diffVisible
+    ? demotedTabs ?? rawPlan.tabs
+    : rawPlan.tabs.filter((entry) => entry.id !== 'diff')
   const compiledInitial = effectiveTabs.find((entry) => entry.id === 'compiled')?.id
   const defaultInitial = compiledInitial ?? effectiveTabs[0]?.id ?? rawPlan.initialTab
   const demotedInitial = shouldDemoteDiff && compiledInitial ? compiledInitial : undefined
