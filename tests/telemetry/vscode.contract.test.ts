@@ -2126,6 +2126,10 @@ describe('vscode extension telemetry contract (RED)', () => {
       assertOk('bytes' in artifact, 'export.result failure artifact must expose bytes')
     }
     assertOk(typeof payload.next_backoff_ms === 'number', 'export.result failure payload must include numeric backoff')
+    strictEqual(
+      payload.next_backoff_ms,
+      COLLECT_METRICS_CONTRACT.telemetry.retryPolicy.backoffMs[0],
+    )
   })
   test('error telemetry は retryable/detail.error_code/tags を Collector JSONL へ固定する', () => {
     const spec = findTelemetrySpec('error')
