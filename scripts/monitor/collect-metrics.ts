@@ -229,6 +229,13 @@ export interface ExportArtifactTelemetry {
   readonly bytes: number | null;
 }
 
+export interface ExportResultSummaryTelemetry {
+  /** Export 成功率（0〜1）。Analyzer は phase gate 判定に利用する。 */
+  readonly export_success_rate: number;
+  /** Export 実行レイテンシの P95（ミリ秒）。Analyzer は phase gate 判定に利用する。 */
+  readonly export_latency_p95: number;
+}
+
 export interface ExportFailureEntryTelemetry {
   readonly format: ExportFormat | `package:${string}`;
   readonly name: string | null;
@@ -243,6 +250,7 @@ export interface ExportResultPayload {
   readonly formats: ReadonlyArray<string>;
   readonly duration_ms: number;
   readonly detail: ExportResultDetailTelemetry;
+  readonly summary: ExportResultSummaryTelemetry;
   readonly artifacts: ReadonlyArray<ExportArtifactTelemetry>;
   readonly error?: {
     readonly code: string;
@@ -554,6 +562,15 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       channelType: 'pagerduty',
       destination: 'Export Duty',
       severity: 'critical',
+      metric: 'export_latency_p95',
+      value: 42000,
+      threshold: 30000,
+      template: 'templates/alerts/rollout-monitor.md',
+    },
+    {
+      channelType: 'pagerduty',
+      destination: 'Export Duty',
+      severity: 'critical',
       metric: 'export_success_rate',
       value: 0.96,
       threshold: 0.98,
@@ -661,12 +678,17 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           comparator: 'lte',
           threshold: 30000,
           violationWindowMinutes: 15,
-          notifyChannels: ['slack'],
+          notifyChannels: ['slack', 'pagerduty'],
           notifyDestinations: [
             {
               channelType: 'slack',
               destination: '#export-ops',
               severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Export Duty',
+              severity: 'critical',
             },
           ],
           rollbackTo: 'A-2',
@@ -915,7 +937,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'export.result',
         description:
-          'Export 成否を単一イベントで集約し、成果物バイト数・P95 レイテンシ・失敗時の再試行情報を Reporter へ伝達する。',
+          'Export 成否を単一イベントで集約し、export_latency_p95 ガード用の P95 レイテンシと失敗時の再試行情報を Reporter へ伝達する。',
         jsonlFields: [
           'payload.status',
           'payload.runId',
@@ -923,6 +945,9 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           'payload.formats',
           'payload.duration_ms',
           'payload.detail.duration_ms',
+          // Analyzer 集計（monitor/analyzer/export.ts equivalent）で Phase gate 指標を算出する。
+          'payload.summary.export_latency_p95',
+          'payload.summary.export_success_rate',
           'payload.artifacts[].format',
           'payload.artifacts[].name',
           'payload.artifacts[].status',

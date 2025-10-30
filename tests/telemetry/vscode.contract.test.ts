@@ -1781,9 +1781,49 @@ describe('vscode extension telemetry contract (RED)', () => {
       'export_latency_p95',
       'export.result telemetry must guard export_latency_p95',
     )
+    strictEqual(
+      spec.guardrail.rollbackTo,
+      'A-2',
+      'export.result telemetry must rollback export rollout to A-2 on latency breaches',
+    )
+    assertOk(
+      spec.description.includes('export_latency_p95'),
+      'export.result telemetry description must document export_latency_p95 guardrail',
+    )
     assertOk(
       spec.jsonlFields.includes('payload.duration_ms'),
       'export.result telemetry must emit payload.duration_ms for latency aggregation',
+    )
+  })
+
+  test('collect-metrics 契約は export_latency_p95 指標を全経路で露出する', () => {
+    const { inputRecord, notifications, phaseGates, telemetry } = COLLECT_METRICS_CONTRACT
+
+    strictEqual(
+      typeof inputRecord.export_latency_p95,
+      'number',
+      'input record must define export_latency_p95 metric',
+    )
+
+    assertOk(
+      notifications.some((notification) => notification.metric === 'export_latency_p95'),
+      'notifications must monitor export_latency_p95 breaches',
+    )
+
+    assertOk(
+      phaseGates.flatMap((phase) => phase.guardrails).some((guard) => guard.metric === 'export_latency_p95'),
+      'phase gates must guard export_latency_p95 transitions',
+    )
+
+    const exportResult = telemetry.events.find((event) => event.event === 'export.result')
+    assertOk(exportResult, 'export.result telemetry spec must exist')
+    assertOk(
+      exportResult.jsonlFields.includes('payload.summary.export_latency_p95'),
+      'export.result telemetry must expose summary.export_latency_p95',
+    )
+    assertOk(
+      exportResult.jsonlFields.includes('payload.summary.export_success_rate'),
+      'export.result telemetry must expose summary.export_success_rate',
     )
   })
 

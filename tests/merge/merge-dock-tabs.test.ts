@@ -9,6 +9,10 @@ import {
   planMergeDockTabs,
   resolveMergeDockPhasePlan,
 } from '../../src/components/MergeDock.tsx'
+import {
+  DiffMergeView,
+  type MergeHunk,
+} from '../../src/components/DiffMergeView.tsx'
 import type { FlagSnapshot } from '../../src/config/flags.ts'
 import { mergeCSV, mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'
@@ -99,6 +103,20 @@ test('merge: tab plan snapshot', async (t) => {
     })
   }
 })
+
+const diffMergeSampleHunks = [
+  {
+    id: 'h1',
+    section: null,
+    decision: 'conflict',
+    similarity: 0.42,
+    merged: '<merged />',
+    manual: '<manual />',
+    ai: '<ai />',
+    base: '<base />',
+    prefer: 'none',
+  },
+] as const satisfies readonly MergeHunk[]
 
 test('merge: stable precision demotes diff initial tab when auto applied rate is below target', () => {
   const plan = resolveMergeDockPhasePlan({
@@ -196,6 +214,32 @@ test('merge-ui: stable precision diff tab renders DiffMergeView with backup CTA 
       value: originalWindow,
     })
     Date.now = originalDateNow
+  }
+})
+
+test('merge-ui: diff merge navigation advertises arrow key shortcuts across precision toggles', async (t) => {
+  for (const precision of ['legacy', 'beta'] as const) {
+    await t.test(`precision=${precision}`, () => {
+      const html = renderToStaticMarkup(
+        React.createElement(DiffMergeView, {
+          precision,
+          hunks: diffMergeSampleHunks,
+          queueMergeCommand: async () => ({
+            status: 'success' as const,
+            hunkIds: [],
+            telemetry: {
+              collectorSurface: 'diff-merge.hunk-list' as const,
+              analyzerSurface: 'diff-merge.queue' as const,
+              retryable: false,
+            },
+          }),
+        }),
+      )
+
+      assert.match(html, /role="tablist"/)
+      assert.match(html, new RegExp(`data-precision="${precision}"`))
+      assert.match(html, /aria-keyshortcuts="ArrowLeft ArrowRight"/)
+    })
   }
 })
 

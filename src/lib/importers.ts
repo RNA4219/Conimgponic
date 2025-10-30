@@ -18,7 +18,16 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
   for (const ln of lines){
     try{
       const o = JSON.parse(ln)
-      const i = idx.get(o.id)
+      if (typeof o.id !== 'string') {
+        continue
+      }
+
+      const id = o.id.trim()
+      if (!id) {
+        continue
+      }
+
+      const i = idx.get(id)
       const seed = normalizeNumber(o.seed)
       const take = normalizeNumber(o.take)
       const rating = normalizeSceneRating(o.rating)
@@ -39,8 +48,8 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
         }
         next.scenes[i] = { ...sc, ...patch }
       }else{
-        next.scenes.push({ id: o.id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed: seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take: take, rating })
-        idx.set(o.id, next.scenes.length - 1)
+        next.scenes.push({ id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed: seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take: take, rating })
+        idx.set(id, next.scenes.length - 1)
       }
     }catch{ /* ignore bad line */ }
   }
