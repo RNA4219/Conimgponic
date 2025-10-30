@@ -8,7 +8,7 @@ import type { AutoSaveInitResult } from '../../src/lib/autosave'
 import { AUTOSAVE_RETRY_POLICY } from '../../src/lib/autosave'
 import { ProjectLockError, projectLockApi } from '../../src/lib/locks'
 import type { Storyboard } from '../../src/types'
-import { collectAutoSaveWrites, reset } from './__mocks__/opfs'
+import { collectAutoSaveWrites, failWriteOnce, reset } from './__mocks__/opfs'
 
 const snapshotBase = new URL('./__snapshots__/autosave/on/', import.meta.url)
 
@@ -195,6 +195,84 @@ scenario('AS-EX-01: NotAllowedError failure disables autosave without retries', 
       })
     })
   }
+})
+
+scenario('AS-EX-07: flushNow stops after NotAllowedError write failure', async (t, ctx) => {
+  t.mock.timers.reset()
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 4, 0, 0, 0) })
+  t.after(() => {
+    t.mock.timers.reset()
+  })
+
+  ctx.opfs.files.clear()
+  reset()
+
+  const telemetryStart = ctx.runnerTelemetry.length
+
+  const restoreFailure = failWriteOnce(ctx.opfs, 'project/autosave/current.json.tmp')
+  t.after(restoreFailure)
+
+  const runner = ctx.initAutoSave(createStoryboard, { disabled: false }, ENABLED_GUARD)
+
+  runner.markDirty({ pendingBytes: 1536 })
+
+  await assert.rejects(
+    runner.flushNow(),
+    (error: unknown) => {
+      assert.ok(error instanceof Error, 'flushNow should reject with an Error')
+      return true
+    }
+  )
+
+  assert.equal(runner.snapshot().phase, 'disabled', 'runner should disable after non-retryable failure')
+
+  const writesAfterFailure = collectAutoSaveWrites(ctx.opfs)
+  assert.deepEqual(writesAfterFailure, [], 'write failure must not leave persisted artefacts')
+  assert.equal(ctx.opfs.files.size, 0, 'OPFS mock should not retain temporary files')
+
+  await runner.dispose()
+
+  const writesAfterDispose = collectAutoSaveWrites(ctx.opfs)
+  assert.deepEqual(writesAfterDispose, [], 'dispose must not introduce new writes after failure')
+
+  const runnerTelemetry = ctx.runnerTelemetry.slice(telemetryStart)
+
+  const writeFailedOutputs = runnerTelemetry.filter(
+    (event) => (event.detail as { event?: unknown } | undefined)?.event === 'autosave.write.failed'
+  )
+  assert.ok(writeFailedOutputs.length >= 2, 'write failure telemetry should include write and disable phases')
+
+  const immediateFailure = writeFailedOutputs.find(
+    (event) => (event.detail as { reason?: unknown } | undefined)?.reason === 'write'
+  )
+  assert.ok(immediateFailure, 'immediate autosave.write.failed telemetry is required')
+  const immediateFailureDetail = immediateFailure!.detail as Record<string, unknown>
+  assert.equal(immediateFailureDetail.retryable, false)
+  assert.equal(immediateFailure.phase, 'writing-current')
+
+  const retryExhausted = writeFailedOutputs.find(
+    (event) => (event.detail as { reason?: unknown } | undefined)?.reason === 'retry-exhausted'
+  )
+  assert.ok(retryExhausted, 'retry-exhausted telemetry should accompany the terminal failure')
+  const retryExhaustedDetail = retryExhausted!.detail as Record<string, unknown>
+  assert.equal(retryExhaustedDetail.retryable, false)
+
+  const disabledTelemetry = writeFailedOutputs.find((event) => event.phase === 'disabled')
+  assert.ok(disabledTelemetry, 'autosave.write.failed telemetry should downgrade to phase="disabled"')
+  const disabledDetail = disabledTelemetry!.detail as Record<string, unknown>
+  assert.equal(disabledDetail.reason, 'dispose')
+
+  const runnerWriteFailed = runnerTelemetry.filter(
+    (event) => (event.detail as { event?: unknown } | undefined)?.event === 'write-failed'
+  )
+  assert.equal(runnerWriteFailed.length, 1, 'runner telemetry must record a single write-failed event')
+  const runnerFailureDetail = runnerWriteFailed[0]!.detail as Record<string, unknown>
+  assert.equal(runnerFailureDetail.retryable, false)
+
+  const completedWrites = runnerTelemetry.filter(
+    (event) => (event.detail as { event?: unknown } | undefined)?.event === 'autosave.write.completed'
+  )
+  assert.equal(completedWrites.length, 0, 'successful write telemetry must not be emitted after failure')
 })
 
 scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', async (t, ctx) => {
