@@ -567,6 +567,7 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
   const completionDeferred = createDeferred();
   let releaseInvoked = false;
   let releaseError: ProjectLockError | undefined;
+  let lastReleaseError: ProjectLockError | undefined;
   let releasedPromise: Promise<unknown> | undefined;
   const captureCompletionError = (error: unknown) => {
     if (releaseError) return;
@@ -628,18 +629,17 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
 
     webLockHandles.set(ctx.leaseId, {
       release: async () => {
-        if (releaseInvoked) {
-          if (releaseError) throw releaseError;
-          return;
-        }
+        if (releaseInvoked && !lastReleaseError) return;
         releaseInvoked = true;
+        const previousError = lastReleaseError;
         let releaseFailure: ProjectLockError | undefined;
+        releaseError = undefined;
         if (releaseMethod) {
           try {
             await releaseMethod();
           } catch (error) {
             releaseFailure = toReleaseProjectError(error);
-            if (!releaseError) releaseError = releaseFailure;
+            releaseError = releaseFailure;
           }
         }
         releaseDeferred.resolve();
@@ -648,13 +648,20 @@ const acquireViaWebLock = async (ctx: AcquireContext): Promise<ProjectLockLease>
         } catch (error) {
           captureCompletionError(error);
         }
-        const errorToThrow = releaseFailure ?? releaseError;
+        let errorToThrow = releaseFailure ?? releaseError;
+        if (!releaseFailure && releaseError && previousError && releaseError.cause === previousError.cause) {
+          errorToThrow = previousError;
+        }
         if (errorToThrow) {
           releaseError = errorToThrow;
+          lastReleaseError = errorToThrow;
+          releaseInvoked = false;
           throw errorToThrow;
         }
+        releaseError = undefined;
+        lastReleaseError = undefined;
       },
-      getReleaseError: () => releaseError,
+      getReleaseError: () => lastReleaseError,
     });
 
     ready.resolve();
@@ -1020,7 +1027,7 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
 
   projectLockEvents.emit({ type: 'lock:release-requested', lease });
 
-  if (existingReleaseError) {
+  if (existingReleaseError && !currentState) {
     const state = processFailure(existingReleaseError);
     throw state.lastError;
   }
