@@ -23,6 +23,7 @@ test('mergeCSV.numeric-normalization: 非数値 take は新規シーンへ適用
 
   assert.ok(scene, 'scene-1 should be created')
   assert.strictEqual(scene?.take, undefined)
+  assert.strictEqual(scene && Object.hasOwn(scene, 'take'), false)
   assert.strictEqual(scene?.manual, 'manual text')
   assert.strictEqual(scene?.ai, '')
 })
