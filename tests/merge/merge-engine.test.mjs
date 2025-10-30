@@ -4,7 +4,7 @@ await register(new URL('./ts-loader.mjs', import.meta.url).href, import.meta.url
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-const { DEFAULT_MERGE_ENGINE } = await import('../../src/lib/merge.ts')
+const { DEFAULT_MERGE_ENGINE, DEFAULT_MERGE_PROFILE, PRECISION_THRESHOLD_CLAMP } = await import('../../src/lib/merge.ts')
 const { projectLockEvents } = await import('../../src/lib/locks.ts')
 const { createVsCodeMergeBridge } = await import('../../src/platform/vscode/merge/bridge.ts')
 
@@ -241,6 +241,64 @@ test('merge plan classifies sections by precision thresholds', () => {
   assert.equal(lowSimilarity?.recommendedCommand, 'queue:manual-intervention')
   assert.equal(lowSimilarity?.phase, 'phase-b')
   assert.ok(stableResult.plan?.phaseB.reasons.includes('low-similarity'))
+
+  process.env.MERGE_PRECISION = originalPrecision
+})
+
+test('MG-U-03: stable precision recalculates stats and plan bands when threshold changes', () => {
+  const originalPrecision = process.env.MERGE_PRECISION
+  process.env.MERGE_PRECISION = 'stable'
+
+  const createScoring = (values) => {
+    const queue = values.slice()
+    const fallback = values[values.length - 1] ?? 0
+    return () => {
+      const value = queue.shift() ?? fallback
+      return { jaccard: value, cosine: value, blended: value }
+    }
+  }
+
+  const input = {
+    base: 'Intro base\n\nBody base',
+    ours: 'Intro manual\n\nBody manual',
+    theirs: 'Intro ai\n\nBody ai',
+    sceneId: 'scene-threshold-recalc',
+  }
+
+  const stableDefaultThreshold = Math.max(DEFAULT_MERGE_PROFILE.threshold, PRECISION_THRESHOLD_CLAMP.stable.min)
+  const defaultResult = runMerge(input, { scoring: createScoring([0.9, 0.84]) })
+
+  assert.ok(defaultResult.plan)
+  assert.equal(defaultResult.trace.summary.threshold, stableDefaultThreshold)
+  assert.equal(defaultResult.stats.autoDecisions, 1)
+  assert.equal(defaultResult.stats.conflictDecisions, 1)
+  assert.deepEqual(
+    defaultResult.plan?.entries.map((entry) => ({ band: entry.band, phase: entry.phase })),
+    [
+      { band: 'auto', phase: 'phase-b' },
+      { band: 'review', phase: 'phase-b' },
+    ],
+  )
+  assert.deepEqual(defaultResult.plan?.phaseB, { required: true, reasons: ['review-band'] })
+
+  const customThreshold = 0.9
+  const overriddenResult = runMerge(input, {
+    scoring: createScoring([0.9, 0.84]),
+    profile: { threshold: customThreshold },
+  })
+
+  assert.ok(overriddenResult.plan)
+  assert.equal(overriddenResult.trace.summary.threshold, customThreshold)
+  assert.equal(overriddenResult.stats.autoDecisions, 0)
+  assert.equal(overriddenResult.stats.conflictDecisions, 2)
+  assert.deepEqual(
+    overriddenResult.plan?.entries.map((entry) => ({ band: entry.band, phase: entry.phase })),
+    [
+      { band: 'review', phase: 'phase-b' },
+      { band: 'conflict', phase: 'phase-b' },
+    ],
+  )
+  assert.deepEqual(overriddenResult.plan?.phaseB.reasons.sort(), ['low-similarity', 'review-band'])
 
   process.env.MERGE_PRECISION = originalPrecision
 })
