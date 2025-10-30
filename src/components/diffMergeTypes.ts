@@ -1,34 +1,4 @@
-import type { MergeHunk, MergePrecision } from '../lib/merge'
-import {
-  DIFF_MERGE_TAB_STORAGE_PREFIX,
-  PRECISION_PHASE_GUARD,
-  SUB_TAB_LABELS,
-  createDiffMergeNavigationKeyHandler,
-  diffMergeComponentResponsibilities,
-  diffMergeViewDesign,
-  isDiffMergeDevelopmentEnvironment,
-  planDiffMergeSubTabs,
-  planDiffMergeView,
-  resolveDiffMergeStoredTab,
-  type DiffMergeNavigationKeyEvent,
-  type DiffMergeNavigationKeyHandler,
-  type DiffMergeNavigationKeyHandlerOptions,
-  type DiffMergePaneSpec,
-  type DiffMergePaneTransition,
-  type DiffMergeQueueCommandPayload,
-  type DiffMergeSubTabKey,
-  type DiffMergeSubTabPlan,
-  type DiffMergeTabKey,
-  type DiffMergeTabSpec,
-  type DiffMergeTabStorage,
-  type DiffMergeViewDesign,
-  type DiffMergeViewPlan,
-  type MergeDecisionEvent,
-  type PrecisionPhaseGuard,
-  type QueueMergeCommand,
-} from '../lib/merge/diffMergePlan'
-
-export type { MergeHunk, MergePrecision }
+export type { MergeHunk, MergePrecision } from '../lib/merge'
 
 export {
   DIFF_MERGE_TAB_STORAGE_PREFIX,
@@ -41,7 +11,7 @@ export {
   planDiffMergeSubTabs,
   planDiffMergeView,
   resolveDiffMergeStoredTab,
-}
+} from '../lib/merge/diffMergePlan'
 
 export type {
   DiffMergeNavigationKeyEvent,
@@ -60,4 +30,4 @@ export type {
   MergeDecisionEvent,
   PrecisionPhaseGuard,
   QueueMergeCommand,
-}
+} from '../lib/merge/diffMergePlan'

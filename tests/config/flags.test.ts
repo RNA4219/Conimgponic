@@ -7,8 +7,35 @@ import {
   DEFAULT_FLAG_SNAPSHOT,
   FEATURE_FLAG_DEFINITIONS,
   FlagResolutionError,
+  MergePrecision,
+  resolveFeatureFlag,
   resolveFlags
 } from '../../src/config/flags'
+import type {
+  FeatureFlagValue,
+  FlagResolution,
+  MergePrecision
+} from '../../src/config/flags'
+
+type Expect<T extends true> = T
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() =>
+  T extends B ? 1 : 2
+    ? ((<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2)
+        ? true
+        : false)
+    : false
+
+type MergePrecisionResolution = FlagResolution<FeatureFlagValue<'merge.precision'>>
+type _assertMergePrecisionValue = Expect<
+  Equal<MergePrecisionResolution['value'], MergePrecision>
+>
+
+type _acceptsBeta = Expect<
+  'beta' extends MergePrecisionResolution['value'] ? true : false
+>
+type _acceptsStable = Expect<
+  'stable' extends MergePrecisionResolution['value'] ? true : false
+>
 
 type StorageStub = Pick<Storage, 'getItem'>
 
@@ -23,6 +50,14 @@ function createStorage(values: Record<string, string | undefined>): StorageStub 
     }
   }
 }
+
+// TypeScript 型アサーション: resolveFeatureFlag がフラグ固有の型を返すことを確認する。
+const _mergePrecisionValue: MergePrecision = resolveFeatureFlag(
+  'merge.precision'
+).value
+const _autosaveEnabledValue: boolean = resolveFeatureFlag(
+  'autosave.enabled'
+).value
 
 test('resolveFlags skips default storage when storage is null', () => {
   const moduleUrl = new URL('../../src/config/flags.ts', import.meta.url)

@@ -3,7 +3,7 @@ import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { DiffMergeView } from '../../src/components/DiffMergeView.tsx'
+import { DiffMergeView, type DiffMergeViewProps } from '../../src/components/DiffMergeView.tsx'
 import {
   createDiffMergeNavigationKeyHandler,
   planDiffMergeView,
@@ -29,22 +29,36 @@ const sampleHunks: readonly MergeHunk[] = [
   },
 ]
 
-const render = (precision: 'legacy' | 'beta' | 'stable') =>
+const queueMergeCommand: DiffMergeViewProps['queueMergeCommand'] = async () => ({
+  status: 'success' as const,
+  hunkIds: [],
+  telemetry: {
+    collectorSurface: 'diff-merge.hunk-list' as const,
+    analyzerSurface: 'diff-merge.queue' as const,
+    retryable: false,
+  },
+})
+
+const render = (
+  precision: 'legacy' | 'beta' | 'stable',
+  overrides: Partial<Omit<DiffMergeViewProps, 'precision'>> = {},
+) =>
   renderToStaticMarkup(
     <DiffMergeView
       precision={precision}
       hunks={sampleHunks}
-      queueMergeCommand={async () => ({
-        status: 'success' as const,
-        hunkIds: [],
-        telemetry: {
-          collectorSurface: 'diff-merge.hunk-list' as const,
-          analyzerSurface: 'diff-merge.queue' as const,
-          retryable: false,
-        },
-      })}
+      queueMergeCommand={queueMergeCommand}
+      {...overrides}
     />,
   )
+
+test('disabled mode renders inert diff merge placeholder', () => {
+  const html = render('beta', { disabled: true })
+  assert.match(html, /data-component="diff-merge-view"/)
+  assert.match(html, /data-block="diff-merge-disabled"/)
+  assert.match(html, /aria-disabled="true"/)
+  assert.doesNotMatch(html, /role="tablist"/)
+})
 
 test('precision beta exposes diff tab with accessible roles', () => {
   const html = render('beta')

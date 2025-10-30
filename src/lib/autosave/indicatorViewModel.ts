@@ -282,7 +282,9 @@ export function deriveAutoSaveIndicatorViewModel({
     }
     return null
   })()
-  const messageSpec = messageSpecKey ? AUTOSAVE_INDICATOR_MESSAGE_SPEC[messageSpecKey] : null
+  const messageSpec: AutoSaveIndicatorMessageSpecEntry | null = messageSpecKey
+    ? AUTOSAVE_INDICATOR_MESSAGE_SPEC[messageSpecKey]
+    : null
   const statusLabel = (() => {
     if (isReadOnly) {
       return READONLY_STATUS_LABEL
