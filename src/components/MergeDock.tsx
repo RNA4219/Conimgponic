@@ -43,6 +43,22 @@ type MergeDockPreference = 'manual-first' | 'ai-first' | 'diff-merge'
 
 type MergeDockPersistenceLogger = Pick<Console, 'warn'>
 
+type MergeDockStorageReader = Pick<Storage, 'getItem'> | null | undefined
+
+const readStorageValue = (
+  storage: MergeDockStorageReader,
+  key: string,
+  onFailure: (error: unknown) => void,
+): string | null | undefined => {
+  if (!storage) return undefined
+  try {
+    return storage.getItem(key)
+  } catch (error) {
+    onFailure(error)
+    return undefined
+  }
+}
+
 interface PersistMergeDockActiveTabOptions {
   readonly storage: Pick<Storage, 'setItem'>
   readonly storageKey: string
@@ -396,18 +412,17 @@ export const resolveMergeThresholdSnapshot = (
     return finalize(workspaceThreshold)
   }
 
-  let storedThresholdRaw: string | null | undefined
-  if (storage) {
-    try {
-      storedThresholdRaw = storage.getItem(MERGE_THRESHOLD_STORAGE_KEY)
-    } catch (error) {
+  const storedThresholdRaw = readStorageValue(
+    storage,
+    MERGE_THRESHOLD_STORAGE_KEY,
+    (error) => {
       console.warn(
-        'MergeDock: failed to read merge threshold from localStorage.',
+        'MergeDock: failed to read merge threshold from localStorage. Falling back to defaults.',
         MERGE_THRESHOLD_STORAGE_KEY,
         error,
       )
-    }
-  }
+    },
+  )
   const storedThreshold = parseMergeThreshold(storedThresholdRaw)
   if (storedThreshold !== undefined) {
     return finalize(storedThreshold)
@@ -563,18 +578,13 @@ export function MergeDock(props?: MergeDockProps){
     threshold: props?.mergeThreshold ?? null,
     workspace: props?.workspace ?? null,
   })
-  let storedTabKey: string | null | undefined
-  if (storage) {
-    try {
-      storedTabKey = storage.getItem('merge.lastTab')
-    } catch (error) {
-      console.warn(
-        'MergeDock: failed to read stored active tab. Falling back without localStorage.',
-        'merge.lastTab',
-        error,
-      )
-    }
-  }
+  const storedTabKey = readStorageValue(storage, 'merge.lastTab', (error) => {
+    console.warn(
+      'MergeDock: failed to read stored active tab from localStorage. Falling back without localStorage.',
+      'merge.lastTab',
+      error,
+    )
+  })
   const lastTab = storedTabKey && (storedTabKey === 'diff' || isBaseTabId(storedTabKey)) ? (storedTabKey as MergeDockTabId) : undefined
   const phasePlan = useMemo(
     () =>

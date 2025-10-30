@@ -58,7 +58,8 @@ test('MergeDock.localStorage-read falls back to defaults when storage.getItem th
     assert.match(html!, /class="tab active"[^>]*>Diff/)
 
     const thresholdWarnings = warnings.filter((entry) =>
-      entry[0] === 'MergeDock: failed to read merge threshold from localStorage.'
+      entry[0] ===
+      'MergeDock: failed to read merge threshold from localStorage. Falling back to defaults.'
     )
     assert(thresholdWarnings.length >= 1)
     for (const warning of thresholdWarnings) {
@@ -67,7 +68,8 @@ test('MergeDock.localStorage-read falls back to defaults when storage.getItem th
     }
 
     const tabWarnings = warnings.filter((entry) =>
-      entry[0] === 'MergeDock: failed to read stored active tab. Falling back without localStorage.'
+      entry[0] ===
+      'MergeDock: failed to read stored active tab from localStorage. Falling back without localStorage.'
     )
     assert.equal(tabWarnings.length, 1)
     assert.equal(tabWarnings[0]?.[1], 'merge.lastTab')
