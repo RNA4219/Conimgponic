@@ -14,6 +14,10 @@ import {
   type DiffMergeTabStorage,
   type MergeHunk,
 } from '../../src/components/DiffMergeView.tsx'
+import {
+  DiffMergeOperationPane,
+  type DiffMergeQueueController,
+} from '../../src/components/DiffMergeOperationPane.tsx'
 
 const sampleHunks: readonly MergeHunk[] = [
   {
@@ -71,6 +75,22 @@ test('beta precision surfaces queueMergeCommand action payloads', () => {
   assert.match(html, /data-command="queue-merge"/)
   assert.match(html, /data-hunks="\[\]"/)
   assert.match(html, /data-testid="diff-merge-queue-selected"[\s\S]*?disabled/)
+})
+
+test('DiffMergeOperationPane disables queue button when no hunks are queued', () => {
+  const controller: DiffMergeQueueController = {
+    queueMerge: async () => undefined,
+  }
+  const html = renderToStaticMarkup(
+    <DiffMergeOperationPane
+      visible
+      selectedCount={0}
+      queueCandidateIds={[]}
+      controller={controller}
+    />,
+  )
+  assert.match(html, /data-testid="diff-merge-queue-selected"/)
+  assert.match(html, /disabled/)
 })
 
 test('beta precision renders uniform layout sections', () => {
