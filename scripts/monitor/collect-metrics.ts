@@ -360,6 +360,8 @@ export interface TelemetryEventSpec<E extends TelemetryEventName = TelemetryEven
   readonly guardrail?: {
     readonly metric: MetricsKey;
     readonly rollbackTo: RolloutPhase;
+    /** ガード判定時に同時監視する関連指標。Analyzer の SLO 集計へ引き渡す。 */
+    readonly guardIndicators?: ReadonlyArray<MetricsKey>;
   };
 }
 
@@ -1007,7 +1009,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
       {
         event: 'merge.result',
         description:
-          'Diff Merge 自動適用の成功率と処理時間 (merge_processing_p95) を Collector が集計する。',
+          'Diff Merge 自動適用の成功率と処理時間 (merge_processing_p95) を Collector が集計し、guardIndicators で Analyzer へ伝搬する。',
         jsonlFields: [
           'payload.status',
           'payload.precision',
@@ -1021,7 +1023,8 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
         pipelineStage: 'collector',
         guardrail: {
           metric: 'merge_auto_success_rate',
-          rollbackTo: 'A-2'
+          rollbackTo: 'A-2',
+          guardIndicators: ['merge_processing_p95'],
         }
       },
       {
