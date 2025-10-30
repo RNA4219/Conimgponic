@@ -33,6 +33,7 @@ const {
   resolvePreferenceSelection,
   resolveActiveTabTransition,
   shouldEnableDiffInteraction,
+  sanitizeMergeDockActiveTab,
 } = mergeDockModule as typeof mergeDockModule & {
   readonly getDefaultPreference: (
     precision: FlagSnapshot['merge']['precision'],
@@ -64,6 +65,12 @@ const {
     readonly diffPlan: MergeDockPhasePlan['diff']
     readonly guard: MergeDockPhasePlan['guard']
   }) => boolean
+  readonly sanitizeMergeDockActiveTab: (
+    tab: MergeDockPhasePlan['tabs']['initialTab'],
+    plan: MergeDockPhasePlan['tabs'],
+    diffVisible: boolean,
+    diffEnabled: boolean,
+  ) => MergeDockPhasePlan['tabs']['initialTab']
 }
 type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
 
@@ -253,6 +260,41 @@ test('data-merge-diff-enabled guard blocks diff interaction until enabled', () =
   )
 })
 
+test('data-merge-diff-enabled guard keeps diff tab inactive while disabled', () => {
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.9,
+    autoAppliedRate: 0.84,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(phasePlan.diff.enabled, false)
+  assert.equal(phasePlan.diff.visible, true)
+  assert.equal(phasePlan.tabs.initialTab, 'compiled')
+  assert.equal(
+    sanitizeMergeDockActiveTab(
+      'diff',
+      phasePlan.tabs,
+      phasePlan.diff.visible,
+      phasePlan.diff.enabled,
+    ),
+    'compiled',
+  )
+  assert.equal(
+    sanitizeMergeDockActiveTab(
+      'shot',
+      phasePlan.tabs,
+      phasePlan.diff.visible,
+      phasePlan.diff.enabled,
+    ),
+    'shot',
+  )
+  assert.equal(
+    shouldEnableDiffInteraction({ diffPlan: phasePlan.diff, guard: phasePlan.guard }),
+    false,
+  )
+})
+
 test('diff exposure falls back to opt-in when auto applied underperforms', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',
@@ -405,12 +447,31 @@ test('stable precision demotes diff tab when auto apply underperforms', () => {
   assert.equal(plan.threshold.autoTarget > (plan.autoApplied.rate ?? 0), true)
   assert.deepEqual(
     plan.tabs.tabs.map((entry) => entry.id),
-    ['compiled', 'shot', 'assets', 'import', 'diff', 'golden'],
+    ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
   )
   assert.equal(plan.tabs.initialTab, 'compiled')
   assert.equal(plan.diff.visible, true)
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.equal(plan.diff.enabled, false)
+})
+
+test('stable precision demotion shouldDemoteDiff swaps to beta tab layout with Diff (Beta) badge', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.88,
+    autoAppliedRate: 0.82,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(plan.autoApplied.meetsTarget, false)
+  assert.deepEqual(
+    plan.tabs.tabs.map((entry) => entry.id),
+    ['compiled', 'shot', 'assets', 'import', 'golden', 'diff'],
+  )
+  const diffEntry = plan.tabs.tabs.at(-1)
+  assert.equal(diffEntry?.id, 'diff')
+  assert.equal(diffEntry?.label, 'Diff (Beta)')
+  assert.equal(diffEntry?.badge, 'Beta')
 })
 
 test('stable precision auto apply demotion resets initial tab to compiled', () => {

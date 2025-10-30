@@ -1,0 +1,26 @@
+{
+  "id": "src/lib/autosave/indicatorViewModel.ts",
+  "role": "application",
+  "public_api": [
+    "deriveAutoSaveIndicatorViewModel",
+    "AUTOSAVE_INDICATOR_MESSAGE_SPEC",
+    "AutoSaveIndicatorViewModel"
+  ],
+  "summary": "AutoSave のフェーズ情報・履歴サマリ・ロック状態から表示用ビューモデルを導出する純粋関数群。閲覧専用時のバナー制御や履歴アクセス可否を判定し、副作用を持たないよう分離する。",
+  "deps_out": [
+    "src/lib/autosave.ts",
+    "src/lib/locks.ts"
+  ],
+  "deps_in": [
+    "src/components/AutoSaveIndicator.tsx",
+    "src/lib/autosave/indicatorController.ts",
+    "tests/components/AutoSaveIndicator.test.tsx",
+    "tests/lib/autosave/indicatorViewModel.spec.ts"
+  ],
+  "risks": ["仕様変更時に UI との整合が崩れると警告表示がずれる"],
+  "tests": [
+    "tests/lib/autosave/indicatorViewModel.spec.ts",
+    "tests/components/AutoSaveIndicator.test.tsx"
+  ],
+  "generated_at": "2025-10-21T09:30:00Z"
+}

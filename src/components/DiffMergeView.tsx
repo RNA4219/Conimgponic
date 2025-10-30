@@ -182,19 +182,17 @@ export const resolveDiffMergeStoredTab = ({
 }): DiffMergeSubTabKey => {
   const storageKey = `${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`
   let stored: string | null = null
-  let readFailed = false
 
   if (storage) {
     try {
       stored = storage.getItem(storageKey)
     } catch (error) {
-      readFailed = true
-      console.warn('DiffMergeView: failed to read stored tab selection', error)
+      console.warn(
+        `DiffMergeView: failed to read stored tab selection for ${storageKey}`,
+        error,
+      )
+      return plan.initialTab
     }
-  }
-
-  if (readFailed) {
-    return plan.initialTab
   }
 
   stored = stored ?? null
@@ -447,8 +445,26 @@ export interface DiffMergeViewProps {
   readonly hunks: readonly MergeHunk[]
   readonly queueMergeCommand: QueueMergeCommand
   readonly autoApplied?: DiffMergeAutoAppliedState
+  readonly disabled?: boolean
 }
-export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ precision, hunks, queueMergeCommand, autoApplied }) => {
+export const DiffMergeView: React.FC<DiffMergeViewProps> = ({
+  precision,
+  hunks,
+  queueMergeCommand,
+  autoApplied,
+  disabled = false,
+}) => {
+  if (disabled) {
+    return (
+      <section
+        data-block="diff-merge-disabled"
+        data-precision={precision}
+        data-testid="diff-merge-disabled"
+        aria-disabled="true"
+      />
+    )
+  }
+
   const plan = useMemo(() => planDiffMergeView(precision), [precision])
   const storage = (globalThis as { localStorage?: DiffMergeTabStorage }).localStorage
   const storageKey = useMemo(() => `${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`, [precision])

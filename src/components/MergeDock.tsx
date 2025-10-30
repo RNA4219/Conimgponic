@@ -172,13 +172,14 @@ export const resolvePreferenceSelection = (input: {
   return sanitizedPreference
 }
 
-const sanitizeActiveTab = (
+export const sanitizeMergeDockActiveTab = (
   tab: MergeDockTabId,
   plan: MergeDockTabPlan,
   diffVisible: boolean,
+  diffEnabled: boolean,
 ): MergeDockTabId => {
   if (!plan.tabs.some((entry) => entry.id === tab)) return plan.initialTab
-  if (tab === 'diff' && !diffVisible) return plan.initialTab
+  if (tab === 'diff' && (!diffVisible || !diffEnabled)) return plan.initialTab
   return tab
 }
 
@@ -210,7 +211,7 @@ export const resolveActiveTabTransition = ({
       return plan.initialTab
     }
   }
-  return sanitizeActiveTab(activeTab, plan, diffVisible)
+  return sanitizeMergeDockActiveTab(activeTab, plan, diffVisible, diffEnabled)
 }
 
 interface MergeDockAutoSaveState {
@@ -642,7 +643,12 @@ export function MergeDock(props?: MergeDockProps){
 
   const onTabChange = useCallback(
     (next: MergeDockTabId) => {
-      const sanitized = sanitizeActiveTab(next, plan, phasePlan.diff.visible)
+      const sanitized = sanitizeMergeDockActiveTab(
+        next,
+        plan,
+        phasePlan.diff.visible,
+        phasePlan.diff.enabled,
+      )
       store.getState().setActiveTab(sanitized)
     },
     [phasePlan.diff.visible, plan, store],
@@ -796,6 +802,7 @@ export function MergeDock(props?: MergeDockProps){
               hunks={emptyDiffHunks}
               queueMergeCommand={diffMergeNoopCommand}
               autoApplied={phasePlan.autoApplied}
+              disabled={!phasePlan.diff.enabled}
             />
           ) : (
             <div

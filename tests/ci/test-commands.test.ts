@@ -9,15 +9,34 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 const packageJsonPath = fileURLToPath(new URL('../../package.json', import.meta.url));
-const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+const packageJsonSource = readFileSync(packageJsonPath, 'utf8');
+
+type PackageJson = {
   scripts?: Record<string, string>;
+};
+
+let cachedPackageJson: PackageJson | undefined;
+
+const parsePackageJson = (): PackageJson => JSON.parse(packageJsonSource) as PackageJson;
+
+const getPackageJson = (): PackageJson => {
+  if (!cachedPackageJson) {
+    cachedPackageJson = parsePackageJson();
+  }
+
+  return cachedPackageJson;
 };
 
 const ensureCommand =
   "node --input-type=module --eval \"import { mkdirSync } from 'node:fs'; const dir = process.argv.at(-1); if (!dir) throw new Error('missing dir'); mkdirSync(dir, { recursive: true });\"";
 
+test('package.json scripts are valid JSON', () => {
+  cachedPackageJson = undefined;
+  assert.doesNotThrow(() => getPackageJson());
+});
+
 const resolveScript = (name: string): string => {
-  const scripts = packageJson.scripts;
+  const scripts = getPackageJson().scripts;
   assert.ok(scripts, 'package.json.scripts is missing');
   const script = scripts[name];
   assert.ok(script, `script ${name} is missing`);
@@ -40,24 +59,39 @@ test('test:coverage script prepares coverage directory and writes into it', () =
 test('test:coverage script collects files for all default suffixes', () => {
   const script = resolveScript('test:coverage');
 
-  const runSelectedPath = fileURLToPath(new URL('../../scripts/test/run-selected.ts', import.meta.url));
-  const runSelectedSource = readFileSync(runSelectedPath, 'utf8');
-  const suffixesMatch = runSelectedSource.match(
-    /const DEFAULT_TEST_SUFFIXES = \[(?<items>[\s\S]*?)\] as const;/,
+  assert.ok(
+    script.includes('const defaultSuffixes = [...DEFAULT_TEST_SUFFIXES];'),
+    'test:coverage script must derive suffix list from DEFAULT_TEST_SUFFIXES',
   );
 
-  assert.ok(suffixesMatch?.groups?.items, 'DEFAULT_TEST_SUFFIXES definition must exist');
+  assert.ok(
+    script.includes("defaultSuffixes.some((suffix) => full.endsWith(suffix))"),
+    'test:coverage script must iterate over every default suffix when matching files',
+  );
+});
 
-  const suffixes = JSON.parse(
-    `[${suffixesMatch.groups.items.replace(/'/g, '"')}]`,
-  ) as string[];
+test('DEFAULT_TEST_SUFFIXES includes .spec.mjs files', async () => {
+  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+  const { DEFAULT_TEST_SUFFIXES } = await import(moduleUrl);
 
-  for (const suffix of suffixes) {
-    assert.ok(
-      script.includes(suffix),
-      `test:coverage script must reference default suffix ${suffix}`,
-    );
-  }
+  assert.ok(
+    DEFAULT_TEST_SUFFIXES.includes('.spec.mjs'),
+    'DEFAULT_TEST_SUFFIXES must include .spec.mjs to ensure spec modules run under coverage',
+  );
+});
+
+test('test:junit script collects files for all default suffixes', () => {
+  const script = resolveScript('test:junit');
+
+  assert.ok(
+    script.includes('const defaultSuffixes = [...DEFAULT_TEST_SUFFIXES];'),
+    'test:junit script must derive suffix list from DEFAULT_TEST_SUFFIXES',
+  );
+
+  assert.ok(
+    script.includes("defaultSuffixes.some((suffix) => full.endsWith(suffix))"),
+    'test:junit script must iterate over every default suffix when matching files',
+  );
 });
 
 test('test:junit script prepares reports directory before writing junit report', () => {

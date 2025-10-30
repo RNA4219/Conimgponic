@@ -45,3 +45,30 @@ test('mergeJSONL: 文字列以外の id は無視される', () => {
 
   assert.strictEqual(merged.scenes.length, 0)
 })
+
+test('mergeJSONL: 無効 id 行が idx を汚染せず新規シーンが作成される', () => {
+  const before: Storyboard = {
+    id: 'sb-1',
+    title: 'demo',
+    scenes: [],
+    selection: [],
+    version: 1,
+  }
+
+  const payload = [
+    JSON.stringify({ id: 0, text: 'invalid numeric id' }),
+    JSON.stringify({ text: 'missing id entirely' }),
+    JSON.stringify({ id: 'scene-1', text: 'first valid scene' }),
+    JSON.stringify({ id: 'scene-2', text: 'second valid scene' }),
+  ].join('\n')
+
+  const merged = mergeJSONL(before, `${payload}\n`, 'manual')
+
+  assert.deepStrictEqual(
+    merged.scenes.map((scene) => [scene.id, scene.manual]),
+    [
+      ['scene-1', 'first valid scene'],
+      ['scene-2', 'second valid scene'],
+    ],
+  )
+})
