@@ -11,7 +11,7 @@ import {
   type DiffMergeViewPlan,
   type QueueMergeCommand,
   isDiffMergeDevelopmentEnvironment as isDevelopmentEnvironment,
-} from '../lib/merge/diffMergePlan'
+} from './diffMergePlan.js'
 
 import {
   createDiffMergeController,
@@ -34,7 +34,7 @@ export {
   diffMergeComponentResponsibilities,
   diffMergeViewDesign,
   planDiffMergeSubTabs,
-} from '../lib/merge/diffMergePlan'
+} from './diffMergePlan.js'
 export type {
   DiffMergeNavigationKeyEvent,
   DiffMergeNavigationKeyHandler,
@@ -51,7 +51,7 @@ export type {
   MergeDecisionEvent,
   QueueMergeCommand,
   PrecisionPhaseGuard,
-} from '../lib/merge/diffMergePlan'
+} from './diffMergePlan.js'
 
 type DiffMergeController = ReturnType<typeof createDiffMergeController>
 
