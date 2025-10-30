@@ -153,20 +153,6 @@ const ZERO_FLUSH_LATENCY: AutoSaveTelemetryEventProperties['performance'] = {
   flush_latency_ms: 0
 } as const
 
-const resolveGuardTelemetryPhase = (guard: AutoSavePhaseGuardSnapshot): RolloutPhase => {
-  if (!guard.featureFlag.value || guard.optionsDisabled) {
-    return 'A-0'
-  }
-  switch (guard.featureFlag.source) {
-    case 'env':
-      return 'A-1'
-    case 'workspace':
-      return 'A-2'
-    default:
-      return 'A-0'
-  }
-}
-
 const resolveGuardRollbackPhase = (phase: RolloutPhase): RolloutPhase => {
   switch (phase) {
     case 'B-1':
@@ -185,7 +171,7 @@ const resolveGuardRollbackPhase = (phase: RolloutPhase): RolloutPhase => {
 const encodeGuardTelemetry = (
   guard: AutoSavePhaseGuardSnapshot
 ): AutoSaveTelemetryGuardProperties => {
-  const current = resolveGuardTelemetryPhase(guard)
+  const current = resolveCollectorPhase(guard)
   return { current, rollbackTo: resolveGuardRollbackPhase(current) }
 }
 
@@ -506,7 +492,21 @@ const computeLagSeconds = (
   return Math.max(0, Math.floor(diffMs / 1000))
 }
 
-export const resolveCollectorPhase = resolveGuardTelemetryPhase
+export const resolveCollectorPhase = (
+  guard: AutoSavePhaseGuardSnapshot
+): RolloutPhase => {
+  if (!guard.featureFlag.value || guard.optionsDisabled) {
+    return 'A-0'
+  }
+  switch (guard.featureFlag.source) {
+    case 'env':
+      return 'A-1'
+    case 'workspace':
+      return 'A-2'
+    default:
+      return 'A-0'
+  }
+}
 
 type SnapshotResultDetailPhase = AutoSaveStatusSnapshot['phase']
 
