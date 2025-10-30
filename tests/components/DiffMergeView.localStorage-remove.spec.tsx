@@ -13,17 +13,20 @@ test('DiffMergeView.localStorage-remove recovers when storage.removeItem throws 
     warnings.push(args)
   }
 
-  let removeAttempts = 0
   const storage: DiffMergeTabStorage = {
     getItem: () => 'unsupported-tab',
     setItem: () => {
       throw new Error('should not persist when removal fails')
     },
-    removeItem: () => {
-      removeAttempts += 1
+  }
+  let removeAccesses = 0
+  Object.defineProperty(storage, 'removeItem', {
+    configurable: true,
+    get() {
+      removeAccesses += 1
       throw quotaError
     },
-  }
+  })
 
   try {
     const resolved = resolveDiffMergeStoredTab({ plan, precision, storage, fallback: 'merged' })
@@ -33,7 +36,7 @@ test('DiffMergeView.localStorage-remove recovers when storage.removeItem throws 
     console.warn = originalWarn
   }
 
-  assert.equal(removeAttempts, 1)
+  assert.equal(removeAccesses, 1)
   assert.equal(warnings.length, 1)
   const [message, error] = warnings[0] ?? []
   assert.equal(

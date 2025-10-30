@@ -40,6 +40,7 @@ DiffMergeView から createDiffMergeController へアクティブタブ解決関
 ## Local Commands
 - pnpm test -- --filter diff-merge-view-state
 - pnpm test tests/components/DiffMergeView.test.tsx
+- pnpm test --filter components -- --test-name-pattern DiffMergeView.localStorage-remove
 
 ## Deliverables
 - テレメトリ lastTab の同期を検証するユニットテスト
@@ -53,10 +54,11 @@ DiffMergeView から createDiffMergeController へアクティブタブ解決関
 ## Tests
 - [x] pnpm test -- --filter diff-merge-view-state
 - [x] pnpm test tests/components/DiffMergeView.test.tsx
+- [x] pnpm test --filter components -- --test-name-pattern DiffMergeView.localStorage-remove
 
 ## Commands
 - [x] pnpm test -- --filter diff-merge-view-state
 - [x] pnpm test tests/components/DiffMergeView.test.tsx
 
 ## Notes
-- なし
+- localStorage.removeItem 失敗時も console.warn ログのみに留め、plan.initialTab へフォールバックした検証ログを追記する。

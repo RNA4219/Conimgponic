@@ -202,16 +202,17 @@ export const resolveDiffMergeStoredTab = ({
   let resetToInitialTab = false
 
   if (stored && !isAllowed(stored as DiffMergeSubTabKey)) {
-    if (storage?.removeItem) {
-      try {
-        storage.removeItem(storageKey)
-      } catch (error) {
-        resetToInitialTab = true
-        console.warn(
-          `DiffMergeView: failed to clear stored tab selection for ${storageKey}`,
-          error,
-        )
+    try {
+      const removeItem = storage?.removeItem
+      if (removeItem) {
+        removeItem.call(storage, storageKey)
       }
+    } catch (error) {
+      resetToInitialTab = true
+      console.warn(
+        `DiffMergeView: failed to clear stored tab selection for ${storageKey}`,
+        error,
+      )
     }
     stored = null
   }
