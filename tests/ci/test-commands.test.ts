@@ -90,6 +90,21 @@ test('test:junit script passes reporter destination and test glob as separate to
   );
 });
 
+test('test:junit script collects tests for common suffixes', () => {
+  const script = resolveScript('test:junit');
+
+  const suffixArraySnippet = "const suffixes = ['.test.ts', '.test.tsx', '.spec.ts', '.spec.tsx'];";
+  assert.ok(
+    script.includes(suffixArraySnippet),
+    'test:junit script must declare common test suffixes array',
+  );
+
+  assert.ok(
+    script.includes('suffixes.some((suffix) => full.endsWith(suffix))'),
+    'test:junit script must use suffixes array when collecting tests',
+  );
+});
+
 test('run-selected respects tests root when autorun is skipped', async () => {
   const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
   process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
