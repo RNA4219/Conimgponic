@@ -323,6 +323,44 @@ scenario('AS-HB-02: Renew infers heartbeat interval when lease omits heartbeatIn
   await releaseProjectLock(refreshed)
 })
 
+scenario('AS-HB-03: Heartbeat schedule is clipped by ttl when shorter than interval', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+  const ttlMs = 4_000
+  const heartbeatMs = 10_000
+  const uuids = ['lease-heartbeat-ttl', 'owner-heartbeat-ttl']
+  t.mock.method(crypto, 'randomUUID', () => {
+    const value = uuids.shift()
+    if (!value) throw new Error('uuid exhausted')
+    return value
+  })
+
+  const scheduled: Array<{ lease: ProjectLockLease; nextIn: number }> = []
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    if (event.type === 'lock:renew-scheduled') {
+      scheduled.push({ lease: event.lease, nextIn: event.nextHeartbeatInMs })
+    }
+  })
+  t.after(unsubscribe)
+
+  const lease = await acquireProjectLock({
+    preferredStrategy: 'file-lock',
+    ttlMs,
+    heartbeatIntervalMs: heartbeatMs,
+  })
+
+  const now = Date.now()
+  const leaseTtl = lease.expiresAt - now
+  assert.equal(leaseTtl, ttlMs)
+
+  const initialSchedule = scheduled.at(-1)
+  assert.ok(initialSchedule, 'initial heartbeat schedule must be captured')
+  assert.equal(initialSchedule?.nextIn, leaseTtl)
+  assert.ok(initialSchedule?.nextIn <= lease.expiresAt - now)
+  assert.ok(lease.nextHeartbeatAt <= lease.expiresAt)
+
+  await releaseProjectLock(lease)
+})
+
 scenario(
   'AS-LK-22: Fallback conflict warning exposes existing lease metadata',
   {
