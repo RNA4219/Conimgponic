@@ -96,6 +96,11 @@
       "caps": "docs/birdseye/caps/docs.INCIDENT_TEMPLATE.md.json",
       "mtime": "2025-10-16T12:00:00Z"
     },
+    "src/components/DiffMergeView.tsx": {
+      "role": "ui",
+      "caps": "docs/birdseye/caps/src.components.DiffMergeView.tsx.json",
+      "mtime": "2025-10-21T12:15:00Z"
+    },
     "src/components/MergeDock.tsx": {
       "role": "ui",
       "caps": "docs/birdseye/caps/src.components.MergeDock.tsx.json",
@@ -155,6 +160,16 @@
       "role": "test",
       "caps": "docs/birdseye/caps/tests.lib.autosave.indicatorController.spec.ts.json",
       "mtime": "2025-10-21T11:45:00Z"
+    },
+    "src/lib/merge/diffMergePlan.ts": {
+      "role": "module",
+      "caps": "docs/birdseye/caps/src.lib.merge.diffMergePlan.ts.json",
+      "mtime": "2025-10-21T12:15:00Z"
+    },
+    "tests/lib/merge/diffMergeViewPlan.spec.ts": {
+      "role": "test",
+      "caps": "docs/birdseye/caps/tests.lib.merge.diffMergeViewPlan.spec.ts.json",
+      "mtime": "2025-10-21T12:15:00Z"
     }
   },
   "edges": [
@@ -419,6 +434,14 @@
       "docs/IN-20250115-001.md"
     ],
     [
+      "src/components/DiffMergeView.tsx",
+      "src/components/diffMergeState.ts"
+    ],
+    [
+      "src/components/DiffMergeView.tsx",
+      "src/lib/merge/diffMergePlan.ts"
+    ],
+    [
       "src/components/MergeDock.tsx",
       "src/lib/merge/phasePlan.ts"
     ],
@@ -441,6 +464,12 @@
     [
       "tests/lib/merge/mergeThreshold.spec.ts",
       "src/lib/merge/threshold.ts"
+      "src/lib/merge/diffMergePlan.ts",
+      "src/lib/merge.ts"
+    ],
+    [
+      "tests/lib/merge/diffMergeViewPlan.spec.ts",
+      "src/lib/merge/diffMergePlan.ts"
     ],
     [
       "README.md",

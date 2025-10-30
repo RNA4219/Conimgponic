@@ -1,0 +1,24 @@
+{
+  "id": "src/lib/merge/diffMergePlan.ts",
+  "role": "module",
+  "public_api": [
+    "planDiffMergeView",
+    "planDiffMergeSubTabs",
+    "resolveDiffMergeStoredTab",
+    "createDiffMergeNavigationKeyHandler",
+    "diffMergeViewDesign"
+  ],
+  "summary": "DiffMergeView の UI から独立した純粋なプラン定義。precision ごとのタブ構成・ストレージ復元・キーボード操作・設計ドキュメントを一箇所に集約する。",
+  "deps_out": [
+    "src/lib/merge.ts"
+  ],
+  "deps_in": [
+    "src/components/DiffMergeView.tsx",
+    "tests/lib/merge/diffMergeViewPlan.spec.ts"
+  ],
+  "risks": ["精度別のタブ制御がズレると UI 層の telemetry/queue 契約が破綻する"],
+  "tests": [
+    "tests/lib/merge/diffMergeViewPlan.spec.ts"
+  ],
+  "generated_at": "2025-10-21T12:15:00Z"
+}

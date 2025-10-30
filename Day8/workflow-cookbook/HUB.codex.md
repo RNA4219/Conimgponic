@@ -159,6 +159,12 @@ in_progress → blocked → in_progress（解除後に戻す）
     - 20240331-ops-01
 ```
 
+## 6. 開発・実行ガードライン
+
+- テスト駆動開発（TDD）は [workflow-cookbook/GUARDRAILS.md](GUARDRAILS.md) が定める最優先原則であり、Seed に記録する検証ログも [docs/TASKS.md](../docs/TASKS.md) のテンプレート順にテスト→結果を残すこと。着手前に RED テストを置くフローを Task Seed の `Tests` セクションへ明記する。
+- ブランチおよび PR は [docs/day8/guides/07_contributing.md](../docs/day8/guides/07_contributing.md) の「1タスク=1ブランチ=1PR」規約を守り、計画段階の Seed で衝突回避とレビューフローを整理する。
+- Python を含む任意コードの実行は Guardrails によって禁止されている（[workflow-cookbook/GUARDRAILS.md](GUARDRAILS.md)）。自動化や検証はリポジトリに登録された lint/type/test コマンドのみを使用し、Seed の検証ログでも外部スクリプトを記載しない。
+
 ## 6. 運用メモ
 
 - Orchestration MD には `## Phase` `## Stage` 等の段階名を揃える

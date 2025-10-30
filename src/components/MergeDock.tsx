@@ -502,6 +502,7 @@ export function MergeDock(props?: MergeDockProps){
             />
           ) : (
             <div
+              data-component="diff-merge-view"
               role="note"
               data-testid="merge-diff-disabled-placeholder"
               style={{
