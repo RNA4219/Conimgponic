@@ -396,7 +396,19 @@ export const resolveMergeThresholdSnapshot = (
     return finalize(workspaceThreshold)
   }
 
-  const storedThreshold = parseMergeThreshold(storage?.getItem(MERGE_THRESHOLD_STORAGE_KEY))
+  let storedThresholdRaw: string | null | undefined
+  if (storage) {
+    try {
+      storedThresholdRaw = storage.getItem(MERGE_THRESHOLD_STORAGE_KEY)
+    } catch (error) {
+      console.warn(
+        'MergeDock: failed to read merge threshold from localStorage.',
+        MERGE_THRESHOLD_STORAGE_KEY,
+        error,
+      )
+    }
+  }
+  const storedThreshold = parseMergeThreshold(storedThresholdRaw)
   if (storedThreshold !== undefined) {
     return finalize(storedThreshold)
   }
@@ -551,7 +563,18 @@ export function MergeDock(props?: MergeDockProps){
     threshold: props?.mergeThreshold ?? null,
     workspace: props?.workspace ?? null,
   })
-  const storedTabKey = storage?.getItem('merge.lastTab')
+  let storedTabKey: string | null | undefined
+  if (storage) {
+    try {
+      storedTabKey = storage.getItem('merge.lastTab')
+    } catch (error) {
+      console.warn(
+        'MergeDock: failed to read stored active tab. Falling back without localStorage.',
+        'merge.lastTab',
+        error,
+      )
+    }
+  }
   const lastTab = storedTabKey && (storedTabKey === 'diff' || isBaseTabId(storedTabKey)) ? (storedTabKey as MergeDockTabId) : undefined
   const phasePlan = useMemo(
     () =>
