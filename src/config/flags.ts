@@ -1,5 +1,16 @@
 export type FlagSource = 'env' | 'workspace' | 'localStorage' | 'default'
 export type MergePrecision = 'legacy' | 'beta' | 'stable'
+
+export interface FeatureFlagValueMap {
+  readonly 'autosave.enabled': boolean
+  readonly 'plugins.enable': boolean
+  readonly 'merge.precision': MergePrecision
+}
+
+export type FeatureFlagName = keyof FeatureFlagValueMap
+
+export type FeatureFlagValue<Name extends FeatureFlagName> =
+  FeatureFlagValueMap[Name]
 export type FlagRolloutPhase =
   | 'phase-a0'
   | 'phase-a1'
@@ -541,23 +552,15 @@ export const FEATURE_FLAG_DEFINITIONS = {
     phase: 'phase-b0'
   }
 } as const satisfies {
-  readonly 'autosave.enabled': FlagDefinition<boolean>
-  readonly 'plugins.enable': FlagDefinition<boolean>
-  readonly 'merge.precision': FlagDefinition<MergePrecision>
+  readonly [Name in FeatureFlagName]: FlagDefinition<FeatureFlagValue<Name>>
 }
-
-export type FeatureFlagName = keyof typeof FEATURE_FLAG_DEFINITIONS
-
-export type FeatureFlagValue<Name extends FeatureFlagName> =
-  (typeof FEATURE_FLAG_DEFINITIONS)[Name]['defaultValue']
 
 export function resolveFeatureFlag<Name extends FeatureFlagName>(
   name: Name,
   options?: ResolveOptions
 ): FlagResolution<FeatureFlagValue<Name>> {
-  const definition = FEATURE_FLAG_DEFINITIONS[name] as FlagDefinition<
-    FeatureFlagValue<Name>
-  >
+  const definition =
+    FEATURE_FLAG_DEFINITIONS[name] as FlagDefinition<FeatureFlagValue<Name>>
   return resolveFlag(definition, options)
 }
 
