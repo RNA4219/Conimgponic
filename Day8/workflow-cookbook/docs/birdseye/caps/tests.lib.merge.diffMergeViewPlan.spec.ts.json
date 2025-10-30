@@ -1,0 +1,13 @@
+{
+  "id": "tests/lib/merge/diffMergeViewPlan.spec.ts",
+  "role": "test",
+  "public_api": [],
+  "summary": "diffMergePlan.ts のプラン生成・ストレージ復元・キーボードハンドラ・設計カタログを固定化する RED テスト。既存挙動の回帰を防ぐ。",
+  "deps_out": [
+    "src/lib/merge/diffMergePlan.ts"
+  ],
+  "deps_in": [],
+  "risks": [],
+  "tests": [],
+  "generated_at": "2025-10-21T12:15:00Z"
+}
