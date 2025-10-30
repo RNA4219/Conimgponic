@@ -303,6 +303,44 @@ test('MG-U-03: stable precision recalculates stats and plan bands when threshold
   process.env.MERGE_PRECISION = originalPrecision
 })
 
+test('MG-U-03: stats reset between runs when threshold overrides change bands', () => {
+  const originalPrecision = process.env.MERGE_PRECISION
+  process.env.MERGE_PRECISION = 'stable'
+
+  const createScoring = () => {
+    const values = [0.87, 0.83]
+    const fallback = values[values.length - 1] ?? 0.83
+    return () => {
+      const value = values.shift() ?? fallback
+      return { jaccard: value, cosine: value, blended: value }
+    }
+  }
+
+  const input = {
+    base: 'Intro base\n\nBody base',
+    ours: 'Intro manual\n\nBody manual',
+    theirs: 'Intro ai\n\nBody ai',
+    sceneId: 'scene-threshold-stats-reset',
+  }
+
+  const defaultResult = runMerge(input, { scoring: createScoring() })
+
+  assert.equal(defaultResult.stats.autoDecisions, 1)
+  assert.equal(defaultResult.stats.conflictDecisions, 1)
+
+  const overriddenThreshold = 0.9
+  const overriddenResult = runMerge(input, {
+    scoring: createScoring(),
+    profile: { threshold: overriddenThreshold },
+  })
+
+  assert.equal(overriddenResult.trace.summary.threshold, overriddenThreshold)
+  assert.equal(overriddenResult.stats.autoDecisions, 0)
+  assert.equal(overriddenResult.stats.conflictDecisions, 2)
+
+  process.env.MERGE_PRECISION = originalPrecision
+})
+
 test('non-legacy precision halts queue when similarity underflows review band', () => {
   const originalPrecision = process.env.MERGE_PRECISION
   process.env.MERGE_PRECISION = 'stable'
