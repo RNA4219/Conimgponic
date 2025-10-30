@@ -811,12 +811,14 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(disabledByGuard, 'phase guard disabled telemetry is required')
     assert.equal(disabledByGuard.properties?.retryCount, 0)
     assert.equal(disabledByGuard.properties?.detail?.retry_count, 0)
+    assert.equal(disabledByGuard.properties?.attempt, 1)
 
     bridge.reportDirty(1024, guardEnabled)
     const dirtyEvent = status('dirty', undefined, (event) => event.properties?.pendingBytes === 1024)
     assert.ok(dirtyEvent, 'dirty telemetry should exist')
     assert.equal(dirtyEvent.properties?.retryCount, 0)
     assert.equal(dirtyEvent.properties?.detail?.retry_count, 0)
+    assert.equal(dirtyEvent.properties?.attempt, 1)
 
     const retryRequest = createRequest('req-retry', 'corr-retry', guardEnabled, 1024, 1)
     await bridge.handleSnapshotRequest(retryRequest)
@@ -824,11 +826,12 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(savingEvent, 'saving telemetry should exist for retry request')
     assert.equal(savingEvent.properties?.retryCount, 0)
     assert.equal(savingEvent.properties?.detail?.retry_count, 0)
+    assert.equal(savingEvent.properties?.attempt, 1)
     const backoffEvent = status('backoff', 'corr-retry')
     assert.ok(backoffEvent, 'backoff telemetry should exist after retryable failure')
     assert.equal(backoffEvent.properties?.retryCount, 1)
     assert.equal(backoffEvent.properties?.detail?.retry_count, 1)
-    assert.ok(backoffEvent.properties && !('attempt' in backoffEvent.properties))
+    assert.equal(backoffEvent.properties?.attempt, 2)
 
     const retrySuccess = createRequest('req-success', 'corr-success', guardEnabled, 1024, 2)
     await bridge.handleSnapshotRequest(retrySuccess)
@@ -836,10 +839,12 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(savingRetryEvent, 'saving telemetry should exist for retry success')
     assert.equal(savingRetryEvent.properties?.retryCount, 1)
     assert.equal(savingRetryEvent.properties?.detail?.retry_count, 1)
+    assert.equal(savingRetryEvent.properties?.attempt, 2)
     const savedEvent = status('saved', 'corr-success')
     assert.ok(savedEvent, 'saved telemetry should exist after successful retry')
     assert.equal(savedEvent.properties?.retryCount, 0)
     assert.equal(savedEvent.properties?.detail?.retry_count, 0)
+    assert.equal(savedEvent.properties?.attempt, 2)
 
     const disabledRequest = createRequest('req-disabled', 'corr-disabled', guardReadonly, 512, 3)
     await bridge.handleSnapshotRequest(disabledRequest)
@@ -847,6 +852,7 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.ok(disabledDuringRequest, 'disabled telemetry should exist for guard-disabled request')
     assert.equal(disabledDuringRequest.properties?.retryCount, 0)
     assert.equal(disabledDuringRequest.properties?.detail?.retry_count, 0)
+    assert.equal(disabledDuringRequest.properties?.attempt, 1)
   })
 
   it('autosave.status telemetry provides zero flush latency when guard short-circuits reportDirty', () => {
@@ -1750,6 +1756,181 @@ describe('createVscodeAutoSaveBridge', () => {
     expectPhaseStep('error', (event) => event.properties?.correlationId === fatalRequest.correlationId, 'error autosave.status telemetry が必要')
     expectPhaseStep('disabled', (event) => event.properties?.correlationId === fatalRequest.correlationId, 'fatal disabled autosave.status telemetry が必要')
   })
+
+  it(
+    "RED ケース: autosave.status telemetry に debounce/latency/attempt/phase_step メタデータを全状態で付与する",
+    async () => {
+      const telemetry: AutoSaveTelemetryEvent[] = []
+      const timeline = [
+        new Date('2024-01-05T00:00:00.000Z'),
+        new Date('2024-01-05T00:00:01.000Z'),
+        new Date('2024-01-05T00:00:02.000Z'),
+        new Date('2024-01-05T00:00:03.000Z'),
+        new Date('2024-01-05T00:00:03.300Z'),
+        new Date('2024-01-05T00:00:04.000Z'),
+        new Date('2024-01-05T00:00:04.500Z'),
+        new Date('2024-01-05T00:00:05.000Z'),
+        new Date('2024-01-05T00:00:05.700Z')
+      ]
+      const now = () => {
+        const next = timeline.shift()
+        assert.ok(next, 'unexpected now invocation')
+        return next
+      }
+      const retryableError: AutoSaveError = {
+        name: 'AutoSaveError',
+        message: 'retryable failure',
+        code: 'retryable',
+        retryable: true
+      }
+      const fatalError: AutoSaveError = {
+        name: 'AutoSaveError',
+        message: 'fatal failure',
+        code: 'fatal',
+        retryable: false
+      }
+      const atomicResponses: Array<
+        (input: { request: AutoSaveSnapshotRequestMessage }) => Promise<AutoSaveAtomicWriteResult>
+      > = [
+        async () => ({ ok: false, error: retryableError }),
+        async ({ request }) => ({
+          ok: true,
+          bytes: request.payload.pendingBytes,
+          generation: request.payload.queuedGeneration ?? 1,
+          lastSuccessAt: new Date('2024-01-05T00:00:06.000Z').toISOString(),
+          lockStrategy: 'web-lock'
+        }),
+        async () => ({ ok: false, error: fatalError })
+      ]
+      const bridge = createVscodeAutoSaveBridge({
+        policy: AUTOSAVE_POLICY,
+        initialGuard: guardEnabled,
+        flags: createDefaultFlags(),
+        now,
+        sendMessage: () => {},
+        atomicWrite: async (input) => {
+          const next = atomicResponses.shift()
+          assert.ok(next, 'unexpected atomicWrite invocation')
+          return next(input)
+        },
+        telemetry: telemetry.push.bind(telemetry)
+      })
+
+      bridge.reportDirty(128, guardReadonly)
+      bridge.reportDirty(256, guardEnabled)
+
+      const retryRequestBase = createRequest(
+        'req-attempt-retry',
+        'corr-attempt-retry',
+        guardEnabled,
+        256,
+        1
+      )
+      const retryRequest: AutoSaveSnapshotRequestMessage = {
+        ...retryRequestBase,
+        payload: { ...retryRequestBase.payload, debounceMs: AUTOSAVE_POLICY.debounceMs + 100 }
+      }
+      await bridge.handleSnapshotRequest(retryRequest)
+
+      const successRequestBase = createRequest(
+        'req-attempt-success',
+        'corr-attempt-success',
+        guardEnabled,
+        256,
+        2
+      )
+      const successRequest: AutoSaveSnapshotRequestMessage = {
+        ...successRequestBase,
+        payload: { ...successRequestBase.payload, debounceMs: AUTOSAVE_POLICY.debounceMs + 250 }
+      }
+      await bridge.handleSnapshotRequest(successRequest)
+
+      const fatalRequestBase = createRequest(
+        'req-attempt-fatal',
+        'corr-attempt-fatal',
+        guardEnabled,
+        256,
+        3
+      )
+      const fatalRequest: AutoSaveSnapshotRequestMessage = {
+        ...fatalRequestBase,
+        payload: { ...fatalRequestBase.payload, debounceMs: AUTOSAVE_POLICY.debounceMs + 400 }
+      }
+      await bridge.handleSnapshotRequest(fatalRequest)
+
+      assert.equal(atomicResponses.length, 0, 'atomicWrite responses should be exhausted')
+
+      const expectStateTelemetry = (
+        label: string,
+        state: AutoSaveStatusState,
+        predicate: (event: AutoSaveTelemetryEvent) => boolean,
+        expectation: { debounce: number; latency: number; attempt: number }
+      ) => {
+        const event = telemetry.find(
+          (candidate) =>
+            candidate.name === 'autosave.status' &&
+            candidate.properties?.state === state &&
+            predicate(candidate)
+        )
+        assert.ok(event, `${label} autosave.status telemetry が必要`)
+        assert.equal(event.properties?.debounce_ms, expectation.debounce, `${label} telemetry should include debounce_ms`)
+        assert.equal(event.properties?.latency_ms, expectation.latency, `${label} telemetry should include latency_ms`)
+        assert.equal(event.properties?.attempt, expectation.attempt, `${label} telemetry should include attempt`)
+        assert.equal(
+          event.properties?.phase_step,
+          statusPhaseForState(state),
+          `${label} telemetry should include phase_step`
+        )
+      }
+
+      expectStateTelemetry('guard disabled', 'disabled', (event) => event.properties?.source === 'phase-guard', {
+        debounce: AUTOSAVE_POLICY.debounceMs,
+        latency: 0,
+        attempt: 1
+      })
+      expectStateTelemetry('dirty transition', 'dirty', (event) => event.properties?.pendingBytes === 256, {
+        debounce: AUTOSAVE_POLICY.debounceMs,
+        latency: 0,
+        attempt: 1
+      })
+      expectStateTelemetry(
+        'initial saving',
+        'saving',
+        (event) => event.properties?.correlationId === retryRequest.correlationId,
+        { debounce: retryRequest.payload.debounceMs, latency: 0, attempt: 1 }
+      )
+      expectStateTelemetry(
+        'retry backoff',
+        'backoff',
+        (event) => event.properties?.correlationId === retryRequest.correlationId,
+        { debounce: retryRequest.payload.debounceMs, latency: 300, attempt: 2 }
+      )
+      expectStateTelemetry(
+        'retry saving',
+        'saving',
+        (event) => event.properties?.correlationId === successRequest.correlationId,
+        { debounce: successRequest.payload.debounceMs, latency: 0, attempt: 2 }
+      )
+      expectStateTelemetry(
+        'retry saved',
+        'saved',
+        (event) => event.properties?.correlationId === successRequest.correlationId,
+        { debounce: successRequest.payload.debounceMs, latency: 500, attempt: 2 }
+      )
+      expectStateTelemetry(
+        'fatal error',
+        'error',
+        (event) => event.properties?.correlationId === fatalRequest.correlationId,
+        { debounce: fatalRequest.payload.debounceMs, latency: 700, attempt: 1 }
+      )
+      expectStateTelemetry(
+        'fatal disabled',
+        'disabled',
+        (event) => event.properties?.correlationId === fatalRequest.correlationId,
+        { debounce: fatalRequest.payload.debounceMs, latency: 700, attempt: 1 }
+      )
+    }
+  )
 
   it('maintains retryCount when retrying after backoff', async () => {
     const sent: AutoSaveBridgeMessage[] = []
