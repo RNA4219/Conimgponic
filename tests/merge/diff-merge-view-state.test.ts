@@ -74,52 +74,33 @@ test('markSkipped/reset', () => {
   assert.equal(h.state().hunkStates.h1, 'Unreviewed')
 })
 
-test('queueMerge success', async () => {
-  const payloads: DiffMergeQueueCommandPayload[] = []
-  let hunks = [createMergeHunk()]
-  let state: DiffMergeState = createInitialDiffMergeState(hunks)
-  const dispatch: Dispatch = (action) => {
-    state = diffMergeReducer(state, action)
-    if (action.type === 'syncHunks') hunks = [...action.hunks]
+test('queueMerge success', async (t) => {
+  const precisions: readonly MergePrecision[] = ['stable', 'beta']
+  for (const precision of precisions) {
+    await t.test(`precision ${precision}`, async () => {
+      const payloads: DiffMergeQueueCommandPayload[] = []
+      let hunks = [createMergeHunk()]
+      let state: DiffMergeState = createInitialDiffMergeState(hunks)
+      const dispatch: Dispatch = (action) => {
+        state = diffMergeReducer(state, action)
+        if (action.type === 'syncHunks') hunks = [...action.hunks]
+      }
+      const controller = createDiffMergeController({
+        precision,
+        dispatch,
+        queueMergeCommand: async (payload) => {
+          payloads.push(payload)
+          return successEvent
+        },
+        getCurrentHunkIds: () => hunks.map((hunk) => hunk.id),
+      })
+      await controller.queueMerge(['h1'])
+      assert.equal(payloads.length, 1)
+      const payload = payloads[0]
+      assert.equal(payload?.precision, precision)
+      assert.equal(state.hunkStates.h1, 'Merged')
+    })
   }
-  const controller = createDiffMergeController({
-    precision: 'stable',
-    dispatch,
-    queueMergeCommand: async (payload) => {
-      payloads.push(payload)
-      return successEvent
-    },
-    getCurrentHunkIds: () => hunks.map((hunk) => hunk.id),
-  })
-  await controller.queueMerge(['h1'])
-  assert.equal(payloads.length, 1)
-  const payload = payloads[0]
-  assert.equal(payload?.precision, 'stable')
-  assert.equal(state.hunkStates.h1, 'Merged')
-})
-
-test('queueMerge success with beta precision', async () => {
-  const payloads: DiffMergeQueueCommandPayload[] = []
-  let hunks = [createMergeHunk()]
-  let state: DiffMergeState = createInitialDiffMergeState(hunks)
-  const dispatch: Dispatch = (action) => {
-    state = diffMergeReducer(state, action)
-    if (action.type === 'syncHunks') hunks = [...action.hunks]
-  }
-  const controller = createDiffMergeController({
-    precision: 'beta',
-    dispatch,
-    queueMergeCommand: async (payload) => {
-      payloads.push(payload)
-      return successEvent
-    },
-    getCurrentHunkIds: () => hunks.map((hunk) => hunk.id),
-  })
-  await controller.queueMerge(['h1'])
-  assert.equal(payloads.length, 1)
-  const payload = payloads[0]
-  assert.equal(payload?.precision, 'beta')
-  assert.equal(state.hunkStates.h1, 'Merged')
 })
 
 test('queueMerge resolves even when queueMergeCommand throws', async () => {

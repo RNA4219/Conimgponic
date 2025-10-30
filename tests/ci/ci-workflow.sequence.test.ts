@@ -1,11 +1,10 @@
 /// <reference types="node" />
 
 import assert from 'node:assert/strict';
-import { readdir, readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import { describe, test } from 'node:test';
+import { importJsYaml, loadWorkflow } from './utils/workflow-loader.js';
+
+import { loadTestStrategyExpectations } from './test-strategy-autosave-merge.ts';
 
 type WorkflowYaml = {
   jobs?: {
@@ -83,6 +82,7 @@ type JsYamlModule = {
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, '..', '..');
 const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
+const testStrategyPath = resolve(repoRoot, 'tests', 'TEST_STRATEGY_AUTOSAVE_MERGE.md');
 const require = createRequire(import.meta.url);
 const autosaveSuffixModuleGlobs = [
   'src/**/*autosave*.ts',
@@ -119,32 +119,15 @@ const requiredAutosaveFilterGlobs = [
   vscodeFlagsHandshakeSpecPath,
 ];
 
-const expectedQualitySequence = [
-  'pnpm -s lint',
-  'pnpm -s typecheck',
-  'pnpm -s test:autosave',
-  'pnpm -s test:merge',
-  'pnpm -s test:cli',
-  'pnpm -s test:collector',
-  'pnpm -s test:telemetry',
-];
-
-const expectedQualitySuites = [
-  'lint',
-  'typecheck',
-  'autosave',
-  'merge',
-  'cli',
-  'collector',
-  'telemetry',
-];
-
 const expectedRunSuiteStepIds = ['run_suite_autosave', 'run_suite_default'] as const;
 
-const expectedCoverageCommand = 'pnpm -s test:coverage';
+const {
+  qualityCommands: expectedQualitySequence,
+  qualitySuites: expectedQualitySuites,
+  coverageCommand: expectedCoverageCommand,
+  junitCommand: expectedJunitCommand,
+} = await loadTestStrategyExpectations(testStrategyPath);
 const expectedCoverageCleanup = 'rm -rf coverage';
-const expectedJunitCommand =
-  'pnpm test --test-reporter=junit --test-reporter-destination=file=reports/junit.xml';
 const expectedSuiteFailureChecks = [
   "steps.run_suite_autosave.outcome == 'failure'",
   "steps.run_suite_default.outcome == 'failure'",
@@ -1834,43 +1817,10 @@ function extractMatrixSuites(entries: QualityMatrixEntry[]): string[] {
   });
 }
 
-async function importJsYaml(): Promise<JsYamlModule> {
-  try {
-    return require('js-yaml') as JsYamlModule;
-  } catch (error) {
-    if (!isNodeError(error) || error.code !== 'MODULE_NOT_FOUND') {
-      throw error;
-    }
-  }
-
-  const pnpmDir = resolve(repoRoot, 'node_modules', '.pnpm');
-  const entries = await readdir(pnpmDir, { withFileTypes: true });
-  const match = entries.find((entry) => entry.isDirectory() && entry.name.startsWith('js-yaml@'));
-
-  if (!match) {
-    assert.fail('js-yaml must be present in pnpm store');
-  }
-
-  const moduleDir = resolve(pnpmDir, match.name, 'node_modules', 'js-yaml');
-  const moduleRequire = createRequire(resolve(moduleDir, 'index.js'));
-  return moduleRequire('.') as JsYamlModule;
-}
-
 async function readWorkflowYaml(): Promise<WorkflowYaml> {
-  const source = await readFile(workflowPath, 'utf8');
-  const parsed = load(source) as unknown;
-
-  if (!parsed || typeof parsed !== 'object') {
+  const workflow = await loadWorkflow();
+  if (!workflow || typeof workflow !== 'object') {
     assert.fail('workflow must parse to an object');
   }
-
-  return parsed as WorkflowYaml;
-}
-
-type NodeError = Error & {
-  code?: string;
-};
-
-function isNodeError(error: unknown): error is NodeError {
-  return error instanceof Error && 'code' in error;
+  return workflow as WorkflowYaml;
 }

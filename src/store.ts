@@ -65,13 +65,30 @@ const createSBStore = (): UseSBStore => {
     }))
   },
   moveScene(id, dir){
-    const s = get().sb.scenes
-    const i = s.findIndex(x => x.id === id)
-    if (i < 0) return
-    const j = i + dir
-    if (j < 0 || j >= s.length) return
-    const tmp = s[i]; s[i]=s[j]; s[j]=tmp
-    set(ss=>({sb:{...ss.sb, scenes:[...s]}}))
+    set((state) => {
+      const currentScenes = state.sb.scenes
+      const currentIndex = currentScenes.findIndex((scene) => scene.id === id)
+      if (currentIndex < 0) {
+        return state
+      }
+
+      const targetIndex = currentIndex + dir
+      if (targetIndex < 0 || targetIndex >= currentScenes.length) {
+        return state
+      }
+
+      const nextScenes = [...currentScenes]
+      const temp = nextScenes[currentIndex]
+      nextScenes[currentIndex] = nextScenes[targetIndex]
+      nextScenes[targetIndex] = temp
+
+      return {
+        sb: {
+          ...state.sb,
+          scenes: nextScenes,
+        },
+      }
+    })
   },
   updateScene(id, patch){
     set(ss => {

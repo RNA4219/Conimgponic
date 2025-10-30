@@ -1,15 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
 import {
-  DIFF_MERGE_TAB_STORAGE_PREFIX,
   createDiffMergeNavigationKeyHandler,
   isDiffMergeDevelopmentEnvironment as isDevelopmentEnvironment,
   planDiffMergeView,
-  resolveDiffMergeStoredTab,
+  type DiffMergeTabStorage,
 } from './diffMergeTypes.js'
+import { createDiffMergeStoredTabManager } from './diffMergeStoredTabManager.js'
 import type {
   DiffMergeSubTabKey,
-  DiffMergeTabStorage,
   DiffMergeViewPlan,
   MergeHunk,
   MergePrecision,
@@ -179,32 +178,34 @@ export interface DiffMergeViewProps {
   readonly autoApplied?: DiffMergeAutoAppliedState
   readonly disabled?: boolean
 }
-export const DiffMergeView: React.FC<DiffMergeViewProps> = ({
+interface DiffMergeViewContentProps extends Omit<DiffMergeViewProps, 'disabled'> {}
+
+const DiffMergeViewDisabled: React.FC<Pick<DiffMergeViewProps, 'precision'>> = ({ precision }) => (
+  <section
+    data-component="diff-merge-view"
+    data-block="diff-merge-disabled"
+    data-precision={precision}
+    data-testid="diff-merge-disabled"
+    aria-disabled="true"
+  />
+)
+
+const DiffMergeViewContent: React.FC<DiffMergeViewContentProps> = ({
   precision,
   hunks,
   queueMergeCommand,
   autoApplied,
-  disabled = false,
 }) => {
-  if (disabled) {
-    return (
-      <section
-        data-component="diff-merge-view"
-        data-block="diff-merge-disabled"
-        data-precision={precision}
-        data-testid="diff-merge-disabled"
-        aria-disabled="true"
-      />
-    )
-  }
-
   const plan = useMemo(() => planDiffMergeView(precision), [precision])
   const storage = (globalThis as { localStorage?: DiffMergeTabStorage }).localStorage
-  const storageKey = useMemo(() => `${DIFF_MERGE_TAB_STORAGE_PREFIX}${precision}`, [precision])
-  const allowedTabKeys = useMemo(() => new Set(plan.tabs.map((tab) => tab.key)), [plan])
-  const resolvedInitialTab = useMemo(
-    () => resolveDiffMergeStoredTab({ plan, precision, storage, fallback: plan.initialTab }),
+  const storedTabManager = useMemo(
+    () => createDiffMergeStoredTabManager({ plan, precision, storage }),
     [plan, precision, storage],
+  )
+  const allowedTabKeys = storedTabManager.allowedTabs
+  const resolvedInitialTab = useMemo(
+    () => storedTabManager.resolveInitialTab(plan.initialTab),
+    [storedTabManager, plan.initialTab],
   )
   const [activeTab, setActiveTab] = useState(resolvedInitialTab)
 
@@ -265,33 +266,15 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({
   const editingHunkId = state.editingHunkId
   const editingHunk = editingHunkId ? hunks.find((hunk) => hunk.id === editingHunkId) : undefined
 
-  const persistTabSelection = useCallback(
-    (key: DiffMergeSubTabKey) => {
-      if (!storage || !allowedTabKeys.has(key)) {
-        return
-      }
-      try {
-        storage.setItem(storageKey, key)
-      } catch (error) {
-        if (isDevelopmentEnvironment()) {
-          // Guardrails: Day8/workflow-cookbook/GUARDRAILS.md の副作用境界に従い、永続化失敗時も
-          // graceful degradation（ログのみ）でタブ選択を維持する。
-          console.warn('DiffMergeView: failed to persist tab selection', error)
-        }
-      }
-    },
-    [allowedTabKeys, storage, storageKey],
-  )
-
   const handleSelectTab = useCallback(
     (key: DiffMergeSubTabKey) => {
       if (!allowedTabKeys.has(key)) {
         return
       }
       setActiveTab(key)
-      persistTabSelection(key)
+      storedTabManager.persist(key)
     },
-    [allowedTabKeys, persistTabSelection, setActiveTab],
+    [allowedTabKeys, setActiveTab, storedTabManager],
   )
 
   const planTabs = plan.tabs
@@ -366,4 +349,11 @@ export const DiffMergeView: React.FC<DiffMergeViewProps> = ({
       {editModal}
     </section>
   )
+}
+
+export const DiffMergeView: React.FC<DiffMergeViewProps> = ({ disabled = false, ...props }) => {
+  if (disabled) {
+    return <DiffMergeViewDisabled precision={props.precision} />
+  }
+  return <DiffMergeViewContent {...props} />
 }

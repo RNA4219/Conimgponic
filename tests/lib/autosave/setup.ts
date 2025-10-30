@@ -174,6 +174,44 @@ export const createOpfs = (): OpfsMock => {
   return { files, storage: { async getDirectory(){ return makeDir('') } } }
 }
 
+export interface LocalStorageStub {
+  readonly entries: Map<string, string>
+  readonly length: number
+  key(index: number): string | null
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+  clear(): void
+}
+
+export const createLocalStorageStub = (
+  initial: Record<string, string> = {}
+): LocalStorageStub => {
+  const entries = new Map<string, string>(Object.entries(initial))
+  const storage: LocalStorageStub = {
+    entries,
+    get length(){
+      return entries.size
+    },
+    key(index: number){
+      return Array.from(entries.keys())[index] ?? null
+    },
+    getItem(key: string){
+      return entries.get(key) ?? null
+    },
+    setItem(key: string, value: string){
+      entries.set(key, value)
+    },
+    removeItem(key: string){
+      entries.delete(key)
+    },
+    clear(){
+      entries.clear()
+    }
+  }
+  return storage
+}
+
 type AutoSaveTestModule = AutoSaveModule & {
   opfs: OpfsMock
   collectorEvents: Array<Record<string, unknown>>
