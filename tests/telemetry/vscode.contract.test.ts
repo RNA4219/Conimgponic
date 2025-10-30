@@ -1787,6 +1787,37 @@ describe('vscode extension telemetry contract (RED)', () => {
     )
   })
 
+  test('collect-metrics 契約は export_latency_p95 指標を全経路で露出する', () => {
+    const { inputRecord, notifications, phaseGates, telemetry } = COLLECT_METRICS_CONTRACT
+
+    strictEqual(
+      typeof inputRecord.export_latency_p95,
+      'number',
+      'input record must define export_latency_p95 metric',
+    )
+
+    assertOk(
+      notifications.some((notification) => notification.metric === 'export_latency_p95'),
+      'notifications must monitor export_latency_p95 breaches',
+    )
+
+    assertOk(
+      phaseGates.flatMap((phase) => phase.guardrails).some((guard) => guard.metric === 'export_latency_p95'),
+      'phase gates must guard export_latency_p95 transitions',
+    )
+
+    const exportResult = telemetry.events.find((event) => event.event === 'export.result')
+    assertOk(exportResult, 'export.result telemetry spec must exist')
+    assertOk(
+      exportResult.jsonlFields.includes('payload.summary.export_latency_p95'),
+      'export.result telemetry must expose summary.export_latency_p95',
+    )
+    assertOk(
+      exportResult.jsonlFields.includes('payload.summary.export_success_rate'),
+      'export.result telemetry must expose summary.export_success_rate',
+    )
+  })
+
   test('export guardrail の違反ウィンドウが telemetry.retryPolicy と同期している', () => {
     const exportGuard = COLLECT_METRICS_CONTRACT.phaseGates
       .flatMap((phase) => phase.guardrails)
