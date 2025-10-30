@@ -76,7 +76,7 @@
             "properties": {
               "state": {
                 "type": "string",
-                "enum": ["disabled", "dirty", "saving", "saved", "error", "backoff"]
+                "enum": ["dirty", "saving", "saved", "backoff", "error", "disabled"]
               },
               "debounce_ms": { "type": "number", "minimum": 0 },
               "latency_ms": { "type": "number", "minimum": 0 },
