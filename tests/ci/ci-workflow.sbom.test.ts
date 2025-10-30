@@ -57,6 +57,15 @@ describe('ci workflow sbom job', () => {
       installScript.includes('echo "$HOME/.local/bin" >> "$GITHUB_PATH"'),
       'Install Syft step must append the local bin directory to GITHUB_PATH',
     );
+    assert.match(
+      installScript,
+      /pnpm\s+dlx\s+@anchore\/syft@\d+\.\d+\.\d+/,
+      'Install Syft step must invoke pnpm dlx with a pinned @anchore/syft version',
+    );
+    assert.ok(
+      !installScript.includes('curl '),
+      'Install Syft step must not download syft via curl',
+    );
   });
 
   test('produces sbom.json via syft CLI and always uploads artifact', async () => {

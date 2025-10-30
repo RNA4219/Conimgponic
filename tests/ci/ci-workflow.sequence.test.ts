@@ -623,16 +623,15 @@ describe('ci workflow build job', () => {
       'audit job must run pnpm audit with JSON output redirected to audit-report.json',
     );
 
-    assertLineIncludes(
+    assertLineMatches(
       auditRunLines,
-      'https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64',
-      'audit job must install osv-scanner from official release',
+      /pnpm\s+(?:-s\s+)?dlx\s+@google\/osv-scanner@\d+\.\d+\.\d+(?:\s|$)/,
+      'audit job must install osv-scanner via pnpm dlx with a pinned version',
     );
 
-    assertLineIncludes(
-      auditRunLines,
-      'osv-scanner',
-      'audit job must run osv-scanner',
+    assert.ok(
+      !auditRunLines.some((line) => line.includes('curl ')),
+      'audit job must not install osv-scanner via curl',
     );
     assertLineIncludes(
       auditRunLines,
@@ -1723,6 +1722,12 @@ function normalizeJobNeeds(value: JobNeedsConfig, message: string): string[] {
 
 function assertLineIncludes(lines: string[], expected: string, message: string): void {
   const index = lines.findIndex((line) => line.includes(expected));
+
+  assert.notStrictEqual(index, -1, message);
+}
+
+function assertLineMatches(lines: string[], pattern: RegExp, message: string): void {
+  const index = lines.findIndex((line) => pattern.test(line));
 
   assert.notStrictEqual(index, -1, message);
 }

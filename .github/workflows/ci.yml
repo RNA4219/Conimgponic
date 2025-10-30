@@ -24,12 +24,27 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@9.12.3 --activate
       - name: Install Syft
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b "$HOME/.local/bin"
+          cat <<'SYFT_WRAPPER' > "$HOME/.local/bin/syft"
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec pnpm dlx @anchore/syft@1.20.0 "$@"
+          SYFT_WRAPPER
+          chmod +x "$HOME/.local/bin/syft"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Generate SBOM
         id: generate_sbom
@@ -110,8 +125,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          curl -sSfL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 \
-            -o "$HOME/.local/bin/osv-scanner"
+          cat <<'OSV_SCANNER' > "$HOME/.local/bin/osv-scanner"
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec pnpm dlx @google/osv-scanner@1.7.4 "$@"
+          OSV_SCANNER
           chmod +x "$HOME/.local/bin/osv-scanner"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
