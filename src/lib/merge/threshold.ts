@@ -174,7 +174,8 @@ export const resolveMergeThresholdSnapshot = (
     return finalize(flagThreshold)
   }
 
-  const workspaceThreshold = parseMergeThreshold(readWorkspaceSetting(workspace, MERGE_THRESHOLD_STORAGE_KEY))
+  const workspaceValue = readWorkspaceSetting(workspace, MERGE_THRESHOLD_STORAGE_KEY)
+  const workspaceThreshold = parseMergeThreshold(workspaceValue as ParseThresholdInput)
   if (workspaceThreshold !== undefined) {
     return finalize(workspaceThreshold)
   }

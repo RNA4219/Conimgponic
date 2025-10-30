@@ -5,10 +5,13 @@ import { LeftRight } from './components/LeftRightPanes'
 import { StoryboardList } from './components/StoryboardList'
 import { MergeDock } from './components/MergeDock'
 import {
+  DEFAULT_FLAG_SNAPSHOT,
   OLLAMA_BASE,
   setOllamaBase,
   resolveAutoSaveBootstrapPlan,
-  type AutoSaveBootstrapPlan
+  type AutoSaveBootstrapPlan,
+  type FlagSnapshot,
+  type ResolveOptions
 } from './config'
 import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
@@ -258,6 +261,25 @@ export function resolveAutoSaveBootstrapPlanForApp(
   return plan
 }
 
+export interface MergeDockIntegrationSnapshot {
+  readonly flags: Pick<FlagSnapshot, 'merge'>
+  readonly mergeThreshold: number | null
+  readonly workspace: ResolveOptions['workspace'] | null
+}
+
+export function resolveMergeDockIntegration(
+  plan: AutoSaveBootstrapPlan | null,
+  options?: ResolveOptions | null
+): MergeDockIntegrationSnapshot {
+  const snapshot = plan?.snapshot ?? DEFAULT_FLAG_SNAPSHOT
+  const threshold = plan?.snapshot.merge.threshold ?? snapshot.merge.threshold ?? null
+  return {
+    flags: { merge: snapshot.merge },
+    mergeThreshold: threshold,
+    workspace: options?.workspace ?? null
+  }
+}
+
 export interface AutoSaveStoryboardStore {
   readonly getState: () => { readonly sb: Storyboard }
   readonly subscribe: (
@@ -357,7 +379,11 @@ export function createKeyboardShortcutHandler(
   }
 }
 
-export default function App(){
+export interface AppProps {
+  readonly resolveOptions?: ResolveOptions | null
+}
+
+export default function App({ resolveOptions }: AppProps = {}){
   const { sb, setSBTitle, addScene } = useSB()
   const [dockOpen, setDockOpen] = useState(()=> getDockOpenPreference())
   const [help, setHelp] = useState(false)
@@ -365,6 +391,7 @@ export default function App(){
   const [autoSavePlan, setAutoSavePlan] = useState<AutoSaveBootstrapPlan | null>(null)
   const [autoSaveDecision, setAutoSaveDecision] = useState<AutoSaveActivationDecision | null>(null)
   const autoSaveRunner = useRef<AutoSaveInitResult | null>(null)
+  const mergeDockIntegration = resolveMergeDockIntegration(autoSavePlan, resolveOptions ?? null)
   const toolbarNotifiers: ToolbarNotifiers = {
     alert(message) {
       if (typeof window !== 'undefined' && typeof window.alert === 'function') {
@@ -422,9 +449,9 @@ export default function App(){
   }, [])
 
   useEffect(()=>{
-    const plan = resolveAutoSaveBootstrapPlan()
+    const plan = resolveAutoSaveBootstrapPlan(resolveOptions ?? undefined)
     setAutoSavePlan(plan)
-  }, [])
+  }, [resolveOptions])
 
   useEffect(()=>{
     if (!autoSavePlan){
@@ -550,7 +577,11 @@ export default function App(){
         <StoryboardList />
       </div>
       <div className="dock" style={{display: dockOpen?'block':'none'}}>
-        <MergeDock />
+        <MergeDock
+          flags={mergeDockIntegration.flags}
+          mergeThreshold={mergeDockIntegration.mergeThreshold}
+          workspace={mergeDockIntegration.workspace}
+        />
       </div>
       {help && <HelpModal onClose={()=>setHelp(false)} />}
     </div>

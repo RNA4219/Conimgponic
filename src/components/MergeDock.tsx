@@ -43,11 +43,8 @@ export {
   shouldShowDiffBackupCTA,
 } from '../lib/merge/phasePlan'
 import { GoldenCompare } from './GoldenCompare'
-import {
-  DiffMergeView,
-  type MergeHunk,
-  type QueueMergeCommand,
-} from './DiffMergeView'
+import { DiffMergeView } from './DiffMergeView'
+import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
 
 interface MergeDockViewState {
   readonly activeTab: MergeDockTabId
@@ -185,26 +182,29 @@ function Checks(): JSX.Element {
 }
 
 interface MergeDockProps {
-  readonly flags?: Pick<FlagSnapshot, 'merge'>
+  readonly flags: Pick<FlagSnapshot, 'merge'>
   readonly mergeThreshold?: number | null
   readonly autoAppliedRate?: number | null
   readonly phaseStats?: MergeDockPhaseStats | null
   readonly workspace?: WorkspaceConfiguration | null
 }
 
-export function MergeDock(props?: MergeDockProps){
+export function MergeDock({
+  flags,
+  mergeThreshold = null,
+  autoAppliedRate = null,
+  phaseStats = null,
+  workspace = null,
+}: MergeDockProps){
   const sb = useSB((state) => state.sb)
-  const flags = props?.flags
-  const autoAppliedRate = props?.autoAppliedRate ?? null
-  const phaseStats = props?.phaseStats ?? null
   const storage = typeof window !== 'undefined' ? window.localStorage : undefined
   const mergeWindow = typeof window !== 'undefined' ? (window as MergeDockWindow) : undefined
   const autoSave = readAutoSaveState(mergeWindow)
   const { precision, threshold } = useMergeThreshold({
-    flags: flags ?? null,
-    precision: flags?.merge.precision ?? null,
-    threshold: props?.mergeThreshold ?? null,
-    workspace: props?.workspace ?? null,
+    flags,
+    precision: flags.merge.precision,
+    threshold: mergeThreshold,
+    workspace,
   })
   let storedTabKey: string | null | undefined
   if (storage) {
