@@ -9,6 +9,7 @@ import {
   planMergeDockTabs,
   resolveMergeDockPhasePlan,
 } from '../../src/components/MergeDock.tsx'
+import { DiffMergeView, type MergeHunk } from '../../src/components/DiffMergeView.tsx'
 import type { FlagSnapshot } from '../../src/config/flags.ts'
 import { mergeCSV, mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'
@@ -134,6 +135,11 @@ const stableFlags: FlagSnapshot = {
   updatedAt: '2024-05-01T00:00:00.000Z',
 }
 
+const betaFlags: FlagSnapshot = {
+  ...stableFlags,
+  merge: { ...stableFlags.merge, value: 'beta', precision: 'beta' },
+}
+
 test('merge-ui: stable precision diff tab renders DiffMergeView with backup CTA when autosave is stale', () => {
   const originalWindow = globalThis.window
   const originalDateNow = Date.now
@@ -197,6 +203,57 @@ test('merge-ui: stable precision diff tab renders DiffMergeView with backup CTA 
     })
     Date.now = originalDateNow
   }
+})
+
+test('merge-ui: beta precision diff navigation retains ArrowLeft/Right shortcuts', () => {
+  const originalWindow = Reflect.get(globalThis, 'window')
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear: () => store.clear(),
+    getItem: (key) => (store.has(key) ? store.get(key)! : null),
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key) => { store.delete(key) },
+    setItem: (key, value) => { store.set(key, value) },
+  }
+  storage.setItem('merge.lastTab', 'diff')
+  const mockWindow = { localStorage: storage } as typeof window
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: mockWindow })
+
+  try {
+    assert.match(
+      renderToStaticMarkup(React.createElement(MergeDock, { flags: betaFlags })),
+      /aria-keyshortcuts="ArrowLeft ArrowRight"/,
+    )
+  } finally {
+    originalWindow
+      ? Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
+      : Reflect.deleteProperty(globalThis, 'window')
+  }
+})
+
+test('merge-ui: legacy precision DiffMergeView keeps ArrowLeft/Right shortcuts', () => {
+  const queueMergeCommand = async () => ({
+    status: 'success' as const,
+    hunkIds: [],
+    telemetry: {
+      collectorSurface: 'diff-merge-hunk-list' as const,
+      analyzerSurface: 'diff-merge.queue' as const,
+      retryable: false,
+    },
+  })
+  assert.match(
+    renderToStaticMarkup(
+      React.createElement(DiffMergeView, {
+        precision: 'legacy',
+        hunks: [] as readonly MergeHunk[],
+        queueMergeCommand,
+      }),
+    ),
+    /role="tablist"[^"]*aria-keyshortcuts="ArrowLeft ArrowRight"/,
+  )
 })
 
 test('merge-ui: stable precision diff tab renders but keeps guard when stats missing', () => {

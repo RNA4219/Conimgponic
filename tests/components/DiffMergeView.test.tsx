@@ -46,6 +46,32 @@ const render = (precision: 'legacy' | 'beta' | 'stable') =>
     />,
   )
 
+const createNavigationHarness = (precision: 'legacy' | 'beta' | 'stable') => {
+  const plan = planDiffMergeView(precision)
+  let active: DiffMergeSubTabKey = plan.initialTab
+  const tabs = plan.tabs.map((tab) => tab.key)
+  const selected: DiffMergeSubTabKey[] = []
+  const handler = createDiffMergeNavigationKeyHandler({
+    tabs,
+    resolveActive: () => active,
+    onSelect: (key) => {
+      selected.push(key)
+      active = key
+    },
+  })
+  const simulate = (key: 'ArrowLeft' | 'ArrowRight') => {
+    let prevented = false
+    handler({
+      key,
+      preventDefault: () => {
+        prevented = true
+      },
+    } as unknown as React.KeyboardEvent<HTMLDivElement>)
+    return prevented
+  }
+  return { plan, tabs, selected, simulate, getActive: () => active }
+}
+
 test('precision beta exposes diff tab with accessible roles', () => {
   const html = render('beta')
   assert.match(html, /role="tablist"[^>]*data-precision="beta"/)
@@ -73,6 +99,31 @@ test('beta precision renders uniform layout sections', () => {
   assert.match(html, /data-block="hunk-list"/)
   assert.match(html, /data-block="operation-pane"/)
   assert.doesNotMatch(html, /data-block="edit-modal"/)
+})
+
+test('legacy precision navigation preserves historical review-only order', () => {
+  const { tabs, selected, simulate, getActive } = createNavigationHarness('legacy')
+  assert.deepEqual(tabs, ['review'])
+
+  const prevented = ['ArrowRight', 'ArrowLeft'].map(simulate)
+  assert(prevented.every(Boolean))
+  assert.equal(getActive(), 'review')
+  assert.deepEqual(selected, [])
+})
+
+test('beta precision navigation cycles review, diff, merged while keeping legacy controls', () => {
+  const { tabs, selected, simulate, getActive } = createNavigationHarness('beta')
+  assert.deepEqual(tabs, ['review', 'diff', 'merged'])
+  const sequence: readonly ('ArrowLeft' | 'ArrowRight')[] = ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowLeft']
+  const prevented = sequence.map(simulate)
+  assert(prevented.every(Boolean))
+  assert.deepEqual(selected, ['diff', 'merged', 'review', 'merged', 'diff'])
+  assert.equal(getActive(), 'diff')
+
+  const html = render('beta')
+  for (const pattern of [/data-testid="diff-merge-hunk-h1-toggle"/, /data-testid="diff-merge-hunk-h1-edit"/, /data-testid="diff-merge-queue-selected"/]) {
+    assert.match(html, pattern)
+  }
 })
 
 test('stable precision navigation cycles tabs with arrow keys', () => {
