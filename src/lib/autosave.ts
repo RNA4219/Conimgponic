@@ -455,6 +455,7 @@ export interface AutoSaveStatusPayload {
   readonly lastSuccessAt?: string
   readonly pendingBytes?: number
   readonly guard: AutoSavePhaseGuardSnapshot
+  readonly attempt: number
 }
 
 export type AutoSaveStatusMessage = AutoSaveBridgeEnvelope<

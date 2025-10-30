@@ -332,7 +332,8 @@ const createStatusMessage = (
   guard: AutoSavePhaseGuardSnapshot,
   retryCount: number,
   lastSuccessAt: string | undefined,
-  pendingBytes?: number
+  pendingBytes?: number,
+  attemptOverride?: number
 ): AutoSaveStatusMessage => ({
   type: 'status.autosave',
   apiVersion: API_VERSION,
@@ -347,7 +348,8 @@ const createStatusMessage = (
     retryCount,
     lastSuccessAt,
     pendingBytes,
-    guard
+    guard,
+    attempt: attemptOverride ?? retryCount + 1
   }
 })
 
@@ -1183,7 +1185,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         'saved',
         state.guard,
         state.retryCount,
-        state.lastSuccessAt
+        state.lastSuccessAt,
+        undefined,
+        savedAttempt
       )
     )
     emitTelemetry(

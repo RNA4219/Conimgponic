@@ -1985,10 +1985,12 @@ describe('createVscodeAutoSaveBridge', () => {
     const savingStatus = retryStatuses.find((msg) => msg.payload.state === 'saving')
     assert.ok(savingStatus, 'retry should emit saving status')
     assert.equal(savingStatus.payload.retryCount, 1)
+    assert.equal(savingStatus.payload.attempt, 2)
 
     const savedStatus = retryStatuses.find((msg) => msg.payload.state === 'saved')
     assert.ok(savedStatus, 'retry should eventually save successfully')
     assert.equal(savedStatus.payload.retryCount, 0)
+    assert.equal(savedStatus.payload.attempt, 2)
   })
 
   it('propagates retryCount when backoff transitions to non-retryable error', async () => {
@@ -2049,6 +2051,7 @@ describe('createVscodeAutoSaveBridge', () => {
     )
     assert.ok(errorStatus, 'non-retryable error should emit status.autosave error state')
     assert.equal(errorStatus.payload.retryCount, 1)
+    assert.equal(errorStatus.payload.attempt, 2)
 
     const disabledStatus = sent.find(
       (msg): msg is AutoSaveStatusMessage =>
@@ -2058,6 +2061,7 @@ describe('createVscodeAutoSaveBridge', () => {
     )
     assert.ok(disabledStatus, 'non-retryable error should transition to disabled state')
     assert.equal(disabledStatus.payload.retryCount, 1)
+    assert.equal(disabledStatus.payload.attempt, 2)
 
     const errorTelemetry = telemetry.find(
       (event) =>
@@ -2479,6 +2483,14 @@ describe('createVscodeAutoSaveBridge', () => {
     const statuses = sent.filter((msg): msg is AutoSaveStatusMessage => msg.type === 'status.autosave')
     assert.deepEqual(statuses.map((msg) => msg.payload.state).slice(-2), ['error', 'disabled'])
     assert.equal(statuses.at(-1)?.payload.guard.optionsDisabled, true)
+    const errorStatusMessage = statuses.find((msg) => msg.payload.state === 'error')
+    assert.ok(errorStatusMessage, 'error status message should be present')
+    assert.equal(errorStatusMessage.payload.retryCount, 0)
+    assert.equal(errorStatusMessage.payload.attempt, 1)
+    const disabledStatusMessage = statuses.find((msg) => msg.payload.state === 'disabled')
+    assert.ok(disabledStatusMessage, 'disabled status message should be present')
+    assert.equal(disabledStatusMessage.payload.retryCount, 0)
+    assert.equal(disabledStatusMessage.payload.attempt, 1)
 
     const statusEvents = telemetry.filter(
       (event) => event.name === 'autosave.status' && event.properties?.correlationId === 'corr-error'
