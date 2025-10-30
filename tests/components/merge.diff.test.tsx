@@ -19,14 +19,10 @@ import { createStore } from 'zustand/vanilla'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
 const mergeDockModule = await import('../../src/components/MergeDock')
+const mergePhaseModule = await import('../../src/lib/merge/phasePlan.ts')
 const {
-  resolveMergeDockPhasePlan,
-  planMergeDockTabs,
-  resolveMergeThresholdPlan,
   resolveMergeThresholdSnapshot,
-  diffBackupPolicy,
   shouldRenderDiffBackupCTA,
-  shouldShowDiffBackupCTA,
   isDiffBackupCTAEligible,
   getDefaultPreference,
   sanitizePreference,
@@ -72,6 +68,13 @@ const {
     diffEnabled: boolean,
   ) => MergeDockPhasePlan['tabs']['initialTab']
 }
+const {
+  diffBackupPolicy,
+  planMergeDockTabs,
+  resolveMergeDockPhasePlan,
+  resolveMergeThresholdPlan,
+  shouldShowDiffBackupCTA,
+} = mergePhaseModule
 type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
 
 test('resolveMergeThresholdSnapshot falls back to default threshold', () => {

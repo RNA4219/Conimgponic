@@ -2,6 +2,7 @@
   "id": "src/lib/merge/phasePlan.ts",
   "role": "module",
   "public_api": [
+    "DIFF_BACKUP_THRESHOLD_MS",
     "diffBackupPolicy",
     "isBaseTabId",
     "planMergeDockTabs",
@@ -16,11 +17,13 @@
   ],
   "deps_in": [
     "src/components/MergeDock.tsx",
-    "tests/lib/merge/phasePlan.spec.ts"
+    "tests/components/merge.diff.test.tsx",
+    "tests/lib/merge/phasePlan.spec.ts",
+    "tests/merge/merge-dock-tabs.test.ts"
   ],
   "risks": [],
   "tests": [
     "tests/lib/merge/phasePlan.spec.ts"
   ],
-  "generated_at": "2025-10-21T09:15:00Z"
+  "generated_at": "2025-10-21T10:00:00Z"
 }

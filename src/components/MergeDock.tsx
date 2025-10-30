@@ -22,14 +22,6 @@ import {
   type MergeDockTabId,
   type MergeDockTabPlan,
 } from '../lib/merge/phasePlan'
-
-export {
-  diffBackupPolicy,
-  planMergeDockTabs,
-  resolveMergeDockPhasePlan,
-  resolveMergeThresholdPlan,
-  shouldShowDiffBackupCTA,
-} from '../lib/merge/phasePlan'
 import { GoldenCompare } from './GoldenCompare'
 import {
   DiffMergeView,

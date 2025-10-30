@@ -4,11 +4,8 @@ import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import {
-  MergeDock,
-  planMergeDockTabs,
-  resolveMergeDockPhasePlan,
-} from '../../src/components/MergeDock.tsx'
+import { MergeDock } from '../../src/components/MergeDock.tsx'
+import { planMergeDockTabs, resolveMergeDockPhasePlan } from '../../src/lib/merge/phasePlan.ts'
 import {
   DiffMergeView,
   type MergeHunk,

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  DIFF_BACKUP_THRESHOLD_MS,
   resolveMergeDockPhasePlan,
   resolveMergeThresholdPlan,
   shouldShowDiffBackupCTA,
@@ -35,6 +36,29 @@ test('phasePlan: stable diff demotes to compiled when review signals exist and t
   assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in' })
   assert.deepEqual(plan.autoApplied, { rate: 0.8, target: 0.86, meetsTarget: false })
   assert.deepEqual(plan.guard, { phaseBRequired: true, reviewBandCount: 2, conflictBandCount: 0 })
+})
+
+test('phasePlan: stable diff defaults retain backup window and disabled guard', () => {
+  const plan = resolveMergeDockPhasePlan({ precision: 'stable', threshold: 0.82 })
+
+  assert.equal(plan.tabs.initialTab, 'diff')
+  assert.deepEqual(plan.tabs.diff, { exposure: 'default', backupAfterMs: DIFF_BACKUP_THRESHOLD_MS })
+  assert.deepEqual(plan.diff, { exposure: 'default', visible: true, enabled: false, initialTab: 'diff' })
+  assert.deepEqual(plan.autoApplied, { rate: null, target: 0.86, meetsTarget: null })
+  assert.deepEqual(plan.guard, { phaseBRequired: false, reviewBandCount: null, conflictBandCount: null })
+})
+
+test('phasePlan: stable diff enables when conflict signals meet auto target', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+    autoAppliedRate: 0.9,
+    phaseStats: { reviewBandCount: 0, conflictBandCount: 1 },
+  })
+
+  assert.equal(plan.diff.enabled, true)
+  assert.deepEqual(plan.guard, { phaseBRequired: true, reviewBandCount: 0, conflictBandCount: 1 })
+  assert.deepEqual(plan.autoApplied, { rate: 0.9, target: 0.86, meetsTarget: true })
 })
 
 test('phasePlan: diff backup CTA only shows when threshold elapsed', () => {

@@ -1,0 +1,15 @@
+{
+  "id": "tests/merge/merge-dock-tabs.test.ts",
+  "role": "test",
+  "public_api": [],
+  "summary": "MergeDock のタブ計画と Diff タブの初期化を snapshot 的に検証する node:test。pure module から取得したプランを React レンダリングと突き合わせる。",
+  "deps_out": [
+    "src/components/MergeDock.tsx",
+    "src/lib/merge/phasePlan.ts",
+    "src/components/DiffMergeView.tsx"
+  ],
+  "deps_in": [],
+  "risks": [],
+  "tests": [],
+  "generated_at": "2025-10-21T10:00:00Z"
+}
