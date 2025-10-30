@@ -1,5 +1,5 @@
-import { BETA_THRESHOLD_DEFAULT, DEFAULT_FLAGS, STABLE_THRESHOLD_DEFAULT } from '../../config/flags.ts'
-import type { MergePlanPhase, MergePrecision } from '../merge.ts'
+import { BETA_THRESHOLD_DEFAULT, DEFAULT_FLAGS, STABLE_THRESHOLD_DEFAULT } from '../../config/flags'
+import type { MergePlanPhase, MergePrecision } from '../merge'
 
 export const DIFF_BACKUP_THRESHOLD_MS = 5 * 60 * 1000
 
