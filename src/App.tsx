@@ -177,9 +177,25 @@ function setDockOpenPreference(value: boolean): void {
   window.localStorage.setItem('dockOpen', value ? '1' : '0')
 }
 
-function HelpModal({onClose}:{onClose:()=>void}){
+export function HelpModal({ onClose }: { onClose: () => void }): React.ReactElement {
+  const handleKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>
+  ): void => {
+    if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onClose()
+    }
+  }
+
   return (
-    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,.35)', display:'grid', placeItems:'center', zIndex:50}} onClick={onClose}>
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label="ヘルプを閉じる"
+      style={{position:'fixed', inset:0, background:'rgba(0,0,0,.35)', display:'grid', placeItems:'center', zIndex:50}}
+      onClick={onClose}
+      onKeyDown={handleKeyDown}
+    >
       <div className="card" style={{width:600, maxWidth:'90vw', maxHeight:'80vh', overflow:'auto', padding:12}} onClick={e=>e.stopPropagation()}>
         <h3>ショートカット</h3>
         <ul>
