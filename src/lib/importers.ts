@@ -82,12 +82,12 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
   const idx = new Map(next.scenes.map((s,i)=> [s.id, i]))
   for (let i=1;i<lines.length;i++){
     const cols = parseCSVLine(lines[i])
-    const id = cols[idIdx]?.replace(/^"|"$/g, '')
-    const text = cols[textIdx]?.replace(/^"|"$/g, '').replace(/\\n/g, '\n') || ''
+    const id = cols[idIdx]?.replace(/(?:^"|"$)/g, '')
+    const text = cols[textIdx]?.replace(/(?:^"|"$)/g, '').replace(/\\n/g, '\n') || ''
     const seed = seedIdx >= 0 ? normalizeNumber(cols[seedIdx]) : undefined
-    const tone = cols[toneIdx]?.replace(/^"|"$/g, '') || undefined
-    const slate = slateIdx >= 0 ? (cols[slateIdx]?.replace(/^"|"$/g, '') || undefined) : undefined
-    const shot = shotIdx >= 0 ? (cols[shotIdx]?.replace(/^"|"$/g, '') || undefined) : undefined
+    const tone = cols[toneIdx]?.replace(/(?:^"|"$)/g, '') || undefined
+    const slate = slateIdx >= 0 ? (cols[slateIdx]?.replace(/(?:^"|"$)/g, '') || undefined) : undefined
+    const shot = shotIdx >= 0 ? (cols[shotIdx]?.replace(/(?:^"|"$)/g, '') || undefined) : undefined
     const take = takeIdx >= 0 ? normalizeNumber(cols[takeIdx]) : undefined
 
     if (!id) continue
