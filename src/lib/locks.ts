@@ -760,6 +760,31 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
 
   signal?.addEventListener('abort', onAbort, { once: true });
 
+  let writeTask: Promise<void> | undefined;
+  let wroteFallbackRecord = false;
+
+  const cleanupAbortedFallback = async () => {
+    if (!((signal?.aborted ?? false) || aborted)) {
+      return;
+    }
+    if (!writeTask) {
+      return;
+    }
+    try {
+      await writeTask.catch(() => undefined);
+    } catch {
+      // Ignore write errors once abort has been signalled.
+    }
+    if (!wroteFallbackRecord) {
+      return;
+    }
+    try {
+      await removeFallbackFile();
+    } catch {
+      // Best-effort cleanup; surface the original abort error instead.
+    }
+  };
+
   try {
     const now = Date.now();
     throwIfAborted();
@@ -797,16 +822,22 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
     };
 
     throwIfAborted();
-    const writePromise = saveJSON(FALLBACK_LOCK_PATH, next);
+    writeTask = (async () => {
+      await saveJSON(FALLBACK_LOCK_PATH, next);
+      wroteFallbackRecord = true;
+    })();
     if (abortAwaitable) {
-      await Promise.race([writePromise, abortAwaitable]);
+      await Promise.race([writeTask, abortAwaitable]);
       rejectOnAbort = undefined;
     } else {
-      await writePromise;
+      await writeTask;
     }
     throwIfAborted();
 
     return buildLease('file-lock', FALLBACK_LOCK_PATH, ttl, ctx.heartbeatMs, ctx, acquiredAt);
+  } catch (error) {
+    await cleanupAbortedFallback();
+    throw error;
   } finally {
     rejectOnAbort = undefined;
     signal?.removeEventListener('abort', onAbort);
