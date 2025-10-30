@@ -11,18 +11,16 @@ import {
   DiffMergeState,
   MergeDecisionEvent,
 } from '../../src/components/diffMergeState'
+import { DiffMergeView } from '../../src/components/DiffMergeView'
 import {
-  DiffMergeView,
   createDiffMergeNavigationKeyHandler,
   planDiffMergeView,
   resolveDiffMergeStoredTab,
-} from '../../src/components/DiffMergeView'
-import type {
-  DiffMergeQueueCommandPayload,
-  DiffMergeSubTabKey,
-  MergeHunk,
-  MergePrecision,
-} from '../../src/components/DiffMergeView'
+  type DiffMergeQueueCommandPayload,
+  type DiffMergeSubTabKey,
+  type MergePrecision,
+} from '../../src/components/diffMergeTypes'
+import type { MergeHunk } from '../../src/components/diffMergeTypes'
 
 type Dispatch = (action: DiffMergeAction) => void
 

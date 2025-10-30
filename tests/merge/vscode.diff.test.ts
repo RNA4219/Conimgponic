@@ -6,7 +6,7 @@ import {
   PRECISION_THRESHOLD_CLAMP,
   MergeTrace,
 } from '../../src/lib/merge'
-import { planDiffMergeSubTabs, PRECISION_PHASE_GUARD } from '../../src/components/DiffMergeView'
+import { planDiffMergeSubTabs, PRECISION_PHASE_GUARD } from '../../src/components/diffMergeTypes'
 import { createVsCodeMergeBridge } from '../../src/platform/vscode/merge/bridge'
 
 const readAutoRate = (trace: MergeTrace): number => trace.summary.autoAdoptionRate

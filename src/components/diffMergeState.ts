@@ -5,7 +5,7 @@ import type {
   MergeHunk,
   MergePrecision,
   QueueMergeCommand,
-} from './DiffMergeView'
+} from './diffMergeTypes.js'
 
 export type DiffMergeHunkStatus =
   | 'Unreviewed'
