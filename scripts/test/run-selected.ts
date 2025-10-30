@@ -6,13 +6,21 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 const DEFAULT_TEST_ROOT = 'tests';
-export const DEFAULT_TEST_SUFFIXES = ['.test.ts', '.test.tsx', '.test.mjs', '.spec.ts', '.spec.tsx'] as const;
+export const DEFAULT_TEST_SUFFIXES = [
+  '.test.ts',
+  '.test.tsx',
+  '.test.mjs',
+  '.spec.ts',
+  '.spec.tsx',
+  '.spec.mjs',
+] as const;
 const DEFAULT_TEST_GLOBS = [
   'tests/**/*.test.ts',
   'tests/**/*.test.tsx',
   'tests/**/*.test.mjs',
   'tests/**/*.spec.ts',
   'tests/**/*.spec.tsx',
+  'tests/**/*.spec.mjs',
 ] as const;
 const moduleLoader = createRequire(import.meta.url);
 
