@@ -39,7 +39,7 @@ import {
 } from '../../src/telemetry/day8Collector.js'
 
 type JsonSchemaObject = {
-  readonly type?: string
+  readonly type?: string | readonly string[]
   readonly enum?: readonly string[]
   readonly $ref?: string
   readonly format?: string
@@ -49,6 +49,8 @@ type JsonSchemaObject = {
   readonly required?: readonly string[]
   readonly additionalProperties?: boolean | JsonSchemaObject
   readonly minLength?: number
+  readonly minimum?: number
+  readonly maximum?: number
   readonly items?: JsonSchemaObject
 }
 
@@ -106,13 +108,45 @@ const findConditional = (predicate: (entry: TelemetrySchemaConditional) => boole
 
 const assertPayloadSchema = (
   thenClause: NonNullable<TelemetrySchemaConditional['then']>,
-  expectedRequired: readonly string[]
+  expectedRequired: readonly string[],
+  options?: {
+    readonly summary?: {
+      readonly required: readonly string[]
+    }
+  },
 ) => {
   assertOk(thenClause.properties, 'telemetry schema conditional lacks properties')
   const payloadSchema = thenClause.properties.payload
   assertOk(payloadSchema, 'telemetry schema conditional must define payload')
   assertOk(payloadSchema.required, 'payload schema must define required fields')
   deepStrictEqual(payloadSchema.required, Array.from(expectedRequired))
+  if (options?.summary) {
+    assertOk(payloadSchema.properties, 'payload schema must define properties for summary validation')
+    const summarySchema = resolveSchemaRef(payloadSchema.properties.summary)
+    assertOk(summarySchema, 'payload schema must define summary schema')
+    strictEqual(summarySchema.type, 'object', 'payload summary must be object')
+    strictEqual(
+      summarySchema.additionalProperties,
+      false,
+      'payload summary must disable additional properties',
+    )
+    assertOk(summarySchema.required, 'payload summary schema must define required fields')
+    deepStrictEqual(summarySchema.required, Array.from(options.summary.required))
+    assertOk(summarySchema.properties, 'payload summary schema must define properties')
+
+    const summaryProperties = summarySchema.properties
+
+    const latencySchema = resolveSchemaRef(summaryProperties.export_latency_p95)
+    assertOk(latencySchema, 'payload summary must define export_latency_p95 schema')
+    strictEqual(latencySchema.type, 'number', 'payload summary export_latency_p95 must be number')
+    strictEqual(latencySchema.minimum, 0, 'payload summary export_latency_p95 must enforce minimum 0')
+
+    const successRateSchema = resolveSchemaRef(summaryProperties.export_success_rate)
+    assertOk(successRateSchema, 'payload summary must define export_success_rate schema')
+    strictEqual(successRateSchema.type, 'number', 'payload summary export_success_rate must be number')
+    strictEqual(successRateSchema.minimum, 0, 'payload summary export_success_rate must enforce minimum 0')
+    strictEqual(successRateSchema.maximum, 1, 'payload summary export_success_rate must enforce maximum 1')
+  }
   return payloadSchema
 }
 
@@ -144,6 +178,65 @@ const resolveSchemaProperties = (schema: JsonSchemaObject | undefined) => {
     }
   }
   return undefined
+}
+
+const assertSummaryMetricWithinSchema = (
+  schema: JsonSchemaObject,
+  value: unknown,
+  path: string,
+) => {
+  assertOk(typeof value === 'number' && Number.isFinite(value), `${path} must be finite number`)
+  if (typeof schema.minimum === 'number') {
+    assertOk(value >= schema.minimum, `${path} must be >= ${schema.minimum}`)
+  }
+  if (typeof schema.maximum === 'number') {
+    assertOk(value <= schema.maximum, `${path} must be <= ${schema.maximum}`)
+  }
+}
+
+const validateExportResultTelemetryAgainstSchema = (
+  telemetry: { readonly event: string; readonly payload?: unknown },
+) => {
+  strictEqual(telemetry.event, 'export.result', 'export.result validator requires export.result event')
+  const payload = telemetry.payload
+  assertOk(payload && typeof payload === 'object' && !Array.isArray(payload), 'export.result payload must be object')
+
+  const thenClause = findConditional(
+    (entry) => entry.if?.properties?.event?.const === 'export.result',
+  )
+
+  const payloadSchema = assertPayloadSchema(
+    thenClause,
+    ['status', 'runId', 'matchRate', 'formats', 'duration_ms', 'detail', 'summary', 'artifacts'],
+    {
+      summary: {
+        required: ['export_latency_p95', 'export_success_rate'],
+      },
+    },
+  )
+
+  const summary = (payload as { readonly summary?: unknown }).summary
+  assertOk(summary && typeof summary === 'object' && !Array.isArray(summary), 'export.result payload summary must be object')
+
+  const summarySchema = resolveSchemaRef(payloadSchema.properties?.summary)
+  assertOk(summarySchema && summarySchema.properties, 'export.result payload summary schema must define properties')
+  const summaryProperties = summarySchema.properties
+
+  const latencySchema = resolveSchemaRef(summaryProperties.export_latency_p95)
+  assertOk(latencySchema, 'export.result payload summary must define export_latency_p95 schema')
+  assertSummaryMetricWithinSchema(
+    latencySchema,
+    (summary as { readonly export_latency_p95?: unknown }).export_latency_p95,
+    'export.result payload summary.export_latency_p95',
+  )
+
+  const successSchema = resolveSchemaRef(summaryProperties.export_success_rate)
+  assertOk(successSchema, 'export.result payload summary must define export_success_rate schema')
+  assertSummaryMetricWithinSchema(
+    successSchema,
+    (summary as { readonly export_success_rate?: unknown }).export_success_rate,
+    'export.result payload summary.export_success_rate',
+  )
 }
 
 const assertFlagValidationErrorSchema = (schema: JsonSchemaObject | undefined) => {
@@ -1754,15 +1847,24 @@ describe('vscode extension telemetry contract (RED)', () => {
       (entry) => entry.if?.properties?.event?.const === 'export.result',
     )
 
-    const payloadSchema = assertPayloadSchema(thenClause, [
-      'status',
-      'runId',
-      'matchRate',
-      'formats',
-      'duration_ms',
-      'detail',
-      'artifacts',
-    ])
+    const payloadSchema = assertPayloadSchema(
+      thenClause,
+      [
+        'status',
+        'runId',
+        'matchRate',
+        'formats',
+        'duration_ms',
+        'detail',
+        'summary',
+        'artifacts',
+      ],
+      {
+        summary: {
+          required: ['export_latency_p95', 'export_success_rate'],
+        },
+      },
+    )
 
     assertOk(payloadSchema.properties, 'export.result payload schema must define properties')
     const statusSchema = resolveSchemaRef(payloadSchema.properties.status)
@@ -2013,6 +2115,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     const telemetry = createTelemetryEvent(comparison, runId, { duration_ms: durationMs })
     assertOk(telemetry, 'createTelemetryEvent must return export.result when comparison passes')
     strictEqual(telemetry.event, 'export.result')
+    validateExportResultTelemetryAgainstSchema(telemetry)
 
     const payload = telemetry.payload as {
       readonly status?: string
@@ -2132,6 +2235,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     const telemetry = createTelemetryEvent(comparison, runId, { duration_ms: durationMs })
     assertOk(telemetry, 'createTelemetryEvent must return export.result when comparison fails')
     strictEqual(telemetry.event, 'export.result')
+    validateExportResultTelemetryAgainstSchema(telemetry)
 
     const payload = telemetry.payload as {
       readonly status?: string
@@ -2273,15 +2377,24 @@ describe('vscode extension telemetry contract (RED)', () => {
     const exportThen = findConditional(
       (entry) => entry.if?.properties?.event?.const === 'export.result'
     )
-    const exportPayloadSchema = assertPayloadSchema(exportThen, [
-      'status',
-      'runId',
-      'matchRate',
-      'formats',
-      'duration_ms',
-      'detail',
-      'artifacts',
-    ])
+    const exportPayloadSchema = assertPayloadSchema(
+      exportThen,
+      [
+        'status',
+        'runId',
+        'matchRate',
+        'formats',
+        'duration_ms',
+        'detail',
+        'summary',
+        'artifacts',
+      ],
+      {
+        summary: {
+          required: ['export_latency_p95', 'export_success_rate'],
+        },
+      },
+    )
 
     assertOk(
       exportPayloadSchema.properties,
