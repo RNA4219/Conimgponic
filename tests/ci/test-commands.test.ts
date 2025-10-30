@@ -60,6 +60,17 @@ test('test:coverage script collects files for all default suffixes', () => {
   }
 });
 
+test('test:coverage script enumerates TypeScript spec and TSX suffixes', () => {
+  const script = resolveScript('test:coverage');
+
+  for (const suffix of ['.test.tsx', '.spec.ts', '.spec.tsx']) {
+    assert.ok(
+      script.includes(suffix),
+      `test:coverage script must reference ${suffix} when collecting coverage targets`,
+    );
+  }
+});
+
 test('test:junit script prepares reports directory before writing junit report', () => {
   const script = resolveScript('test:junit');
   assert.ok(
