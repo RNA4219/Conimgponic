@@ -72,7 +72,130 @@ const waitForIdle = async (t: TestContext, runner: AutoSaveInitResult): Promise<
   throw new Error('Timed out waiting for runner to reach idle phase')
 }
 
+const waitForDisabled = async (t: TestContext, runner: AutoSaveInitResult): Promise<void> => {
+  for (let i = 0; i < 200; i += 1) {
+    await Promise.resolve()
+    await Promise.resolve()
+    if (runner.snapshot().phase === 'disabled') {
+      return
+    }
+    t.mock.timers.tick(10)
+  }
+  throw new Error('Timed out waiting for runner to reach disabled phase')
+}
+
+const injectWriteFailure = (opfs: { files: Map<string, string> }, path: string): (() => void) => {
+  const { files } = opfs
+  const original = files.set
+  let remaining = 1
+  const patched: typeof files.set = function patchedSet(key, value) {
+    if (remaining > 0 && key === path) {
+      remaining -= 1
+      throw new DOMException('Lock denied', 'NotAllowedError')
+    }
+    return original.call(this, key, value)
+  }
+  files.set = patched
+  return () => {
+    files.set = original
+  }
+}
+
 beforeEach(reset)
+
+scenario('AS-EX-01: NotAllowedError failure disables autosave without retries', async (t, ctx) => {
+  const failureTargets = [
+    { label: 'writing-current', path: 'project/autosave/current.json.tmp' },
+    { label: 'updating-index', path: 'project/autosave/index.json.tmp' }
+  ] as const
+
+  for (const [index, target] of failureTargets.entries()) {
+    await t.test(`non-retryable failure during ${target.label}`, async () => {
+      t.mock.timers.reset()
+      t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2024, 0, 3, index, 0, 0) })
+      t.after(() => {
+        t.mock.timers.reset()
+      })
+
+      ctx.opfs.files.clear()
+      reset()
+
+      const telemetryStart = ctx.runnerTelemetry.length
+      const collectorStart = ctx.collectorEvents.length
+
+      const restoreFailure = injectWriteFailure(ctx.opfs, target.path)
+      t.after(restoreFailure)
+
+      const runner = ctx.initAutoSave(createStoryboard, { disabled: false }, ENABLED_GUARD)
+      runner.markDirty({ pendingBytes: 2048 })
+
+      const policy = ctx.AUTOSAVE_POLICY
+      t.mock.timers.tick(policy.debounceMs)
+      await Promise.resolve()
+      t.mock.timers.tick(policy.idleMs)
+      await waitForDisabled(t, runner)
+
+      const writesBeforeDispose = collectAutoSaveWrites(ctx.opfs)
+
+      await runner.dispose()
+
+      const writesAfterDispose = collectAutoSaveWrites(ctx.opfs)
+      assert.deepEqual(
+        writesAfterDispose,
+        writesBeforeDispose,
+        `dispose should not mutate artefacts after ${target.label} failure`
+      )
+
+      const runnerTelemetry = ctx.runnerTelemetry.slice(telemetryStart)
+      const collectorEvents = ctx.collectorEvents.slice(collectorStart)
+
+      const writeFailedTelemetry = runnerTelemetry.filter((event) => {
+        const detail = event.detail as { event?: unknown; reason?: unknown } | undefined
+        return detail?.event === 'autosave.write.failed' && detail.reason === 'retry-exhausted'
+      })
+      assert.equal(writeFailedTelemetry.length, 1, 'autosave.write.failed should be recorded once for failure')
+      const failureDetail = writeFailedTelemetry[0]!.detail as Record<string, unknown>
+      assert.equal(failureDetail.retryable, false)
+      assert.equal(failureDetail.error_code, 'write-failed')
+      assert.equal(failureDetail.retry_count, 1)
+      assert.equal(writeFailedTelemetry[0]!.phase, 'writing-current')
+
+      const retryScheduled = runnerTelemetry.filter(
+        (event) => (event.detail as { event?: unknown } | undefined)?.event === 'retry-scheduled'
+      )
+      assert.equal(retryScheduled.length, 0, 'non-retryable failure must not schedule retries')
+
+      const retryExhausted = runnerTelemetry.filter(
+        (event) => (event.detail as { event?: unknown } | undefined)?.event === 'retry-exhausted'
+      )
+      assert.equal(retryExhausted.length, 1, 'retry-exhausted telemetry should be emitted once')
+      const retryExhaustedDetail = retryExhausted[0]!.detail as Record<string, unknown>
+      assert.equal(retryExhaustedDetail.retryable, false)
+      assert.equal(retryExhausted[0]!.phase, 'writing-current')
+
+      const writeFailedRunner = runnerTelemetry.filter(
+        (event) => (event.detail as { event?: unknown } | undefined)?.event === 'write-failed'
+      )
+      assert.equal(writeFailedRunner.length, 1, 'write-failed runner telemetry should be emitted once')
+      const runnerFailureDetail = writeFailedRunner[0]!.detail as Record<string, unknown>
+      assert.equal(runnerFailureDetail.retryable, false)
+      assert.equal(writeFailedRunner[0]!.phase, 'writing-current')
+
+      const completedTelemetry = runnerTelemetry.filter(
+        (event) => (event.detail as { event?: unknown } | undefined)?.event === 'autosave.write.completed'
+      )
+      assert.equal(completedTelemetry.length, 0, 'autosave.write.completed telemetry must not emit after failure')
+
+      assert.ok(
+        collectorEvents.some((event) => event.event === 'autosave.schedule.requested'),
+        'schedule telemetry should be published'
+      )
+      collectorEvents.forEach((event) => {
+        assert.notEqual(event.event, 'autosave.write.completed')
+      })
+    })
+  }
+})
 
 scenario('AS-I-02: idle flush persists autosave artefacts and rotates history', async (t, ctx) => {
   const telemetry = makeCollector()
