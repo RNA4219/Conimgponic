@@ -1082,7 +1082,14 @@ scenario(
                 }
               },
               async getFile() {
-                return getFile()
+                try {
+                  return await getFile()
+                } catch (error) {
+                  if (error instanceof Error && error.message === 'missing file') {
+                    error.name = 'NotFoundError'
+                  }
+                  throw error
+                }
               }
             }
           }
@@ -1145,6 +1152,141 @@ scenario(
       ctx.opfs.files.has('project/.lock'),
       false,
       'fallback lock file must not be created when acquisition aborts during pending write'
+    )
+  }
+)
+
+scenario(
+  'AS-LK-12b: Fallback acquisition abort after write cleans lock file and allows reacquire',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['Date'], now: 0 })
+
+    const telemetry: TelemetrySnapshot = []
+    const { sequence, unsubscribe } = collectLockSequence(telemetry)
+    t.after(unsubscribe)
+
+    const controller = new AbortController()
+    const abortReason = new DOMException('User cancelled fallback write', 'AbortError')
+    let abortTriggered = false
+
+    const originalGetDirectory = ctx.opfs.storage.getDirectory
+    const wrapDirectory = (
+      directory: Awaited<ReturnType<typeof originalGetDirectory>>,
+      prefix: string
+    ): Awaited<ReturnType<typeof originalGetDirectory>> => {
+      const getDirectoryHandle = directory.getDirectoryHandle.bind(directory)
+      const getFileHandle = directory.getFileHandle.bind(directory)
+      const removeEntry = directory.removeEntry.bind(directory)
+      const entries = directory.entries.bind(directory)
+      return {
+        async getDirectoryHandle(name: string, options?: { create?: boolean }) {
+          const next = await getDirectoryHandle(name, options as { create?: boolean })
+          const nextPrefix = prefix ? `${prefix}/${name}` : name
+          return wrapDirectory(next, nextPrefix)
+        },
+        async getFileHandle(name: string) {
+          const handle = await getFileHandle(name)
+          const filePath = prefix ? `${prefix}/${name}` : name
+          if (filePath === FALLBACK_LOCK_PATH) {
+            const createWritable = handle.createWritable.bind(handle)
+            const getFile = handle.getFile.bind(handle)
+            return {
+              async createWritable() {
+                const writable = await createWritable()
+                const originalWrite = writable.write.bind(writable)
+                const originalClose = writable.close.bind(writable)
+                return {
+                  async write(data: string) {
+                    return originalWrite(data)
+                  },
+                  async close() {
+                    const result = await originalClose()
+                    if (!abortTriggered) {
+                      abortTriggered = true
+                      controller.abort(abortReason)
+                    }
+                    return result
+                  }
+                }
+              },
+              async getFile() {
+                try {
+                  return await getFile()
+                } catch (error) {
+                  if (error instanceof Error && error.message === 'missing file') {
+                    error.name = 'NotFoundError'
+                  }
+                  throw error
+                }
+              }
+            }
+          }
+          return handle
+        },
+        async removeEntry(name: string) {
+          return removeEntry(name)
+        },
+        async *entries() {
+          for await (const entry of entries()) {
+            yield entry
+          }
+        }
+      }
+    }
+
+    ctx.opfs.storage.getDirectory = async () => wrapDirectory(await originalGetDirectory(), '')
+    t.after(() => {
+      ctx.opfs.storage.getDirectory = originalGetDirectory
+    })
+
+    await assert.rejects(
+      () =>
+        acquireProjectLock({
+          preferredStrategy: 'file-lock',
+          signal: controller.signal,
+          retry: false,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof ProjectLockError, 'abort must surface as ProjectLockError')
+        assert.equal(error.code, 'acquire-denied', 'abort must map to acquire-denied')
+        assert.equal(error.retryable, true, 'abort-triggered errors must remain retryable')
+        return true
+      }
+    )
+
+    assert.equal(
+      ctx.opfs.files.has(FALLBACK_LOCK_PATH),
+      false,
+      'fallback lock file must be removed after abort completes'
+    )
+
+    const lease = await acquireProjectLock({ preferredStrategy: 'file-lock', retry: false })
+    await releaseProjectLock(lease)
+
+    assert.deepEqual(
+      sequence,
+      [
+        'attempt:file-lock',
+        'error:acquire-denied:retryable=true',
+        'attempt:file-lock',
+        'warning:fallback-engaged',
+        'fallback-engaged',
+        'acquired:file-lock',
+        'released',
+      ]
+    )
+    assert.deepEqual(telemetry, [
+      { type: 'lock:error', code: 'acquire-denied', retryable: true, operation: 'acquire' },
+      { type: 'lock:readonly-entered', reason: 'acquire-failed', retryable: false },
+    ])
+
+    assert.equal(
+      ctx.opfs.files.has(FALLBACK_LOCK_PATH),
+      false,
+      'fallback lock file must be removed after successful reacquire and release'
     )
   }
 )
