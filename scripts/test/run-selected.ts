@@ -134,6 +134,12 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/platform/vscode/*reload*.test.ts',
     'tests/platform/vscode/**/*reload*.test.ts',
   ],
+  platform: [
+    'tests/platform/**/*.test.ts',
+    'tests/platform/**/*.test.tsx',
+    'tests/platform/**/*.spec.ts',
+    'tests/platform/**/*.spec.tsx',
+  ],
   'diff-merge': [
     'tests/lib/merge/diffMergeViewPlan.spec.ts',
     'tests/merge/diff-merge-view-state.test.ts',
