@@ -8,6 +8,39 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+const runSelectedModuleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
+
+let cachedDefaultSuffixes: readonly string[] | undefined;
+
+const getDefaultTestSuffixesForTest = async (): Promise<readonly string[]> => {
+  if (!cachedDefaultSuffixes) {
+    const { DEFAULT_TEST_SUFFIXES } = await import(runSelectedModuleUrl);
+    cachedDefaultSuffixes = [...DEFAULT_TEST_SUFFIXES];
+  }
+
+  return cachedDefaultSuffixes;
+};
+
+const suffixDeclarationSnippet = 'const defaultSuffixes = [...DEFAULT_TEST_SUFFIXES];';
+const suffixIterationSnippet = "defaultSuffixes.some((suffix) => full.endsWith(suffix))";
+
+const assertScriptReferencesAllDefaultSuffixes = async (
+  scriptName: string,
+  script: string,
+): Promise<void> => {
+  const suffixes = await getDefaultTestSuffixesForTest();
+
+  assert.ok(
+    script.includes(suffixDeclarationSnippet),
+    `${scriptName} must derive suffix list from DEFAULT_TEST_SUFFIXES (${suffixes.join(', ')})`,
+  );
+
+  assert.ok(
+    script.includes(suffixIterationSnippet),
+    `${scriptName} must iterate over every default suffix when matching files (${suffixes.join(', ')})`,
+  );
+};
+
 const packageJsonPath = fileURLToPath(new URL('../../package.json', import.meta.url));
 const packageJsonSource = readFileSync(packageJsonPath, 'utf8');
 
@@ -71,11 +104,10 @@ test('test:coverage script collects files for all default suffixes', () => {
 });
 
 test('DEFAULT_TEST_SUFFIXES includes .spec.mjs files', async () => {
-  const moduleUrl = new URL('../../scripts/test/run-selected.ts', import.meta.url).href;
-  const { DEFAULT_TEST_SUFFIXES } = await import(moduleUrl);
+  const suffixes = await getDefaultTestSuffixesForTest();
 
   assert.ok(
-    DEFAULT_TEST_SUFFIXES.includes('.spec.mjs'),
+    suffixes.includes('.spec.mjs'),
     'DEFAULT_TEST_SUFFIXES must include .spec.mjs to ensure spec modules run under coverage',
   );
 });
@@ -92,6 +124,12 @@ test('test:junit script collects files for all default suffixes', () => {
     script.includes("defaultSuffixes.some((suffix) => full.endsWith(suffix))"),
     'test:junit script must iterate over every default suffix when matching files',
   );
+});
+
+test('test:junit script references every suffix exported by run-selected', async () => {
+  const script = resolveScript('test:junit');
+
+  await assertScriptReferencesAllDefaultSuffixes('test:junit script', script);
 });
 
 test('test:junit script prepares reports directory before writing junit report', () => {
