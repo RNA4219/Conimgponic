@@ -254,6 +254,180 @@ const emitWarn = (options: AutoSaveHostBridgeOptions, event: AutoSaveWarnEvent):
   options.warn?.(event)
 }
 
+const computeFlushLatencyMs = (state: InternalState, nowMs: number): number => {
+  const startedAt = state.flushStartedAtMs
+  if (typeof startedAt !== 'number') {
+    return 0
+  }
+  return Math.max(0, nowMs - startedAt)
+}
+
+const nextReqId = (state: InternalState): string => `autosave-${++state.reqCounter}`
+const nextCorrelationId = (state: InternalState): string => `autosave-corr-${++state.correlationCounter}`
+
+const clampMilliseconds = (value: number): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0
+  }
+  return Math.max(0, Math.round(value))
+}
+
+const clampCount = (value: number): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0
+  }
+  return Math.max(0, Math.trunc(value))
+}
+
+const normalizeErrorCode = (code: string): string => {
+  const trimmed = typeof code === 'string' ? code.trim() : ''
+  return trimmed ? trimmed : 'unknown'
+}
+
+const normalizeErrorMessage = (message: string | undefined, fallback: string): string => {
+  if (typeof message !== 'string') {
+    return fallback
+  }
+  const trimmed = message.trim()
+  return trimmed ? trimmed : fallback
+}
+
+const computeLagSeconds = (
+  lastSuccessAt: string | undefined,
+  timestamp: string
+): number | undefined => {
+  if (!lastSuccessAt) {
+    return undefined
+  }
+  const last = Date.parse(lastSuccessAt)
+  const current = Date.parse(timestamp)
+  if (!Number.isFinite(last) || Number.isNaN(last) || !Number.isFinite(current) || Number.isNaN(current)) {
+    return undefined
+  }
+  const diffMs = current - last
+  if (!Number.isFinite(diffMs) || Number.isNaN(diffMs) || diffMs < 0) {
+    return undefined
+  }
+  return Math.max(0, Math.floor(diffMs / 1000))
+}
+
+export const resolveCollectorPhase = (
+  guard: AutoSavePhaseGuardSnapshot
+): RolloutPhase => {
+  if (!guard.featureFlag.value || guard.optionsDisabled) {
+    return 'A-0'
+  }
+  switch (guard.featureFlag.source) {
+    case 'env':
+    case 'localStorage':
+      return 'A-1'
+    case 'workspace':
+      return 'A-2'
+    default:
+      return 'A-0'
+  }
+}
+
+type SnapshotResultDetailPhase = AutoSaveStatusSnapshot['phase']
+
+type SnapshotResultSuccessDetailWithPhase = SnapshotResultSuccessDetail & {
+  readonly phase: SnapshotResultDetailPhase
+}
+
+type SnapshotResultFailureDetailWithPhase = SnapshotResultFailureDetail & {
+  readonly phase: SnapshotResultDetailPhase
+}
+
+const createSnapshotSuccessDetail = (
+  durationMs: number,
+  retryCount: number,
+  lagSeconds: number | undefined,
+  phase: SnapshotResultDetailPhase
+): SnapshotResultSuccessDetailWithPhase => {
+  const baseDetail = {
+    duration_ms: clampMilliseconds(durationMs),
+    retry_count: clampCount(retryCount),
+    retryable: false as const,
+    error_code: null,
+    phase
+  }
+  if (lagSeconds === undefined) {
+    return baseDetail
+  }
+  return { ...baseDetail, lag_seconds: clampCount(lagSeconds) }
+}
+
+const createSnapshotFailureDetail = (
+  durationMs: number,
+  retryCount: number,
+  retryable: boolean,
+  errorCode: string,
+  errorMessage: string,
+  lagSeconds: number | undefined,
+  phase: SnapshotResultDetailPhase
+): SnapshotResultFailureDetailWithPhase => {
+  const code = normalizeErrorCode(errorCode)
+  const baseDetail = {
+    duration_ms: clampMilliseconds(durationMs),
+    retry_count: clampCount(retryCount),
+    retryable,
+    error_code: code,
+    error_message: normalizeErrorMessage(errorMessage, code),
+    phase
+  }
+  if (lagSeconds === undefined) {
+    return baseDetail
+  }
+  return { ...baseDetail, lag_seconds: clampCount(lagSeconds) }
+}
+
+const createSnapshotPayload = (
+  bytes: number,
+  retainedBytes: number,
+  generation: number,
+  lastSuccessAt: string | undefined,
+  fallbackTs: string
+): SnapshotResultSnapshot => ({
+  bytes: clampCount(bytes),
+  retained_bytes: clampCount(retainedBytes),
+  generation: clampCount(generation),
+  last_success_at:
+    typeof lastSuccessAt === 'string' && lastSuccessAt.trim()
+      ? lastSuccessAt
+      : fallbackTs
+})
+
+type SnapshotResultCollectorPayload =
+  | {
+      readonly status: 'success'
+      readonly detail: SnapshotResultSuccessDetail
+      readonly snapshot: SnapshotResultSnapshot
+    }
+  | {
+      readonly status: 'failure'
+      readonly detail: SnapshotResultFailureDetail
+      readonly snapshot?: SnapshotResultSnapshot
+    }
+
+const publishCollectorSnapshotResult = (
+  request: AutoSaveSnapshotRequestMessage,
+  guard: AutoSavePhaseGuardSnapshot,
+  timestamp: string,
+  payload: SnapshotResultCollectorPayload
+): void => {
+  publishSnapshotResult({
+    phase: resolveCollectorPhase(guard),
+    status: payload.status,
+    detail: payload.detail,
+    snapshot: payload.snapshot,
+    overrides: {
+      reqId: request.reqId,
+      correlationId: request.correlationId,
+      ts: timestamp
+    }
+  })
+}
+
 
 const handleNonRetryableError = (
   options: AutoSaveHostBridgeOptions,

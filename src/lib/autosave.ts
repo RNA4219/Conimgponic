@@ -316,6 +316,7 @@ const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): AutoSaveEnvel
   }
   switch (guard.featureFlag.source) {
     case 'env':
+    case 'localStorage':
       return 'A-1'
     case 'workspace':
       return 'A-2'
