@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-10-21T08:51:14Z",
+  "generated_at": "2025-10-21T09:15:00Z",
   "nodes": {
     "README.md": {
       "role": "overview",
@@ -95,6 +95,21 @@
       "role": "template",
       "caps": "docs/birdseye/caps/docs.INCIDENT_TEMPLATE.md.json",
       "mtime": "2025-10-16T12:00:00Z"
+    },
+    "src/components/MergeDock.tsx": {
+      "role": "ui",
+      "caps": "docs/birdseye/caps/src.components.MergeDock.tsx.json",
+      "mtime": "2025-10-21T09:15:00Z"
+    },
+    "src/lib/merge/phasePlan.ts": {
+      "role": "module",
+      "caps": "docs/birdseye/caps/src.lib.merge.phasePlan.ts.json",
+      "mtime": "2025-10-21T09:15:00Z"
+    },
+    "tests/lib/merge/phasePlan.spec.ts": {
+      "role": "test",
+      "caps": "docs/birdseye/caps/tests.lib.merge.phasePlan.spec.ts.json",
+      "mtime": "2025-10-21T09:15:00Z"
     }
   },
   "edges": [
@@ -357,6 +372,14 @@
     [
       "docs/INCIDENT_TEMPLATE.md",
       "docs/IN-20250115-001.md"
+    ],
+    [
+      "src/components/MergeDock.tsx",
+      "src/lib/merge/phasePlan.ts"
+    ],
+    [
+      "tests/lib/merge/phasePlan.spec.ts",
+      "src/lib/merge/phasePlan.ts"
     ],
     [
       "README.md",

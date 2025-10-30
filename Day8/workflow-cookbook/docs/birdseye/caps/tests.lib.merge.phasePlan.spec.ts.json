@@ -1,0 +1,13 @@
+{
+  "id": "tests/lib/merge/phasePlan.spec.ts",
+  "role": "test",
+  "public_api": [],
+  "summary": "phasePlan.ts の純粋関数について現行挙動を固定化する RED テスト。しきい値計算・Diff タブ降格・バックアップ CTA 判定を直接検証する。",
+  "deps_out": [
+    "src/lib/merge/phasePlan.ts"
+  ],
+  "deps_in": [],
+  "risks": [],
+  "tests": [],
+  "generated_at": "2025-10-21T09:15:00Z"
+}
