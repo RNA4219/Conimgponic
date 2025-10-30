@@ -287,8 +287,8 @@ stateDiagram-v2
 - **フォールバックの責務**: Web Lock が利用不可または衝突検出時は `project/.lock` を用いて UUID・`mtime`・TTL(30s) を同期する（同 §3.3）。
 - **失敗時の挙動**: ロック取得が最終的に失敗した場合は閲覧専用モードへ移行し、UI へ警告イベントを伝播する（同 §3.4）。
 - **解放要件の整理**: Web Lock の解放は `releaseProjectLock` が Web Lock ハンドルの `release()`／`released`／`navigator.locks.request` 完了を直列で待機し、`releaseDeferred`→`requestSettled`→`lock:released` の順で収束させる。追加モニタリング（`releaseMonitor` など）に依存せず、失敗時は `lock:error(retryable=true)` → `lock:readonly-entered(reason='release-failed')` を発火してフォールバック削除とロールバック判定を同期する（`docs/AUTOSAVE-DESIGN-IMPL.md` §3.1）。
-- **Release 再試行の扱い**: Web Lock 解放が失敗した場合は `releaseError` を保持し、再度 `releaseProjectLock` が呼ばれても即座に同じ例外で拒否する。同時に例外の `retryable=true` を維持し、バックグラウンド監視が Web Lock/`.lock` の解放を再試行できるようにする。
-- **Readonly 降格の継続**: Release 失敗後は `lock:readonly-entered(reason='release-failed', lastError.retryable=true)` を維持し、Phase ガード経由で再試行可否を判定する。
+- **Release 再試行の扱い**: Web Lock 解放失敗時はリース ID ごとに試行回数と待機時間をキャッシュし、`0.5s → 1.0s → 2.0s` の指数バックオフで最大 3 回まで `releaseProjectLock` を再実行する。待機中の呼び出しは Delay 解消まで待機し、成功時に状態を破棄する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L812-L876】
+- **Readonly 降格の継続**: 初回失敗で `lock:readonly-entered(reason='release-failed')` / `onReadonly` を通知しつつ、成功するまで同一エラーを共有する。3 回失敗した場合は同一 `ProjectLockError` を即時再送出して Runbook の降格判定に接続する。【F:docs/tasks/task-autosave-project-locks.md†L13-L30】
 - **Collector/Analyzer との干渉防止**: Lock ファイルは `project/` 配下に限定し、`workflow-cookbook/` や `logs/` など Day8 系アーティファクトには触れない（`docs/day8/design/03_architecture.md`）。
 
 #### 1.1 ロック API 状態遷移図
