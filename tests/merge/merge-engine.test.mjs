@@ -111,6 +111,39 @@ test('locks force conflict decision regardless of similarity', () => {
   process.env.MERGE_PRECISION = originalPrecision
 })
 
+test('descriptor preferred AI content is applied on auto decision', () => {
+  const originalPrecision = process.env.MERGE_PRECISION
+  process.env.MERGE_PRECISION = 'legacy'
+
+  const input = {
+    base: 'Shared intro',
+    ours: 'Manual version',
+    theirs: 'AI version',
+    sections: ['section-1'],
+    sectionDescriptors: [
+      {
+        id: 'section-1',
+        label: 'section-1',
+        range: [0, 11],
+        preferred: 'ai',
+      },
+    ],
+    sceneId: 'scene-prefer-ai',
+  }
+
+  const result = runMerge(input, {
+    scoring: () => ({ jaccard: 0.95, cosine: 0.95, blended: 0.95 }),
+    profile: { threshold: 0.6 },
+  })
+
+  const [hunk] = result.hunks
+  assert.equal(hunk.decision, 'auto')
+  assert.equal(hunk.prefer, 'ai')
+  assert.equal(hunk.merged, 'AI version')
+
+  process.env.MERGE_PRECISION = originalPrecision
+})
+
 test('telemetry sink receives ordered lifecycle events with processing stats', () => {
   const originalPrecision = process.env.MERGE_PRECISION
   process.env.MERGE_PRECISION = 'legacy'
