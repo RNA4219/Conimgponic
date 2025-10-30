@@ -39,14 +39,31 @@ test('test:coverage script prepares coverage directory and writes into it', () =
 
 test('test:junit script prepares reports directory before writing junit report', () => {
   const script = resolveScript('test:junit');
-  assert.match(
-    script,
-    new RegExp(`${ensureCommand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} reports`),
-    'reports directory setup command must precede junit reporter execution',
+  assert.ok(
+    script.includes("mkdirSync('reports', { recursive: true })"),
+    'test:junit should create reports directory before running tests',
   );
   assert.ok(
-    script.includes('reports/junit.xml'),
-    'junit report should be written to reports/junit.xml',
+    script.includes("mkdirSync('file=reports', { recursive: true })"),
+    'test:junit should create temporary reporter directory for junit output',
+  );
+  assert.ok(
+    script.includes("renameSync('file=reports/junit.xml', 'reports/junit.xml')"),
+    'test:junit should move junit reporter output into reports/junit.xml',
+  );
+});
+
+test('test:junit script passes reporter destination and test glob as separate tokens', () => {
+  const script = resolveScript('test:junit');
+  assert.ok(
+    script.includes("'--test-reporter=junit'"),
+    'test:junit script must configure junit reporter for node test run',
+  );
+
+  const reporterArgsSnippet = "'--test-reporter-destination=file=reports/junit.xml', ...extraArgs, ...tests";
+  assert.ok(
+    script.includes(reporterArgsSnippet),
+    'test:junit script must separate reporter destination and test glob within args array',
   );
 });
 
