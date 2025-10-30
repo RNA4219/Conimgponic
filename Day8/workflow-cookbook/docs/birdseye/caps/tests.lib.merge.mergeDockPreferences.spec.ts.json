@@ -1,0 +1,14 @@
+{
+  "id": "tests/lib/merge/mergeDockPreferences.spec.ts",
+  "role": "test",
+  "public_api": [],
+  "summary": "MergeDock preferences.ts の純粋関数についてタブ遷移とプリファレンス選択の期待挙動を固定化するテスト。",
+  "deps_out": [
+    "src/lib/merge/preferences.ts",
+    "src/lib/merge/phasePlan.ts"
+  ],
+  "deps_in": [],
+  "risks": [],
+  "tests": [],
+  "generated_at": "2025-10-21T12:30:00Z"
+}

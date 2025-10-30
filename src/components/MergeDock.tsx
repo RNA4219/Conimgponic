@@ -2,8 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from 'zustand'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
-import { resolveFlags, type FlagSnapshot } from '../config'
-import { workspaceKeyCandidates } from '../config/flags'
+import type { FlagSnapshot } from '../config'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
@@ -14,7 +13,6 @@ import {
   diffBackupPolicy,
   isBaseTabId,
   resolveMergeDockPhasePlan,
-  resolveMergeThresholdPlan,
   shouldShowDiffBackupCTA,
   type DiffBackupPolicy,
   type MergeDockPhasePlan,
@@ -22,6 +20,19 @@ import {
   type MergeDockTabId,
   type MergeDockTabPlan,
 } from '../lib/merge/phasePlan'
+import type { MergePrecision } from '../lib/merge'
+import {
+  getDefaultPreference,
+  resolveActiveTabTransition,
+  resolvePreferenceSelection,
+  sanitizeMergeDockActiveTab,
+  sanitizePreference,
+  type MergeDockPreference,
+} from '../lib/merge/preferences'
+import {
+  useMergeThreshold,
+  type WorkspaceConfiguration,
+} from '../lib/merge/threshold'
 
 export {
   diffBackupPolicy,
@@ -36,10 +47,6 @@ import {
   type MergeHunk,
   type QueueMergeCommand,
 } from './DiffMergeView'
-
-type MergePrecision = FlagSnapshot['merge']['precision']
-
-type MergeDockPreference = 'manual-first' | 'ai-first' | 'diff-merge'
 
 type MergeDockPersistenceLogger = Pick<Console, 'warn'>
 
@@ -92,128 +99,6 @@ const createMergeDockViewStore = (
     setPreference: (next) => set({ preference: next }),
   }))
 
-const MERGE_THRESHOLD_STORAGE_KEY = 'conimg.merge.threshold'
-
-const parseMergePrecision = (value: unknown): MergePrecision | undefined => {
-  if (value === 'legacy' || value === 'beta' || value === 'stable') {
-    return value
-  }
-  return undefined
-}
-
-export const getDefaultPreference = (
-  precision: MergePrecision,
-  diffEnabled: boolean,
-): MergeDockPreference => {
-  if (precision === 'stable') {
-    return 'diff-merge'
-  }
-  if (!diffEnabled) {
-    return 'manual-first'
-  }
-  if (precision === 'legacy') {
-    return 'manual-first'
-  }
-  return 'diff-merge'
-}
-
-export const sanitizePreference = (
-  preference: MergeDockPreference,
-  precision: MergePrecision,
-  diffEnabled: boolean,
-): MergeDockPreference => {
-  if (precision === 'stable') {
-    if (!diffEnabled && preference === 'diff-merge') {
-      return 'diff-merge'
-    }
-    return preference
-  }
-  if (!diffEnabled) {
-    return 'manual-first'
-  }
-  return preference
-}
-
-export const resolvePreferenceSelection = (input: {
-  readonly precision: MergePrecision
-  readonly previousPrecision: MergePrecision
-  readonly diffEnabled: boolean
-  readonly previousDiffEnabled: boolean
-  readonly preference: MergeDockPreference
-  readonly defaultPreference: MergeDockPreference
-}): MergeDockPreference => {
-  const {
-    precision,
-    previousPrecision,
-    diffEnabled,
-    previousDiffEnabled,
-    preference,
-    defaultPreference,
-  } = input
-  const precisionChanged = previousPrecision !== precision
-  const diffStateChanged = previousDiffEnabled !== diffEnabled
-  const sanitizedDefault = diffEnabled
-    ? sanitizePreference(defaultPreference, precision, diffEnabled)
-    : defaultPreference
-  const sanitizedPreference = sanitizePreference(preference, precision, diffEnabled)
-
-  if (precisionChanged) {
-    return sanitizedDefault
-  }
-  if (diffStateChanged) {
-    if (!diffEnabled) {
-      return sanitizedPreference
-    }
-    if (!previousDiffEnabled && sanitizedPreference !== sanitizedDefault) {
-      return sanitizedPreference
-    }
-    return sanitizedDefault
-  }
-  return sanitizedPreference
-}
-
-export const sanitizeMergeDockActiveTab = (
-  tab: MergeDockTabId,
-  plan: MergeDockTabPlan,
-  diffVisible: boolean,
-  diffEnabled: boolean,
-): MergeDockTabId => {
-  if (!plan.tabs.some((entry) => entry.id === tab)) return plan.initialTab
-  if (tab === 'diff' && (!diffVisible || !diffEnabled)) return plan.initialTab
-  return tab
-}
-
-export const resolveActiveTabTransition = ({
-  precision,
-  previousPrecision,
-  plan,
-  activeTab,
-  diffVisible,
-  diffEnabled,
-  previousDiffEnabled,
-}: {
-  readonly precision: MergePrecision
-  readonly previousPrecision: MergePrecision
-  readonly plan: MergeDockPhasePlan['tabs']
-  readonly activeTab: MergeDockPhasePlan['tabs']['initialTab']
-  readonly diffVisible: boolean
-  readonly diffEnabled: boolean
-  readonly previousDiffEnabled: boolean
-}): MergeDockPhasePlan['tabs']['initialTab'] => {
-  if (previousPrecision !== precision) {
-    return plan.initialTab
-  }
-  if (previousDiffEnabled !== diffEnabled) {
-    if (!diffEnabled) {
-      return plan.initialTab
-    }
-    if (!previousDiffEnabled) {
-      return plan.initialTab
-    }
-  }
-  return sanitizeMergeDockActiveTab(activeTab, plan, diffVisible, diffEnabled)
-}
-
 interface MergeDockAutoSaveState {
   readonly flushNow?: () => void
   readonly lastSuccessAt?: string
@@ -238,218 +123,6 @@ const diffMergeNoopCommand: QueueMergeCommand = async () => ({
 })
 
 type MergeDockNotice = { readonly level: 'info' | 'error'; readonly message: string }
-
-const parseMergeThreshold = (value: unknown): number | undefined => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value.trim())
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return undefined
-}
-
-const clampThresholdToPrecisionMinimum = (precision: MergePrecision, value: number): number => {
-  const plan = resolveMergeThresholdPlan(precision, value)
-  return value < plan.slider.min ? plan.slider.min : value
-}
-
-interface MergeThresholdOptions {
-  readonly precision?: MergePrecision | null
-  readonly threshold?: number | null
-}
-
-interface MergeThresholdSnapshot {
-  readonly precision: MergePrecision
-  readonly threshold: number | undefined
-}
-
-type WorkspaceConfiguration =
-  | { readonly get: <T = unknown>(key: string) => T | undefined }
-  | Record<string, unknown>
-
-type MergeThresholdStorage = Pick<Storage, 'getItem'> | null
-
-interface MergeThresholdSourceOptions extends MergeThresholdOptions {
-  readonly workspace?: WorkspaceConfiguration | null
-  readonly storage?: MergeThresholdStorage
-  readonly flags?: Pick<FlagSnapshot, 'merge'> | null
-}
-
-const readWorkspaceSetting = (
-  workspace: WorkspaceConfiguration | null | undefined,
-  key: string,
-): unknown => {
-  if (!workspace) {
-    return undefined
-  }
-
-  const candidates = workspaceKeyCandidates(key)
-  const accessor = workspace as { readonly get?: <T = unknown>(target: string) => T | undefined }
-  if (typeof accessor.get === 'function') {
-    let deferredError: unknown = undefined
-    for (const candidate of candidates) {
-      try {
-        const value = accessor.get(candidate)
-        if (value !== undefined) {
-          return value
-        }
-      } catch (error) {
-        if (!candidate.startsWith('conimg.')) {
-          if (deferredError === undefined) {
-            deferredError = error
-          }
-        }
-      }
-    }
-    if (deferredError !== undefined) {
-      throw deferredError
-    }
-    return undefined
-  }
-
-  if (typeof workspace === 'object' && workspace) {
-    for (const candidate of candidates) {
-      if (Object.prototype.hasOwnProperty.call(workspace, candidate)) {
-        return (workspace as Record<string, unknown>)[candidate]
-      }
-    }
-
-    for (const candidate of candidates) {
-      const resolved = candidate.split('.').reduce<unknown>((current, segment) => {
-        if (!current || typeof current !== 'object') {
-          return undefined
-        }
-        if (!(segment in (current as Record<string, unknown>))) {
-          return undefined
-        }
-        return (current as Record<string, unknown>)[segment]
-      }, workspace as Record<string, unknown>)
-      if (resolved !== undefined) {
-        return resolved
-      }
-    }
-  }
-
-  return undefined
-}
-
-export const resolveMergeThresholdSnapshot = (
-  options: MergeThresholdSourceOptions = {},
-): MergeThresholdSnapshot => {
-  const workspace = options.workspace ?? null
-  const storage = options.storage ?? null
-  const snapshot: Pick<FlagSnapshot, 'merge'> =
-    options.flags ?? resolveFlags({ workspace, storage })
-  const envPrecision = parseMergePrecision(
-    (() => {
-      const metaCandidate = (() => {
-        const meta = import.meta as ImportMeta & { env?: Record<string, unknown> }
-        const raw = meta.env?.VITE_MERGE_PRECISION
-        return typeof raw === 'string' ? raw : undefined
-      })()
-      if (metaCandidate) {
-        return metaCandidate
-      }
-      const nodeProcess =
-        typeof globalThis === 'object'
-          ? ((globalThis as { process?: { env?: Record<string, unknown> } }).process ?? null)
-          : null
-      const processCandidate = nodeProcess?.env?.VITE_MERGE_PRECISION
-      return typeof processCandidate === 'string' ? processCandidate : undefined
-    })(),
-  )
-  const precision =
-    options.precision ??
-    envPrecision ??
-    snapshot.merge.precision
-  const envOverrides =
-    envPrecision !== undefined && options.precision === undefined && options.threshold === undefined
-  const defaultThreshold = resolveMergeThresholdPlan(precision, undefined).request
-
-  const finalize = (value: number): MergeThresholdSnapshot => ({
-    precision,
-    threshold: clampThresholdToPrecisionMinimum(precision, value),
-  })
-
-  const overrideThreshold = parseMergeThreshold(options.threshold)
-  if (overrideThreshold !== undefined) {
-    return finalize(overrideThreshold)
-  }
-
-  const flagThreshold = parseMergeThreshold(snapshot.merge.threshold)
-
-  if (envOverrides) {
-    if (flagThreshold !== undefined) {
-      return finalize(flagThreshold)
-    }
-    return finalize(defaultThreshold)
-  }
-
-  if (flagThreshold !== undefined) {
-    return finalize(flagThreshold)
-  }
-
-  const workspaceThreshold = parseMergeThreshold(
-    readWorkspaceSetting(workspace, MERGE_THRESHOLD_STORAGE_KEY),
-  )
-  if (workspaceThreshold !== undefined) {
-    return finalize(workspaceThreshold)
-  }
-
-  let storedThresholdRaw: string | null | undefined
-  if (storage) {
-    try {
-      storedThresholdRaw = storage.getItem(MERGE_THRESHOLD_STORAGE_KEY)
-    } catch (error) {
-      console.warn(
-        'MergeDock: failed to read merge threshold from localStorage.',
-        MERGE_THRESHOLD_STORAGE_KEY,
-        error,
-      )
-    }
-  }
-  const storedThreshold = parseMergeThreshold(storedThresholdRaw)
-  if (storedThreshold !== undefined) {
-    return finalize(storedThreshold)
-  }
-
-  return finalize(defaultThreshold)
-}
-
-type MergeThresholdHookOptions = MergeThresholdSourceOptions
-
-const useMergeThreshold = (
-  options: MergeThresholdHookOptions = {},
-): MergeThresholdSnapshot => {
-  const fallbackStorage: MergeThresholdStorage =
-    typeof window !== 'undefined' ? window.localStorage : null
-  const storage = options.storage ?? fallbackStorage
-  const workspace = options.workspace ?? null
-  const providedFlags = options.flags ?? null
-  const snapshot = useMemo<Pick<FlagSnapshot, 'merge'>>(
-    () => providedFlags ?? resolveFlags({ workspace, storage }),
-    [providedFlags, workspace, storage],
-  )
-
-  return useMemo(
-    () =>
-      resolveMergeThresholdSnapshot({
-        ...options,
-        precision: options.precision ?? snapshot.merge.precision,
-        workspace,
-        storage,
-        flags: snapshot,
-      }),
-    [
-      options.precision,
-      options.threshold,
-      workspace,
-      storage,
-      snapshot.merge.precision,
-      snapshot.merge.threshold,
-    ],
-  )
-}
 
 const resolveDiffBackupPolicy = (
   tabPlan: MergeDockTabPlan,

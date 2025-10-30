@@ -1,0 +1,26 @@
+{
+  "id": "src/lib/merge/preferences.ts",
+  "role": "module",
+  "public_api": [
+    "getDefaultPreference",
+    "sanitizePreference",
+    "resolvePreferenceSelection",
+    "sanitizeMergeDockActiveTab",
+    "resolveActiveTabTransition"
+  ],
+  "summary": "MergeDock のタブ選択と表示プリファレンスを純粋関数で解決する層。ビューはここで算出した値を利用して状態遷移を管理する。",
+  "deps_out": [
+    "src/lib/merge/phasePlan.ts",
+    "src/lib/merge.ts"
+  ],
+  "deps_in": [
+    "src/components/MergeDock.tsx",
+    "tests/components/merge.diff.test.tsx",
+    "tests/lib/merge/mergeDockPreferences.spec.ts"
+  ],
+  "risks": [],
+  "tests": [
+    "tests/lib/merge/mergeDockPreferences.spec.ts"
+  ],
+  "generated_at": "2025-10-21T12:30:00Z"
+}

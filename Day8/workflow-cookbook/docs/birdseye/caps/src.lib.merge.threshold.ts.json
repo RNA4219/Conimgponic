@@ -1,0 +1,28 @@
+{
+  "id": "src/lib/merge/threshold.ts",
+  "role": "module",
+  "public_api": [
+    "MERGE_THRESHOLD_STORAGE_KEY",
+    "parseMergePrecision",
+    "readWorkspaceSetting",
+    "resolveMergeThresholdSnapshot",
+    "useMergeThreshold"
+  ],
+  "summary": "MergeDock のしきい値解決・hook を純粋化し、フラグ/環境/ストレージの優先順位を一貫して評価する層。",
+  "deps_out": [
+    "src/config/flags.ts",
+    "src/lib/merge/phasePlan.ts",
+    "src/lib/merge.ts"
+  ],
+  "deps_in": [
+    "src/components/MergeDock.tsx",
+    "tests/components/MergeDock.localStorage-read.spec.tsx",
+    "tests/components/merge.diff.test.tsx",
+    "tests/lib/merge/mergeThreshold.spec.ts"
+  ],
+  "risks": [],
+  "tests": [
+    "tests/lib/merge/mergeThreshold.spec.ts"
+  ],
+  "generated_at": "2025-10-21T12:30:00Z"
+}

@@ -2,23 +2,29 @@
   "id": "src/components/MergeDock.tsx",
   "role": "ui",
   "public_api": [
+    "MergeDock",
+    "persistMergeDockActiveTab",
     "planMergeDockTabs",
     "resolveMergeDockPhasePlan",
     "resolveMergeThresholdPlan",
     "shouldShowDiffBackupCTA"
   ],
-  "summary": "MergeDock のビュー層。フラグやストレージの状態を収集し、phasePlan.ts の純粋関数から得たプランを元にタブ遷移と Diff CTA 表示を制御する。",
+  "summary": "MergeDock のビュー層。preferences.ts / threshold.ts から純粋化された設定ロジックを取り込み、phasePlan.ts のプランを元にタブ遷移と Diff CTA 表示を調停する。",
   "deps_out": [
+    "src/lib/merge/preferences.ts",
+    "src/lib/merge/threshold.ts",
     "src/lib/merge/phasePlan.ts"
   ],
   "deps_in": [
+    "tests/components/MergeDock.localStorage-read.spec.tsx",
     "tests/components/merge.diff.test.tsx",
     "tests/merge/merge-dock-tabs.test.ts"
   ],
   "risks": [],
   "tests": [
+    "tests/components/MergeDock.localStorage-read.spec.tsx",
     "tests/components/merge.diff.test.tsx",
     "tests/merge/merge-dock-tabs.test.ts"
   ],
-  "generated_at": "2025-10-21T09:15:00Z"
+  "generated_at": "2025-10-21T12:30:00Z"
 }
