@@ -138,6 +138,7 @@ export interface AutoSaveTelemetryEventProperties {
   readonly phaseBefore?: AutoSavePhase
   readonly phaseAfter?: AutoSavePhase
   readonly phase_step?: AutoSavePhase
+  readonly attempt?: number
   readonly flagSource?: AutoSavePhaseGuardSnapshot['featureFlag']['source']
   readonly guard?: AutoSaveTelemetryGuardProperties
   readonly lockStrategy?: AutoSaveTelemetryLockStrategy | 'none'
@@ -630,6 +631,7 @@ const handleNonRetryableError = (
       ? request.payload.debounceMs
       : options.policy.debounceMs
   const retryCountBeforeReset = state.retryCount
+  const attempt = retryCountBeforeReset + 1
   state.status = 'error'
   const errorTimestamp = options.now()
   const ts = toIso(errorTimestamp)
@@ -692,7 +694,9 @@ const handleNonRetryableError = (
         phase: errorEnvelopePhase,
         performance: createFlushLatencyPerformance(flushLatencyMs),
         debounce_ms: requestDebounceMs,
-        latency_ms: flushLatencyMs
+        latency_ms: flushLatencyMs,
+        attempt,
+        phase_step: statusPhaseForState(state.status)
       }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
@@ -726,7 +730,9 @@ const handleNonRetryableError = (
         phase: PHASE_STATUS,
         performance: createFlushLatencyPerformance(flushLatencyMs),
         debounce_ms: requestDebounceMs,
-        latency_ms: flushLatencyMs
+        latency_ms: flushLatencyMs,
+        attempt,
+        phase_step: statusPhaseForState(state.status)
       }
     },
     { before: statusBeforeDisable, after: state.status, guard: state.guard }
@@ -792,6 +798,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           state.lastSuccessAt
         )
       )
+      const attempt = state.retryCount + 1
+      const phaseStep = statusPhaseForState(state.status)
       emitTelemetry(
         options,
         {
@@ -804,7 +812,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             phase: envelopePhase,
             performance: flushLatency,
             debounce_ms: options.policy.debounceMs,
-            latency_ms: latencyMs
+            latency_ms: latencyMs,
+            attempt,
+            phase_step: phaseStep
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
@@ -839,6 +849,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         pendingBytes
       )
     )
+    const attempt = state.retryCount + 1
+    const phaseStep = statusPhaseForState(state.status)
       emitTelemetry(
         options,
         {
@@ -851,12 +863,14 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             phase: envelopePhase,
             performance: flushLatency,
             debounce_ms: options.policy.debounceMs,
-            latency_ms: latencyMs
+            latency_ms: latencyMs,
+            attempt,
+            phase_step: phaseStep
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
       )
-    }
+  }
 
   const handleSnapshotRequest = async (request: AutoSaveSnapshotRequestMessage): Promise<void> => {
     const statusBeforeRequest = state.status
@@ -923,6 +937,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           state.lastSuccessAt
         )
       )
+      const attempt = state.retryCount + 1
+      const phaseStep = statusPhaseForState(state.status)
       emitTelemetry(
         options,
         {
@@ -934,7 +950,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             phase: PHASE_STATUS,
             performance: ZERO_FLUSH_LATENCY,
             debounce_ms: requestDebounceMs,
-            latency_ms: disabledLatencyMs
+            latency_ms: disabledLatencyMs,
+            attempt,
+            phase_step: phaseStep
           }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
@@ -977,6 +995,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       )
     )
     const savingLatencyMs = computeFlushLatencyMs(state, requestStartedAtMs)
+    const savingAttempt = state.retryCount + 1
+    const savingPhaseStep = statusPhaseForState(state.status)
     emitTelemetry(
       options,
       {
@@ -989,7 +1009,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           phase: requestEnvelopePhase,
           performance: createFlushLatencyPerformance(savingLatencyMs),
           debounce_ms: requestDebounceMs,
-          latency_ms: savingLatencyMs
+          latency_ms: savingLatencyMs,
+          attempt: savingAttempt,
+          phase_step: savingPhaseStep
         }
       },
       { before: statusBeforeSaving, after: state.status, guard: state.guard }
@@ -1041,6 +1063,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             state.lastSuccessAt
           )
         )
+        const backoffAttempt = state.retryCount + 1
+        const backoffPhaseStep = statusPhaseForState(state.status)
         emitTelemetry(
           options,
           {
@@ -1052,7 +1076,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
               phase: requestEnvelopePhase,
               performance: createFlushLatencyPerformance(retryLatency),
               debounce_ms: requestDebounceMs,
-              latency_ms: retryLatency
+              latency_ms: retryLatency,
+              attempt: backoffAttempt,
+              phase_step: backoffPhaseStep
             }
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
@@ -1128,6 +1154,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       detail: successDetail,
       snapshot: collectorSnapshot
     })
+    const savedAttempt = retryCountForSnapshot + 1
+    const savedPhaseStep = statusPhaseForState(state.status)
     emitTelemetry(
       options,
       {
@@ -1170,7 +1198,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           phase: requestEnvelopePhase,
           performance: createFlushLatencyPerformance(successLatency),
           debounce_ms: requestDebounceMs,
-          latency_ms: successLatency
+          latency_ms: successLatency,
+          attempt: savedAttempt,
+          phase_step: savedPhaseStep
         }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }
