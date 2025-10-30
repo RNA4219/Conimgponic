@@ -291,6 +291,7 @@ export const PROJECT_LOCK_TEST_CASES = Object.freeze({
 });
 
 const defaultBackoff: BackoffPolicy = { initialDelayMs: 500, factor: 2, maxAttempts: MAX_LOCK_RETRIES };
+const releaseBackoff: BackoffPolicy = { initialDelayMs: 500, factor: 2, maxAttempts: MAX_LOCK_RETRIES };
 const listeners = new Set<ProjectLockEventListener>();
 
 export const projectLockEvents: ProjectLockEventTarget = {
@@ -309,14 +310,28 @@ type WebLockHandleEntry = {
 };
 
 const webLockHandles = new Map<string, WebLockHandleEntry>();
-const releaseFailures = new Map<string, ProjectLockError>();
-
-const captureReleaseFailure = (leaseId: string, error: ProjectLockError): ProjectLockError => {
-  if (!releaseFailures.has(leaseId)) {
-    releaseFailures.set(leaseId, error);
-  }
-  return releaseFailures.get(leaseId)!;
+type ReleaseFailureState = {
+  attempts: number;
+  lastError: ProjectLockError;
+  readonlyNotified: boolean;
+  nextDelayMs: number;
 };
+
+const releaseFailures = new Map<string, ReleaseFailureState>();
+
+const rememberReleaseFailure = (
+  leaseId: string,
+  error: ProjectLockError,
+  attempts: number,
+  readonlyNotified: boolean,
+  nextDelayMs: number
+) => {
+  const state: ReleaseFailureState = { attempts, lastError: error, readonlyNotified, nextDelayMs };
+  releaseFailures.set(leaseId, state);
+  return state;
+};
+
+const getReleaseFailure = (leaseId: string): ReleaseFailureState | undefined => releaseFailures.get(leaseId);
 
 const clearReleaseFailure = (leaseId: string) => {
   releaseFailures.delete(leaseId);
@@ -381,6 +396,36 @@ const awaitBackoff = (delayMs: number, signal?: AbortSignal): Promise<void> => {
     };
     signal.addEventListener('abort', onAbort, { once: true });
   });
+};
+
+const awaitReleaseDelay = (delayMs: number, signal?: AbortSignal): Promise<void> => {
+  if (delayMs <= 0) return Promise.resolve();
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, delayMs));
+  if (signal.aborted)
+    return Promise.reject(
+      makeError('release-failed', 'Project lock release aborted during retry backoff', 'release', true, signal.reason)
+    );
+
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      reject(
+        makeError('release-failed', 'Project lock release aborted during retry backoff', 'release', true, signal.reason)
+      );
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+};
+
+const computeReleaseDelay = (attemptNumber: number): number => {
+  if (attemptNumber <= 1) return 0;
+  const exponent = Math.max(0, attemptNumber - 2);
+  return releaseBackoff.initialDelayMs * releaseBackoff.factor ** exponent;
 };
 
 const emitReadonly = (
@@ -910,20 +955,47 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     throw aborted;
   }
 
-  const hadCachedFailure = releaseFailures.has(lease.leaseId);
+  const currentState = getReleaseFailure(lease.leaseId);
+  if (currentState && currentState.attempts >= releaseBackoff.maxAttempts) {
+    if (!currentState.readonlyNotified) {
+      emitReadonly('release-failed', currentState.lastError, options.onReadonly);
+      currentState.readonlyNotified = true;
+    }
+    throw currentState.lastError;
+  }
+
+  if (currentState?.nextDelayMs) {
+    await awaitReleaseDelay(currentState.nextDelayMs, options.signal);
+  }
 
   const handle = lease.strategy === 'web-lock' ? webLockHandles.get(lease.leaseId) : undefined;
   const existingReleaseError = handle?.getReleaseError();
-  if (existingReleaseError) {
-    const remembered = captureReleaseFailure(lease.leaseId, existingReleaseError);
-    if (!hadCachedFailure) {
-      emitError(remembered);
-      emitReadonly('release-failed', remembered, options.onReadonly);
-    }
-    throw remembered;
-  }
+
+  const processFailure = (error: ProjectLockError) => {
+    const previous = getReleaseFailure(lease.leaseId);
+    const attempts = (previous?.attempts ?? 0) + 1;
+    const alreadyReadonly = previous?.readonlyNotified ?? false;
+    const shouldEmitReadonly = !alreadyReadonly;
+    const nextDelay = attempts < releaseBackoff.maxAttempts ? computeReleaseDelay(attempts + 1) : 0;
+    const state = rememberReleaseFailure(
+      lease.leaseId,
+      error,
+      attempts,
+      alreadyReadonly || shouldEmitReadonly,
+      nextDelay
+    );
+    emitError(error);
+    if (shouldEmitReadonly) emitReadonly('release-failed', error, options.onReadonly);
+    return state;
+  };
 
   projectLockEvents.emit({ type: 'lock:release-requested', lease });
+
+  if (existingReleaseError) {
+    const state = processFailure(existingReleaseError);
+    throw state.lastError;
+  }
+
   try {
     if (lease.strategy === 'web-lock') {
       if (handle) {
@@ -940,10 +1012,8 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
       error instanceof ProjectLockError
         ? error
         : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
-    const remembered = captureReleaseFailure(lease.leaseId, projectError);
-    emitError(remembered);
-    if (!hadCachedFailure) emitReadonly('release-failed', remembered, options.onReadonly);
-    throw remembered;
+    const state = processFailure(projectError);
+    throw state.lastError;
   }
 };
 const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOptions, force: boolean) => {
@@ -952,10 +1022,15 @@ const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOpti
   } catch (error) {
     if (error instanceof ProjectLockError) throw error;
     const projectError = makeError('release-failed', 'Failed to release project lock', 'release', true, error);
-    const remembered = captureReleaseFailure(lease.leaseId, projectError);
-    emitError(remembered);
-    emitReadonly('release-failed', remembered, options.onReadonly);
-    throw remembered;
+    const previous = getReleaseFailure(lease.leaseId);
+    const attempts = (previous?.attempts ?? 0) + 1;
+    const alreadyReadonly = previous?.readonlyNotified ?? false;
+    const shouldEmitReadonly = !alreadyReadonly;
+    const nextDelay = attempts < releaseBackoff.maxAttempts ? computeReleaseDelay(attempts + 1) : 0;
+    rememberReleaseFailure(lease.leaseId, projectError, attempts, alreadyReadonly || shouldEmitReadonly, nextDelay);
+    emitError(projectError);
+    if (shouldEmitReadonly) emitReadonly('release-failed', projectError, options.onReadonly);
+    throw projectError;
   }
 };
 export const withProjectLock: WithProjectLock = async (executor, options = {}) => {
