@@ -354,9 +354,43 @@ scenario('AS-HB-03: Heartbeat schedule is clipped by ttl when shorter than inter
 
   const initialSchedule = scheduled.at(-1)
   assert.ok(initialSchedule, 'initial heartbeat schedule must be captured')
-  assert.equal(initialSchedule?.nextIn, leaseTtl)
+  const expectedNext = Math.max(0, leaseTtl - 5_000)
+  assert.equal(initialSchedule?.nextIn, expectedNext)
   assert.ok(initialSchedule?.nextIn <= lease.expiresAt - now)
   assert.ok(lease.nextHeartbeatAt <= lease.expiresAt)
+  assert.equal(lease.nextHeartbeatAt - now, expectedNext)
+
+  await releaseProjectLock(lease)
+})
+
+scenario('AS-HB-04: TTL override schedules heartbeat five seconds before expiry', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+  const ttlMs = 45_000
+  const uuids = ['lease-heartbeat-override', 'owner-heartbeat-override']
+  t.mock.method(crypto, 'randomUUID', () => {
+    const value = uuids.shift()
+    if (!value) throw new Error('uuid exhausted')
+    return value
+  })
+
+  const scheduled: Array<{ lease: ProjectLockLease; nextIn: number }> = []
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    if (event.type === 'lock:renew-scheduled') {
+      scheduled.push({ lease: event.lease, nextIn: event.nextHeartbeatInMs })
+    }
+  })
+  t.after(unsubscribe)
+
+  const lease = await acquireProjectLock({ preferredStrategy: 'file-lock', ttlMs })
+
+  const now = Date.now()
+  const leaseTtl = lease.expiresAt - now
+  assert.equal(leaseTtl, ttlMs)
+
+  const initialSchedule = scheduled.at(-1)
+  assert.ok(initialSchedule, 'initial heartbeat schedule must be captured')
+  assert.equal(initialSchedule?.nextIn, ttlMs - 5_000)
+  assert.equal(lease.nextHeartbeatAt - now, ttlMs - 5_000)
 
   await releaseProjectLock(lease)
 })
