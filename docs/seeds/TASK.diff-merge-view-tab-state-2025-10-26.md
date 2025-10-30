@@ -29,6 +29,7 @@ DiffMergeView のタブ初期化を precision 別に localStorage へ永続化�
   - `resolveDiffMergeStoredTab` は precision ごとの許容タブか検証し、無効な保存値を破棄して初期タブを決定すること。
   - `DiffMergeView` は初期表示時に storage からタブ状態を復元し、タブ切替時に許容タブのみを storage へ保存すること。
   - 選択中タブは `queueMergeCommand` の `telemetryContext.lastTab` に必ず反映されること（Day8 Guardrails の型安全/TDD/最小差分ガイド遵守）。
+  - storage 読み出し失敗時は `console.warn` に storage key を含めた警告を記録し、初期タブへフォールバックすること。
 - I/O Contract:
   - Input: `precision`, `hunks`, `queueMergeCommand`
   - Storage: `localStorage['diff-merge.lastTab.<precision>']`
@@ -39,6 +40,7 @@ DiffMergeView のタブ初期化を precision 別に localStorage へ永続化�
 - Acceptance Criteria:
   - 無効タブの保存値がある場合でも許容タブにフォールバックし、storage から削除される。
   - `pnpm test -- --filter diff-merge-view-state` がグリーン。
+  - `pnpm test --filter components -- --test-name-pattern DiffMergeView.localStorage-read` のログで storage 読み出し失敗時の警告が確認できる。
 
 ## Affected Paths
 
@@ -50,6 +52,7 @@ DiffMergeView のタブ初期化を precision 別に localStorage へ永続化�
 ```bash
 pnpm test tests/components/DiffMergeView.test.tsx
 pnpm test -- --filter diff-merge-view-state
+pnpm test --filter components -- --test-name-pattern DiffMergeView.localStorage-read
 ```
 
 ## Deliverables
