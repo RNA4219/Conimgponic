@@ -32,6 +32,7 @@ const {
   sanitizePreference,
   resolvePreferenceSelection,
   resolveActiveTabTransition,
+  shouldEnableDiffInteraction,
 } = mergeDockModule as typeof mergeDockModule & {
   readonly getDefaultPreference: (
     precision: FlagSnapshot['merge']['precision'],
@@ -59,6 +60,10 @@ const {
     readonly activeTab: ReturnType<typeof resolveMergeDockPhasePlan>['tabs']['initialTab']
     readonly diffVisible: boolean
   }) => ReturnType<typeof resolveMergeDockPhasePlan>['tabs']['initialTab']
+  readonly shouldEnableDiffInteraction: (input: {
+    readonly diffPlan: MergeDockPhasePlan['diff']
+    readonly guard: MergeDockPhasePlan['guard']
+  }) => boolean
 }
 type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
 
@@ -236,6 +241,16 @@ test('beta precision keeps diff visible but disabled when stats are zeroed', () 
   assert.equal(plan.diff.exposure, 'opt-in')
   assert.deepEqual(plan.tabs.diff, { exposure: 'opt-in' })
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
+})
+
+test('data-merge-diff-enabled guard blocks diff interaction until enabled', () => {
+  const phasePlan = resolveMergeDockPhasePlan({ precision: 'stable', threshold: 0.82 })
+
+  assert.equal(phasePlan.diff.enabled, false)
+  assert.equal(
+    shouldEnableDiffInteraction({ diffPlan: phasePlan.diff, guard: phasePlan.guard }),
+    false,
+  )
 })
 
 test('diff exposure falls back to opt-in when auto applied underperforms', () => {
