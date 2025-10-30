@@ -1,0 +1,26 @@
+{
+  "id": "src/lib/merge/phasePlan.ts",
+  "role": "module",
+  "public_api": [
+    "diffBackupPolicy",
+    "isBaseTabId",
+    "planMergeDockTabs",
+    "resolveMergeDockPhasePlan",
+    "resolveMergeThresholdPlan",
+    "shouldShowDiffBackupCTA"
+  ],
+  "summary": "MergeDock のタブ計画・しきい値・バックアップ CTA 判定を純粋関数として提供する合成ロジック。ビュー層やテストから副作用を分離する。",
+  "deps_out": [
+    "src/config/flags.ts",
+    "src/lib/merge.ts"
+  ],
+  "deps_in": [
+    "src/components/MergeDock.tsx",
+    "tests/lib/merge/phasePlan.spec.ts"
+  ],
+  "risks": [],
+  "tests": [
+    "tests/lib/merge/phasePlan.spec.ts"
+  ],
+  "generated_at": "2025-10-21T09:15:00Z"
+}
