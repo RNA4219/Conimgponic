@@ -105,7 +105,7 @@ describe('ci workflow sbom job', () => {
       'sbom job must upload sbom log artifact on failure',
       {
         stepName: 'Upload SBOM log on failure',
-        ifCondition: 'failure()',
+        ifCondition: "steps.generate_sbom.outputs.exit_code != '0'",
       },
     );
 
