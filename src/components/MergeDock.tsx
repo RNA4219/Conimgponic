@@ -321,6 +321,9 @@ export const resolveActiveTabTransition = ({
   if (!previousDiffEnabled && diffEnabled) {
     return plan.initialTab
   }
+  if (previousDiffEnabled && !diffEnabled) {
+    return plan.initialTab
+  }
   return sanitizeActiveTab(activeTab, plan, diffVisible)
 }
 
