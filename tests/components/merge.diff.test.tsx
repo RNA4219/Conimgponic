@@ -598,6 +598,38 @@ test('resolveActiveTabTransition falls back to plan initial tab when diff disabl
   assert.equal(nextTab, 'compiled')
 })
 
+test('resolveActiveTabTransition demotes active tab to plan initial tab when diffEnabled toggles off', () => {
+  const promotedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.92,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+  const demotedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.8,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(promotedPlan.diff.enabled, true)
+  assert.equal(demotedPlan.diff.enabled, false)
+  assert.equal(demotedPlan.tabs.initialTab, 'compiled')
+
+  const nextTab = resolveActiveTabTransition({
+    precision: demotedPlan.precision,
+    previousPrecision: promotedPlan.precision,
+    diffEnabled: demotedPlan.diff.enabled,
+    previousDiffEnabled: promotedPlan.diff.enabled,
+    plan: demotedPlan.tabs,
+    activeTab: 'diff',
+    diffVisible: demotedPlan.diff.visible,
+  })
+
+  assert.equal(nextTab, demotedPlan.tabs.initialTab)
+  assert.equal(nextTab, 'compiled')
+})
+
 test('stable precision respects manual preference selection immediately after guard unlocks', () => {
   const guardedPlan = resolveMergeDockPhasePlan({
     precision: 'stable',
