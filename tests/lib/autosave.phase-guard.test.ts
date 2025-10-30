@@ -214,6 +214,44 @@ scenario(
 )
 
 scenario(
+  'fallback guard enables autosave when legacy localStorage key present',
+  async (t: any, { initAutoSave }: any) => {
+    const storage = new Map<string, string>([['flag:autoSave.enabled', 'true']])
+    const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem(key: string){ return storage.get(key) ?? null }
+      },
+      configurable: true
+    })
+
+    t.after(() => {
+      if (originalLocalStorage) {
+        Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
+      } else {
+        delete (globalThis as any).localStorage
+      }
+    })
+
+    const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false })
+    assert.equal(runner.snapshot().phase, 'idle')
+
+    const events: any[] = []
+    const unsubscribe = runner.onEvent((event: any) => { events.push(event) })
+    t.after(() => unsubscribe())
+
+    runner.markDirty({ pendingBytes: 128 })
+
+    const schedule = events.find((event) => event.type === 'autosave.schedule.requested')
+    assert.ok(schedule, 'expected autosave.schedule.requested event')
+    assert.equal(schedule?.payload?.flag_source, 'localStorage')
+    assert.equal(runner.snapshot().phase, 'debouncing')
+
+    await runner.dispose()
+  }
+)
+
+scenario(
   'fallback guard reads VS Code configuration scoped by conimg prefix',
   async (t: any, { initAutoSave }: any) => {
     const storage = new Map<string, string>([['autosave.enabled', '1']])
