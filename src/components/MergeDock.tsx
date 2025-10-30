@@ -738,6 +738,21 @@ export const shouldRenderDiffBackupCTA = ({
   return shouldShowDiffBackupCTA(resolvedPolicy, precision, activeTab, autoSave.lastSuccessAt, now)
 }
 
+type DiffInteractionGuardContext = {
+  readonly diffPlan: MergeDockPhasePlan['diff']
+  readonly guard: MergeDockPhasePlan['guard']
+}
+
+export const shouldEnableDiffInteraction = ({
+  diffPlan,
+  guard,
+}: DiffInteractionGuardContext): boolean => {
+  if (!diffPlan.visible) return false
+  if (!diffPlan.enabled) return false
+  if (!guard.phaseBRequired) return false
+  return true
+}
+
 const computeStoryboardWarnings = (storyboard: Storyboard): string[] => {
   const results: string[] = []
   for (let index = 0; index < storyboard.scenes.length; index += 1) {
@@ -926,6 +941,10 @@ export function MergeDock(props?: MergeDockProps){
   }, [sb, preference])
   const compiledDisplay = compiledOverride ?? compiled
 
+  const diffInteractionEnabled = shouldEnableDiffInteraction({
+    diffPlan,
+    guard: phasePlan.guard,
+  })
   const showBackupCTA = shouldRenderDiffBackupCTA({
     diffPlan,
     tabPlan: plan,
@@ -1014,6 +1033,7 @@ export function MergeDock(props?: MergeDockProps){
           data-merge-diff-enabled={diffPlan.enabled ? 'true' : 'false'}
           data-merge-diff-exposure={diffPlan.exposure}
           data-merge-diff-initial-tab={diffPlan.initialTab}
+          aria-disabled={diffInteractionEnabled ? undefined : 'true'}
         >
           {showBackupCTA ? (
             <button
@@ -1032,12 +1052,28 @@ export function MergeDock(props?: MergeDockProps){
               バックアップを今すぐ実行
             </button>
           ) : null}
-          <DiffMergeView
-            precision={precision}
-            hunks={emptyDiffHunks}
-            queueMergeCommand={diffMergeNoopCommand}
-            autoApplied={phasePlan.autoApplied}
-          />
+          {diffInteractionEnabled ? (
+            <DiffMergeView
+              precision={precision}
+              hunks={emptyDiffHunks}
+              queueMergeCommand={diffMergeNoopCommand}
+              autoApplied={phasePlan.autoApplied}
+            />
+          ) : (
+            <div
+              role="note"
+              data-testid="merge-diff-disabled-placeholder"
+              style={{
+                padding: '16px',
+                borderRadius: 4,
+                border: '1px dashed #cbd5f5',
+                background: '#f8fafc',
+                color: '#1f2937',
+              }}
+            >
+              Diff マージは現在準備中です。レビュー指標が揃うまでお待ちください。
+            </div>
+          )}
         </div>
       )}
 
