@@ -1502,6 +1502,19 @@ describe('vscode extension telemetry contract (RED)', () => {
     )
   })
 
+  test('merge.result telemetry guardrail は merge_processing_p95 をガード指標に含める', () => {
+    const spec = findTelemetrySpec('merge.result')
+    assertOk(spec, 'merge.result telemetry spec is missing for guard indicators')
+
+    const guardrail = spec.guardrail
+    assertOk(guardrail, 'merge.result telemetry guardrail must be defined for guard indicators')
+    assertOk(Array.isArray(guardrail.guardIndicators), 'guardIndicators must be defined as array')
+    assertOk(
+      guardrail.guardIndicators.includes('merge_processing_p95'),
+      'merge.result guardIndicators must include merge_processing_p95'
+    )
+  })
+
   test('collect-metrics 契約は merge_processing_p95 指標を Phase B ガードで監視する', () => {
     const { inputRecord, phaseGates, telemetry } = COLLECT_METRICS_CONTRACT
 
