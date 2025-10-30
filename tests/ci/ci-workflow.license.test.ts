@@ -1,11 +1,8 @@
 /// <reference types="node" />
 process.env.TS_NODE_COMPILER_OPTIONS ??= JSON.stringify({ moduleResolution: 'bundler' });
 import assert from 'node:assert/strict';
-import { readdir, readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import { describe, test } from 'node:test';
+import { loadWorkflow } from './utils/workflow-loader.js';
 
 type WorkflowYaml = { jobs?: { license?: WorkflowJob } };
 type WorkflowJob = { steps?: StepConfig[]; needs?: JobNeeds };
@@ -15,12 +12,6 @@ type UploadStep = StepConfig & {
   with?: { name?: unknown; path?: unknown; ['if-no-files-found']?: unknown };
 };
 type JobNeeds = string | string[] | undefined;
-type JsYamlModule = { load: (input: string) => unknown };
-
-const require = createRequire(import.meta.url);
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const workflowPath = resolve(repoRoot, '.github', 'workflows', 'ci.yml');
-
 describe('ci workflow license job', () => {
   test('runs license verification and uploads required artifacts', async () => {
     try {
@@ -73,27 +64,6 @@ function parsePathEntries(input: string): string[] {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-}
-
-async function importJsYaml(): Promise<JsYamlModule> {
-  const pnpmDir = resolve(repoRoot, 'node_modules', '.pnpm');
-  const entries = await readdir(pnpmDir, { withFileTypes: true });
-  const match = entries.find((entry) => entry.isDirectory() && entry.name.startsWith('js-yaml@'));
-  if (!match) {
-    assert.fail('js-yaml must be present in pnpm store');
-  }
-  const moduleDir = resolve(pnpmDir, match.name, 'node_modules', 'js-yaml');
-  return require(moduleDir) as JsYamlModule;
-}
-
-async function loadWorkflow(): Promise<WorkflowYaml> {
-  const { load } = await importJsYaml();
-  const source = await readFile(workflowPath, 'utf8');
-  const parsed = load(source) as WorkflowYaml | null;
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('workflow must parse to an object');
-  }
-  return parsed as WorkflowYaml;
 }
 
 function expectJobSteps(job: WorkflowJob | undefined, message: string): StepConfig[] {
