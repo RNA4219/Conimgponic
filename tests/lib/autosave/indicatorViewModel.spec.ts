@@ -70,4 +70,25 @@ describe('deriveAutoSaveIndicatorViewModel', () => {
     assert.equal(viewModel.banner?.variant, 'warning')
     assert.ok(viewModel.isReadOnly)
   })
+
+  test('再試行可能エラー時は履歴アクセスを再開し Spec のトーストを表示する', () => {
+    const snapshot: AutoSaveStatusSnapshot = {
+      phase: 'awaiting-lock',
+      retryCount: 4,
+      pendingBytes: 2048,
+      lastSuccessAt: '2024-05-01T00:00:00Z',
+      lastError: { code: 'lock-unavailable', retryable: true, message: 'Lock busy' }
+    }
+
+    const viewModel = deriveAutoSaveIndicatorViewModel({ snapshot })
+
+    const expectedToastMessage =
+      AUTOSAVE_INDICATOR_MESSAGE_SPEC.retryableFailure.toast?.message?.replace('{{error.message}}', 'Lock busy') ?? ''
+
+    assert.equal(viewModel.history.access, 'available')
+    assert.equal(viewModel.history.note, AUTOSAVE_INDICATOR_MESSAGE_SPEC.retryableFailure.notes[0])
+    assert.equal(viewModel.history.canOpen, true)
+    assert.equal(viewModel.toast?.variant, 'warning')
+    assert.equal(viewModel.toast?.message, expectedToastMessage)
+  })
 })

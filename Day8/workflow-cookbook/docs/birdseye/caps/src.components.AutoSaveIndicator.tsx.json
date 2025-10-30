@@ -2,14 +2,15 @@
   "id": "src/components/AutoSaveIndicator.tsx",
   "role": "ui",
   "public_api": ["AutoSaveIndicator"],
-  "summary": "AutoSave 状態を描画する React コンポーネント。ビューモデル生成ロジックを src/lib/autosave/indicatorViewModel.ts へ委譲し、UI レイヤは表示とハンドラ配線のみに責務を限定する。",
+  "summary": "AutoSave 状態を描画する React コンポーネント。抽出済みの viewModel が提供する history.canOpen などの派生情報でボタン活性制御を担い、副作用は lib 層へ委譲する。",
   "deps_out": [
-    "src/lib/autosave/indicatorViewModel.ts"
+    "src/lib/autosave/indicatorViewModel.ts",
+    "src/lib/autosave/indicatorController.ts"
   ],
   "deps_in": [
     "tests/components/AutoSaveIndicator.test.tsx"
   ],
   "risks": ["ビューとロジックの境界が崩れると再利用性が低下する"],
   "tests": ["tests/components/AutoSaveIndicator.test.tsx"],
-  "generated_at": "2025-10-21T09:30:00Z"
+  "generated_at": "2025-10-21T11:45:00Z"
 }

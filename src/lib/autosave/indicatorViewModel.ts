@@ -14,6 +14,28 @@ const ANIMATING_PHASES: ReadonlySet<AutoSavePhase> = new Set([
 ])
 const READONLY_STATUS_LABEL = '閲覧専用モード'
 
+type AutoSaveIndicatorMessageSpecKey = keyof typeof AUTOSAVE_INDICATOR_MESSAGE_SPEC
+
+function renderTemplate(template: string, replacements: Record<string, string | undefined>): string {
+  return Object.entries(replacements).reduce<string>((result, [key, value]) => {
+    const pattern = new RegExp(`\\{\\{${key.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\}}`, 'g')
+    return result.replace(pattern, value ?? '')
+  }, template)
+}
+
+function resolveReadonlyReasonLabel(reason?: ProjectLockReadonlyReason): string {
+  switch (reason) {
+    case 'acquire-failed':
+      return '他のタブが編集しています'
+    case 'renew-failed':
+      return 'ロック更新に失敗しました'
+    case 'release-failed':
+      return 'ロック解放に失敗しました'
+    default:
+      return 'ロック状態を確認してください'
+  }
+}
+
 export interface AutoSaveHistorySummary {
   readonly totalGenerations: number
   readonly maxGenerations: number
@@ -207,7 +229,10 @@ export interface AutoSaveIndicatorViewModel {
   readonly label: string
   readonly description: string
   readonly indicator: AutoSavePhaseViewConfig['indicator']
-  readonly history: AutoSavePhaseHistoryRequirement & { readonly usageWarning?: string }
+  readonly history: AutoSavePhaseHistoryRequirement & {
+    readonly usageWarning?: string
+    readonly canOpen: boolean
+  }
   readonly meta: {
     readonly lastSuccessAt?: string
     readonly pendingBytes?: number
@@ -242,6 +267,22 @@ export function deriveAutoSaveIndicatorViewModel({
   const effectiveLockEvent = lockState?.lastEvent ?? lockEvent
   const isReadOnly =
     lockState?.mode === 'readonly' || effectiveLockEvent?.type === 'lock:readonly-entered'
+  const messageSpecKey: AutoSaveIndicatorMessageSpecKey | null = (() => {
+    if (isReadOnly) {
+      return 'readonlyEntered'
+    }
+    if (snapshot.phase === 'error' && snapshot.lastError && snapshot.lastError.retryable === false) {
+      return 'fatalFailure'
+    }
+    if (snapshot.lastError?.retryable) {
+      return 'retryableFailure'
+    }
+    if (snapshot.phase === 'idle') {
+      return 'success'
+    }
+    return null
+  })()
+  const messageSpec = messageSpecKey ? AUTOSAVE_INDICATOR_MESSAGE_SPEC[messageSpecKey] : null
   const statusLabel = (() => {
     if (isReadOnly) {
       return READONLY_STATUS_LABEL
@@ -279,45 +320,67 @@ export function deriveAutoSaveIndicatorViewModel({
 
   const historyView = (() => {
     if (isReadOnly) {
+      const readonlyNote = messageSpec?.notes?.[0] ?? AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.notes[0] ?? base.history.note
       return {
         access: 'disabled' as const,
-        note: AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.notes[0] ?? base.history.note,
-        usageWarning: undefined
+        note: readonlyNote,
+        usageWarning: undefined,
+        canOpen: false
       }
     }
-    return { ...base.history, usageWarning: historyUsage }
+    let access = base.history.access
+    let note = base.history.note
+    if (messageSpec?.historyAccess) {
+      access = messageSpec.historyAccess
+    }
+    if (messageSpec?.notes && messageSpec.notes.length > 0) {
+      note = messageSpec.notes[0]
+    }
+    const canOpen = access === 'available'
+    return {
+      access,
+      note,
+      usageWarning: canOpen ? historyUsage : undefined,
+      canOpen
+    }
   })()
 
   const banner = (() => {
     if (isReadOnly) {
-      const readonlyReason = lockState?.reason
-      const resolvedReason = readonlyReason ??
+      const readonlyReason = lockState?.reason ??
         (effectiveLockEvent?.type === 'lock:readonly-entered' ? effectiveLockEvent.reason : undefined)
-      const reasonLabel =
-        resolvedReason === 'acquire-failed'
-          ? '他のタブが編集しています'
-          : resolvedReason === 'renew-failed'
-          ? 'ロック更新に失敗しました'
-          : resolvedReason === 'release-failed'
-          ? 'ロック解放に失敗しました'
-          : 'ロック状態を確認してください'
+      const reasonLabel = resolveReadonlyReasonLabel(readonlyReason)
+      const template = messageSpec?.banner?.message ??
+        AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.banner?.message ??
+        '閲覧専用モードに切り替わりました（{{reasonLabel}}）'
+      const variant = messageSpec?.banner?.variant ??
+        AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.banner?.variant ??
+        'warning'
       return {
-        variant: 'warning' as const,
-        message: `閲覧専用モードに切り替わりました（${reasonLabel}）。 復元・再試行の前にタブの状態を確認してください。`
+        variant,
+        message: renderTemplate(template, { 'reasonLabel': reasonLabel })
       }
     }
-    if (snapshot.phase === 'error' && snapshot.lastError && !snapshot.lastError.retryable) {
+    if (messageSpecKey === 'fatalFailure' && messageSpec?.banner) {
       return {
-        variant: 'error' as const,
-        message: `自動保存を停止しました: ${snapshot.lastError.message}`
+        variant: messageSpec.banner.variant,
+        message: renderTemplate(messageSpec.banner.message, {
+          'lastError.message': snapshot.lastError?.message ?? ''
+        })
       }
     }
     return undefined
   })()
 
   const toast = (() => {
-    if (snapshot.lastError && snapshot.lastError.retryable) {
-      return { variant: 'warning' as const, message: `自動保存の再試行に失敗しました（${snapshot.lastError.message}）` }
+    if (messageSpec?.toast) {
+      return {
+        variant: messageSpec.toast.variant,
+        message: renderTemplate(messageSpec.toast.message, {
+          'error.message': snapshot.lastError?.message ?? '',
+          retryCount: snapshot.retryCount.toString()
+        })
+      }
     }
     if (snapshot.retryCount >= RETRY_LABEL_THRESHOLD && snapshot.phase === 'awaiting-lock') {
       return { variant: 'warning' as const, message: `ロック取得を再試行中です (${snapshot.retryCount})` }
@@ -360,6 +423,7 @@ export function isViewModelEqual(a: AutoSaveIndicatorViewModel, b: AutoSaveIndic
     a.history.access === b.history.access &&
     a.history.note === b.history.note &&
     a.history.usageWarning === b.history.usageWarning &&
+    a.history.canOpen === b.history.canOpen &&
     a.meta.lastSuccessAt === b.meta.lastSuccessAt &&
     a.meta.pendingBytes === b.meta.pendingBytes &&
     a.meta.retryCount === b.meta.retryCount &&

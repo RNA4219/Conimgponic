@@ -2,7 +2,7 @@
   "id": "tests/lib/autosave/indicatorViewModel.spec.ts",
   "role": "test",
   "public_api": [],
-  "summary": "node:test で deriveAutoSaveIndicatorViewModel の履歴アクセス制御とロック時バナー表示を固定化するユニットテスト。",
+  "summary": "node:test で deriveAutoSaveIndicatorViewModel の履歴アクセス制御とロック時バナー表示を固定化するユニットテスト。Message Spec に沿ったトースト文言と history.canOpen の開閉判定も検証する。",
   "deps_out": [
     "src/lib/autosave/indicatorViewModel.ts",
     "src/lib/autosave.ts"
@@ -10,5 +10,5 @@
   "deps_in": [],
   "risks": ["期待仕様が更新された際にテスト修正を忘れるとリファクタが阻害される"],
   "tests": [],
-  "generated_at": "2025-10-21T09:30:00Z"
+  "generated_at": "2025-10-21T11:45:00Z"
 }

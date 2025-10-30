@@ -94,6 +94,7 @@ export function createAutoSaveIndicatorController({
   const store = createStore<AutoSaveIndicatorControllerState>(() => initialState)
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let unsubscribeLock: () => void = () => {}
+  let lockSubscribed = false
   let retryingTelemetryEmitted = false
 
   const commitSnapshot = (nextSnapshot: AutoSaveStatusSnapshot) => {
@@ -195,11 +196,13 @@ export function createAutoSaveIndicatorController({
     }
     poll()
     pollTimer = setInterval(poll, pollIntervalMs)
+    if (!lockSubscribed) {
+      unsubscribeLock = subscribeLockEvents((event) => {
+        commitLockEvent(event)
+      })
+      lockSubscribed = true
+    }
   }
-
-  unsubscribeLock = subscribeLockEvents((event) => {
-    commitLockEvent(event)
-  })
 
   const dispose = () => {
     if (pollTimer !== null) {
@@ -208,6 +211,7 @@ export function createAutoSaveIndicatorController({
     }
     unsubscribeLock()
     unsubscribeLock = () => {}
+    lockSubscribed = false
   }
 
   const flushTelemetry = (): readonly AutoSaveIndicatorTelemetryEvent[] => {
@@ -231,8 +235,6 @@ export function createAutoSaveIndicatorController({
       isVisible: nextVisible
     }))
   }
-
-  start()
 
   return {
     store,

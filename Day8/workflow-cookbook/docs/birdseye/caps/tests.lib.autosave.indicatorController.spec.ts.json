@@ -2,7 +2,7 @@
   "id": "tests/lib/autosave/indicatorController.spec.ts",
   "role": "test",
   "public_api": [],
-  "summary": "node:test で createAutoSaveIndicatorController のフェーズ遷移 telemetry とロックイベント処理を検証し、履歴制御の副作用を保証する。",
+  "summary": "node:test で createAutoSaveIndicatorController のフェーズ遷移 telemetry とロックイベント処理を検証し、start() 前はポーリングも購読も走らないことを確認して副作用境界を保証する。",
   "deps_out": [
     "src/lib/autosave/indicatorController.ts",
     "src/lib/autosave.ts",
@@ -12,5 +12,5 @@
   "deps_in": [],
   "risks": ["setInterval 依存のテストはタイミング閾値が厳しいためフレークの可能性がある"],
   "tests": [],
-  "generated_at": "2025-10-21T09:30:00Z"
+  "generated_at": "2025-10-21T11:45:00Z"
 }
