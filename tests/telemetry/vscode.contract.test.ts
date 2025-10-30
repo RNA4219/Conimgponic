@@ -83,6 +83,17 @@ const telemetrySchema = JSON.parse(
   readFileSync(new URL('../../schemas/telemetry.schema.json', import.meta.url), 'utf-8')
 ) as TelemetrySchema
 
+const STATUS_AUTOSAVE_PAYLOAD_REQUIRED_FIELDS = [
+  'state',
+  'debounce_ms',
+  'latency_ms',
+  'attempt',
+  'phase_step',
+  'guard',
+  'detail',
+  'performance'
+] as const
+
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -1353,16 +1364,10 @@ describe('vscode extension telemetry contract (RED)', () => {
     const thenClause = findConditional(
       (entry) => entry.if?.properties?.event?.const === 'status.autosave'
     )
-    const payloadSchema = assertPayloadSchema(thenClause, [
-      'state',
-      'debounce_ms',
-      'latency_ms',
-      'attempt',
-      'phase_step',
-      'guard',
-      'detail',
-      'performance'
-    ])
+    const payloadSchema = assertPayloadSchema(
+      thenClause,
+      STATUS_AUTOSAVE_PAYLOAD_REQUIRED_FIELDS
+    )
 
     assertOk(payloadSchema.properties, 'status.autosave payload schema must define properties')
 
@@ -1432,6 +1437,28 @@ describe('vscode extension telemetry contract (RED)', () => {
       'minimum' in flushLatencySchema && flushLatencySchema.minimum === 0,
       'status.autosave payload performance.flush_latency_ms must enforce non-negative values'
     )
+  })
+
+  test('telemetry schema の status.autosave state は backoff/error/disabled を許容する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'status.autosave'
+    )
+    const payloadSchema = assertPayloadSchema(
+      thenClause,
+      STATUS_AUTOSAVE_PAYLOAD_REQUIRED_FIELDS
+    )
+
+    assertOk(payloadSchema.properties, 'status.autosave payload schema must define properties')
+    const stateSchema = resolveSchemaRef(payloadSchema.properties.state)
+    assertOk(stateSchema?.enum, 'status.autosave payload state must define enum')
+
+    const allowedStates = new Set(stateSchema.enum)
+    for (const state of ['backoff', 'error', 'disabled'] as const) {
+      assertOk(
+        allowedStates.has(state),
+        `status.autosave payload state must allow ${state}`
+      )
+    }
   })
 
   test('telemetry schema の merge.result payload が Collector 要件を固定する', () => {
