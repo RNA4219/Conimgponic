@@ -406,6 +406,8 @@ const buildLease = (
 ): ProjectLockLease => {
   const heartbeatInterval = heartbeatMs > 0 ? heartbeatMs : LOCK_HEARTBEAT_INTERVAL_MS;
   const now = Date.now();
+  const expiresAt = now + ttl;
+  const nextHeartbeatAt = Math.min(expiresAt, now + heartbeatInterval);
   return {
     leaseId: ctx.leaseId,
     ownerId: ctx.ownerId,
@@ -413,10 +415,10 @@ const buildLease = (
     viaFallback: strategy === 'file-lock',
     resource,
     acquiredAt,
-    expiresAt: now + ttl,
+    expiresAt,
     ttlMillis: ttl,
     heartbeatIntervalMs: heartbeatInterval,
-    nextHeartbeatAt: now + heartbeatInterval,
+    nextHeartbeatAt,
     renewAttempt,
   };
 };
@@ -705,12 +707,13 @@ const acquireViaFallback = async (ctx: AcquireContext): Promise<ProjectLockLease
       record !== null && record.leaseId === ctx.leaseId && record.expiresAt > now;
     const acquiredAt = isReentrantActiveLease ? record.acquiredAt : now;
     const heartbeatInterval = ctx.heartbeatMs > 0 ? ctx.heartbeatMs : LOCK_HEARTBEAT_INTERVAL_MS;
-    const scheduledHeartbeatAt = now + heartbeatInterval;
+    const expiresAt = now + ttl;
+    const scheduledHeartbeatAt = Math.min(expiresAt, now + heartbeatInterval);
     const next: FallbackLockLeaseRecord = {
       leaseId: ctx.leaseId,
       ownerId: ctx.ownerId,
       acquiredAt,
-      expiresAt: now + ttl,
+      expiresAt,
       ttlSeconds, // ← ttlSecondsを正しく記録
       mtime: now,
       heartbeatIntervalMs: heartbeatInterval,
