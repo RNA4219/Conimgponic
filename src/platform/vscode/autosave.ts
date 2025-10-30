@@ -625,6 +625,10 @@ const handleNonRetryableError = (
 ): void => {
   const guardForTelemetry = state.guard
   const errorEnvelopePhase = request.phase ?? PHASE_SNAPSHOT
+  const requestDebounceMs =
+    typeof request.payload.debounceMs === 'number'
+      ? request.payload.debounceMs
+      : options.policy.debounceMs
   const retryCountBeforeReset = state.retryCount
   state.status = 'error'
   const errorTimestamp = options.now()
@@ -686,7 +690,9 @@ const handleNonRetryableError = (
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
         phase: errorEnvelopePhase,
-        performance: createFlushLatencyPerformance(flushLatencyMs)
+        performance: createFlushLatencyPerformance(flushLatencyMs),
+        debounce_ms: requestDebounceMs,
+        latency_ms: flushLatencyMs
       }
     },
     { before: previousStatus, after: state.status, guard: guardForTelemetry }
@@ -718,7 +724,9 @@ const handleNonRetryableError = (
         correlationId: request.correlationId,
         retryCount: retryCountBeforeReset,
         phase: PHASE_STATUS,
-        performance: createFlushLatencyPerformance(flushLatencyMs)
+        performance: createFlushLatencyPerformance(flushLatencyMs),
+        debounce_ms: requestDebounceMs,
+        latency_ms: flushLatencyMs
       }
     },
     { before: statusBeforeDisable, after: state.status, guard: state.guard }
@@ -761,10 +769,13 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const previousStatus = state.status
     const shouldForceDisable = state.forceDisabled
     state.guard = mergeGuard(state.guard, guard, shouldForceDisable)
-    const ts = toIso(options.now())
+    const now = options.now()
+    const nowMs = now.getTime()
+    const ts = toIso(now)
     const correlationId = nextCorrelationId(state)
     const envelopePhase = PHASE_STATUS
-    const flushLatency = ZERO_FLUSH_LATENCY
+    const latencyMs = computeFlushLatencyMs(state, nowMs)
+    const flushLatency = createFlushLatencyPerformance(latencyMs)
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
@@ -791,7 +802,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             correlationId,
             retryCount: state.retryCount,
             phase: envelopePhase,
-            performance: flushLatency
+            performance: flushLatency,
+            debounce_ms: options.policy.debounceMs,
+            latency_ms: latencyMs
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
@@ -836,7 +849,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             correlationId,
             retryCount: state.retryCount,
             phase: envelopePhase,
-            performance: flushLatency
+            performance: flushLatency,
+            debounce_ms: options.policy.debounceMs,
+            latency_ms: latencyMs
           }
         },
         { before: previousStatus, after: state.status, guard: state.guard }
@@ -849,12 +864,17 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const shouldForceDisable = state.forceDisabled
     const requestStartedAt = options.now()
     const requestStartedAtMs = requestStartedAt.getTime()
+    const requestDebounceMs =
+      typeof request.payload.debounceMs === 'number'
+        ? request.payload.debounceMs
+        : options.policy.debounceMs
     state.guard = mergeGuard(state.guard, incomingGuard, shouldForceDisable)
     const ts = toIso(requestStartedAt)
     const requestEnvelopePhase = request.phase ?? PHASE_SNAPSHOT
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
+      const disabledLatencyMs = computeFlushLatencyMs(state, requestStartedAtMs)
       state.flushStartedAtMs = undefined
       const disabledError = createDisabledError()
       options.sendMessage(
@@ -912,7 +932,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
             correlationId: request.correlationId,
             retryCount: state.retryCount,
             phase: PHASE_STATUS,
-            performance: ZERO_FLUSH_LATENCY
+            performance: ZERO_FLUSH_LATENCY,
+            debounce_ms: requestDebounceMs,
+            latency_ms: disabledLatencyMs
           }
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
@@ -954,6 +976,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         request.payload.pendingBytes
       )
     )
+    const savingLatencyMs = computeFlushLatencyMs(state, requestStartedAtMs)
     emitTelemetry(
       options,
       {
@@ -964,7 +987,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           correlationId: request.correlationId,
           retryCount: state.retryCount,
           phase: requestEnvelopePhase,
-          performance: ZERO_FLUSH_LATENCY
+          performance: createFlushLatencyPerformance(savingLatencyMs),
+          debounce_ms: requestDebounceMs,
+          latency_ms: savingLatencyMs
         }
       },
       { before: statusBeforeSaving, after: state.status, guard: state.guard }
@@ -1025,7 +1050,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
               correlationId: request.correlationId,
               retryCount: state.retryCount,
               phase: requestEnvelopePhase,
-              performance: createFlushLatencyPerformance(retryLatency)
+              performance: createFlushLatencyPerformance(retryLatency),
+              debounce_ms: requestDebounceMs,
+              latency_ms: retryLatency
             }
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
@@ -1141,7 +1168,9 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           correlationId: request.correlationId,
           retryCount: state.retryCount,
           phase: requestEnvelopePhase,
-          performance: createFlushLatencyPerformance(successLatency)
+          performance: createFlushLatencyPerformance(successLatency),
+          debounce_ms: requestDebounceMs,
+          latency_ms: successLatency
         }
       },
       { before: statusBeforeSuccess, after: state.status, guard: state.guard, lockStrategy: writeResult.lockStrategy }
