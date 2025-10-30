@@ -551,6 +551,39 @@ test('stable precision diff guard unlock restores diff as active tab in store', 
   assert.equal(viewStore.getState().activeTab, 'diff')
 })
 
+test('resolveActiveTabTransition falls back to plan initial tab when diff disables', () => {
+  const unlockedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.9,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+  const demotedPlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoAppliedRate: 0.81,
+    phaseStats: { reviewBandCount: 3, conflictBandCount: 0 },
+  })
+
+  assert.equal(unlockedPlan.diff.enabled, true)
+  assert.equal(demotedPlan.diff.enabled, false)
+  assert.equal(demotedPlan.tabs.initialTab, 'compiled')
+
+  const viewStore = createStore<{ readonly activeTab: 'compiled' | 'diff' }>(() => ({ activeTab: 'diff' }))
+  const nextTab = resolveActiveTabTransition({
+    precision: demotedPlan.precision,
+    previousPrecision: unlockedPlan.precision,
+    diffEnabled: demotedPlan.diff.enabled,
+    previousDiffEnabled: unlockedPlan.diff.enabled,
+    plan: demotedPlan.tabs,
+    activeTab: viewStore.getState().activeTab,
+    diffVisible: demotedPlan.diff.visible,
+  })
+
+  assert.equal(nextTab, demotedPlan.tabs.initialTab)
+  assert.equal(nextTab, 'compiled')
+})
+
 test('stable precision respects manual preference selection immediately after guard unlocks', () => {
   const guardedPlan = resolveMergeDockPhasePlan({
     precision: 'stable',
