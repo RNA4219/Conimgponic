@@ -1365,6 +1365,16 @@ describe('vscode extension telemetry contract (RED)', () => {
     ])
 
     assertOk(payloadSchema.properties, 'status.autosave payload schema must define properties')
+
+    const stateSchema = resolveSchemaRef(payloadSchema.properties.state)
+    assertOk(stateSchema, 'status.autosave payload schema must define state')
+    assertOk(stateSchema.type === 'string', 'status.autosave payload state must be string')
+    assertOk(stateSchema.enum, 'status.autosave payload state must define enum')
+    deepStrictEqual(
+      Array.from(stateSchema.enum).sort(),
+      ['disabled', 'dirty', 'saving', 'saved', 'error', 'backoff'].sort()
+    )
+
     const guardSchema = payloadSchema.properties.guard
     assertOk(guardSchema, 'status.autosave payload schema must define guard')
     assertOk(guardSchema.required, 'status.autosave guard must define required fields')
