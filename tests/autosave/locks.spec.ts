@@ -395,6 +395,48 @@ scenario('AS-HB-04: TTL override schedules heartbeat five seconds before expiry'
   await releaseProjectLock(lease)
 })
 
+scenario('AS-HB-05: Renew reschedules heartbeat five seconds before new expiry', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+  const uuids = ['lease-heartbeat-renew', 'owner-heartbeat-renew']
+  t.mock.method(crypto, 'randomUUID', () => {
+    const value = uuids.shift()
+    if (!value) throw new Error('uuid exhausted')
+    return value
+  })
+
+  const renewSchedules: Array<{ lease: ProjectLockLease; nextIn: number; at: number }> = []
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    if (event.type === 'lock:renew-scheduled') {
+      renewSchedules.push({ lease: event.lease, nextIn: event.nextHeartbeatInMs, at: Date.now() })
+    }
+  })
+  t.after(unsubscribe)
+
+  const lease = await acquireProjectLock({ preferredStrategy: 'file-lock' })
+
+  const initialSchedule = renewSchedules.find(
+    (record) => record.lease.leaseId === lease.leaseId && record.lease.renewAttempt === lease.renewAttempt
+  )
+  assert.ok(initialSchedule, 'initial heartbeat schedule must be captured')
+  assert.equal(initialSchedule.nextIn, Math.max(0, lease.ttlMillis - 5_000))
+
+  t.mock.timers.tick(Math.max(0, lease.nextHeartbeatAt - Date.now()))
+  const refreshed = await renewProjectLock(lease)
+
+  const renewedSchedule = renewSchedules.find(
+    (record) =>
+      record.lease.leaseId === refreshed.leaseId && record.lease.renewAttempt === refreshed.renewAttempt
+  )
+  assert.ok(renewedSchedule, 'renewed heartbeat schedule must be captured')
+
+  const expectedNext = Math.max(0, refreshed.ttlMillis - 5_000)
+  assert.equal(renewedSchedule.nextIn, expectedNext)
+  assert.equal(refreshed.nextHeartbeatAt - Date.now(), expectedNext)
+  assert.equal(renewedSchedule.lease.nextHeartbeatAt - Date.now(), expectedNext)
+
+  await releaseProjectLock(refreshed)
+})
+
 scenario(
   'AS-LK-22: Fallback conflict warning exposes existing lease metadata',
   {

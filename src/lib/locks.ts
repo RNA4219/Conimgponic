@@ -931,27 +931,25 @@ export const renewProjectLock: RenewProjectLock = async (lease, options = {}) =>
   });
 
   try {
+    const nextExpiresCandidate = now + lease.ttlMillis;
+    const nextExpires = Math.max(lease.expiresAt + 1, nextExpiresCandidate);
+    const heartbeatLeadTarget = Math.min(nextExpires - HEARTBEAT_LEAD_MS, nextExpires);
+    const heartbeatFloor = nextExpires - lease.ttlMillis;
+    const refreshedNextHeartbeat = Math.max(heartbeatFloor, heartbeatLeadTarget);
+
     if (lease.strategy === 'file-lock') {
       const record = (await loadJSON(FALLBACK_LOCK_PATH)) as FallbackLockLeaseRecord | null;
       if (!record || record.leaseId !== lease.leaseId)
         throw makeError('lease-stale', 'Fallback lease missing for renew', 'renew', false);
       await saveJSON(FALLBACK_LOCK_PATH, {
         ...record,
-        expiresAt: now + lease.ttlMillis,
+        expiresAt: nextExpires,
         ttlSeconds: lease.ttlMillis / 1000,
         mtime: now,
         heartbeatIntervalMs: heartbeatInterval,
-        nextHeartbeatAt: scheduleNextHeartbeat(now + lease.ttlMillis, now, lease.ttlMillis, lease.acquiredAt),
+        nextHeartbeatAt: refreshedNextHeartbeat,
       });
     }
-
-    const nextExpires = Math.max(lease.expiresAt + 1, now + lease.ttlMillis);
-    const refreshedNextHeartbeat = scheduleNextHeartbeat(
-      nextExpires,
-      now,
-      lease.ttlMillis,
-      lease.acquiredAt
-    );
     const refreshed: ProjectLockLease = {
       ...lease,
       expiresAt: nextExpires,
