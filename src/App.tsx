@@ -21,6 +21,7 @@ import {
   type AutoSaveInitResult,
   type AutoSavePhaseGuardSnapshot
 } from './lib/autosave'
+import { attachMergeDockAutoSaveBridge } from './lib/merge/mergeDockAutoSaveBridge'
 import { getDay8Collector } from './telemetry/day8Collector'
 
 interface ToolbarNotifiers {
@@ -391,6 +392,7 @@ export default function App({ resolveOptions }: AppProps = {}){
   const [autoSavePlan, setAutoSavePlan] = useState<AutoSaveBootstrapPlan | null>(null)
   const [autoSaveDecision, setAutoSaveDecision] = useState<AutoSaveActivationDecision | null>(null)
   const autoSaveRunner = useRef<AutoSaveInitResult | null>(null)
+  const mergeDockAutoSaveBridge = useRef<(() => void) | null>(null)
   const mergeDockIntegration = resolveMergeDockIntegration(autoSavePlan, resolveOptions ?? null)
   const toolbarNotifiers: ToolbarNotifiers = {
     alert(message) {
@@ -461,8 +463,13 @@ export default function App({ resolveOptions }: AppProps = {}){
     const decision = planAutoSave(autoSavePlan)
     setAutoSaveDecision(decision)
     if (decision.mode !== 'autosave'){
-      autoSaveRunner.current?.dispose()
+      mergeDockAutoSaveBridge.current?.()
+      mergeDockAutoSaveBridge.current = null
+      const activeRunner = autoSaveRunner.current
       autoSaveRunner.current = null
+      if (activeRunner){
+        void activeRunner.dispose()
+      }
       return
     }
 
@@ -475,12 +482,22 @@ export default function App({ resolveOptions }: AppProps = {}){
     )
     autoSaveRunner.current = runner
 
+    mergeDockAutoSaveBridge.current?.()
+    const detachBridge = attachMergeDockAutoSaveBridge(runner)
+    mergeDockAutoSaveBridge.current = detachBridge
+
     const unsubscribe = watchAutoSaveStoryboardDiffs(useSB, autoSaveRunner, runner)
 
     return ()=>{
       unsubscribe()
+      if (mergeDockAutoSaveBridge.current === detachBridge){
+        mergeDockAutoSaveBridge.current()
+        mergeDockAutoSaveBridge.current = null
+      } else {
+        detachBridge()
+      }
       if (autoSaveRunner.current === runner){
-        autoSaveRunner.current?.dispose()
+        void autoSaveRunner.current?.dispose()
         autoSaveRunner.current = null
       }
     }
