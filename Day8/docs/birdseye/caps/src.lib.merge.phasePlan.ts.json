@@ -1,0 +1,34 @@
+{
+  "id": "src/lib/merge/phasePlan.ts",
+  "role": "application",
+  "public_api": [
+    "planMergeDockTabs",
+    "resolveMergeDockPhasePlan",
+    "resolveMergeThresholdPlan",
+    "diffBackupPolicy",
+    "shouldShowDiffBackupCTA"
+  ],
+  "summary": "MergeDock のタブ構成と diff backup CTA を制御するフェーズ別プランナー。precision/flags/telemetry 条件から UI 表示と diff backup ポリシーを決定する。",
+  "deps_out": [
+    "src/lib/merge.ts"
+  ],
+  "deps_in": [
+    "src/components/MergeDock.tsx"
+  ],
+  "risks": [
+    "precision 定義と UI の期待がずれると自動適用ガードや backup CTA が誤表示になる"
+  ],
+  "tests": [
+    "tests/lib/merge/phasePlan.spec.ts",
+    "tests/merge/merge-dock-tabs.test.ts",
+    "tests/components/merge.diff.test.tsx"
+  ],
+  "maintenance": {
+    "refresh": "タブ配列や diff backup ポリシーを変更したら MergeDock UI/merge.* テストで挙動を確認し Birdseye を更新する",
+    "tooling": [
+      "pnpm test --filter autotag:merge",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "2025-11-06T09:00:00Z"
+}

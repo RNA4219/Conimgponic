@@ -1,0 +1,26 @@
+{
+  "id": "src/lib/merge/mergeDockAutoSaveBridge.ts",
+  "role": "integration",
+  "public_api": [
+    "attachMergeDockAutoSaveBridge"
+  ],
+  "summary": "MergeDock UI と AutoSave ランナーを window 経由で橋渡しし、flushNow 呼び出しと最終成功時刻スナップショットを共有する薄いブリッジ。unsubscribe で window 汚染を確実に掃除する。",
+  "deps_out": [
+    "src/lib/autosave.ts"
+  ],
+  "deps_in": [],
+  "risks": [
+    "デタッチ忘れで window に参照が残るとテスト間リークや flush 競合を誘発する"
+  ],
+  "tests": [
+    "tests/merge/merge-dock-tabs.test.ts"
+  ],
+  "maintenance": {
+    "refresh": "ブリッジ契約を変えたら MergeDock UI テストで window フックの初期化/解放を確認し Birdseye を更新する",
+    "tooling": [
+      "pnpm test --filter autotag:merge",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "2025-11-06T09:00:00Z"
+}

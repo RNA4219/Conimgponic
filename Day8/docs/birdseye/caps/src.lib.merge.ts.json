@@ -1,0 +1,32 @@
+{
+  "id": "src/lib/merge.ts",
+  "role": "application",
+  "public_api": [
+    "buildMergePlan",
+    "createQueueMergeCommand",
+    "attachAutoSaveLockEvents",
+    "DEFAULT_MERGE_ENGINE"
+  ],
+  "summary": "精緻マージエンジンの中核。セクション分割→スコアリング→自動/レビュー判定を統合し、AutoSave ロックとの同期と telemetry フックを提供する。",
+  "deps_out": [],
+  "deps_in": [
+    "src/lib/merge/phasePlan.ts"
+  ],
+  "risks": [
+    "閾値や precision プロファイルの調整を誤ると自動適用/衝突判定が逸脱する"
+  ],
+  "tests": [
+    "tests/lib/merge/phasePlan.spec.ts",
+    "tests/lib/merge/mergeThreshold.spec.ts",
+    "tests/merge/vscode.diff.test.ts",
+    "tests/components/merge.diff.test.tsx"
+  ],
+  "maintenance": {
+    "refresh": "スコアリングや閾値を変えた際は merge.* テストと UI 回りの差分確認後に Birdseye を更新する",
+    "tooling": [
+      "pnpm test --filter autotag:merge",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "2025-11-06T09:00:00Z"
+}

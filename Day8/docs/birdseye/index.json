@@ -520,6 +520,22 @@
     [
       "docs/ROADMAP_AND_SPECS.md",
       "docs/day8/spec/01_requirements.md"
+    ],
+    [
+      "src/platform/vscode/autosave.ts",
+      "src/lib/autosave.ts"
+    ],
+    [
+      "src/lib/merge/mergeDockAutoSaveBridge.ts",
+      "src/lib/autosave.ts"
+    ],
+    [
+      "src/components/MergeDock.tsx",
+      "src/lib/merge/phasePlan.ts"
+    ],
+    [
+      "src/lib/merge/phasePlan.ts",
+      "src/lib/merge.ts"
     ]
   ],
   "generated_at": "2025-11-06T09:00:00Z",
@@ -803,6 +819,36 @@
       "caps": "docs/birdseye/caps/docs.day8.spec.01_requirements.md.json",
       "mtime": "2025-11-06T09:00:00Z",
       "role": "requirements"
+    },
+    "src/lib/autosave.ts": {
+      "caps": "docs/birdseye/caps/src.lib.autosave.ts.json",
+      "mtime": "2025-11-06T09:00:00Z",
+      "role": "application"
+    },
+    "src/platform/vscode/autosave.ts": {
+      "caps": "docs/birdseye/caps/src.platform.vscode.autosave.ts.json",
+      "mtime": "2025-11-06T09:00:00Z",
+      "role": "integration"
+    },
+    "src/lib/merge.ts": {
+      "caps": "docs/birdseye/caps/src.lib.merge.ts.json",
+      "mtime": "2025-11-06T09:00:00Z",
+      "role": "application"
+    },
+    "src/lib/merge/mergeDockAutoSaveBridge.ts": {
+      "caps": "docs/birdseye/caps/src.lib.merge.mergeDockAutoSaveBridge.ts.json",
+      "mtime": "2025-11-06T09:00:00Z",
+      "role": "integration"
+    },
+    "src/components/MergeDock.tsx": {
+      "caps": "docs/birdseye/caps/src.components.MergeDock.tsx.json",
+      "mtime": "2025-11-06T09:00:00Z",
+      "role": "ui"
+    },
+    "src/lib/merge/phasePlan.ts": {
+      "caps": "docs/birdseye/caps/src.lib.merge.phasePlan.ts.json",
+      "mtime": "2025-11-06T09:00:00Z",
+      "role": "application"
     }
   }
 }
