@@ -379,19 +379,7 @@
               },
               "duration_ms": { "type": "number", "minimum": 0 },
               "detail": { "$ref": "#/definitions/exportDetail" },
-              "summary": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "export_latency_p95": { "type": "number", "minimum": 0 },
-                  "export_success_rate": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  }
-                },
-                "required": ["export_latency_p95", "export_success_rate"]
-              },
+              "summary": { "$ref": "#/definitions/exportSummary" },
               "artifacts": {
                 "type": "array",
                 "items": {
@@ -642,6 +630,19 @@
         "duration_ms": { "type": "number", "minimum": 0 }
       },
       "required": ["duration_ms"]
+    },
+    "exportSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export_latency_p95": { "type": "number", "minimum": 0 },
+        "export_success_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": ["export_latency_p95", "export_success_rate"]
     },
     "flagResolutionSource": {
       "type": "string",
