@@ -98,6 +98,11 @@ const readWorkspaceValue = (
   return undefined
 }
 
+const LOCAL_STORAGE_GUARD_KEYS = Object.freeze([
+  'autosave.enabled',
+  'flag:autoSave.enabled'
+] as const)
+
 export interface AutoSavePolicyResolutionOptions {
   readonly workspace?: WorkspaceConfiguration | null
 }
@@ -1123,9 +1128,8 @@ export function initAutoSave(
         optionsDisabled: fallbackOptionsDisabled
       }
     }
-    const localStorageKeys = ['autosave.enabled', 'flag:autoSave.enabled'] as const
     if (scope.localStorage && typeof scope.localStorage.getItem === 'function') {
-      for (const key of localStorageKeys) {
+      for (const key of LOCAL_STORAGE_GUARD_KEYS) {
         const storage = asBool(scope.localStorage.getItem(key))
         if (storage != null) {
           return {
