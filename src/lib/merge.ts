@@ -26,6 +26,25 @@
 import type { ProjectLockLease } from './locks';
 import { projectLockEvents } from './locks';
 
+import {
+  clamp,
+  DEFAULT_THRESHOLD,
+  PRECISION_CONFIG,
+  PRECISION_FALLBACK,
+  PRECISION_THRESHOLD_CLAMP,
+  resolvePrecision,
+  resolveThreshold,
+} from './merge/profile';
+import {
+  computeCosine,
+  computeJaccard,
+  splitSections,
+  tokenize,
+  type MergeSection,
+} from './merge/sections';
+
+export { PRECISION_THRESHOLD_CLAMP } from './merge/profile';
+
 export type MergeTokenizer = 'char' | 'word' | 'morpheme';
 
 export type MergeGranularity = 'section' | 'line';
@@ -524,16 +543,6 @@ export class MergeError extends Error {
   }
 }
 
-interface MergeSection {
-  readonly id: string;
-  readonly label: string;
-  readonly base: string;
-  readonly manual: string;
-  readonly ai: string;
-  readonly prefer: MergePreference;
-  readonly locked: boolean;
-}
-
 interface SectionDecision {
   readonly hunk: MergeHunk;
   readonly similarity: number;
@@ -542,63 +551,8 @@ interface SectionDecision {
   readonly recommendedCommand: MergePlanRecommendedCommand;
 }
 
-const PRECISION_FALLBACK: MergePrecision = 'legacy';
-
-type PrecisionThresholdClamp = { readonly min: number; readonly max?: number };
-
-export const PRECISION_THRESHOLD_CLAMP: Record<MergePrecision, PrecisionThresholdClamp> = {
-  legacy: { min: 0.65 },
-  beta: { min: 0.75, max: 0.9 },
-  stable: { min: 0.82, max: 0.94 },
-} as const;
-
-const PRECISION_CONFIG: Record<MergePrecision, {
-  readonly min: number;
-  readonly autoDelta: (threshold: number) => number;
-  readonly reviewDelta: (threshold: number) => number;
-  readonly weights: { readonly jaccard: number; readonly cosine: number };
-  readonly lockPolicy: 'strict' | 'advisory';
-  readonly thresholdClamp: (value: number) => number;
-}> = {
-  legacy: {
-    min: PRECISION_THRESHOLD_CLAMP.legacy.min,
-    autoDelta: (threshold) => threshold + 0.08,
-    reviewDelta: (threshold) => threshold - 0.04,
-    weights: { jaccard: 0.5, cosine: 0.5 },
-    lockPolicy: 'strict',
-    thresholdClamp: (value) => Math.max(value, PRECISION_THRESHOLD_CLAMP.legacy.min),
-  },
-  beta: {
-    min: PRECISION_THRESHOLD_CLAMP.beta.min,
-    autoDelta: (threshold) => clamp(threshold + 0.05, 0.8, 0.92),
-    reviewDelta: (threshold) => threshold - 0.02,
-    weights: { jaccard: 0.4, cosine: 0.6 },
-    lockPolicy: 'strict',
-    thresholdClamp: (value) => clamp(value, PRECISION_THRESHOLD_CLAMP.beta.min, PRECISION_THRESHOLD_CLAMP.beta.max!),
-  },
-  stable: {
-    min: PRECISION_THRESHOLD_CLAMP.stable.min,
-    autoDelta: (threshold) => clamp(threshold + 0.03, 0.86, 0.95),
-    reviewDelta: (threshold) => threshold - 0.01,
-    weights: { jaccard: 0.3, cosine: 0.7 },
-    lockPolicy: 'strict',
-    thresholdClamp: (value) => clamp(value, PRECISION_THRESHOLD_CLAMP.stable.min, PRECISION_THRESHOLD_CLAMP.stable.max!),
-  },
-};
-
 const DEFAULT_MAX_PROCESSING_MILLIS = 5_000;
 const DEFAULT_SECTION_SIZE_HINT = 640;
-
-type MaybeNodeProcess = { readonly env?: Record<string, string | undefined> };
-
-function readEnvVar(key: string): string | undefined {
-  const scope = globalThis as typeof globalThis & { process?: MaybeNodeProcess };
-  return scope.process?.env?.[key];
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
 
 function now(): number {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -606,43 +560,7 @@ function now(): number {
   }
   return Date.now();
 }
-
-function normalizePrecision(value?: string | null): MergePrecision {
-  if (!value) {
-    return PRECISION_FALLBACK;
-  }
-  const normalized = value.toLowerCase();
-  if (normalized === 'beta' || normalized === 'stable' || normalized === 'legacy') {
-    return normalized;
-  }
-  return PRECISION_FALLBACK;
-}
-
-function resolvePrecision(overrides?: MergeProfileOverrides): MergePrecision {
-  const envPrecision = readEnvVar('MERGE_PRECISION');
-  const candidate = overrides?.precision ?? envPrecision;
-  return normalizePrecision(candidate ?? undefined);
-}
-
-function parseThreshold(value?: string | null): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const parsed = Number.parseFloat(value);
-  if (Number.isFinite(parsed)) {
-    return parsed;
-  }
-  return undefined;
-}
-
-function resolveThreshold(precision: MergePrecision, overrides?: MergeProfileOverrides): number {
-  const config = PRECISION_CONFIG[precision];
-  const overrideValue = overrides?.threshold;
-  const envThreshold = parseThreshold(readEnvVar('CONIMG_MERGE_THRESHOLD') ?? null);
-  const base = overrideValue ?? envThreshold ?? DEFAULT_MERGE_PROFILE.threshold;
-  return config.thresholdClamp(base);
-}
-
+ 
 function ensureNotAborted(signal?: AbortSignal): void {
   if (!signal) {
     return;
@@ -658,103 +576,6 @@ function ensureNotAborted(signal?: AbortSignal): void {
     retryable: code === 'timeout',
     cause: reason,
   });
-}
-
-function splitSections(input: MergeInput, profile: ResolvedMergeProfile): readonly MergeSection[] {
-  const manualSections = tokenSections(input.ours);
-  const aiSections = tokenSections(input.theirs);
-  const baseSections = tokenSections(input.base);
-  const labels = input.sections ?? [];
-  const descriptors = new Map((input.sectionDescriptors ?? []).map((descriptor) => [descriptor.id, descriptor]));
-  const sections: MergeSection[] = [];
-  const maxLength = Math.max(manualSections.length, aiSections.length, baseSections.length);
-
-  for (let index = 0; index < maxLength; index += 1) {
-    const label = labels[index] ?? `section-${index + 1}`;
-    const descriptor = descriptors.get(label);
-    const prefer = (input.locks?.get(label) ?? descriptor?.preferred ?? profile.prefer) ?? 'none';
-    sections.push({
-      id: label,
-      label,
-      base: baseSections[index] ?? '',
-      manual: manualSections[index] ?? '',
-      ai: aiSections[index] ?? '',
-      prefer,
-      locked: input.locks?.has(label) ?? false,
-    });
-  }
-  return sections;
-}
-
-function tokenSections(text: string): readonly string[] {
-  return text.split(/\r?\n\r?\n/).map((section) => section.trim()).filter((section, index, arr) => section.length > 0 || index === arr.length - 1);
-}
-
-function tokenize(text: string, tokenizer: MergeTokenizer): readonly string[] {
-  if (!text) {
-    return [];
-  }
-  switch (tokenizer) {
-    case 'char':
-      return Array.from(text);
-    case 'word':
-      return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-    case 'morpheme':
-      return text.toLowerCase().match(/[\p{L}\p{N}]{1,2}/gu) ?? [];
-    default:
-      return Array.from(text);
-  }
-}
-
-function computeJaccard(left: readonly string[], right: readonly string[]): number {
-  if (left.length === 0 && right.length === 0) {
-    return 1;
-  }
-  const leftSet = new Set(left);
-  const rightSet = new Set(right);
-  let intersection = 0;
-  leftSet.forEach((token) => {
-    if (rightSet.has(token)) {
-      intersection += 1;
-    }
-  });
-  const union = new Set([...leftSet, ...rightSet]).size;
-  return union === 0 ? 0 : intersection / union;
-}
-
-function computeCosine(left: readonly string[], right: readonly string[]): number {
-  if (left.length === 0 && right.length === 0) {
-    return 1;
-  }
-  const leftFreq = frequency(left);
-  const rightFreq = frequency(right);
-  const shared = new Set([...leftFreq.keys(), ...rightFreq.keys()]);
-  let dot = 0;
-  let leftMagnitude = 0;
-  let rightMagnitude = 0;
-  shared.forEach((token) => {
-    const l = leftFreq.get(token) ?? 0;
-    const r = rightFreq.get(token) ?? 0;
-    dot += l * r;
-  });
-  leftFreq.forEach((value) => {
-    leftMagnitude += value * value;
-  });
-  rightFreq.forEach((value) => {
-    rightMagnitude += value * value;
-  });
-  if (leftMagnitude === 0 || rightMagnitude === 0) {
-    return 0;
-  }
-  return dot / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
-}
-
-function frequency(tokens: readonly string[]): Map<string, number> {
-  const freq = new Map<string, number>();
-  tokens.forEach((token) => {
-    freq.set(token, (freq.get(token) ?? 0) + 1);
-  });
-  return freq;
 }
 
 function blendedScore(metrics: { jaccard: number; cosine: number }, profile: ResolvedMergeProfile): number {
@@ -903,17 +724,17 @@ const resolveProfileInternal = (overrides?: MergeProfileOverrides): ResolvedMerg
 export const DEFAULT_MERGE_PROFILE: ResolvedMergeProfile = {
   tokenizer: 'char',
   granularity: 'section',
-  threshold: 0.75,
+  threshold: DEFAULT_THRESHOLD,
   prefer: 'none',
   seed: undefined,
-  precision: 'legacy',
-  minAutoThreshold: 0.75,
+  precision: PRECISION_FALLBACK,
+  minAutoThreshold: Math.max(DEFAULT_THRESHOLD, PRECISION_CONFIG[PRECISION_FALLBACK].min),
   maxProcessingMillis: DEFAULT_MAX_PROCESSING_MILLIS,
   similarityBands: {
-    auto: 0.83,
-    review: 0.71,
+    auto: PRECISION_CONFIG[PRECISION_FALLBACK].autoDelta(DEFAULT_THRESHOLD),
+    review: PRECISION_CONFIG[PRECISION_FALLBACK].reviewDelta(DEFAULT_THRESHOLD),
   },
-  lockPolicy: 'strict',
+  lockPolicy: PRECISION_CONFIG[PRECISION_FALLBACK].lockPolicy,
   sectionSizeHint: DEFAULT_SECTION_SIZE_HINT,
 };
 
