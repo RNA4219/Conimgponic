@@ -14,60 +14,65 @@ test('MG-U-04: abort signal preempts merge execution and surfaces MergeError con
   const createOptions = (signal) => {
     const published = []
     const queued = []
+    const traceStages = []
     return {
       options: {
         abortSignal: signal,
         events: {
-          publish: (event) => published.push(event),
+          publish: (event) => {
+            published.push(event)
+            traceStages.push(event.trace.entries.map((entry) => entry.stage))
+          },
           subscribe: () => () => undefined,
         },
         queueMergeCommand: (command) => queued.push(command),
       },
       published,
       queued,
+      traceStages,
     }
   }
 
-  await t.test('abort() cancels merge without queueing AutoSave commands', async () => {
+  const waitForAbort = async (signal) => {
+    if (signal.aborted) {
+      return
+    }
+    await new Promise((resolve) => {
+      signal.addEventListener('abort', resolve, { once: true })
+    })
+  }
+
+  const runScenario = async ({ signal, expectedCode }) => {
+    await waitForAbort(signal)
+    const { options, published, queued, traceStages } = createOptions(signal)
+    const expectedReason = signal.reason
+
+    await assert.rejects(async () => {
+      DEFAULT_MERGE_ENGINE.merge3(input, options)
+    }, (error) => {
+      assert.ok(error instanceof MergeError)
+      assert.equal(error.name, 'MergeError')
+      assert.equal(error.code, expectedCode)
+      assert.equal(error.retryable, false)
+      assert.strictEqual(error.cause, expectedReason)
+      return true
+    })
+
+    assert.equal(queued.length, 0)
+    assert.equal(published.length, 0)
+    assert.ok(traceStages.every((stages) => !stages.includes('queue')))
+    assert.equal(traceStages.length, 0)
+  }
+
+  await t.test('AbortController abort() cancels merge without queueing AutoSave commands', async () => {
     const controller = new AbortController()
     controller.abort()
-    const reason = controller.signal.reason
-    const { options, published, queued } = createOptions(controller.signal)
-
-    await assert.rejects(async () => {
-      DEFAULT_MERGE_ENGINE.merge3(input, options)
-    }, (error) => {
-      assert.ok(error instanceof MergeError)
-      assert.equal(error.name, 'MergeError')
-      assert.equal(error.code, 'aborted')
-      assert.equal(error.retryable, false)
-      assert.equal(error.cause, reason)
-      return true
-    })
-
-    assert.equal(published.length, 0)
-    assert.equal(queued.length, 0)
+    await runScenario({ signal: controller.signal, expectedCode: 'aborted' })
   })
 
-  await t.test("abort('timeout') marks merge as retryable timeout", async () => {
-    const controller = new AbortController()
-    controller.abort('timeout')
-    const reason = controller.signal.reason
-    const { options, published, queued } = createOptions(controller.signal)
-
-    await assert.rejects(async () => {
-      DEFAULT_MERGE_ENGINE.merge3(input, options)
-    }, (error) => {
-      assert.ok(error instanceof MergeError)
-      assert.equal(error.name, 'MergeError')
-      assert.equal(error.code, 'timeout')
-      assert.equal(error.retryable, true)
-      assert.equal(error.cause, reason)
-      return true
-    })
-
-    assert.equal(published.length, 0)
-    assert.equal(queued.length, 0)
+  await t.test('AbortSignal.timeout() surfaces non-retryable timeout error', async () => {
+    const signal = AbortSignal.timeout(1)
+    await runScenario({ signal, expectedCode: 'timeout' })
   })
 })
 
