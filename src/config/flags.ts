@@ -122,6 +122,15 @@ export type WorkspaceConfiguration =
 
 export type FlagResolution<T> = FlagValueSnapshot<T>
 
+export interface FeatureFlagSnapshotMap {
+  readonly 'autosave.enabled': AutosaveFlagSnapshot
+  readonly 'plugins.enable': PluginEnableFlagSnapshot
+  readonly 'merge.precision': MergePrecisionFlagSnapshot
+}
+
+export type FeatureFlagSnapshot<Name extends FeatureFlagName> =
+  FeatureFlagSnapshotMap[Name]
+
 const defaultEnv = (() => {
   const metaEnvSource = (import.meta as ImportMeta & { env?: unknown }).env
   const metaEnv: Record<string, unknown> =
@@ -555,13 +564,63 @@ export const FEATURE_FLAG_DEFINITIONS = {
   readonly [Name in FeatureFlagName]: FlagDefinition<FeatureFlagValue<Name>>
 }
 
+export function resolveFeatureFlag(
+  name: 'autosave.enabled',
+  options?: ResolveOptions
+): AutosaveFlagSnapshot
+export function resolveFeatureFlag(
+  name: 'plugins.enable',
+  options?: ResolveOptions
+): PluginEnableFlagSnapshot
+export function resolveFeatureFlag(
+  name: 'merge.precision',
+  options?: ResolveOptions
+): MergePrecisionFlagSnapshot
 export function resolveFeatureFlag<Name extends FeatureFlagName>(
   name: Name,
   options?: ResolveOptions
-): FlagResolution<FeatureFlagValue<Name>> {
+): FeatureFlagSnapshot<Name> {
   const definition =
     FEATURE_FLAG_DEFINITIONS[name] as FlagDefinition<FeatureFlagValue<Name>>
-  return resolveFlag(definition, options)
+  const resolution = resolveFlag(definition, options)
+
+  switch (name) {
+    case 'merge.precision': {
+      const precision = resolution.value as MergePrecision
+      const errors: FlagValidationError[] = [...resolution.errors]
+      const threshold = resolveMergeThreshold(options, errors)
+      const snapshot: MergePrecisionFlagSnapshot = {
+        value: precision,
+        source: resolution.source,
+        errors,
+        precision,
+        threshold
+      }
+      return snapshot as FeatureFlagSnapshot<Name>
+    }
+    case 'autosave.enabled': {
+      const enabled = resolution.value as boolean
+      const snapshot: AutosaveFlagSnapshot = {
+        value: enabled,
+        source: resolution.source,
+        errors: resolution.errors,
+        enabled
+      }
+      return snapshot as FeatureFlagSnapshot<Name>
+    }
+    case 'plugins.enable': {
+      const enabled = resolution.value as boolean
+      const snapshot: PluginEnableFlagSnapshot = {
+        value: enabled,
+        source: resolution.source,
+        errors: resolution.errors,
+        enabled
+      }
+      return snapshot as FeatureFlagSnapshot<Name>
+    }
+  }
+
+  throw new Error(`Unsupported feature flag: ${name}`)
 }
 
 export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
@@ -605,32 +664,14 @@ export function resolveFlags(
   const plugins = resolveFeatureFlag('plugins.enable', options)
   const merge = resolveFeatureFlag('merge.precision', options)
   const clock = options?.clock ?? (() => new Date())
-  const mergeErrors = [...merge.errors]
-  const mergeThreshold = resolveMergeThreshold(options, mergeErrors)
 
   // Phase A 移行中は既存 UI の `localStorage` 直読フェールセーフが残るため、
   // resolveFlags() だけでは値が届かないケースも想定する。App/Merge 側で
   // snapshot 未取得時は従来挙動へフォールバックできるようガイドする。
   const snapshot: FlagSnapshot = {
-    autosave: {
-      value: autosave.value,
-      source: autosave.source,
-      errors: autosave.errors,
-      enabled: autosave.value
-    },
-    plugins: {
-      value: plugins.value,
-      source: plugins.source,
-      errors: plugins.errors,
-      enabled: plugins.value
-    },
-    merge: {
-      value: merge.value,
-      source: merge.source,
-      errors: mergeErrors,
-      precision: merge.value,
-      threshold: mergeThreshold
-    },
+    autosave,
+    plugins,
+    merge,
     updatedAt: clock().toISOString()
   }
 
@@ -638,7 +679,7 @@ export function resolveFlags(
     const errors: FlagResolutionError[] = [
       ...autosave.errors,
       ...plugins.errors,
-      ...mergeErrors
+      ...merge.errors
     ]
     return {
       snapshot,

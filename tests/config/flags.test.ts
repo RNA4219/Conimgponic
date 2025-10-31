@@ -11,11 +11,7 @@ import {
   resolveFeatureFlag,
   resolveFlags
 } from '../../src/config/flags'
-import type {
-  FeatureFlagValue,
-  FlagResolution,
-  MergePrecision
-} from '../../src/config/flags'
+import type { MergePrecision } from '../../src/config/flags'
 
 type Expect<T extends true> = T
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() =>
@@ -25,7 +21,9 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() =>
         : false)
     : false
 
-type MergePrecisionResolution = FlagResolution<FeatureFlagValue<'merge.precision'>>
+const mergePrecisionSnapshotForTypes = resolveFeatureFlag('merge.precision')
+
+type MergePrecisionResolution = typeof mergePrecisionSnapshotForTypes
 type _assertMergePrecisionValue = Expect<
   Equal<MergePrecisionResolution['value'], MergePrecision>
 >
@@ -36,6 +34,9 @@ type _acceptsBeta = Expect<
 type _acceptsStable = Expect<
   'stable' extends MergePrecisionResolution['value'] ? true : false
 >
+
+const _betaAssignable: MergePrecisionResolution['value'] = 'beta'
+const _stableAssignable: MergePrecisionResolution['value'] = 'stable'
 
 type StorageStub = Pick<Storage, 'getItem'>
 
