@@ -18,6 +18,7 @@
 ### 1.2 フラグ解決シーケンス
 - `import.meta.env` → `localStorage` → `docs/CONFIG_FLAGS.md` 既定値の順に解決する。`FlagSnapshot.source` を保持しロールバック調査時の証跡とする。【F:docs/IMPLEMENTATION-PLAN.md†L9-L52】
 - Phase A-1 までは QA 対象アカウントに限り `localStorage` 上書きを許容し、Phase A-2 以降は Collector が配布する `flags:push --env beta` による集中管理へ切り替える。【F:docs/IMPLEMENTATION-PLAN.md†L69-L110】
+- Collector/Bridge の `resolveCollectorPhase` は `flag_source='localStorage'` を QA Canary (`A-1`) として集計し、Phase 行列の基準に沿ってメトリクスを分離する。【F:docs/IMPLEMENTATION-PLAN.md†L52-L101】
 
 ### 1.3 フェーズ移行判定フロー
 1. Analyzer が 15 分毎に算出したメトリクスを `metrics/autosave_merge/<date>.json` に書き出し、`phase` キーで対象フェーズを明示する（Phase 移行時に履歴を切り分けるため）。【F:Day8/docs/day8/design/03_architecture.md†L12-L31】

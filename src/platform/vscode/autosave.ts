@@ -63,7 +63,6 @@ export type {
   SnapshotResultFailureDetailWithPhase,
   SnapshotResultSuccessDetailWithPhase
 } from './autosave/collector.js'
-export { resolveCollectorPhase } from './autosave/collector.js'
 export { statusPhaseForState } from './autosave/state.js'
 
 const toIso = (input: Date): string => input.toISOString()
@@ -320,6 +319,7 @@ export const resolveCollectorPhase = (
   switch (guard.featureFlag.source) {
     case 'env':
     case 'localStorage':
+      // QA localStorage override は Phase A-1 として Collector へ送出する。
       return 'A-1'
     case 'workspace':
       return 'A-2'
@@ -408,26 +408,6 @@ type SnapshotResultCollectorPayload =
       readonly detail: SnapshotResultFailureDetail
       readonly snapshot?: SnapshotResultSnapshot
     }
-
-const publishCollectorSnapshotResult = (
-  request: AutoSaveSnapshotRequestMessage,
-  guard: AutoSavePhaseGuardSnapshot,
-  timestamp: string,
-  payload: SnapshotResultCollectorPayload
-): void => {
-  publishSnapshotResult({
-    phase: resolveCollectorPhase(guard),
-    status: payload.status,
-    detail: payload.detail,
-    snapshot: payload.snapshot,
-    overrides: {
-      reqId: request.reqId,
-      correlationId: request.correlationId,
-      ts: timestamp
-    }
-  })
-}
-
 
 const handleNonRetryableError = (
   options: AutoSaveHostBridgeOptions,
@@ -684,8 +664,13 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         ? request.payload.debounceMs
         : options.policy.debounceMs
     state.guard = mergeGuard(state.guard, incomingGuard, shouldForceDisable)
-    const ts = toIso(requestStartedAt)
     const requestEnvelopePhase = request.phase ?? PHASE_SNAPSHOT
+    const guardPhase = resolveCollectorPhase(state.guard)
+    const telemetryPhase =
+      state.guard.featureFlag.source === 'localStorage' && state.guard.featureFlag.value
+        ? guardPhase
+        : requestEnvelopePhase
+    const ts = toIso(requestStartedAt)
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
@@ -807,7 +792,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           reqId: request.reqId,
           correlationId: request.correlationId,
           retryCount: state.retryCount,
-          phase: requestEnvelopePhase,
+          phase: telemetryPhase,
           performance: createFlushLatencyPerformance(savingLatencyMs),
           debounce_ms: requestDebounceMs,
           latency_ms: savingLatencyMs,
@@ -874,7 +859,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
               state: 'backoff',
               correlationId: request.correlationId,
               retryCount: state.retryCount,
-              phase: requestEnvelopePhase,
+              phase: telemetryPhase,
               performance: createFlushLatencyPerformance(retryLatency),
               debounce_ms: requestDebounceMs,
               latency_ms: retryLatency,
@@ -895,7 +880,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
               retryable: true,
               correlationId: request.correlationId,
               retryCount: state.retryCount,
-              phase: requestEnvelopePhase,
+              phase: telemetryPhase,
               performance: createFlushLatencyPerformance(retryLatency),
               detail: { phase: statusPhase }
             }
@@ -968,7 +953,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           retainedBytes: state.retainedBytes,
           correlationId: request.correlationId,
           retryCount: retryCountForSnapshot,
-          phase: requestEnvelopePhase,
+          phase: telemetryPhase,
           performance: createFlushLatencyPerformance(successLatency),
           detail: { phase: statusPhase }
         }
@@ -998,7 +983,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           reqId: request.reqId,
           correlationId: request.correlationId,
           retryCount: state.retryCount,
-          phase: requestEnvelopePhase,
+          phase: telemetryPhase,
           performance: createFlushLatencyPerformance(successLatency),
           debounce_ms: requestDebounceMs,
           latency_ms: successLatency,

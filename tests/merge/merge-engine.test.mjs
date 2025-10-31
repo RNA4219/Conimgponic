@@ -4,7 +4,7 @@ await register(new URL('./ts-loader.mjs', import.meta.url).href, import.meta.url
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-const { DEFAULT_MERGE_ENGINE, DEFAULT_MERGE_PROFILE, PRECISION_THRESHOLD_CLAMP } = await import('../../src/lib/merge.ts')
+const { DEFAULT_MERGE_ENGINE, DEFAULT_MERGE_PROFILE, PRECISION_THRESHOLD_CLAMP, MergeError } = await import('../../src/lib/merge.ts')
 const { projectLockEvents } = await import('../../src/lib/locks.ts')
 const { createVsCodeMergeBridge } = await import('../../src/platform/vscode/merge/bridge.ts')
 
@@ -339,6 +339,74 @@ test('MG-U-03: stats reset between runs when threshold overrides change bands', 
   assert.equal(overriddenResult.stats.conflictDecisions, 2)
 
   process.env.MERGE_PRECISION = originalPrecision
+})
+
+test('MG-U-04: abort signal preempts merge execution and surfaces MergeError contract', async (t) => {
+  const input = {
+    base: 'Base content',
+    ours: 'Manual content',
+    theirs: 'AI content',
+    sceneId: 'scene-merge-abort',
+  }
+
+  const createOptions = (signal) => {
+    const published = []
+    const queued = []
+    return {
+      options: {
+        abortSignal: signal,
+        events: {
+          publish: (event) => published.push(event),
+          subscribe: () => () => undefined,
+        },
+        queueMergeCommand: (command) => queued.push(command),
+      },
+      published,
+      queued,
+    }
+  }
+
+  await t.test('abort() cancels merge without queueing AutoSave commands', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const reason = controller.signal.reason
+    const { options, published, queued } = createOptions(controller.signal)
+
+    await assert.rejects(async () => {
+      DEFAULT_MERGE_ENGINE.merge3(input, options)
+    }, (error) => {
+      assert.ok(error instanceof MergeError)
+      assert.equal(error.name, 'MergeError')
+      assert.equal(error.code, 'aborted')
+      assert.equal(error.retryable, false)
+      assert.equal(error.cause, reason)
+      return true
+    })
+
+    assert.equal(published.length, 0)
+    assert.equal(queued.length, 0)
+  })
+
+  await t.test("abort('timeout') marks merge as retryable timeout", async () => {
+    const controller = new AbortController()
+    controller.abort('timeout')
+    const reason = controller.signal.reason
+    const { options, published, queued } = createOptions(controller.signal)
+
+    await assert.rejects(async () => {
+      DEFAULT_MERGE_ENGINE.merge3(input, options)
+    }, (error) => {
+      assert.ok(error instanceof MergeError)
+      assert.equal(error.name, 'MergeError')
+      assert.equal(error.code, 'timeout')
+      assert.equal(error.retryable, true)
+      assert.equal(error.cause, reason)
+      return true
+    })
+
+    assert.equal(published.length, 0)
+    assert.equal(queued.length, 0)
+  })
 })
 
 test('non-legacy precision halts queue when similarity underflows review band', () => {

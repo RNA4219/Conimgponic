@@ -110,7 +110,7 @@ scenario(
 
 scenario(
   'legacy localStorage key enables guard resolution from storage',
-  async (t: TestContext, { initAutoSave, runnerTelemetry }) => {
+  async (t: TestContext, { initAutoSave, runnerTelemetry, collectorEvents }) => {
     const storage = createLocalStorageStub({ 'flag:autoSave.enabled': 'true' })
     const scope = globalThis as typeof globalThis & { localStorage?: LocalStorageStub }
     const previousDescriptor = Object.getOwnPropertyDescriptor(scope, 'localStorage')
@@ -138,6 +138,57 @@ scenario(
     assert.ok(telemetry.length > 0)
     const last = telemetry.at(-1)!
     assert.equal(last.detail?.flag_source, 'localStorage')
+
+    const scheduleEvent = collectorEvents.find(
+      (event) => event.event === 'autosave.schedule.requested'
+    )
+    assert.ok(scheduleEvent, 'collector should record autosave.schedule.requested event')
+    assert.equal(scheduleEvent?.phase, 'A-1')
+  }
+)
+
+scenario(
+  'legacy localStorage key alone promotes guard to localStorage=true',
+  async (
+    t: TestContext,
+    { initAutoSave, runnerTelemetry, collectorEvents }
+  ) => {
+    const storage = createLocalStorageStub({ 'flag:autoSave.enabled': 'true' })
+    const scope = globalThis as typeof globalThis & { localStorage?: LocalStorageStub }
+    const previousDescriptor = Object.getOwnPropertyDescriptor(scope, 'localStorage')
+    Object.defineProperty(scope, 'localStorage', {
+      value: storage,
+      configurable: true,
+      writable: true
+    })
+    t.after(() => {
+      storage.clear()
+      if (previousDescriptor) {
+        Object.defineProperty(scope, 'localStorage', previousDescriptor)
+      } else {
+        delete scope.localStorage
+      }
+    })
+
+    const runner = initAutoSave(() => makeStoryboard(['legacy-storage-fallback']), {
+      disabled: false
+    })
+    runner.markDirty({ pendingBytes: 128 })
+
+    const telemetry = runnerTelemetry.filter(
+      (event) => event.detail?.event === 'autosave.schedule.requested'
+    )
+    assert.ok(telemetry.length > 0)
+    const lastTelemetry = telemetry.at(-1)!
+    assert.equal(lastTelemetry.detail?.flag_source, 'localStorage')
+
+    const scheduleEvents = collectorEvents.filter(
+      (event) => event.event === 'autosave.schedule.requested'
+    )
+    assert.ok(scheduleEvents.length > 0)
+    const lastCollectorEvent = scheduleEvents.at(-1)!
+    assert.equal(lastCollectorEvent.flag_source, 'localStorage')
+    assert.equal(lastCollectorEvent.phase, 'A-1')
   }
 )
 
