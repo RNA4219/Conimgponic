@@ -1,0 +1,30 @@
+{
+  "id": "src/platform/vscode/autosave.ts",
+  "role": "integration",
+  "public_api": [
+    "createVscodeAutoSaveBridge",
+    "resolveCollectorPhase",
+    "statusPhaseForState"
+  ],
+  "summary": "VS Code ホスト向け AutoSave ブリッジ。Guard/Lock ステータスをブートストラップし、スナップショット要求や telemetry 送信を橋渡しする。Collector とのフェーズ同期とリトライ判定を担う。",
+  "deps_out": [
+    "src/lib/autosave.ts"
+  ],
+  "deps_in": [],
+  "risks": [
+    "phase/telemetry の同期を誤るとロールバック基準がずれ、Analyzer が誤判定する"
+  ],
+  "tests": [
+    "tests/platform/vscode/autosave.host.status.test.ts",
+    "tests/platform/vscode/autosave/autosave.responsibility.test.ts",
+    "tests/webview/autosave.vscode.test.ts"
+  ],
+  "maintenance": {
+    "refresh": "VS Code 側 API 契約を更新したら bridge/state/collector テストを更新し、Birdseye を再生成する",
+    "tooling": [
+      "pnpm test --filter autotag:autosave",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "2025-11-06T09:00:00Z"
+}
