@@ -24,7 +24,7 @@ type UploadArtifactConfig = {
 type UploadStep = StepConfig & { uses: string; with: UploadArtifactConfig };
 type RunStep = StepConfig & { name: string; run: string };
 const expectedSyftPackageSpecifier = '@anchore/syft@1.16.0';
-const expectedSyftDlxPrefix = `pnpm dlx ${expectedSyftPackageSpecifier}`;
+const expectedSyftDlxPrefix = `pnpm dlx --package=${expectedSyftPackageSpecifier}`;
 
 describe('ci workflow sbom job', () => {
   test('installs syft via pnpm dlx exactly once', async () => {

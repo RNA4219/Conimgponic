@@ -142,7 +142,7 @@ const expectedAuditReportRedirection =
   'pnpm audit --audit-level=moderate --json > audit-report.json';
 const expectedOsvReportOutputFlag = '--output osv-report.json';
 const expectedOsvPackageSpecifier = '@google/osv-scanner@1.7.3';
-const expectedOsvDlxPrefix = `pnpm dlx --package ${expectedOsvPackageSpecifier}`;
+const expectedOsvDlxPrefix = `pnpm dlx --package=${expectedOsvPackageSpecifier}`;
 const expectedPnpmAuditStepId = 'pnpm_audit';
 const expectedPnpmAuditExitCodeExport = 'echo "exit_code=$status" >> "$GITHUB_OUTPUT"';
 const expectedAuditFailureStepName = 'Fail when pnpm audit reports vulnerabilities';
