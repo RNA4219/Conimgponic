@@ -4,7 +4,7 @@ import type { Storyboard } from '../types'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
 import * as policy from './autosave/policy.ts'
-import type { AutoSavePolicy } from './autosave/policy.ts'
+import type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.ts'
 
 export const AUTOSAVE_POLICY = policy.AUTOSAVE_POLICY
 export const AUTOSAVE_DEFAULTS = policy.AUTOSAVE_DEFAULTS
@@ -85,26 +85,6 @@ const LOCAL_STORAGE_GUARD_KEYS = Object.freeze([
   'autosave.enabled',
   'flag:autoSave.enabled'
 ] as const)
-
-export interface AutoSavePolicyResolutionOptions {
-  readonly workspace?: WorkspaceConfiguration | null
-}
-
-type AutoSavePolicyResolutionInput =
-  | WorkspaceConfiguration
-  | null
-  | undefined
-  | AutoSavePolicyResolutionOptions
-
-export const resolveAutoSavePolicy = (
-  _input?: AutoSavePolicyResolutionInput
-): AutoSavePolicy => {
-  void _input
-  // Phase A: 保存ポリシーは固定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 および
-  // `docs/IMPLEMENTATION-PLAN.md` §0.4 の要件に合わせ、入力に関わらず
-  // `AUTOSAVE_POLICY` をそのまま返却する。
-  return AUTOSAVE_POLICY
-}
 
 export type AutoSaveErrorCode =
   | 'lock-unavailable'

@@ -16,6 +16,7 @@ import { mergeCSV, mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'
 import type { AutoSaveInitResult, AutoSaveRunnerEvent } from '../../src/lib/autosave.ts'
 import { installMergeDockAutoSaveBridge } from '../../src/App.tsx'
+import { attachMergeDockAutoSaveBridge } from '../../src/lib/merge/mergeDockAutoSaveBridge.ts'
 
 type MergePrecision = Parameters<typeof planMergeDockTabs>[0]
 type MergeDockTabPlan = ReturnType<typeof planMergeDockTabs>
@@ -245,6 +246,110 @@ test('merge-ui: stable precision backup CTA surfaces via AutoSave window bridge'
       })
     }
     assert.equal(mockWindow.__mergeDockAutoSaveSnapshot?.lastSuccessAt, '2024-05-01T00:12:00.000Z')
+  } finally {
+    detachBridge()
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+    Date.now = originalDateNow
+  }
+})
+
+test('merge-ui: diff backup CTA toggles after autosave refresh bridge', () => {
+  const originalWindow = globalThis.window
+  const originalDateNow = Date.now
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const mockWindow = {
+    localStorage: storage,
+  } as typeof window & {
+    __mergeDockFlushNow?: () => void
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+
+  const handlers: Array<(event: AutoSaveRunnerEvent) => void> = []
+  const runnerSnapshot = { lastSuccessAt: '2024-05-01T00:10:00.000Z' }
+  const runner: AutoSaveInitResult = {
+    snapshot: () => ({
+      phase: 'idle',
+      lastSuccessAt: runnerSnapshot.lastSuccessAt,
+      retryCount: 0,
+    }),
+    flushNow: () => Promise.resolve(),
+    dispose: () => Promise.resolve(),
+    markDirty: () => undefined,
+    onEvent: (handler) => {
+      handlers.push(handler)
+      return () => {
+        const index = handlers.indexOf(handler)
+        if (index >= 0) {
+          handlers.splice(index, 1)
+        }
+      }
+    },
+  }
+
+  let detachBridge: () => void = () => {}
+
+  const render = (): string =>
+    renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags: {
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'stable', precision: 'stable' },
+        },
+        phaseStats: { reviewBandCount: 1, conflictBandCount: 1 },
+      }),
+    )
+
+  try {
+    detachBridge = attachMergeDockAutoSaveBridge(runner)
+
+    Date.now = () => new Date('2024-05-01T00:15:01.000Z').getTime()
+    const overdueHtml = render()
+    assert.match(overdueHtml, /data-testid="merge-dock-backup-cta"/)
+
+    runnerSnapshot.lastSuccessAt = '2024-05-01T00:16:30.000Z'
+    for (const handler of [...handlers]) {
+      handler({
+        type: 'write-succeeded',
+        phase: 'idle',
+        at: '2024-05-01T00:16:31.000Z',
+        payload: { bytes: 1024 },
+      })
+    }
+
+    Date.now = () => new Date('2024-05-01T00:16:45.000Z').getTime()
+    const freshHtml = render()
+    assert.doesNotMatch(freshHtml, /data-testid="merge-dock-backup-cta"/)
+
+    Date.now = () => new Date('2024-05-01T00:21:46.000Z').getTime()
+    const restoredHtml = render()
+    assert.match(restoredHtml, /data-testid="merge-dock-backup-cta"/)
   } finally {
     detachBridge()
     Object.defineProperty(globalThis, 'window', {
