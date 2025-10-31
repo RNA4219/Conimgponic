@@ -263,7 +263,7 @@ export function resolveAutoSaveBootstrapPlanForApp(
 }
 
 export interface MergeDockIntegrationSnapshot {
-  readonly flags: Pick<FlagSnapshot, 'merge'>
+  readonly flagSnapshot: Pick<FlagSnapshot, 'merge'>
   readonly mergeThreshold: number | null
   readonly workspace: ResolveOptions['workspace'] | null
 }
@@ -274,8 +274,9 @@ export function resolveMergeDockIntegration(
 ): MergeDockIntegrationSnapshot {
   const snapshot = plan?.snapshot ?? DEFAULT_FLAG_SNAPSHOT
   const threshold = plan?.snapshot.merge.threshold ?? snapshot.merge.threshold ?? null
+  const flagSnapshot: Pick<FlagSnapshot, 'merge'> = { merge: snapshot.merge }
   return {
-    flags: { merge: snapshot.merge },
+    flagSnapshot,
     mergeThreshold: threshold,
     workspace: options?.workspace ?? null
   }
@@ -394,6 +395,7 @@ export default function App({ resolveOptions }: AppProps = {}){
   const autoSaveRunner = useRef<AutoSaveInitResult | null>(null)
   const mergeDockAutoSaveBridge = useRef<(() => void) | null>(null)
   const mergeDockIntegration = resolveMergeDockIntegration(autoSavePlan, resolveOptions ?? null)
+  const mergeDockFlags = mergeDockIntegration.flagSnapshot
   const toolbarNotifiers: ToolbarNotifiers = {
     alert(message) {
       if (typeof window !== 'undefined' && typeof window.alert === 'function') {
@@ -595,7 +597,7 @@ export default function App({ resolveOptions }: AppProps = {}){
       </div>
       <div className="dock" style={{display: dockOpen?'block':'none'}}>
         <MergeDock
-          flags={mergeDockIntegration.flags}
+          flags={mergeDockFlags}
           mergeThreshold={mergeDockIntegration.mergeThreshold}
           workspace={mergeDockIntegration.workspace}
         />

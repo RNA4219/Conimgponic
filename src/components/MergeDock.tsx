@@ -13,12 +13,9 @@ import {
   diffBackupPolicy,
   isBaseTabId,
   resolveMergeDockPhasePlan,
-  type MergeDockPhasePlan,
   type MergeDockPhaseStats,
   type MergeDockTabId,
-  type MergeDockTabPlan,
 } from '../lib/merge/phasePlan'
-import type { MergePrecision } from '../lib/merge'
 import {
   getDefaultPreference,
   persistMergeDockActiveTab,
@@ -33,7 +30,6 @@ import {
   type WorkspaceConfiguration,
 } from '../lib/merge/threshold'
 import {
-  isDiffBackupCTAEligible,
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
   type DiffBackupAutoSaveState,
@@ -156,7 +152,6 @@ export function MergeDock({
   const autoSave = readAutoSaveState(mergeWindow)
   const { precision, threshold } = useMergeThreshold({
     flags,
-    precision: flags.merge.precision,
     threshold: mergeThreshold,
     workspace,
   })
