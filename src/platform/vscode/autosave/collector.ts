@@ -97,6 +97,8 @@ export const resolveCollectorPhase = (
   }
   switch (guard.featureFlag.source) {
     case 'env':
+    case 'localStorage':
+      // QA localStorage override は Phase A-1 の Collector 集計対象。
       return 'A-1';
     case 'workspace':
       return 'A-2';

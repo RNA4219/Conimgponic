@@ -21,7 +21,6 @@ import {
   type AutoSaveInitResult,
   type AutoSavePhaseGuardSnapshot
 } from './lib/autosave'
-import { attachMergeDockAutoSaveBridge } from './lib/merge/mergeDockAutoSaveBridge'
 import { getDay8Collector } from './telemetry/day8Collector'
 
 interface ToolbarNotifiers {
@@ -225,6 +224,71 @@ export type AutoSaveActivationDecision =
       readonly reason: 'feature-flag-enabled'
     }
 
+type MergeDockWindow = Window & {
+  __mergeDockFlushNow?: () => void
+  __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+}
+
+const resolveMergeDockWindow = (target?: Window): MergeDockWindow | undefined => {
+  if (target) {
+    return target as MergeDockWindow
+  }
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+  return window as MergeDockWindow
+}
+
+const updateMergeDockSnapshot = (
+  runner: AutoSaveInitResult,
+  snapshotBox: { lastSuccessAt?: string }
+): void => {
+  const snapshot = runner.snapshot()
+  snapshotBox.lastSuccessAt = snapshot.lastSuccessAt
+}
+
+export const installMergeDockAutoSaveBridge = (
+  runner: AutoSaveInitResult,
+  target?: Window,
+): (() => void) => {
+  const mergeWindow = resolveMergeDockWindow(target)
+  if (!mergeWindow) {
+    return () => {}
+  }
+
+  const snapshotBox: { lastSuccessAt?: string } = {
+    lastSuccessAt: runner.snapshot().lastSuccessAt,
+  }
+
+  const flushWrapper = (): void => {
+    runner
+      .flushNow()
+      .then(() => {
+        updateMergeDockSnapshot(runner, snapshotBox)
+      })
+      .catch((error) => {
+        console.error('MergeDock: AutoSave flush failed', error)
+      })
+  }
+
+  mergeWindow.__mergeDockAutoSaveSnapshot = snapshotBox
+  mergeWindow.__mergeDockFlushNow = flushWrapper
+
+  const unsubscribe = runner.onEvent(() => {
+    updateMergeDockSnapshot(runner, snapshotBox)
+  })
+
+  return () => {
+    unsubscribe()
+    if (mergeWindow.__mergeDockFlushNow === flushWrapper) {
+      delete mergeWindow.__mergeDockFlushNow
+    }
+    if (mergeWindow.__mergeDockAutoSaveSnapshot === snapshotBox) {
+      delete mergeWindow.__mergeDockAutoSaveSnapshot
+    }
+  }
+}
+
 export function planAutoSave(plan: AutoSaveBootstrapPlan): AutoSaveActivationDecision {
   if (plan.guard.optionsDisabled) {
     return { mode: 'manual-only', guard: plan.guard, reason: 'options-disabled' }
@@ -263,7 +327,7 @@ export function resolveAutoSaveBootstrapPlanForApp(
 }
 
 export interface MergeDockIntegrationSnapshot {
-  readonly flags: Pick<FlagSnapshot, 'merge'>
+  readonly flagSnapshot: Pick<FlagSnapshot, 'merge'>
   readonly mergeThreshold: number | null
   readonly workspace: ResolveOptions['workspace'] | null
 }
@@ -274,8 +338,9 @@ export function resolveMergeDockIntegration(
 ): MergeDockIntegrationSnapshot {
   const snapshot = plan?.snapshot ?? DEFAULT_FLAG_SNAPSHOT
   const threshold = plan?.snapshot.merge.threshold ?? snapshot.merge.threshold ?? null
+  const flagSnapshot: Pick<FlagSnapshot, 'merge'> = { merge: snapshot.merge }
   return {
-    flags: { merge: snapshot.merge },
+    flagSnapshot,
     mergeThreshold: threshold,
     workspace: options?.workspace ?? null
   }
@@ -394,6 +459,7 @@ export default function App({ resolveOptions }: AppProps = {}){
   const autoSaveRunner = useRef<AutoSaveInitResult | null>(null)
   const mergeDockAutoSaveBridge = useRef<(() => void) | null>(null)
   const mergeDockIntegration = resolveMergeDockIntegration(autoSavePlan, resolveOptions ?? null)
+  const mergeDockFlags = mergeDockIntegration.flagSnapshot
   const toolbarNotifiers: ToolbarNotifiers = {
     alert(message) {
       if (typeof window !== 'undefined' && typeof window.alert === 'function') {
@@ -483,7 +549,7 @@ export default function App({ resolveOptions }: AppProps = {}){
     autoSaveRunner.current = runner
 
     mergeDockAutoSaveBridge.current?.()
-    const detachBridge = attachMergeDockAutoSaveBridge(runner)
+    const detachBridge = installMergeDockAutoSaveBridge(runner)
     mergeDockAutoSaveBridge.current = detachBridge
 
     const unsubscribe = watchAutoSaveStoryboardDiffs(useSB, autoSaveRunner, runner)
@@ -595,7 +661,7 @@ export default function App({ resolveOptions }: AppProps = {}){
       </div>
       <div className="dock" style={{display: dockOpen?'block':'none'}}>
         <MergeDock
-          flags={mergeDockIntegration.flags}
+          flags={mergeDockFlags}
           mergeThreshold={mergeDockIntegration.mergeThreshold}
           workspace={mergeDockIntegration.workspace}
         />

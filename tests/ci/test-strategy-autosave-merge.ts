@@ -7,6 +7,7 @@ const NEXT_HEADING_PATTERN = /\n#{2,}\s/u
 export type TestStrategyExpectations = {
   qualityCommands: readonly string[]
   qualitySuites: readonly string[]
+  coverageCleanup: string
   coverageCommand: string
   junitCommand: string
 }
@@ -16,27 +17,40 @@ export async function loadTestStrategyExpectations(
 ): Promise<TestStrategyExpectations> {
   const section = extractCommandSection(await readFile(strategyPath, 'utf8'))
   const qualityCommands: string[] = [], qualitySuites: string[] = []
-  let coverageCommand: string | undefined, junitCommand: string | undefined
+  let coverageCleanup: string | undefined
+  let coverageCommand: string | undefined
+  let junitCommand: string | undefined
 
   for (const raw of extractCommandTokens(section)) {
-    const canonical = canonicalizeCommand(raw)
+    const canonical = raw.includes('pnpm') ? canonicalizeCommand(raw) : raw
+    if (!coverageCleanup && isCoverageCleanupCommand(canonical)) {
+      coverageCleanup = canonical
+      continue
+    }
+    if (!canonical.includes('pnpm')) {
+      continue
+    }
+
     const suite = deriveQualitySuite(canonical)
     if (suite) {
       qualitySuites.push(suite)
       qualityCommands.push(canonical)
       continue
     }
-    if (!coverageCommand && canonical === 'pnpm -s test:coverage') {
+    if (!coverageCommand && isCoverageCommand(canonical)) {
       coverageCommand = canonical
       continue
     }
-    if (!junitCommand && canonical.startsWith('pnpm test --test-reporter=')) {
+    if (!junitCommand && isJunitCommand(canonical)) {
       junitCommand = canonical
     }
   }
 
   if (qualityCommands.length === 0) {
     throw new Error('Test strategy did not provide any quality commands')
+  }
+  if (!coverageCleanup) {
+    throw new Error('Test strategy did not provide coverage cleanup command')
   }
   if (!coverageCommand) {
     throw new Error('Test strategy did not provide coverage command')
@@ -45,7 +59,13 @@ export async function loadTestStrategyExpectations(
     throw new Error('Test strategy did not provide JUnit command')
   }
 
-  return { qualityCommands, qualitySuites, coverageCommand, junitCommand }
+  return {
+    qualityCommands,
+    qualitySuites,
+    coverageCleanup,
+    coverageCommand,
+    junitCommand,
+  }
 }
 
 function extractCommandSection(markdown: string): string {
@@ -63,12 +83,25 @@ function extractCommandTokens(section: string): string[] {
   let match: RegExpExecArray | null
   while ((match = CODE_SPAN_PATTERN.exec(section)) !== null) {
     for (const segment of splitSegments(match[1])) {
-      if (segment.includes('pnpm')) {
-        commands.push(segment.replace(/\s+/g, ' ').trim())
+      const normalized = segment.replace(/\s+/g, ' ').trim()
+      if (normalized) {
+        commands.push(normalized)
       }
     }
   }
   return commands
+}
+
+function isCoverageCleanupCommand(command: string): boolean {
+  return /rm\s+-rf\s+coverage/u.test(command)
+}
+
+function isCoverageCommand(command: string): boolean {
+  return /pnpm(?:\s+-s)?\s+(?:test:coverage|test\s+--filter\s+coverage)/u.test(command)
+}
+
+function isJunitCommand(command: string): boolean {
+  return /pnpm(?:\s+-s)?\s+test\b.*--test-reporter=junit/u.test(command)
 }
 
 function splitSegments(input: string): string[] {

@@ -4,7 +4,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 type JsYamlModule = { load: (input: string) => unknown };
-export type WorkflowYaml = { jobs?: Record<string, unknown> } & Record<string, unknown>;
+export type WorkflowYaml = { jobs?: Record<string, WorkflowJob> } & Record<string, unknown>;
+
+type WorkflowJob = { steps?: WorkflowStep[] } & Record<string, unknown>;
+type WorkflowStep = { uses?: unknown; with?: unknown } & Record<string, unknown>;
+type UploadArtifactConfig = { path?: unknown } & Record<string, unknown>;
 
 type NodeError = Error & { code?: string };
 
@@ -40,6 +44,52 @@ export async function loadWorkflow(): Promise<WorkflowYaml> {
     })();
   }
   return workflowCache;
+}
+
+export async function listUploadArtifactPaths(jobName: string): Promise<string[]> {
+  const workflow = await loadWorkflow();
+  const jobs = workflow.jobs;
+  if (!jobs || typeof jobs !== 'object') {
+    throw new Error('workflow must define jobs object');
+  }
+  const job = jobs[jobName];
+  if (!job || typeof job !== 'object') {
+    throw new Error(`workflow job "${jobName}" must exist`);
+  }
+  const steps = job.steps;
+  if (!Array.isArray(steps)) {
+    return [];
+  }
+  const uploads: string[] = [];
+  for (const step of steps) {
+    if (!step || typeof step !== 'object') {
+      continue;
+    }
+    const uses = step.uses;
+    if (typeof uses !== 'string') {
+      continue;
+    }
+    if (!uses.trim().startsWith('actions/upload-artifact@')) {
+      continue;
+    }
+    const config = step.with;
+    if (!config || typeof config !== 'object') {
+      continue;
+    }
+    const path = (config as UploadArtifactConfig).path;
+    if (typeof path !== 'string') {
+      continue;
+    }
+    uploads.push(...normalizeArtifactPaths(path));
+  }
+  return uploads;
+}
+
+function normalizeArtifactPaths(input: string): string[] {
+  return input
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 export function clearModuleCache(): void {

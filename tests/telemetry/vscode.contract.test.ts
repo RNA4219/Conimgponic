@@ -121,8 +121,14 @@ const assertPayloadSchema = (
   assertOk(payloadSchema.required, 'payload schema must define required fields')
   deepStrictEqual(payloadSchema.required, Array.from(expectedRequired))
   if (options?.summary) {
-    assertOk(payloadSchema.properties, 'payload schema must define properties for summary validation')
-    const summarySchema = resolveSchemaRef(payloadSchema.properties.summary)
+    assertOk(
+      expectedRequired.includes('summary'),
+      'payload schema must require summary field when validating summary metrics',
+    )
+    const payloadProperties = payloadSchema.properties
+    assertOk(payloadProperties, 'payload schema must define properties for summary validation')
+    assertOk('summary' in payloadProperties, 'payload schema must define summary property')
+    const summarySchema = resolveSchemaRef(payloadProperties.summary)
     assertOk(summarySchema, 'payload schema must define summary schema')
     strictEqual(summarySchema.type, 'object', 'payload summary must be object')
     strictEqual(
@@ -224,17 +230,25 @@ const validateExportResultTelemetryAgainstSchema = (
 
   const latencySchema = resolveSchemaRef(summaryProperties.export_latency_p95)
   assertOk(latencySchema, 'export.result payload summary must define export_latency_p95 schema')
+  const summaryRecord = summary as {
+    readonly export_latency_p95?: unknown
+    readonly export_success_rate?: unknown
+  }
+  const latencyValue = summaryRecord.export_latency_p95
+  assertOk(typeof latencyValue === 'number', 'export.result payload summary.export_latency_p95 must be number')
   assertSummaryMetricWithinSchema(
     latencySchema,
-    (summary as { readonly export_latency_p95?: unknown }).export_latency_p95,
+    latencyValue,
     'export.result payload summary.export_latency_p95',
   )
 
   const successSchema = resolveSchemaRef(summaryProperties.export_success_rate)
   assertOk(successSchema, 'export.result payload summary must define export_success_rate schema')
+  const successValue = summaryRecord.export_success_rate
+  assertOk(typeof successValue === 'number', 'export.result payload summary.export_success_rate must be number')
   assertSummaryMetricWithinSchema(
     successSchema,
-    (summary as { readonly export_success_rate?: unknown }).export_success_rate,
+    successValue,
     'export.result payload summary.export_success_rate',
   )
 }
@@ -2297,6 +2311,61 @@ describe('vscode extension telemetry contract (RED)', () => {
       Object.keys(payload.summary).sort(),
       ['export_latency_p95', 'export_success_rate'].sort(),
     )
+  })
+  test('telemetry schema は export.result summary を definitions として公開する', () => {
+    const exportThen = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'export.result',
+    )
+    const payloadSchema = assertPayloadSchema(exportThen, [
+      'status',
+      'runId',
+      'matchRate',
+      'formats',
+      'duration_ms',
+      'detail',
+      'summary',
+      'artifacts',
+    ])
+
+    assertOk(payloadSchema.properties, 'export.result payload must define properties')
+    const summaryProperty = payloadSchema.properties.summary
+    assertOk(summaryProperty, 'export.result payload must expose summary property')
+    strictEqual(
+      summaryProperty.$ref,
+      '#/definitions/exportSummary',
+      'export.result payload summary must reference exportSummary definition',
+    )
+
+    const summaryDefinition = telemetrySchema.definitions?.exportSummary
+    assertOk(summaryDefinition, 'telemetry schema must define exportSummary definition')
+    strictEqual(summaryDefinition.type, 'object', 'exportSummary definition must be object')
+    strictEqual(
+      summaryDefinition.additionalProperties,
+      false,
+      'exportSummary definition must disable additional properties',
+    )
+    assertOk(summaryDefinition.required, 'exportSummary definition must define required fields')
+    deepStrictEqual(
+      Array.from(summaryDefinition.required).sort(),
+      ['export_latency_p95', 'export_success_rate'].sort(),
+    )
+    assertOk(summaryDefinition.properties, 'exportSummary definition must expose properties')
+
+    const latencySchema = resolveSchemaRef(summaryDefinition.properties.export_latency_p95)
+    assertOk(latencySchema, 'exportSummary definition must expose export_latency_p95 schema')
+    strictEqual(latencySchema.type, 'number', 'export_latency_p95 schema must be number')
+    strictEqual(latencySchema.minimum, 0, 'export_latency_p95 schema must enforce minimum 0')
+
+    const successRateSchema = resolveSchemaRef(
+      summaryDefinition.properties.export_success_rate,
+    )
+    assertOk(
+      successRateSchema,
+      'exportSummary definition must expose export_success_rate schema',
+    )
+    strictEqual(successRateSchema.type, 'number', 'export_success_rate schema must be number')
+    strictEqual(successRateSchema.minimum, 0, 'export_success_rate schema must enforce minimum 0')
+    strictEqual(successRateSchema.maximum, 1, 'export_success_rate schema must enforce maximum 1')
   })
   test('export.result failure payload は error/entries/backoff を Collector へ送信する', () => {
     const runId = 'run-telemetry-failure'

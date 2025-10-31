@@ -21,7 +21,7 @@ langs: [typescript]
 
 ## Objective
 
-MergeDock の Diff タブを Integration & Review フェーズ向けに開放し、`beta` / `stable` precision での UI 露出とガード挙動を検証可能にする。
+App と MergeDock の AutoSave 連携を整備し、`docs/IMPLEMENTATION-PLAN.md` と `docs/design/app-merge-dock-integration.md` で定義された Diff タブのバックアップ CTA 制御をタスク駆動で検証する。
 
 ## Scope
 
@@ -31,17 +31,17 @@ MergeDock の Diff タブを Integration & Review フェーズ向けに開放し
 ## Requirements
 
 - Behavior:
-  - precision=`beta` / `stable` で `phaseStats` が無い場合でも Diff タブが DOM に描画される。
-  - ガード未達成時は `data-merge-diff-enabled=false` として CTA/操作が無効化され、レビュー帯域が検出されると `true` に遷移する。
+  - AutoSave ランナー確立時に `window.__mergeDockFlushNow` / `window.__mergeDockAutoSaveSnapshot` を公開し、`docs/design/app-merge-dock-integration.md` §3-4 の統合フロー通りに Diff タブ CTA を制御する。
+  - precision=`beta` / `stable` では `phaseStats` 未提供でも Diff タブを描画し、`docs/IMPLEMENTATION-PLAN.md` §0.4 の 5 分しきい値と AutoSave スナップショット同期でバックアップ CTA を露出する。
 - I/O Contract:
-  - Input: `FlagSnapshot.merge.precision`, `MergeDockPhaseStats?`
-  - Output: `data-merge-diff-visible`, `data-merge-diff-enabled` 属性、およびバックアップ CTA の表示制御
+  - Input: `FlagSnapshot.merge.precision`, `MergeDockPhaseStats?`, `window.__mergeDockAutoSaveSnapshot`
+  - Output: `data-merge-diff-visible`, `data-merge-diff-enabled`, `data-testid="merge-dock-backup-cta"`
 - Constraints:
   - 既存 API の互換性維持 / 新規依存の追加禁止
-  - `pnpm lint && pnpm typecheck` と対象テストの通過
+  - `pnpm lint && pnpm typecheck && pnpm test --filter merge` の通過
 - Acceptance Criteria:
-  - `tests/components/merge.diff.test.tsx` と `tests/merge/merge-dock-tabs.test.ts` にガード差異のテストが追加されグリーン
-  - Diff タブのバックアップ CTA が `data-merge-diff-enabled=true` の条件でのみ描画される
+  - `tests/merge/merge-dock-tabs.test.ts` に Diff バックアップ CTA 再現テストが追加され、AutoSave ブリッジ経由で `flushNow` を呼び出せることを検証する。
+  - `src/App.tsx` が AutoSave 初期化時に `window` ブリッジを確実に設定/解除し、CTA がロールアウト計画に沿って露出する。
 
 ## Affected Paths
 
@@ -54,9 +54,7 @@ MergeDock の Diff タブを Integration & Review フェーズ向けに開放し
 ## Local Commands（存在するものだけ実行）
 
 ```bash
-pnpm lint && pnpm typecheck
-pnpm test tests/components/merge.diff.test.tsx
-pnpm test tests/merge/merge-dock-tabs.test.ts
+pnpm lint && pnpm typecheck && pnpm test --filter merge
 ```
 
 ## Deliverables
@@ -70,11 +68,11 @@ pnpm test tests/merge/merge-dock-tabs.test.ts
 
 ### Steps
 
-1) `MergeDock.tsx` のタブプラン/ガード判定を整理し、`data-merge-diff-visible` と `data-merge-diff-enabled` を分離する。
-2) テスト (`merge.diff` / `merge-dock-tabs`) を先に更新し、`beta` / `stable` precision の露出とガード差異を RED にする。
-3) コンポーネント実装を更新し、ガード未達時でも Diff タブが表示されるように調整する。
-4) ドキュメント（設計・実装計画）に新しいタブ露出ルールとガードフローを追記する。
-5) `pnpm lint && pnpm typecheck` および対象テストを実行し、Integration & Review 用ゲートを通過する。
+1) `docs/IMPLEMENTATION-PLAN.md` と `docs/design/app-merge-dock-integration.md` の CTA 条件を確認し、テスト観点を洗い出す。
+2) `tests/merge/merge-dock-tabs.test.ts` へ AutoSave ブリッジ経由のバックアップ CTA 再現テストを追加し RED にする。
+3) `src/App.tsx` の AutoSave 初期化で `window` ブリッジを設定/解除し、`lastSuccessAt` 同期を `runner.onEvent` で実装する。
+4) 必要に応じて `MergeDock.tsx` の CTA 判定を新しいスナップショットフィールドへ合わせる。
+5) `pnpm lint && pnpm typecheck && pnpm test --filter merge` を実行し、ゲート通過を確認する。
 
 ## Patch
 
@@ -94,9 +92,7 @@ pnpm test tests/merge/merge-dock-tabs.test.ts
 
 ### Run gates
 
-- pnpm lint && pnpm typecheck
-- pnpm test tests/components/merge.diff.test.tsx
-- pnpm test tests/merge/merge-dock-tabs.test.ts
+- pnpm lint && pnpm typecheck && pnpm test --filter merge
 
 ## Notes
 

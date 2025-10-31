@@ -2738,6 +2738,7 @@ describe('createVscodeAutoSaveBridge', () => {
         event.name === 'autosave.status' && event.properties?.correlationId === 'corr-guard-local-storage'
     )
     assert.ok(status, 'localStorage ガードシナリオでは autosave.status telemetry が必要')
+    assert.equal(status.properties?.phase, 'A-1')
     assert.equal(status.properties?.guard?.current, 'A-1')
   })
 
