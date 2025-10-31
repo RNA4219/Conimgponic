@@ -45,7 +45,7 @@ describe('ci workflow sbom job', () => {
 
     const installScript = installSteps[0].run;
     assert(
-      installScript.includes(expectedSyftDlxPrefix),
+      installScript.includes(`${expectedSyftDlxPrefix} --version`),
       'Install Syft step must execute pnpm dlx for @anchore/syft with a pinned version',
     );
     assert(
@@ -147,7 +147,7 @@ describe('ci workflow sbom job', () => {
 
     const runScript = generateStep.run;
     assert.ok(
-      runScript.includes(`${expectedSyftDlxPrefix} syft `),
+      runScript.includes(`${expectedSyftDlxPrefix} packages `),
       'Generate SBOM step must invoke syft CLI via pnpm dlx with a pinned version',
     );
     assert.ok(
