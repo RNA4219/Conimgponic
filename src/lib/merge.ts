@@ -655,7 +655,7 @@ function ensureNotAborted(signal?: AbortSignal): void {
     ? 'timeout'
     : 'aborted';
   throw new MergeError(code, code === 'timeout' ? 'Merge operation timed out.' : 'Merge operation was aborted.', {
-    retryable: code === 'timeout',
+    retryable: false,
     cause: reason,
   });
 }

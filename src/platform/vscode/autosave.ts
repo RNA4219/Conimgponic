@@ -255,17 +255,6 @@ const emitWarn = (options: AutoSaveHostBridgeOptions, event: AutoSaveWarnEvent):
   options.warn?.(event)
 }
 
-const computeFlushLatencyMs = (state: InternalState, nowMs: number): number => {
-  const startedAt = state.flushStartedAtMs
-  if (typeof startedAt !== 'number') {
-    return 0
-  }
-  return Math.max(0, nowMs - startedAt)
-}
-
-const nextReqId = (state: InternalState): string => `autosave-${++state.reqCounter}`
-const nextCorrelationId = (state: InternalState): string => `autosave-corr-${++state.correlationCounter}`
-
 const clampMilliseconds = (value: number): number => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return 0
@@ -310,6 +299,8 @@ const computeLagSeconds = (
     return undefined
   }
   return Math.max(0, Math.floor(diffMs / 1000))
+}
+
 }
 
 type SnapshotResultDetailPhase = AutoSaveStatusSnapshot['phase']

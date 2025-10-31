@@ -91,6 +91,23 @@ export const ZERO_FLUSH_LATENCY: AutoSaveTelemetryEventProperties['performance']
 } as const;
 
 export { resolveCollectorPhase };
+export const resolveCollectorPhase = (
+  guard: AutoSavePhaseGuardSnapshot
+): RolloutPhase => {
+  if (!guard.featureFlag.value || guard.optionsDisabled) {
+    return 'A-0';
+  }
+  switch (guard.featureFlag.source) {
+    case 'env':
+    case 'localStorage':
+      // Phase 行列: QA 向け localStorage 上書きは Phase A-1 として集計する。
+      return 'A-1';
+    case 'workspace':
+      return 'A-2';
+    default:
+      return 'A-0';
+  }
+};
 
 export const resolveGuardRollbackPhase = (phase: RolloutPhase): RolloutPhase => {
   switch (phase) {
