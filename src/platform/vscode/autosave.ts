@@ -253,17 +253,6 @@ const emitWarn = (options: AutoSaveHostBridgeOptions, event: AutoSaveWarnEvent):
   options.warn?.(event)
 }
 
-const computeFlushLatencyMs = (state: InternalState, nowMs: number): number => {
-  const startedAt = state.flushStartedAtMs
-  if (typeof startedAt !== 'number') {
-    return 0
-  }
-  return Math.max(0, nowMs - startedAt)
-}
-
-const nextReqId = (state: InternalState): string => `autosave-${++state.reqCounter}`
-const nextCorrelationId = (state: InternalState): string => `autosave-corr-${++state.correlationCounter}`
-
 const clampMilliseconds = (value: number): number => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return 0
@@ -289,25 +278,6 @@ const normalizeErrorMessage = (message: string | undefined, fallback: string): s
   }
   const trimmed = message.trim()
   return trimmed ? trimmed : fallback
-}
-
-const computeLagSeconds = (
-  lastSuccessAt: string | undefined,
-  timestamp: string
-): number | undefined => {
-  if (!lastSuccessAt) {
-    return undefined
-  }
-  const last = Date.parse(lastSuccessAt)
-  const current = Date.parse(timestamp)
-  if (!Number.isFinite(last) || Number.isNaN(last) || !Number.isFinite(current) || Number.isNaN(current)) {
-    return undefined
-  }
-  const diffMs = current - last
-  if (!Number.isFinite(diffMs) || Number.isNaN(diffMs) || diffMs < 0) {
-    return undefined
-  }
-  return Math.max(0, Math.floor(diffMs / 1000))
 }
 
 export const resolveCollectorPhase = (
