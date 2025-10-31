@@ -1,6 +1,7 @@
 /// <reference types="node" />
 process.env.TS_NODE_COMPILER_OPTIONS ??= JSON.stringify({ moduleResolution: 'bundler' });
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
 import { loadWorkflow } from './utils/workflow-loader.js';
 type WorkflowYaml = { jobs?: { build?: WorkflowJob } };
@@ -20,6 +21,13 @@ describe('ci workflow build job', () => {
         (step) => typeof step.run === 'string' && step.run.includes('pnpm --reporter ndjson -s build'),
       );
       if (!buildRun || typeof buildRun.run !== 'string') throw new Error('build job must run pnpm --reporter ndjson -s build');
+      const installExpectation = await loadBuildInstallExpectation();
+      const canonicalInstall = canonicalizeInstallCommand(installExpectation);
+      const buildRunIndex = buildSteps.indexOf(buildRun);
+      const installStep = findInstallStep(buildSteps, canonicalInstall, buildRunIndex);
+      if (!installStep) {
+        throw new Error('build job must install dependencies before running build');
+      }
       const distUpload = expectUploadStep(buildSteps, 'dist', 'build job must upload dist artifact');
       const distCondition = distUpload.if;
       if (typeof distCondition !== 'string') throw new TypeError('dist artifact upload must configure if string');
@@ -64,6 +72,55 @@ describe('ci workflow build job', () => {
     }
   });
 });
+async function loadBuildInstallExpectation(): Promise<string> {
+  const specSource = await readFile(new URL('../../docs/CI-SPEC.md', import.meta.url), 'utf8');
+  const buildLine = specSource
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith('4. **build**:'));
+  if (!buildLine) throw new Error('CI spec must define build job requirements');
+  const inlineCommands = Array.from(buildLine.matchAll(/`([^`]+)`/gu), (match) => match[1]?.trim()).filter(Boolean);
+  if (inlineCommands.length === 0) {
+    throw new Error('CI spec build job must document expected commands');
+  }
+  const [pipeline] = inlineCommands;
+  if (!pipeline) throw new Error('CI spec build job command pipeline must be present');
+  const [firstCommand] = pipeline
+    .split('&&')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (!firstCommand) {
+    throw new Error('CI spec build job must specify install command before build');
+  }
+  return firstCommand;
+}
+function canonicalizeInstallCommand(command: string): string {
+  const trimmed = command.trim();
+  if (!trimmed.startsWith('pnpm ')) {
+    throw new Error('build install expectation must start with pnpm command');
+  }
+  const tokens = trimmed.split(/\s+/u);
+  if (tokens.length < 2) {
+    throw new Error('build install expectation must include subcommand');
+  }
+  const subcommand = tokens[1];
+  if (subcommand === 'i') {
+    tokens[1] = 'install';
+  } else if (subcommand !== 'install') {
+    throw new Error('build install expectation must resolve to pnpm install');
+  }
+  return `${tokens[0]} ${tokens[1]}`;
+}
+function findInstallStep(steps: StepConfig[], canonicalInstall: string, buildRunIndex: number): StepConfig | undefined {
+  if (buildRunIndex < 0) return undefined;
+  const slice = steps.slice(0, buildRunIndex);
+  return slice.find((step) => {
+    if (!step || typeof step !== 'object') return false;
+    if (typeof step.run !== 'string') return false;
+    const normalizedRun = step.run.replace(/\s+/gu, ' ').trim();
+    return normalizedRun.includes(canonicalInstall);
+  });
+}
 function splitLines(input: string): string[] {
   return input.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
 }
