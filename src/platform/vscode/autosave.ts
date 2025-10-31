@@ -11,6 +11,7 @@ import type {
   AutoSavePolicy,
   AutoSaveError
 } from '../../lib/autosave'
+import { resolveCollectorPhase } from '../../lib/autosave/collector-phase.js'
 import { resolveFlags } from '../../config/index.js'
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
 import {
@@ -63,6 +64,7 @@ export type {
   SnapshotResultFailureDetailWithPhase,
   SnapshotResultSuccessDetailWithPhase
 } from './autosave/collector.js'
+export { resolveCollectorPhase } from '../../lib/autosave/collector-phase.js'
 export { statusPhaseForState } from './autosave/state.js'
 
 const toIso = (input: Date): string => input.toISOString()
@@ -280,22 +282,25 @@ const normalizeErrorMessage = (message: string | undefined, fallback: string): s
   return trimmed ? trimmed : fallback
 }
 
-export const resolveCollectorPhase = (
-  guard: AutoSavePhaseGuardSnapshot
-): RolloutPhase => {
-  if (!guard.featureFlag.value || guard.optionsDisabled) {
-    return 'A-0'
+const computeLagSeconds = (
+  lastSuccessAt: string | undefined,
+  timestamp: string
+): number | undefined => {
+  if (!lastSuccessAt) {
+    return undefined
   }
-  switch (guard.featureFlag.source) {
-    case 'env':
-    case 'localStorage':
-      // QA localStorage override は Phase A-1 として Collector へ送出する。
-      return 'A-1'
-    case 'workspace':
-      return 'A-2'
-    default:
-      return 'A-0'
+  const last = Date.parse(lastSuccessAt)
+  const current = Date.parse(timestamp)
+  if (!Number.isFinite(last) || Number.isNaN(last) || !Number.isFinite(current) || Number.isNaN(current)) {
+    return undefined
   }
+  const diffMs = current - last
+  if (!Number.isFinite(diffMs) || Number.isNaN(diffMs) || diffMs < 0) {
+    return undefined
+  }
+  return Math.max(0, Math.floor(diffMs / 1000))
+}
+
 }
 
 type SnapshotResultDetailPhase = AutoSaveStatusSnapshot['phase']
