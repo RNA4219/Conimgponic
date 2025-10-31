@@ -5,11 +5,13 @@ import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
 import * as policy from './autosave/policy.ts'
 import type { AutoSavePolicy } from './autosave/policy.ts'
+import { resolveCollectorPhase } from './autosave/collector-phase.ts'
 
 export const AUTOSAVE_POLICY = policy.AUTOSAVE_POLICY
 export const AUTOSAVE_DEFAULTS = policy.AUTOSAVE_DEFAULTS
 export const AUTOSAVE_MAX_BYTES = policy.AUTOSAVE_MAX_BYTES
 export const resolveAutoSavePolicy = policy.resolveAutoSavePolicy
+export { resolveCollectorPhase }
 export type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.ts'
 
 export type StoryboardProvider = () => Storyboard
@@ -296,22 +298,6 @@ const publishGuardCollectorEvent = (
     guard,
     ts: new Date().toISOString()
   })
-}
-
-const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): AutoSaveEnvelopePhase => {
-  if (!guard.featureFlag.value || guard.optionsDisabled) {
-    return 'A-0'
-  }
-  switch (guard.featureFlag.source) {
-    case 'env':
-    case 'localStorage':
-      // Phase 行列: QA 向け localStorage 上書きは Phase A-1 として集計する。
-      return 'A-1'
-    case 'workspace':
-      return 'A-2'
-    default:
-      return 'A-0'
-  }
 }
 
 interface AutoSaveWriteCompletedEvent {
