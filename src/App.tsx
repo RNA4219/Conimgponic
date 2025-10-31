@@ -21,7 +21,6 @@ import {
   type AutoSaveInitResult,
   type AutoSavePhaseGuardSnapshot
 } from './lib/autosave'
-import { attachMergeDockAutoSaveBridge } from './lib/merge/mergeDockAutoSaveBridge'
 import { getDay8Collector } from './telemetry/day8Collector'
 
 interface ToolbarNotifiers {
@@ -224,6 +223,71 @@ export type AutoSaveActivationDecision =
       readonly guard: AutoSavePhaseGuardSnapshot
       readonly reason: 'feature-flag-enabled'
     }
+
+type MergeDockWindow = Window & {
+  __mergeDockFlushNow?: () => void
+  __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+}
+
+const resolveMergeDockWindow = (target?: Window): MergeDockWindow | undefined => {
+  if (target) {
+    return target as MergeDockWindow
+  }
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+  return window as MergeDockWindow
+}
+
+const updateMergeDockSnapshot = (
+  runner: AutoSaveInitResult,
+  snapshotBox: { lastSuccessAt?: string }
+): void => {
+  const snapshot = runner.snapshot()
+  snapshotBox.lastSuccessAt = snapshot.lastSuccessAt
+}
+
+export const installMergeDockAutoSaveBridge = (
+  runner: AutoSaveInitResult,
+  target?: Window,
+): (() => void) => {
+  const mergeWindow = resolveMergeDockWindow(target)
+  if (!mergeWindow) {
+    return () => {}
+  }
+
+  const snapshotBox: { lastSuccessAt?: string } = {
+    lastSuccessAt: runner.snapshot().lastSuccessAt,
+  }
+
+  const flushWrapper = (): void => {
+    runner
+      .flushNow()
+      .then(() => {
+        updateMergeDockSnapshot(runner, snapshotBox)
+      })
+      .catch((error) => {
+        console.error('MergeDock: AutoSave flush failed', error)
+      })
+  }
+
+  mergeWindow.__mergeDockAutoSaveSnapshot = snapshotBox
+  mergeWindow.__mergeDockFlushNow = flushWrapper
+
+  const unsubscribe = runner.onEvent(() => {
+    updateMergeDockSnapshot(runner, snapshotBox)
+  })
+
+  return () => {
+    unsubscribe()
+    if (mergeWindow.__mergeDockFlushNow === flushWrapper) {
+      delete mergeWindow.__mergeDockFlushNow
+    }
+    if (mergeWindow.__mergeDockAutoSaveSnapshot === snapshotBox) {
+      delete mergeWindow.__mergeDockAutoSaveSnapshot
+    }
+  }
+}
 
 export function planAutoSave(plan: AutoSaveBootstrapPlan): AutoSaveActivationDecision {
   if (plan.guard.optionsDisabled) {
@@ -483,7 +547,7 @@ export default function App({ resolveOptions }: AppProps = {}){
     autoSaveRunner.current = runner
 
     mergeDockAutoSaveBridge.current?.()
-    const detachBridge = attachMergeDockAutoSaveBridge(runner)
+    const detachBridge = installMergeDockAutoSaveBridge(runner)
     mergeDockAutoSaveBridge.current = detachBridge
 
     const unsubscribe = watchAutoSaveStoryboardDiffs(useSB, autoSaveRunner, runner)
