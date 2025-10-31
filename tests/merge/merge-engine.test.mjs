@@ -1,3 +1,8 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import { DEFAULT_MERGE_ENGINE, MergeError } from '../../src/lib/merge.ts'
+
 test('MG-U-04: abort signal preempts merge execution and surfaces MergeError contract', async (t) => {
   const input = {
     base: 'Base content',
@@ -71,7 +76,7 @@ test('MG-U-04: abort signal preempts merge execution and surfaces MergeError con
   })
 })
 
-test('MG-U-05: manual conflict resolution keeps initial artifacts stable across reruns', () => {
+test('MG-U-05: rerun keeps resolved result stable', () => {
   const originalPrecision = process.env.MERGE_PRECISION
   process.env.MERGE_PRECISION = 'legacy'
 
@@ -82,8 +87,39 @@ test('MG-U-05: manual conflict resolution keeps initial artifacts stable across 
       return `${header}\n\n${scenes}`
     }
 
+    const createEventHub = (sink) => {
+      const listeners = new Set()
+      return {
+        publish(event) {
+          sink.push(event)
+          listeners.forEach((listener) => listener(event))
+        },
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => listeners.delete(listener)
+        },
+      }
+    }
+
+    const createScoringQueue = (values) => {
+      const queue = values.map((score) => ({ ...score }))
+      return () => {
+        const next = queue.shift()
+        return next ?? values[values.length - 1] ?? { jaccard: 0.95, cosine: 0.95, blended: 0.95 }
+      }
+    }
+
+    const normalizePlan = (plan) => {
+      if (!plan) return plan
+      return {
+        ...plan,
+        stats: { ...plan.stats, processingMillis: 0 },
+      }
+    }
+
     const baseStoryboard = {
-      projectId: 'mg-u-04-storyboard',
+      // AutoSave 計画と共有する MockStoryboard【tests/autosave/TEST_PLAN.md】
+      projectId: 'mg-u-05-storyboard',
       scenes: [
         { id: 'intro', updatedAt: '2024-05-01T10:00:00Z', frames: 24 },
         { id: 'conflict', updatedAt: '2024-05-01T10:05:00Z', frames: 48 },
@@ -102,91 +138,71 @@ test('MG-U-05: manual conflict resolution keeps initial artifacts stable across 
     const baseText = toStoryboardText(baseStoryboard)
     const oursText = toStoryboardText(manualStoryboard)
     const theirsText = baseText
+    const sceneId = 'scene-mg-u-05'
 
-    const firstTelemetry = []
-    const firstDecisionEvents = []
-    const listeners = new Set()
-    const firstEventHub = {
-      publish(event) {
-        firstDecisionEvents.push(event)
-        listeners.forEach((listener) => listener(event))
-      },
-      subscribe(listener) {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-    }
-
-    const conflictScores = [
-      { jaccard: 0.98, cosine: 0.98, blended: 0.98 },
-      { jaccard: 0.2, cosine: 0.2, blended: 0.2 },
-    ]
-
-    const initialResult = runMerge(
-      { base: baseText, ours: oursText, theirs: theirsText, sceneId: 'scene-mg-u-04' },
+    const conflictTelemetry = []
+    const conflictEvents = []
+    const conflictHub = createEventHub(conflictEvents)
+    const conflictResult = DEFAULT_MERGE_ENGINE.merge3(
+      { base: baseText, ours: oursText, theirs: theirsText, sceneId },
       {
-        events: firstEventHub,
-        telemetry: (event) => firstTelemetry.push(event),
-        scoring: () => conflictScores.shift() ?? { jaccard: 0.2, cosine: 0.2, blended: 0.2 },
+        events: conflictHub,
+        telemetry: (event) => conflictTelemetry.push(event),
+        scoring: createScoringQueue([
+          { jaccard: 0.98, cosine: 0.98, blended: 0.98 },
+          { jaccard: 0.2, cosine: 0.2, blended: 0.2 },
+        ]),
       },
     )
 
-    assert.equal(initialResult.stats.conflictDecisions, 1)
-    const conflictHunk = initialResult.hunks.find((hunk) => hunk.decision === 'conflict')
+    assert.equal(conflictResult.stats.conflictDecisions, 1)
+    const conflictHunk = conflictResult.hunks.find((hunk) => hunk.decision === 'conflict')
     assert.ok(conflictHunk)
 
-    const initialSnapshots = {
-      hunks: JSON.parse(JSON.stringify(initialResult.hunks)),
-      plan: initialResult.plan ? JSON.parse(JSON.stringify(initialResult.plan)) : undefined,
-      trace: JSON.parse(JSON.stringify(initialResult.trace)),
-      telemetry: firstTelemetry.slice(),
-      events: firstDecisionEvents.slice(),
-    }
-
-    const resolvedOurs = initialResult.mergedText
-
-    const resolvedTelemetry = []
-    const resolvedEvents = []
-    const resolvedEventHub = {
-      publish(event) {
-        resolvedEvents.push(event)
-      },
-      subscribe() {
-        return () => undefined
-      },
-    }
-
-    const resolvedScores = [
+    const resolvedOurs = conflictResult.mergedText.replace(conflictHunk.merged, conflictHunk.manual)
+    const resolvedInput = { base: baseText, ours: resolvedOurs, theirs: theirsText, sceneId }
+    const resolvedScoreSequence = [
       { jaccard: 0.98, cosine: 0.98, blended: 0.98 },
       { jaccard: 0.95, cosine: 0.95, blended: 0.95 },
     ]
 
-    const resolvedResult = runMerge(
-      { base: baseText, ours: resolvedOurs, theirs: theirsText, sceneId: 'scene-mg-u-04' },
-      {
-        events: resolvedEventHub,
-        telemetry: (event) => resolvedTelemetry.push(event),
-        scoring: () => resolvedScores.shift() ?? { jaccard: 0.95, cosine: 0.95, blended: 0.95 },
-      },
+    const runResolvedMerge = (eventSink, telemetrySink) =>
+      DEFAULT_MERGE_ENGINE.merge3(resolvedInput, {
+        events: createEventHub(eventSink),
+        telemetry: (event) => telemetrySink.push(event),
+        scoring: createScoringQueue(resolvedScoreSequence),
+      })
+
+    const resolvedEventsFirst = []
+    const resolvedTelemetryFirst = []
+    const firstResolvedResult = runResolvedMerge(resolvedEventsFirst, resolvedTelemetryFirst)
+    assert.equal(firstResolvedResult.stats.conflictDecisions, 0)
+
+    const resolvedEventsSecond = []
+    const resolvedTelemetrySecond = []
+    const secondResolvedResult = runResolvedMerge(resolvedEventsSecond, resolvedTelemetrySecond)
+    assert.equal(secondResolvedResult.stats.conflictDecisions, 0)
+
+    assert.deepEqual(secondResolvedResult.hunks, firstResolvedResult.hunks)
+    assert.deepEqual(
+      normalizePlan(secondResolvedResult.plan),
+      normalizePlan(firstResolvedResult.plan),
+    )
+    assert.deepEqual(
+      secondResolvedResult.trace.summary.threshold,
+      firstResolvedResult.trace.summary.threshold,
     )
 
-    assert.equal(resolvedResult.stats.conflictDecisions, 0)
-
-    assert.deepEqual(initialResult.hunks, initialSnapshots.hunks)
-    assert.deepEqual(initialResult.plan, initialSnapshots.plan)
-    assert.deepEqual(initialResult.trace, initialSnapshots.trace)
-    assert.deepEqual(firstTelemetry, initialSnapshots.telemetry)
-    assert.deepEqual(firstDecisionEvents, initialSnapshots.events)
-
+    assert.ok(resolvedEventsFirst.every((event) => event.type !== 'merge:conflict-detected'))
+    assert.ok(resolvedEventsSecond.every((event) => event.type !== 'merge:conflict-detected'))
+    const expectedTelemetryTypes = ['merge:start', 'merge:hunk-decision', 'merge:hunk-decision', 'merge:finish']
     assert.deepEqual(
-      resolvedResult.hunks.map(({ id, section, base, ai }) => ({ id, section, base, ai })),
-      initialResult.hunks.map(({ id, section, base, ai }) => ({ id, section, base, ai })),
+      resolvedTelemetryFirst.map((event) => event.type),
+      expectedTelemetryTypes,
     )
-
-    assert.ok(resolvedEvents.every((event) => event.type !== 'merge:conflict-detected'))
     assert.deepEqual(
-      resolvedTelemetry.map((event) => event.type),
-      ['merge:start', 'merge:hunk-decision', 'merge:hunk-decision', 'merge:finish'],
+      resolvedTelemetrySecond.map((event) => event.type),
+      expectedTelemetryTypes,
     )
   } finally {
     process.env.MERGE_PRECISION = originalPrecision

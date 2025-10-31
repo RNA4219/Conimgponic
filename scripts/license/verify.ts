@@ -1,9 +1,10 @@
 /// <reference path="./node-shim.d.ts" />
 
 import { execFile } from 'child_process'
+import { readFileSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { resolve } from 'path'
-import { pathToFileURL } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { promisify } from 'util'
 
 type ExecFileAsync = (file: string, args: readonly string[], options: ExecFileOptions) => Promise<ExecFileResult>
@@ -38,12 +39,54 @@ export const DEFAULT_LICENSE_ALLOWLIST = new Set<string>([
   'MIT',
   'MIT-0',
   'Apache-2.0',
+  'BSD',
   'BSD-2-Clause',
   'BSD-3-Clause',
   'ISC',
   'CC0-1.0',
   'Unlicense',
 ])
+
+const CI_SPEC_PATH = fileURLToPath(new URL('../../docs/CI-SPEC.md', import.meta.url))
+
+export function extractDocumentedLicenseAllowlist(markdown: string): string[] {
+  const match = markdown.match(/allowlist:\s*([^\)]+)\)/i)
+  if (!match) return []
+
+  const cleaned = match[1]
+    .replace(/など.*$/u, '')
+    .split(/[\s/、,]+/u)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+
+  return cleaned
+}
+
+export function readDocumentedLicenseAllowlist(): string[] {
+  try {
+    const markdown = readFileSync(CI_SPEC_PATH, 'utf8')
+    return extractDocumentedLicenseAllowlist(markdown)
+  } catch (error) {
+    console.warn('Failed to read documented license allowlist:', error)
+    return []
+  }
+}
+
+export const DOCUMENTED_LICENSE_ALLOWLIST = new Set<string>(readDocumentedLicenseAllowlist())
+
+function assertDocumentedAllowlistCoverage(
+  allowlist: ReadonlySet<string>,
+  documented: ReadonlySet<string>,
+): void {
+  const missing = [...documented].filter((license) => !allowlist.has(license))
+  if (missing.length > 0) {
+    throw new Error(
+      `DEFAULT_LICENSE_ALLOWLIST must include documented licenses: ${missing.join(', ')}`,
+    )
+  }
+}
+
+assertDocumentedAllowlistCoverage(DEFAULT_LICENSE_ALLOWLIST, DOCUMENTED_LICENSE_ALLOWLIST)
 
 const REPORT_FILENAME = 'license-report.json'
 const SUMMARY_FILENAME = 'license-summary.json'

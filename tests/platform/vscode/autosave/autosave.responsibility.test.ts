@@ -6,6 +6,7 @@ import { normalizeAtomicWriteError } from '../../../../src/platform/vscode/autos
 import {
   createSnapshotFailureDetail,
   createSnapshotSuccessDetail,
+  encodeGuardTelemetry,
   publishCollectorSnapshotResult
 } from '../../../../src/platform/vscode/autosave/collector.js';
 import {
@@ -87,6 +88,50 @@ test('publishCollectorSnapshotResult forwards normalized payload', () => {
     (calls[0] as { overrides: { ts: string } }).overrides.ts,
     timestamp
   );
+});
+
+test('publishCollectorSnapshotResult flags localStorage guard as QA phase', () => {
+  const calls: unknown[] = [];
+  const request = {
+    reqId: 'req-1',
+    correlationId: 'corr-1',
+    payload: { debounceMs: 1 }
+  } as const;
+  const guard = {
+    featureFlag: { value: true, source: 'localStorage' as const },
+    optionsDisabled: false
+  };
+  const payload = {
+    status: 'success' as const,
+    detail: createSnapshotSuccessDetail(120, 0, undefined, 'idle'),
+    snapshot: {
+      bytes: 4,
+      retained_bytes: 4,
+      generation: 1,
+      last_success_at: '2024-01-01T00:00:00.000Z'
+    }
+  };
+  const timestamp = '2024-01-01T00:00:00.000Z';
+
+  publishCollectorSnapshotResult(request, guard, timestamp, payload, {
+    publishSnapshotResult: (event) => {
+      calls.push(event);
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal((calls[0] as { phase: string }).phase, 'A-1');
+});
+
+test('encodeGuardTelemetry marks localStorage guard as QA phase', () => {
+  const guard = {
+    featureFlag: { value: true, source: 'localStorage' as const },
+    optionsDisabled: false
+  };
+
+  const telemetry = encodeGuardTelemetry(guard);
+
+  assert.deepEqual(telemetry, { current: 'A-1', rollbackTo: 'A-0' });
 });
 
 test('createInitialState assigns counters and identifiers deterministically', () => {
