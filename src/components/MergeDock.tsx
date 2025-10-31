@@ -149,7 +149,33 @@ export function MergeDock({
   const sb = useSB((state) => state.sb)
   const storage = typeof window !== 'undefined' ? window.localStorage : undefined
   const mergeWindow = typeof window !== 'undefined' ? (window as MergeDockWindow) : undefined
-  const autoSave = readAutoSaveState(mergeWindow)
+  const [autoSave, setAutoSave] = useState<MergeDockAutoSaveState>(() => readAutoSaveState(mergeWindow))
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!mergeWindow) return
+    let disposed = false
+    const syncAutoSave = () => {
+      if (disposed) return
+      const next = readAutoSaveState(mergeWindow)
+      setAutoSave((previous) => {
+        if (previous.flushNow === next.flushNow && previous.lastSuccessAt === next.lastSuccessAt) {
+          return previous
+        }
+        return next
+      })
+    }
+    const tick = () => {
+      if (disposed) return
+      setNow(Date.now())
+      syncAutoSave()
+    }
+    tick()
+    const interval = setInterval(tick, 5_000)
+    return () => {
+      disposed = true
+      clearInterval(interval)
+    }
+  }, [mergeWindow])
   const { precision, threshold } = useMergeThreshold({
     flags,
     threshold: mergeThreshold,
@@ -311,7 +337,7 @@ export function MergeDock({
     precision,
     activeTab,
     autoSave,
-    now: Date.now(),
+    now,
   })
 
   const onImport = useCallback(
