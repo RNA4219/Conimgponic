@@ -1,6 +1,9 @@
 /// <reference types="node" />
 
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
@@ -127,10 +130,10 @@ const expectedRunSuiteStepIds = ['run_suite_autosave', 'run_suite_default'] as c
 const {
   qualityCommands: expectedQualitySequence,
   qualitySuites: expectedQualitySuites,
+  coverageCleanup: expectedCoverageCleanup,
   coverageCommand: expectedCoverageCommand,
   junitCommand: expectedJunitCommand,
 } = await loadTestStrategyExpectations(testStrategyPath);
-const expectedCoverageCleanup = 'rm -rf coverage';
 const expectedSuiteFailureChecks = [
   "steps.run_suite_autosave.outcome == 'failure'",
   "steps.run_suite_default.outcome == 'failure'",
@@ -157,6 +160,36 @@ const expectedPnpmAuditRunLines = [
 const { load } = await importJsYaml();
 
 describe('ci workflow build job', () => {
+  test('test strategy documents coverage cleanup and junit commands', () => {
+    assert.ok(
+      expectedCoverageCleanup,
+      'Test strategy 4.1 (step 7) must document coverage cleanup command before reports job execution',
+    );
+    assert.match(
+      expectedCoverageCleanup,
+      /rm\s+-rf\s+coverage/u,
+      'Test strategy 4.1 (step 7) must instruct removing coverage directory',
+    );
+    assert.ok(
+      expectedCoverageCommand,
+      'Test strategy 4.1 (step 7) must document coverage command',
+    );
+    assert.match(
+      expectedCoverageCommand,
+      /test:coverage/u,
+      'Test strategy 4.1 (step 7) coverage command must target test:coverage suite',
+    );
+    assert.ok(
+      expectedJunitCommand,
+      'Test strategy 4.1 (step 7) must document JUnit command',
+    );
+    assert.match(
+      expectedJunitCommand,
+      /--test-reporter=junit/u,
+      'Test strategy 4.1 (step 7) must configure JUnit reporter output',
+    );
+  });
+
   test('quality job configures expected suites', async () => {
     const workflow = await readWorkflowYaml();
     const quality = workflow.jobs?.quality;
