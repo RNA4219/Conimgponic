@@ -147,6 +147,51 @@ scenario(
   }
 )
 
+scenario(
+  'legacy localStorage key alone promotes guard to localStorage=true',
+  async (
+    t: TestContext,
+    { initAutoSave, runnerTelemetry, collectorEvents }
+  ) => {
+    const storage = createLocalStorageStub({ 'flag:autoSave.enabled': 'true' })
+    const scope = globalThis as typeof globalThis & { localStorage?: LocalStorageStub }
+    const previousDescriptor = Object.getOwnPropertyDescriptor(scope, 'localStorage')
+    Object.defineProperty(scope, 'localStorage', {
+      value: storage,
+      configurable: true,
+      writable: true
+    })
+    t.after(() => {
+      storage.clear()
+      if (previousDescriptor) {
+        Object.defineProperty(scope, 'localStorage', previousDescriptor)
+      } else {
+        delete scope.localStorage
+      }
+    })
+
+    const runner = initAutoSave(() => makeStoryboard(['legacy-storage-fallback']), {
+      disabled: false
+    })
+    runner.markDirty({ pendingBytes: 128 })
+
+    const telemetry = runnerTelemetry.filter(
+      (event) => event.detail?.event === 'autosave.schedule.requested'
+    )
+    assert.ok(telemetry.length > 0)
+    const lastTelemetry = telemetry.at(-1)!
+    assert.equal(lastTelemetry.detail?.flag_source, 'localStorage')
+
+    const scheduleEvents = collectorEvents.filter(
+      (event) => event.event === 'autosave.schedule.requested'
+    )
+    assert.ok(scheduleEvents.length > 0)
+    const lastCollectorEvent = scheduleEvents.at(-1)!
+    assert.equal(lastCollectorEvent.flag_source, 'localStorage')
+    assert.equal(lastCollectorEvent.phase, 'A-1')
+  }
+)
+
 scenario('disabled guard returns no-op handle', async (t: TestContext, { initAutoSave }) => {
   const scope = globalThis as typeof globalThis & {
     __AUTOSAVE_ENABLED__?: boolean
