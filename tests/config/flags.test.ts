@@ -28,6 +28,18 @@ type _assertMergePrecisionValue = Expect<
   Equal<MergePrecisionResolution['value'], MergePrecision>
 >
 
+type AutosaveFlagValue = FeatureFlagValue<'autosave.enabled'>
+type PluginFlagValue = FeatureFlagValue<'plugins.enable'>
+
+type _assertAutosaveFlagIsBoolean = Expect<Equal<AutosaveFlagValue, boolean>>
+type _assertPluginFlagIsBoolean = Expect<Equal<PluginFlagValue, boolean>>
+type _assertUnionMaintained = Expect<
+  Equal<
+    FeatureFlagValue<'autosave.enabled' | 'plugins.enable' | 'merge.precision'>,
+    boolean | MergePrecision
+  >
+>
+
 type _acceptsBeta = Expect<
   'beta' extends MergePrecisionResolution['value'] ? true : false
 >
