@@ -3,6 +3,14 @@ import type { FlagSnapshot, WorkspaceConfiguration } from '../config/flags.js'
 import type { Storyboard } from '../types'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
+import * as policy from './autosave/policy.ts'
+import type { AutoSavePolicy } from './autosave/policy.ts'
+
+export const AUTOSAVE_POLICY = policy.AUTOSAVE_POLICY
+export const AUTOSAVE_DEFAULTS = policy.AUTOSAVE_DEFAULTS
+export const AUTOSAVE_MAX_BYTES = policy.AUTOSAVE_MAX_BYTES
+export const resolveAutoSavePolicy = policy.resolveAutoSavePolicy
+export type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.ts'
 
 export type StoryboardProvider = () => Storyboard
 
@@ -34,31 +42,6 @@ type AssertTrue<T extends true> = T
 type _AutoSaveOptionsPolicyInvariant = AssertTrue<
   AutoSaveOptions extends { readonly policy?: unknown } ? false : true
 >
-
-export const AUTOSAVE_MAX_BYTES = 50 * 1024 * 1024
-
-export interface AutoSavePolicy {
-  readonly debounceMs: number
-  readonly idleMs: number
-  readonly maxGenerations: number
-  readonly maxBytes: number
-  readonly disabled: boolean
-}
-
-/**
- * 保存ポリシー既定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 の表と同期する必要がある。
- */
-const AUTOSAVE_POLICY_VALUES: AutoSavePolicy = {
-  debounceMs: 500,
-  idleMs: 2000,
-  maxGenerations: 20,
-  maxBytes: AUTOSAVE_MAX_BYTES,
-  disabled: true
-}
-
-export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze(AUTOSAVE_POLICY_VALUES)
-
-export const AUTOSAVE_DEFAULTS = AUTOSAVE_POLICY
 
 const readWorkspaceValue = (
   workspace: WorkspaceConfiguration | null | undefined,
@@ -96,26 +79,6 @@ const readWorkspaceValue = (
     }
   }
   return undefined
-}
-
-export interface AutoSavePolicyResolutionOptions {
-  readonly workspace?: WorkspaceConfiguration | null
-}
-
-type AutoSavePolicyResolutionInput =
-  | WorkspaceConfiguration
-  | null
-  | undefined
-  | AutoSavePolicyResolutionOptions
-
-export const resolveAutoSavePolicy = (
-  _input?: AutoSavePolicyResolutionInput
-): AutoSavePolicy => {
-  void _input
-  // Phase A: 保存ポリシーは固定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 および
-  // `docs/IMPLEMENTATION-PLAN.md` §0.4 の要件に合わせ、入力に関わらず
-  // `AUTOSAVE_POLICY` をそのまま返却する。
-  return AUTOSAVE_POLICY
 }
 
 export type AutoSaveErrorCode =
