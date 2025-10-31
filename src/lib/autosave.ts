@@ -86,26 +86,6 @@ const LOCAL_STORAGE_GUARD_KEYS = Object.freeze([
   'flag:autoSave.enabled'
 ] as const)
 
-export interface AutoSavePolicyResolutionOptions {
-  readonly workspace?: WorkspaceConfiguration | null
-}
-
-type AutoSavePolicyResolutionInput =
-  | WorkspaceConfiguration
-  | null
-  | undefined
-  | AutoSavePolicyResolutionOptions
-
-export const resolveAutoSavePolicy = (
-  _input?: AutoSavePolicyResolutionInput
-): AutoSavePolicy => {
-  void _input
-  // Phase A: 保存ポリシーは固定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 および
-  // `docs/IMPLEMENTATION-PLAN.md` §0.4 の要件に合わせ、入力に関わらず
-  // `AUTOSAVE_POLICY` をそのまま返却する。
-  return AUTOSAVE_POLICY
-}
-
 export type AutoSaveErrorCode =
   | 'lock-unavailable'
   | 'write-failed'
