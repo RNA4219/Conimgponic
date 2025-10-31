@@ -1797,11 +1797,39 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(payloadSchema.properties, 'merge.trace payload schema must define properties')
     const guardrailSchema = payloadSchema.properties.guardrail
     assertOk(guardrailSchema, 'merge.trace payload schema must define guardrail')
+    strictEqual(
+      guardrailSchema.additionalProperties,
+      false,
+      'merge.trace guardrail must forbid additional properties'
+    )
     assertOk(guardrailSchema.required, 'merge.trace guardrail must define required fields')
     deepStrictEqual(
       guardrailSchema.required,
       ['metric', 'observed', 'tolerance_pct', 'rollbackTo']
     )
+    const guardrailProperties = guardrailSchema.properties
+    assertOk(
+      guardrailProperties,
+      'merge.trace guardrail schema must define metric properties'
+    )
+    const metricSchema = resolveSchemaRef(guardrailProperties.metric)
+    assertOk(metricSchema, 'merge.trace guardrail.metric schema must resolve')
+    assertOk(metricSchema.enum, 'merge.trace guardrail.metric must define enum')
+    const allowedMetrics = new Set(metricSchema.enum)
+    for (const metric of [
+      'autosave_p95',
+      'restore_success_rate',
+      'merge_auto_success_rate',
+      'ui_saved_rate',
+      'merge_processing_p95',
+      'export_latency_p95',
+      'export_success_rate'
+    ] as const) {
+      assertOk(
+        allowedMetrics.has(metric),
+        `merge.trace guardrail.metric must allow ${metric}`
+      )
+    }
   })
 
   test('merge.trace telemetry は Phase 情報と ±5% 監視用メトリクスを保持する', () => {
@@ -1826,6 +1854,28 @@ describe('vscode extension telemetry contract (RED)', () => {
         `merge.trace must require ${field} in Collector JSONL`
       )
     }
+  })
+
+  test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクスを列挙する', () => {
+    const metricsKeyDefinition = telemetrySchema.definitions?.metricsKey
+    assertOk(metricsKeyDefinition, 'telemetry schema must define metricsKey')
+    const resolvedMetricsKey = resolveSchemaRef(metricsKeyDefinition)
+    assertOk(resolvedMetricsKey, 'metricsKey schema must resolve to concrete definition')
+    assertOk(resolvedMetricsKey.enum, 'metricsKey schema must enumerate allowed metrics')
+    const expectedMetrics = [
+      'autosave_p95',
+      'restore_success_rate',
+      'merge_auto_success_rate',
+      'ui_saved_rate',
+      'merge_processing_p95',
+      'export_latency_p95',
+      'export_success_rate'
+    ] as const
+    deepStrictEqual(
+      [...resolvedMetricsKey.enum].sort(),
+      [...expectedMetrics].sort(),
+      'metricsKey must list all Analyzer guard metrics'
+    )
   })
   test('export.result telemetry は status/detail/artifacts.bytes を Reporter JSONL に固定する', () => {
     const spec = findTelemetrySpec('export.result')
