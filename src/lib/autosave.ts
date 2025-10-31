@@ -3,6 +3,14 @@ import type { FlagSnapshot, WorkspaceConfiguration } from '../config/flags.js'
 import type { Storyboard } from '../types'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
+import * as policy from './autosave/policy.ts'
+import type { AutoSavePolicy } from './autosave/policy.ts'
+
+export const AUTOSAVE_POLICY = policy.AUTOSAVE_POLICY
+export const AUTOSAVE_DEFAULTS = policy.AUTOSAVE_DEFAULTS
+export const AUTOSAVE_MAX_BYTES = policy.AUTOSAVE_MAX_BYTES
+export const resolveAutoSavePolicy = policy.resolveAutoSavePolicy
+export type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.ts'
 
 export type StoryboardProvider = () => Storyboard
 
@@ -34,31 +42,6 @@ type AssertTrue<T extends true> = T
 type _AutoSaveOptionsPolicyInvariant = AssertTrue<
   AutoSaveOptions extends { readonly policy?: unknown } ? false : true
 >
-
-export const AUTOSAVE_MAX_BYTES = 50 * 1024 * 1024
-
-export interface AutoSavePolicy {
-  readonly debounceMs: number
-  readonly idleMs: number
-  readonly maxGenerations: number
-  readonly maxBytes: number
-  readonly disabled: boolean
-}
-
-/**
- * 保存ポリシー既定値。`docs/AUTOSAVE-DESIGN-IMPL.md` §1.1 の表と同期する必要がある。
- */
-const AUTOSAVE_POLICY_VALUES: AutoSavePolicy = {
-  debounceMs: 500,
-  idleMs: 2000,
-  maxGenerations: 20,
-  maxBytes: AUTOSAVE_MAX_BYTES,
-  disabled: true
-}
-
-export const AUTOSAVE_POLICY: AutoSavePolicy = Object.freeze(AUTOSAVE_POLICY_VALUES)
-
-export const AUTOSAVE_DEFAULTS = AUTOSAVE_POLICY
 
 const readWorkspaceValue = (
   workspace: WorkspaceConfiguration | null | undefined,
@@ -322,6 +305,7 @@ const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): AutoSaveEnvel
   switch (guard.featureFlag.source) {
     case 'env':
     case 'localStorage':
+      // Phase 行列: QA 向け localStorage 上書きは Phase A-1 として集計する。
       return 'A-1'
     case 'workspace':
       return 'A-2'

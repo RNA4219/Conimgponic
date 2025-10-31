@@ -110,7 +110,7 @@ scenario(
 
 scenario(
   'legacy localStorage key enables guard resolution from storage',
-  async (t: TestContext, { initAutoSave, runnerTelemetry }) => {
+  async (t: TestContext, { initAutoSave, runnerTelemetry, collectorEvents }) => {
     const storage = createLocalStorageStub({ 'flag:autoSave.enabled': 'true' })
     const scope = globalThis as typeof globalThis & { localStorage?: LocalStorageStub }
     const previousDescriptor = Object.getOwnPropertyDescriptor(scope, 'localStorage')
@@ -138,6 +138,12 @@ scenario(
     assert.ok(telemetry.length > 0)
     const last = telemetry.at(-1)!
     assert.equal(last.detail?.flag_source, 'localStorage')
+
+    const scheduleEvent = collectorEvents.find(
+      (event) => event.event === 'autosave.schedule.requested'
+    )
+    assert.ok(scheduleEvent, 'collector should record autosave.schedule.requested event')
+    assert.equal(scheduleEvent?.phase, 'A-1')
   }
 )
 
