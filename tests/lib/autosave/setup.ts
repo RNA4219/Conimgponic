@@ -147,7 +147,11 @@ export const createOpfs = (): OpfsMock => {
             }
           },
           async getFile(){
-            if (!files.has(full)) throw new Error('missing file')
+            if (!files.has(full)) {
+              const error = new Error('missing file')
+              error.name = 'NotFoundError'
+              throw error
+            }
             const text = files.get(full)!
             return { async text(){ return text } }
           }
