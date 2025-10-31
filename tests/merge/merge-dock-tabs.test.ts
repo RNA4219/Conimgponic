@@ -15,7 +15,7 @@ import type { FlagSnapshot } from '../../src/config/flags.ts'
 import { mergeCSV, mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'
 import type { AutoSaveInitResult, AutoSaveRunnerEvent } from '../../src/lib/autosave.ts'
-import { attachMergeDockAutoSaveBridge } from '../../src/lib/merge/mergeDockAutoSaveBridge.ts'
+import { installMergeDockAutoSaveBridge } from '../../src/App.tsx'
 
 type MergePrecision = Parameters<typeof planMergeDockTabs>[0]
 type MergeDockTabPlan = ReturnType<typeof planMergeDockTabs>
@@ -152,6 +152,109 @@ const stableFlags: FlagSnapshot = {
   updatedAt: '2024-05-01T00:00:00.000Z',
 }
 
+test('merge-ui: stable precision backup CTA surfaces via AutoSave window bridge', () => {
+  const originalWindow = globalThis.window
+  const originalDateNow = Date.now
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const mockWindow = {
+    localStorage: storage,
+  } as typeof window & {
+    __mergeDockFlushNow?: () => void
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+
+  const flushLog: string[] = []
+  const handlers: Array<(event: AutoSaveRunnerEvent) => void> = []
+  const runnerSnapshot = { lastSuccessAt: '2024-05-01T00:00:00.000Z' }
+  const runner: AutoSaveInitResult = {
+    snapshot: () => ({
+      phase: 'idle',
+      lastSuccessAt: runnerSnapshot.lastSuccessAt,
+      retryCount: 0,
+    }),
+    flushNow: () => {
+      runnerSnapshot.lastSuccessAt = '2024-05-01T00:12:00.000Z'
+      flushLog.push('flush')
+      return Promise.resolve()
+    },
+    dispose: () => Promise.resolve(),
+    markDirty: () => undefined,
+    onEvent: (handler) => {
+      handlers.push(handler)
+      return () => {
+        const index = handlers.indexOf(handler)
+        if (index >= 0) {
+          handlers.splice(index, 1)
+        }
+      }
+    },
+  }
+
+  let detachBridge: () => void = () => {}
+  Date.now = () => new Date('2024-05-01T00:15:05.000Z').getTime()
+
+  try {
+    detachBridge = installMergeDockAutoSaveBridge(runner)
+
+    const html = renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags: {
+          ...stableFlags,
+          merge: { ...stableFlags.merge, value: 'stable', precision: 'stable' },
+        },
+        phaseStats: { reviewBandCount: 1, conflictBandCount: 1 },
+      }),
+    )
+
+    assert.match(html, /data-testid="merge-dock-backup-cta"/)
+    assert.equal(typeof mockWindow.__mergeDockFlushNow, 'function')
+    assert.equal(flushLog.length, 0)
+
+    mockWindow.__mergeDockFlushNow?.()
+    assert.equal(flushLog.length, 1)
+    for (const handler of [...handlers]) {
+      handler({
+        type: 'write-succeeded',
+        phase: 'idle',
+        at: '2024-05-01T00:12:05.000Z',
+        payload: { bytes: 2048 },
+      })
+    }
+    assert.equal(mockWindow.__mergeDockAutoSaveSnapshot?.lastSuccessAt, '2024-05-01T00:12:00.000Z')
+  } finally {
+    detachBridge()
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+    Date.now = originalDateNow
+  }
+})
+
 test('merge-ui: autosave bridge exposes flushNow for backup CTA', () => {
   const originalWindow = globalThis.window
   const originalDateNow = Date.now
@@ -217,7 +320,7 @@ test('merge-ui: autosave bridge exposes flushNow for backup CTA', () => {
   Date.now = () => new Date('2024-05-01T00:10:01.000Z').getTime()
 
   try {
-    detachBridge = attachMergeDockAutoSaveBridge(runner)
+    detachBridge = installMergeDockAutoSaveBridge(runner)
 
     assert.equal(mockWindow.__mergeDockAutoSaveSnapshot?.lastSuccessAt, '2024-05-01T00:00:00.000Z')
 
