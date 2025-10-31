@@ -280,6 +280,7 @@ const resolveCollectorPhase = (guard: AutoSavePhaseGuardSnapshot): AutoSaveEnvel
   switch (guard.featureFlag.source) {
     case 'env':
     case 'localStorage':
+      // Phase 行列: QA 向け localStorage 上書きは Phase A-1 として集計する。
       return 'A-1'
     case 'workspace':
       return 'A-2'
