@@ -85,6 +85,14 @@ const telemetrySchema = JSON.parse(
   readFileSync(new URL('../../schemas/telemetry.schema.json', import.meta.url), 'utf-8')
 ) as TelemetrySchema
 
+const loadMetricsKeyEnum = (): readonly string[] => {
+  const metricsKeyDefinition = telemetrySchema.definitions?.metricsKey
+  assertOk(metricsKeyDefinition, 'telemetry schema must define metricsKey enum')
+  const metricsEnum = metricsKeyDefinition.enum
+  assertOk(metricsEnum, 'telemetry schema metricsKey definition must enumerate variants')
+  return metricsEnum
+}
+
 const STATUS_AUTOSAVE_PAYLOAD_REQUIRED_FIELDS = [
   'state',
   'debounce_ms',
@@ -294,6 +302,18 @@ const assertFlagValidationErrorSchema = (schema: JsonSchemaObject | undefined) =
 const findTelemetrySpec = (event: string) =>
   COLLECT_METRICS_CONTRACT.telemetry.events.find((spec) => spec.event === event)
 
+const readMetricsKeyUnionLiterals = () => {
+  const source = readFileSync(
+    new URL('../../scripts/monitor/collect-metrics.ts', import.meta.url),
+    'utf-8'
+  )
+  const unionMatch = source.match(/export type MetricsKey =([\s\S]+?);/)
+  assertOk(unionMatch, 'collect-metrics.ts must export MetricsKey union')
+  const literals = Array.from(unionMatch[1].matchAll(/'([^']+)'/g), (match) => match[1])
+  assertOk(literals.length >= 1, 'MetricsKey union must enumerate at least one literal')
+  return literals
+}
+
 // RED: VS Code 拡張メッセージ/テレメトリ JSONL 契約と再試行条件を固定する。
 describe('vscode extension telemetry contract (RED)', () => {
   test('message envelope は type/apiVersion/reqId/ts を含む Day8 Collector 順序を固定する', () => {
@@ -416,6 +436,11 @@ describe('vscode extension telemetry contract (RED)', () => {
       'minimum' in evaluationSchema && evaluationSchema.minimum === 0,
       'evaluation_ms must enforce non-negative values'
     )
+  })
+  test('telemetry schema metricsKey enum は TypeScript MetricsKey union と乖離しない', () => {
+    const metricsEnum = loadMetricsKeyEnum()
+    const metricsUnion = readMetricsKeyUnionLiterals()
+    deepStrictEqual(metricsEnum.slice().sort(), metricsUnion.slice().sort())
   })
   test('status.autosave telemetry は phase 情報と guard スナップショットを記録する', () => {
     const spec = findTelemetrySpec('status.autosave')
@@ -1782,7 +1807,7 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(traceSpec.jsonlFields.includes('payload.digest'), 'merge.trace must retain digest field')
   })
 
-  test('telemetry schema の merge.trace payload が Collector 要件を固定する', () => {
+  test('telemetry schema の merge.trace payload が Collector 要件を固定する', async (t) => {
     const thenClause = findConditional(
       (entry) => entry.if?.properties?.event?.const === 'merge.trace'
     )
@@ -1797,11 +1822,42 @@ describe('vscode extension telemetry contract (RED)', () => {
     assertOk(payloadSchema.properties, 'merge.trace payload schema must define properties')
     const guardrailSchema = payloadSchema.properties.guardrail
     assertOk(guardrailSchema, 'merge.trace payload schema must define guardrail')
+    strictEqual(
+      guardrailSchema.additionalProperties,
+      false,
+      'merge.trace guardrail must forbid additional properties'
+    )
     assertOk(guardrailSchema.required, 'merge.trace guardrail must define required fields')
     deepStrictEqual(
       guardrailSchema.required,
       ['metric', 'observed', 'tolerance_pct', 'rollbackTo']
     )
+await t.test('merge.trace guardrail.metric は定義済みのすべてのメトリクスキーを列挙する', () => {
+  const guardrailProperties = resolveSchemaProperties(guardrailSchema)
+  assertOk(guardrailProperties, 'merge.trace guardrail must define properties')
+
+  const metricSchema = resolveSchemaRef(guardrailProperties.metric)
+  assertOk(metricSchema?.enum, 'merge.trace guardrail.metric must enumerate metrics keys')
+
+  const allowedMetrics = new Set(metricSchema.enum)
+  const expectedMetrics = [
+    'autosave_p95',
+    'restore_success_rate',
+    'merge_auto_success_rate',
+    'ui_saved_rate',
+    'merge_processing_p95',
+    'export_latency_p95',
+    'export_success_rate'
+  ] as const
+
+  for (const metric of expectedMetrics) {
+    assertOk(
+      allowedMetrics.has(metric),
+      `merge.trace guardrail.metric enum must include ${metric}`,
+    )
+  }
+})
+
   })
 
   test('merge.trace telemetry は Phase 情報と ±5% 監視用メトリクスを保持する', () => {
@@ -1827,7 +1883,28 @@ describe('vscode extension telemetry contract (RED)', () => {
       )
     }
   })
-  test('export.result telemetry は status/detail/artifacts.bytes を Reporter JSONL に固定する', () => {
+test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクスを列挙する', () => {
+  const metricsKeyDefinition = telemetrySchema.definitions?.metricsKey
+  assertOk(metricsKeyDefinition, 'telemetry schema must define metricsKey')
+  const resolvedMetricsKey = resolveSchemaRef(metricsKeyDefinition)
+  assertOk(resolvedMetricsKey, 'metricsKey schema must resolve to concrete definition')
+  assertOk(resolvedMetricsKey.enum, 'metricsKey schema must enumerate allowed metrics')
+  const expectedMetrics = [
+    'autosave_p95',
+    'restore_success_rate',
+    'merge_auto_success_rate',
+    'ui_saved_rate',
+    'merge_processing_p95',
+    'export_latency_p95',
+    'export_success_rate'
+  ] as const
+  deepStrictEqual(
+    [...resolvedMetricsKey.enum].sort(),
+    [...expectedMetrics].sort(),
+    'metricsKey must list all Analyzer guard metrics'
+  )
+})
+
     const spec = findTelemetrySpec('export.result')
     assertOk(spec, 'export.result telemetry spec is missing')
 
@@ -1969,6 +2046,13 @@ describe('vscode extension telemetry contract (RED)', () => {
       'export.result failure error schema must define required fields',
     )
     deepStrictEqual(failureErrorSchema.required, ['code', 'message', 'retryable'])
+
+    await t.test('export.result summary 指標の metricsKey enum は export 成功率を保持する', () => {
+      const metricsEnum = loadMetricsKeyEnum()
+      for (const metric of ['export_latency_p95', 'export_success_rate'] as const) {
+        assertOk(metricsEnum.includes(metric), `metricsKey enum must include ${metric}`)
+      }
+    })
   })
 
   test('export.result telemetry は export_latency_p95 ガードで latency を監視する', () => {

@@ -1,0 +1,28 @@
+{
+  "id": "src/components/MergeDock.tsx",
+  "role": "ui",
+  "public_api": [
+    "MergeDock"
+  ],
+  "summary": "精緻マージ UI。Zustand ストアでタブ/プリファレンスを管理し、diff/backup/AutoSave 状態を組み合わせて操作パネルを描画する。window ブリッジ経由で AutoSave flush を露出する。",
+  "deps_out": [
+    "src/lib/merge/phasePlan.ts"
+  ],
+  "deps_in": [],
+  "risks": [
+    "window ブリッジ/ローカルストレージの同期が壊れるとタブ状態と AutoSave 表示が乖離する"
+  ],
+  "tests": [
+    "tests/components/MergeDock.localStorage.test.tsx",
+    "tests/components/MergeDock.localStorage-read.spec.tsx",
+    "tests/merge/merge-dock-tabs.test.ts"
+  ],
+  "maintenance": {
+    "refresh": "UI のタブ構成や AutoSave 連携を変更したら MergeDock.* テストとブリッジ仕様を更新し Birdseye を再生成する",
+    "tooling": [
+      "pnpm test --filter autotag:merge",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "2025-11-06T09:00:00Z"
+}

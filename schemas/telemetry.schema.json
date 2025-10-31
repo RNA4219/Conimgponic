@@ -656,8 +656,12 @@
       "type": "string",
       "enum": [
         "autosave_p95",
+        "ui_saved_rate",
         "restore_success_rate",
-        "merge_auto_success_rate"
+        "merge_auto_success_rate",
+        "merge_processing_p95",
+        "export_latency_p95",
+        "export_success_rate"
       ]
     },
     "autoSavePhaseStep": {

@@ -2,7 +2,8 @@ import type {
   AutoSavePhase,
   AutoSavePhaseGuardSnapshot,
   AutoSaveSnapshotRequestMessage
-} from '../../../lib/autosave.js';
+} from '../../../lib/autosave';
+import { resolveCollectorPhase } from '../../../lib/autosave/collector-phase.js';
 import { publishSnapshotResult as defaultPublishSnapshotResult } from '../../../telemetry/day8Collector.js';
 import type {
   RolloutPhase,
@@ -68,14 +69,14 @@ export type AutoSaveAtomicWriteResult =
     }
   | {
       readonly ok: false;
-      readonly error: import('../../../lib/autosave.js').AutoSaveError;
+      readonly error: import('../../../lib/autosave').AutoSaveError;
     };
 
 export interface PublishSnapshotResultDependencies {
   readonly publishSnapshotResult?: typeof defaultPublishSnapshotResult;
 }
 
-export type SnapshotResultDetailPhase = import('../../../lib/autosave.js').AutoSaveStatusSnapshot['phase'];
+export type SnapshotResultDetailPhase = import('../../../lib/autosave').AutoSaveStatusSnapshot['phase'];
 
 export type SnapshotResultSuccessDetailWithPhase = SnapshotResultSuccessDetail & {
   readonly phase: SnapshotResultDetailPhase;
@@ -89,6 +90,7 @@ export const ZERO_FLUSH_LATENCY: AutoSaveTelemetryEventProperties['performance']
   flush_latency_ms: 0
 } as const;
 
+export { resolveCollectorPhase };
 export const resolveCollectorPhase = (
   guard: AutoSavePhaseGuardSnapshot
 ): RolloutPhase => {
@@ -98,7 +100,7 @@ export const resolveCollectorPhase = (
   switch (guard.featureFlag.source) {
     case 'env':
     case 'localStorage':
-      // QA localStorage override は Phase A-1 の Collector 集計対象。
+      // Phase 行列: QA 向け localStorage 上書きは Phase A-1 として集計する。
       return 'A-1';
     case 'workspace':
       return 'A-2';

@@ -3,6 +3,7 @@ import type { TestContext } from 'node:test'
 
 import { ENABLED_GUARD, scenario } from './setup'
 
+import { projectLockApi } from '../../../src/lib/locks'
 import type { AutoSaveError } from '../../../src/lib/autosave'
 import type { Storyboard } from '../../../src/types'
 
@@ -13,6 +14,16 @@ const makeStoryboard = (nodes: string[]): Storyboard => ({
   selection: [],
   version: 1
 })
+
+const createDeferred = <T>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
 
 const isAutoSaveError = (
   expected: { code: AutoSaveError['code']; retryable: AutoSaveError['retryable'] }
@@ -156,3 +167,40 @@ scenario(
     assert.equal(finalSnapshot.lastError?.retryable, rejectedError.retryable)
   }
 )
+
+scenario('flushNow stays awaiting-lock until dispose finalizes disabled phase', async (t, ctx) => {
+  const { initAutoSave } = ctx
+  const runner = initAutoSave(() => makeStoryboard(['theta']), { disabled: false }, ENABLED_GUARD)
+  const flushEntered = createDeferred<void>()
+  const releaseFlush = createDeferred<void>()
+  const lease = {
+    leaseId: 'test-lease',
+    ownerId: 'test-owner',
+    strategy: 'web-lock' as const,
+    viaFallback: false,
+    resource: 'project',
+    ttlMillis: 1000,
+    acquiredAt: Date.now(),
+    expiresAt: Date.now() + 1000,
+    heartbeatIntervalMs: 500,
+    nextHeartbeatAt: Date.now() + 500,
+    renewAttempt: 0
+  }
+  t.mock.method(projectLockApi, 'withProjectLock', async (executor) => {
+    flushEntered.resolve()
+    await releaseFlush.promise
+    return executor(lease)
+  })
+
+  const flush = runner.flushNow()
+  await flushEntered.promise
+  assert.equal(runner.snapshot().phase, 'awaiting-lock')
+
+  const disposing = runner.dispose()
+  assert.equal(runner.snapshot().phase, 'disabled')
+
+  releaseFlush.resolve()
+  await flush
+  await disposing
+  assert.equal(runner.snapshot().phase, 'disabled')
+})

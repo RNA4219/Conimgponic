@@ -24,7 +24,7 @@ type UploadArtifactConfig = {
 type UploadStep = StepConfig & { uses: string; with: UploadArtifactConfig };
 type RunStep = StepConfig & { name: string; run: string };
 const expectedSyftPackageSpecifier = '@anchore/syft@1.16.0';
-const expectedSyftDlxPrefix = `pnpm dlx --package ${expectedSyftPackageSpecifier}`;
+const expectedSyftDlxPrefix = `pnpm dlx --package=${expectedSyftPackageSpecifier}`;
 
 describe('ci workflow sbom job', () => {
   test('installs syft via pnpm dlx exactly once', async () => {
@@ -45,7 +45,7 @@ describe('ci workflow sbom job', () => {
 
     const installScript = installSteps[0].run;
     assert(
-      installScript.includes(expectedSyftDlxPrefix),
+      installScript.includes(`${expectedSyftDlxPrefix} --version`),
       'Install Syft step must execute pnpm dlx for @anchore/syft with a pinned version',
     );
     assert(
@@ -147,7 +147,7 @@ describe('ci workflow sbom job', () => {
 
     const runScript = generateStep.run;
     assert.ok(
-      runScript.includes(`${expectedSyftDlxPrefix} syft `),
+      runScript.includes(`${expectedSyftDlxPrefix} packages `),
       'Generate SBOM step must invoke syft CLI via pnpm dlx with a pinned version',
     );
     assert.ok(

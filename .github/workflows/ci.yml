@@ -36,7 +36,7 @@ jobs:
       - name: Install Syft
         run: |
           set -euo pipefail
-          pnpm dlx --package @anchore/syft@1.16.0 syft --version
+          pnpm dlx --package=@anchore/syft@1.16.0 syft --version
       - name: Generate SBOM
         id: generate_sbom
         continue-on-error: true
@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          pnpm dlx --package @anchore/syft@1.16.0 syft packages . -o spdx-json=sbom.json |& tee sbom.log
+          pnpm dlx --package=@anchore/syft@1.16.0 syft packages . -o spdx-json=sbom.json |& tee sbom.log
           status=$?
           set -e
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
@@ -115,10 +115,10 @@ jobs:
       - name: Install osv-scanner
         run: |
           set -euo pipefail
-          pnpm dlx --package @google/osv-scanner@1.7.3 osv-scanner --version
+          pnpm dlx --package=@google/osv-scanner@1.7.3 osv-scanner --version
 
       - name: Run osv-scanner
-        run: pnpm dlx --package @google/osv-scanner@1.7.3 osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
+        run: pnpm dlx --package=@google/osv-scanner@1.7.3 osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
 
       - name: Upload audit report
         if: always()

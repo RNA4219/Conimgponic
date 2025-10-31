@@ -1,0 +1,33 @@
+{
+  "id": "src/lib/autosave.ts",
+  "role": "application",
+  "public_api": [
+    "initAutoSave",
+    "resolveAutoSavePolicy",
+    "AUTOSAVE_HISTORY_ROTATION_PLAN",
+    "AUTOSAVE_RETRY_POLICY"
+  ],
+  "summary": "OPFS ベースの AutoSave 実行環境。ポリシー解決・Phase Guard 制御・履歴ローテーション・ロック管理を統合し、flushNow/queue 操作と telemetry 発火を責務とする。",
+  "deps_out": [],
+  "deps_in": [
+    "src/lib/merge/mergeDockAutoSaveBridge.ts",
+    "src/platform/vscode/autosave.ts"
+  ],
+  "risks": [
+    "ロック/OPFS エラー時に履歴と current.json が不整合になると復元不能となる"
+  ],
+  "tests": [
+    "tests/lib/autosave/init.test.ts",
+    "tests/lib/autosave/scheduler.test.ts",
+    "tests/webview/autosave.bridge.test.ts",
+    "tests/platform/vscode/autosave.host.status.test.ts"
+  ],
+  "maintenance": {
+    "refresh": "ポリシー/履歴仕様を変更したら autosave.* テストスイートを全走し、Birdseye index を再生成する",
+    "tooling": [
+      "pnpm test --filter autotag:autosave",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "2025-11-06T09:00:00Z"
+}
