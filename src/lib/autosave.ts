@@ -3,6 +3,7 @@ import type { FlagSnapshot, WorkspaceConfiguration } from '../config/flags.js'
 import type { Storyboard } from '../types'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
+import { AUTOSAVE_HISTORY_ROTATION_PLAN, type AutoSaveHistoryEntry } from './autosave/persistence.ts'
 import * as policy from './autosave/policy.ts'
 import type { AutoSavePolicy } from './autosave/policy.ts'
 import { resolveCollectorPhase } from './autosave/collector-phase.ts'
@@ -13,6 +14,15 @@ export const AUTOSAVE_MAX_BYTES = policy.AUTOSAVE_MAX_BYTES
 export const resolveAutoSavePolicy = policy.resolveAutoSavePolicy
 export { resolveCollectorPhase }
 export type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.ts'
+export type { AutoSaveSchedulerContract } from './autosave/scheduler.ts'
+export {
+  AUTOSAVE_HISTORY_ROTATION_PLAN
+}
+export type {
+  AutoSaveHistoryEntry,
+  AutoSaveHistoryRotationPlan,
+  AutoSavePersistenceContract
+} from './autosave/persistence.ts'
 
 export type StoryboardProvider = () => Storyboard
 
@@ -496,41 +506,6 @@ export const AUTOSAVE_PHASE_DESCRIPTIONS: Readonly<Record<AutoSavePhase, AutoSav
   backoff: { summary: 'retryable エラー後の待機フェーズ。指数バックオフで再試行を制御する。', entry: ['バックオフタイマーをセット', 'snapshot.retryCount を更新'], exit: ['再試行用に pendingQueue を再キュー', 'startFlush(auto) で復帰'] },
   error: { summary: 'UI/Collector へ公開する致命/警告状態。', entry: ['AutoSaveError を snapshot.lastError に格納', 'telemetry に code/retryable を添付'], exit: ['retryCount を次試行へ引き継ぐ', 'バックオフ完了を待機'] }
 } as const)
-
-export interface AutoSaveHistoryEntry {
-  readonly ts: string
-  readonly bytes: number
-  readonly location: 'current' | 'history'
-  readonly retained: boolean
-}
-
-export interface AutoSaveHistoryRotationPlan {
-  readonly targetDirectory: string
-  readonly indexFile: string
-  readonly currentFile: string
-  readonly maxGenerations: number
-  readonly maxBytes: number
-  readonly gcOrder: 'fifo'
-  readonly cleanupOrphans: boolean
-}
-
-export const AUTOSAVE_HISTORY_ROTATION_PLAN: AutoSaveHistoryRotationPlan = Object.freeze({ targetDirectory: 'project/autosave', indexFile: 'project/autosave/index.json', currentFile: 'project/autosave/current.json', maxGenerations: AUTOSAVE_DEFAULTS.maxGenerations, maxBytes: AUTOSAVE_DEFAULTS.maxBytes, gcOrder: 'fifo', cleanupOrphans: true })
-
-export interface AutoSaveSchedulerContract {
-  readonly start: () => void
-  readonly scheduleFlush: (reason: 'change' | 'flushNow') => void
-  readonly awaitIdle: () => Promise<void>
-  readonly dispose: () => Promise<void>
-}
-
-export interface AutoSavePersistenceContract {
-  readonly writeCurrent: (payload: Storyboard) => Promise<{ bytes: number }>
-  readonly updateIndex: (entry: AutoSaveHistoryEntry) => Promise<void>
-  readonly rotateHistory: (
-    entries: readonly AutoSaveHistoryEntry[],
-    options?: { enforceBytes?: boolean }
-  ) => Promise<readonly AutoSaveHistoryEntry[]>
-}
 
 export interface AutoSaveInitResult {
   readonly snapshot: () => AutoSaveStatusSnapshot
