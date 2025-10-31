@@ -1,6 +1,9 @@
 /// <reference types="node" />
 
 import assert from 'node:assert/strict';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { describe, test } from 'node:test';
 import { importJsYaml, loadWorkflow } from './utils/workflow-loader.js';
 
