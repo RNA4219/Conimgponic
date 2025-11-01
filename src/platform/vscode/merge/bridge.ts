@@ -122,14 +122,25 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
           ? { precision, threshold: effectiveThreshold }
           : { precision }
       const mergeInput = rest as MergeInput
-      const resolvedProfile = engine.resolveProfile(profile)
+      let resolvedPrecision: MergePrecision | undefined
+      const resolvePrecisionSafe = (): MergePrecision => {
+        if (resolvedPrecision !== undefined) {
+          return resolvedPrecision
+        }
+        try {
+          resolvedPrecision = engine.resolveProfile(profile).precision
+        } catch {
+          resolvedPrecision = profile.precision
+        }
+        return resolvedPrecision
+      }
       const { hub, dispose } = createEventHub()
       const detachAutoSaveLock = attachAutoSaveLockEvents(hub)
       const startedAt = Date.now()
       try {
         const result = engine.merge3(mergeInput, { profile, events: hub })
         publishMergeResult({
-          precision: resolvedProfile.precision,
+          precision: resolvePrecisionSafe(),
           processingMs: result.stats.processingMillis,
           conflictSegments: result.stats.conflictDecisions,
           status: result.stats.conflictDecisions === 0 ? 'success' : 'conflict',
@@ -148,7 +159,7 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
         const processingMs = Math.max(0, Math.round(Date.now() - startedAt))
         const mergeError = error instanceof MergeError ? error : undefined
         publishMergeResult({
-          precision: resolvedProfile.precision,
+          precision: resolvePrecisionSafe(),
           processingMs,
           conflictSegments: 0,
           status: 'error',
