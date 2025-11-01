@@ -22,47 +22,19 @@ import {
   type AutoSavePhaseGuardSnapshot
 } from './lib/autosave'
 import { getDay8Collector } from './telemetry/day8Collector'
+import {
+  handleToolbarSaveProject,
+  handleToolbarLoadProject,
+  handleToolbarPackageExport,
+  notifyOpfsFailure,
+  type ToolbarNotifiers
+} from './toolbar/handlers'
 
-interface ToolbarNotifiers {
-  readonly alert: (message: string) => void
-  readonly consoleError: (message: string, error: unknown) => void
-}
-
-function formatOpfsError(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-  return String(error)
-}
-
-function notifyOpfsFailure(
-  notifiers: ToolbarNotifiers,
-  alertPrefix: string,
-  consoleMessage: string,
-  error: unknown
-): void {
-  notifiers.alert(`${alertPrefix}: ${formatOpfsError(error)}`)
-  notifiers.consoleError(consoleMessage, error)
-}
-
-export async function handleToolbarSaveProject(
-  {
-    storyboard,
-    save,
-    alert: alertUser,
-    consoleError
-  }: ToolbarNotifiers & {
-    readonly storyboard: Storyboard
-    readonly save: (path: string, storyboard: Storyboard) => Promise<void>
-  }
-): Promise<void> {
-  try {
-    await save('project/storyboard.json', storyboard)
-    alertUser('Saved to OPFS: project/storyboard.json')
-  } catch (error) {
-    notifyOpfsFailure({ alert: alertUser, consoleError }, 'OPFS 保存に失敗しました', 'Failed to save project to OPFS', error)
-  }
-}
+export {
+  handleToolbarSaveProject,
+  handleToolbarLoadProject,
+  handleToolbarPackageExport
+} from './toolbar/handlers'
 
 interface SaveProjectButtonHandlerOptions extends ToolbarNotifiers {
   readonly getStoryboard: () => Storyboard
@@ -87,74 +59,6 @@ export async function handleSaveProjectButtonClick({
       { alert, consoleError },
       'OPFS 保存に失敗しました',
       'Failed to save project to OPFS',
-      error
-    )
-  }
-}
-
-function isStoryboardPayload(candidate: unknown): candidate is Storyboard {
-  if (!candidate || typeof candidate !== 'object') {
-    return false
-  }
-  const storyboard = candidate as Storyboard
-  return (
-    typeof storyboard.id === 'string' &&
-    typeof storyboard.title === 'string' &&
-    Array.isArray(storyboard.scenes) &&
-    Array.isArray(storyboard.selection)
-  )
-}
-
-export async function handleToolbarLoadProject(
-  {
-    load,
-    applyStoryboard,
-    alert: alertUser,
-    consoleError
-  }: ToolbarNotifiers & {
-    readonly load: (path: string) => Promise<Storyboard | null | undefined>
-    readonly applyStoryboard: (storyboard: Storyboard) => void
-  }
-): Promise<void> {
-  try {
-    const storyboard = await load('project/storyboard.json')
-    if (isStoryboardPayload(storyboard)) {
-      applyStoryboard(storyboard)
-      alertUser('Loaded from OPFS')
-      return
-    }
-    alertUser('No project found')
-  } catch (error) {
-    notifyOpfsFailure(
-      { alert: alertUser, consoleError },
-      'OPFS 読み込みに失敗しました',
-      'Failed to load project from OPFS',
-      error
-    )
-  }
-}
-
-export async function handleToolbarPackageExport(
-  {
-    storyboard,
-    build,
-    createDownload,
-    alert: alertUser,
-    consoleError
-  }: ToolbarNotifiers & {
-    readonly storyboard: Storyboard
-    readonly build: (storyboard: Storyboard) => Promise<string>
-    readonly createDownload: (content: string, storyboard: Storyboard) => void
-  }
-): Promise<void> {
-  try {
-    const pkg = await build(storyboard)
-    createDownload(pkg, storyboard)
-  } catch (error) {
-    notifyOpfsFailure(
-      { alert: alertUser, consoleError },
-      'パッケージ出力に失敗しました',
-      'Failed to export package',
       error
     )
   }

@@ -6,9 +6,9 @@ import test from 'node:test'
 import {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
-  handleToolbarPackageExport,
-  handleSaveProjectButtonClick
-} from '../../src/App'
+  handleToolbarPackageExport
+} from '../../src/toolbar/handlers'
+import { handleSaveProjectButtonClick } from '../../src/App'
 import { useSB } from '../../src/store'
 import type { Storyboard } from '../../src/types'
 
@@ -49,6 +49,28 @@ test('Save Project ボタンが OPFS 例外を通知し状態を保つ', async (
   assert.equal(logs[0]?.[0], 'Failed to save project to OPFS')
 })
 
+test('handleToolbarSaveProject が保存成功時に通知する', async () => {
+  const storyboard = createStoryboard('Toolbar Save Success Test')
+  const alerts: string[] = []
+  const calls: string[] = []
+
+  await handleToolbarSaveProject({
+    storyboard,
+    save: async (path, payload) => {
+      calls.push(`${path}:${payload.title}`)
+    },
+    alert(message) {
+      alerts.push(message)
+    },
+    consoleError() {
+      throw new Error('consoleError should not be called')
+    }
+  })
+
+  assert.deepEqual(calls, ['project/storyboard.json:Toolbar Save Success Test'])
+  assert.deepEqual(alerts, ['Saved to OPFS: project/storyboard.json'])
+})
+
 test('Load Project ボタンが OPFS 例外を通知しボードを変更しない', async () => {
   const original = useSB.getState().sb
   useSB.setState({ sb: { ...original, title: 'Load Failure Baseline', scenes: [], selection: [] } })
@@ -84,6 +106,29 @@ test('Load Project ボタンが OPFS 例外を通知しボードを変更しな�
   useSB.setState({ sb: original })
 })
 
+test('handleToolbarLoadProject が storyboard を適用する', async () => {
+  const storyboard = createStoryboard('Toolbar Load Success Test')
+  const alerts: string[] = []
+  const applied: Storyboard[] = []
+
+  await handleToolbarLoadProject({
+    load: async () => storyboard,
+    applyStoryboard(value) {
+      applied.push(value)
+    },
+    alert(message) {
+      alerts.push(message)
+    },
+    consoleError() {
+      throw new Error('consoleError should not be called')
+    }
+  })
+
+  assert.equal(applied.length, 1)
+  assert.equal(applied[0]?.title, 'Toolbar Load Success Test')
+  assert.deepEqual(alerts, ['Loaded from OPFS'])
+})
+
 test('Package Export ボタンが OPFS 例外を通知しダウンロードを抑止する', async () => {
   const storyboard = createStoryboard('Package Export Failure Test')
   const alerts: string[] = []
@@ -111,6 +156,27 @@ test('Package Export ボタンが OPFS 例外を通知しダウンロードを�
   assert.match(alerts[0], /失敗/)
   assert.equal(logs.length, 1)
   assert.equal(logs[0]?.[0], 'Failed to export package')
+})
+
+test('handleToolbarPackageExport がパッケージを生成してダウンロードする', async () => {
+  const storyboard = createStoryboard('Package Export Success Test')
+  const downloads: string[] = []
+
+  await handleToolbarPackageExport({
+    storyboard,
+    build: async value => JSON.stringify({ title: value.title }),
+    createDownload(content) {
+      downloads.push(content)
+    },
+    alert() {
+      throw new Error('alert should not be called')
+    },
+    consoleError() {
+      throw new Error('consoleError should not be called')
+    }
+  })
+
+  assert.deepEqual(downloads, ['{"title":"Package Export Success Test"}'])
 })
 
 test('Save Project ボタンハンドラが saveJSON 例外時にアラートとログを行う', async () => {
