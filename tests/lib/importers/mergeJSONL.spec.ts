@@ -52,3 +52,21 @@ test('mergeJSONL: 新規シーンの文字列 seed/take を数値化する', () 
   assert.strictEqual(scene?.take, 9)
   assert.strictEqual(scene?.manual, 'new')
 })
+
+test('mergeJSONL: 新規シーンで非文字列 text は空文字に正規化される', () => {
+  const before: Storyboard = {
+    id: 'sb-1',
+    title: 'demo',
+    scenes: [],
+    selection: [],
+    version: 1,
+  }
+
+  const payload = JSON.stringify({ id: 'scene-3', text: { nested: true } })
+
+  const merged = mergeJSONL(before, `${payload}\n`, 'manual')
+  const scene = merged.scenes.find((s) => s.id === 'scene-3')
+
+  assert.ok(scene, 'scene-3 should be created')
+  assert.strictEqual(scene?.manual, '')
+})
