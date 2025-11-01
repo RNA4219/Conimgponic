@@ -1,6 +1,6 @@
 import type { Storyboard } from '../../types'
 
-import { AUTOSAVE_DEFAULTS } from './policy.ts'
+import { AUTOSAVE_DEFAULTS } from './policy.js'
 
 export interface AutoSaveHistoryEntry {
   readonly ts: string
