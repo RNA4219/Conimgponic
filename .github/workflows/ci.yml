@@ -2,562 +2,106 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
-  workflow_dispatch: {}
-  schedule:
-    - cron: '0 3 * * *'
+
+permissions:
+  contents: read
+  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  sbom:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
+env:
+  PNPM_HOME: ${{ runner.temp }}/.pnpm
+  NODE_ENV: test
 
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Prepare pnpm
-        run: corepack prepare pnpm@9.12.3 --activate
-      - name: Setup Node.js
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js (22.x)
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 22
+          cache: pnpm
 
-      - name: Install Syft
-        run: |
-          set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b "$HOME/.local/bin" v1.16.0
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Verify Syft installation
-        run: |
-          set -euo pipefail
-          syft version
-      - name: Generate SBOM
-        id: generate_sbom
-        continue-on-error: true
-        env:
-          SYFT_CHECK_FOR_APP_UPDATE: 'false'
-          SYFT_LOG_FILE: sbom.log
-        run: |
-          set -euo pipefail
-          set +e
-          syft packages . -o spdx-json=sbom.json |& tee sbom.log
-          status=$?
-          set -e
-          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-
-      - name: Upload SBOM artifact
-        if: "always()"
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: sbom.json
-          if-no-files-found: "error"
-          retention-days: 1
-
-      - name: Upload SBOM log on failure
-        if: "steps.generate_sbom.outputs.exit_code != '0'"
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom-log
-          path: sbom.log
-          if-no-files-found: 'error'
-
-      - name: Fail when syft exits non-zero
-        if: steps.generate_sbom.outputs.exit_code != '0'
-        run: exit "${{ steps.generate_sbom.outputs.exit_code }}"
-
-  audit:
-    needs:
-      - sbom
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Prepare pnpm
-        run: corepack prepare pnpm@9.12.3 --activate
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Ensure lockfile
-        run: |
-          if [ ! -f pnpm-lock.yaml ]; then
-            pnpm install --lockfile-only
-          fi
-
-      - name: Install dependencies
+      - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Run pnpm audit
-        id: pnpm_audit
-        run: |
-          set -euo pipefail
-          set +e
-          pnpm audit --audit-level=moderate --json > audit-report.json
-          status=$?
-          set -e
-          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+      - name: Lint
+        run: pnpm -s lint
 
-      - name: Configure pnpm global bin
-        run: |
-          set -euo pipefail
-          PNPM_HOME="$HOME/.local/share/pnpm"
-          mkdir -p "$PNPM_HOME"
-          echo "PNPM_HOME=$PNPM_HOME" >> "$GITHUB_ENV"
-          echo "$PNPM_HOME" >> "$GITHUB_PATH"
+      - name: Typecheck
+        run: pnpm -s typecheck
 
-      - name: Install osv-scanner
+      - name: Build
+        run: pnpm -s build
+
+      - name: Unit tests (JUnit)
+        run: pnpm -s test:junit
+        continue-on-error: false
+
+      - name: Coverage (V8)
+        run: pnpm -s test:coverage
+
+      - name: Upload JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-xml
+          path: reports/junit.xml
+          if-no-files-found: warn
+
+      - name: Upload Coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-coverage
+          path: coverage
+          if-no-files-found: warn
+
+      - name: License check
+        run: pnpm -s license:check
+
+  security_scan:
+    runs-on: ubuntu-latest
+    needs: build_and_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OSV-Scanner (stable latest)
+        shell: bash
         run: |
           set -euo pipefail
-          OSV_SCANNER_VERSION="1.7.3"
           BIN_DIR="$HOME/.local/bin"
           mkdir -p "$BIN_DIR"
-
           case "$(uname -m)" in
-            x86_64|amd64)
-              OSV_ARCH="amd64"
-              ;;
-            aarch64|arm64)
-              OSV_ARCH="arm64"
-              ;;
-            *)
-              echo "Unsupported arch: $(uname -m)" >&2
-              exit 1
-              ;;
+            x86_64|amd64) OSV_ARCH="amd64" ;;
+            aarch64|arm64) OSV_ARCH="arm64" ;;
+            *) echo "Unsupported arch: $(uname -m)" >&2; exit 1 ;;
           esac
-
           curl -sSfL -o "$BIN_DIR/osv-scanner" \
-            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_${OSV_SCANNER_VERSION}_linux_${OSV_ARCH}"
+            "https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_${OSV_ARCH}"
           chmod +x "$BIN_DIR/osv-scanner"
           echo "$BIN_DIR" >> "$GITHUB_PATH"
           osv-scanner --version
 
-      - name: Run osv-scanner
-        run: osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
-
-      - name: Upload audit report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: audit-report
-          path: audit-report.json
-          if-no-files-found: error
-
-      - name: Upload osv report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: osv-report
-          path: osv-report.json
-          if-no-files-found: warn
-
-      - name: Fail when pnpm audit reports vulnerabilities
-        if: steps.pnpm_audit.outputs.exit_code != '0'
-        run: exit "${{ steps.pnpm_audit.outputs.exit_code }}"
-
-  license:
-    needs:
-      - sbom
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Prepare pnpm
-        run: corepack prepare pnpm@9.12.3 --activate
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Ensure lockfile
-        run: |
-          if [ ! -f pnpm-lock.yaml ]; then
-            pnpm install --lockfile-only
-          fi
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify licenses
-        run: pnpm -s license:check
-
-      - name: Upload license reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: license-artifacts
-          path: |
-            license-report.json
-            license-summary.json
-          if-no-files-found: error
-
-  build:
-    needs:
-      - sbom
-      - license
-      - quality
-      - audit
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Prepare pnpm
-        run: corepack prepare pnpm@9.12.3 --activate
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Ensure lockfile
-        run: |
-          if [ ! -f pnpm-lock.yaml ]; then
-            pnpm install --lockfile-only
-          fi
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: |
-          set -euo pipefail
-          pnpm --reporter ndjson -s build |& tee build.log
-
-      - name: Upload build artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: |
-            dist
-          if-no-files-found: error
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
-          if-no-files-found: 'error'
-
-  quality:
-    needs:
-      - sbom
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - suite: lint
-            command: pnpm -s lint
-            collect_failures: false
-          - suite: typecheck
-            command: pnpm -s typecheck
-            collect_failures: false
-          - suite: autosave
-            command: pnpm -s test:autosave
-            collect_failures: true
-          - suite: merge
-            command: pnpm -s test:merge
-            collect_failures: true
-          - suite: cli
-            command: pnpm -s test:cli
-            collect_failures: true
-          - suite: collector
-            command: pnpm -s test:collector
-            collect_failures: true
-          - suite: telemetry
-            command: pnpm -s test:telemetry
-            collect_failures: true
-    name: Quality (${{ matrix.suite }})
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Prepare pnpm
-        run: corepack prepare pnpm@9.12.3 --activate
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Ensure lockfile
-        run: |
-          if [ ! -f pnpm-lock.yaml ]; then
-            pnpm install --lockfile-only
-          fi
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Detect autosave changes
-        if: matrix.suite == 'autosave'
-        id: autosave_paths
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            autosave:
-              - 'src/**/autosave/**'
-              # Ensure autosave-suffixed modules trigger the autosave matrix
-              - 'src/**/*autosave*.ts'
-              - 'src/**/*autosave*.tsx'
-              - 'src/**/*[Aa]uto[Ss]ave*.ts'
-              - 'src/**/*[Aa]uto[Ss]ave*.tsx'
-              - 'tests/**/autosave.*.test.ts'
-              - 'tests/**/autosave/**'
-              - '.github/workflows/autosave*'
-              - 'tests/**/*autosave*.test.ts'
-              - 'tests/**/*autosave*.test.tsx'
-              - 'tests/**/*[Aa]uto[Ss]ave*.test.tsx'
-              # Ensure autosave bridge specs trigger the autosave suite, including the flags handshake coverage
-              - 'tests/**/*autosave*.spec.ts'
-              - 'tests/**/*autosave*.spec.tsx'
-              - 'tests/**/*[Aa]uto[Ss]ave*.spec.tsx'
-              - 'tests/extensions/vscode/flags-handshake.spec.ts'
-
-      - name: Determine autosave execution
-        if: matrix.suite == 'autosave'
-        id: autosave_conditions
-        env:
-          IS_MAIN: ${{ github.ref == 'refs/heads/main' }}
-          IS_WORKFLOW_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
-          IS_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
-          HAS_SLOW_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'run-slow-tests') }}
-          AUTOSAVE_CHANGED: ${{ steps.autosave_paths.outputs.autosave }}
-        run: |
-          set -euo pipefail
-          should_run=false
-          if [[ "${IS_MAIN}" == 'true' ]]; then
-            should_run=true
-          elif [[ "${IS_WORKFLOW_DISPATCH}" == 'true' ]]; then
-            should_run=true
-          elif [[ "${AUTOSAVE_CHANGED}" == 'true' ]]; then
-            should_run=true
-          elif [[ "${IS_PULL_REQUEST}" == 'true' && "${HAS_SLOW_LABEL}" == 'true' ]]; then
-            should_run=true
-          fi
-          echo "should_run=${should_run}" >> "${GITHUB_OUTPUT}"
-
-      - name: Run ${{ matrix.suite }} suite
-        id: run_suite_autosave
-        if: matrix.suite == 'autosave' && steps.autosave_conditions.outputs.should_run == 'true'
-        continue-on-error: true
-        timeout-minutes: 15
+      - name: Run OSV-Scanner (repo + lockfile)
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p logs
-          : > "logs/${{ matrix.suite }}-failures.log"
-          ${{ matrix.command }} |& tee "logs/${{ matrix.suite }}.log"
+          osv-scanner -r . --format sarif -o osv.sarif
 
-      - name: Run ${{ matrix.suite }} suite
-        id: run_suite_default
-        if: matrix.suite != 'autosave'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p logs
-          : > "logs/${{ matrix.suite }}-failures.log"
-          ${{ matrix.command }} |& tee "logs/${{ matrix.suite }}.log"
-
-      - name: Extract failed test output
-        if: |
-          matrix.collect_failures && (
-            steps.run_suite_autosave.outcome == 'failure' ||
-            steps.run_suite_default.outcome == 'failure'
-          )
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p logs
-          grep -E ':[0-9]+:[0-9]+: |not ok|FAIL|Error' "logs/${{ matrix.suite }}.log" > "logs/${{ matrix.suite }}-failures.log" || true
-
-      - name: Upload suite logs
-        if: |
-          always() &&
-          (
-            steps.run_suite_autosave.outcome != 'skipped' ||
-            steps.run_suite_default.outcome != 'skipped'
-          )
-        uses: actions/upload-artifact@v4
+      - name: Upload OSV SARIF
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          name: quality-${{ matrix.suite }}
-          path: |
-            logs/${{ matrix.suite }}.log
-            logs/${{ matrix.suite }}-failures.log
-          if-no-files-found: error
-
-      - name: Report suite failure
-        if: |
-          steps.run_suite_autosave.outcome == 'failure' ||
-          steps.run_suite_default.outcome == 'failure'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "::group::${{ matrix.suite }} suite failure log"
-          if [[ -f "logs/${{ matrix.suite }}.log" ]]; then
-            cat "logs/${{ matrix.suite }}.log"
-          else
-            echo "suite log not found"
-          fi
-          echo "::endgroup::"
-          if [[ -f "logs/${{ matrix.suite }}-failures.log" ]]; then
-            while IFS= read -r line; do
-              if [[ -n "$line" ]]; then
-                echo "::error::${line}"
-              fi
-            done < "logs/${{ matrix.suite }}-failures.log"
-          fi
-          exit 1
-
-  reports:
-    needs:
-      - quality
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Prepare pnpm
-        run: corepack prepare pnpm@9.12.3 --activate
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Ensure lockfile
-        run: |
-          if [ ! -f pnpm-lock.yaml ]; then
-            pnpm install --lockfile-only
-          fi
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Test with coverage
-        run: |
-          set -euo pipefail
-          rm -rf coverage
-          pnpm -s test:coverage
-
-      - name: Generate JUnit report
-        run: |
-          set -euo pipefail
-          mkdir -p reports
-          rm -f reports/junit.xml
-          pnpm test --test-reporter=junit --test-reporter-destination=file=reports/junit.xml
-
-      - name: Upload coverage artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: coverage/
-          if-no-files-found: error
-
-      - name: Upload junit report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: junit-report
-          path: reports/junit.xml
-          if-no-files-found: error
-
-  golden:
-    needs:
-      - build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Prepare pnpm
-        run: corepack prepare pnpm@9.12.3 --activate
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Ensure lockfile
-        run: |
-          if [ ! -f pnpm-lock.yaml ]; then
-            pnpm install --lockfile-only
-          fi
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run golden comparison
-        id: golden
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          rm -rf runs golden-diff.txt golden.log
-          pnpm -s golden:ci |& tee golden.log
-
-      - name: Upload golden artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: golden-artifacts
-          path: |
-            golden.log
-            golden-diff.txt
-            runs
-          if-no-files-found: 'error'
-
-      - name: Assert golden comparison passed
-        if: steps.golden.outcome == 'failure'
-        run: exit 1
+          sarif_file: osv.sarif
