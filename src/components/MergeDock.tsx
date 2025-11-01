@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from 'zustand'
-import { createStore, type StoreApi } from 'zustand/vanilla'
 
 import type { FlagSnapshot } from '../config'
 import { useSB } from '../store'
@@ -9,13 +7,7 @@ import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importe
 import type { Storyboard } from '../types'
 import { saveText, loadText, ensureDir } from '../lib/opfs'
 import { sha256Hex } from '../lib/hash'
-import {
-  diffBackupPolicy,
-  isBaseTabId,
-  resolveMergeDockPhasePlan,
-  type MergeDockPhaseStats,
-  type MergeDockTabId,
-} from '../lib/merge/phasePlan'
+import { isBaseTabId } from '../lib/merge/phasePlan'
 import {
   getDefaultPreference,
   persistMergeDockActiveTab,
@@ -23,17 +15,31 @@ import {
   resolvePreferenceSelection,
   sanitizeMergeDockActiveTab,
   sanitizePreference,
-  type MergeDockPreference,
 } from '../lib/merge/mergeDockPreference'
+import { useMergeThreshold } from '../lib/merge/threshold'
 import {
-  useMergeThreshold,
-  type WorkspaceConfiguration,
-} from '../lib/merge/threshold'
-import {
+  computeStoryboardWarnings,
+  diffBackupPolicy,
+  diffMergeNoopCommand,
+  emptyDiffHunks,
+  mergeMarkdownStoryboard,
+  readAutoSaveState,
+  resolveMergeDockPhasePlan,
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
-  type DiffBackupAutoSaveState,
-} from '../lib/merge/diffBackup'
+  type MergeDockAutoSaveState,
+  type MergeDockNotice,
+  type MergeDockPhaseStats,
+  type MergeDockPreference,
+  type MergeDockWindow,
+  type MergeDockTabId,
+  type WorkspaceConfiguration,
+} from './merge-dock/model'
+import {
+  createMergeDockViewStore,
+  useMergeDockViewStore,
+  type MergeDockViewStore,
+} from './merge-dock/store'
 
 export {
   diffBackupPolicy,
@@ -41,89 +47,13 @@ export {
   resolveMergeDockPhasePlan,
   resolveMergeThresholdPlan,
   shouldShowDiffBackupCTA,
-} from '../lib/merge/phasePlan'
-export {
   isDiffBackupCTAEligible,
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
-} from '../lib/merge/diffBackup'
+  mergeMarkdownStoryboard,
+} from './merge-dock/model'
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
-import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
-
-interface MergeDockViewState {
-  readonly activeTab: MergeDockTabId
-  readonly preference: MergeDockPreference
-  readonly setActiveTab: (tab: MergeDockTabId) => void
-  readonly setPreference: (preference: MergeDockPreference) => void
-}
-
-type MergeDockViewStore = StoreApi<MergeDockViewState>
-
-const createMergeDockViewStore = (
-  initialTab: MergeDockTabId,
-  preference: MergeDockPreference,
-): MergeDockViewStore =>
-  createStore<MergeDockViewState>((set) => ({
-    activeTab: initialTab,
-    preference,
-    setActiveTab: (tab) => set({ activeTab: tab }),
-    setPreference: (next) => set({ preference: next }),
-  }))
-
-type MergeDockAutoSaveState = DiffBackupAutoSaveState
-
-type MergeDockWindow = Window & {
-  __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
-  __mergeDockFlushNow?: () => void
-}
-
-const readAutoSaveState = (target: MergeDockWindow | undefined): MergeDockAutoSaveState => ({
-  flushNow: typeof target?.__mergeDockFlushNow === 'function' ? target.__mergeDockFlushNow : undefined,
-  lastSuccessAt: target?.__mergeDockAutoSaveSnapshot?.lastSuccessAt,
-})
-
-const emptyDiffHunks: readonly MergeHunk[] = []
-
-const diffMergeNoopCommand: QueueMergeCommand = async () => ({
-  status: 'success',
-  hunkIds: [],
-  telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: false },
-})
-
-export function mergeMarkdownStoryboard(
-  current: Storyboard,
-  markdown: string,
-  mode: ImportMode,
-): Storyboard {
-  const normalizedMarkdown = markdown.replace(/\r\n?/g, '\n')
-  const blocks = normalizedMarkdown.split(/(?:^|\n)##\s*Cut\s+\d+/).slice(1)
-  const scenes = current.scenes.map((scene, index) => {
-    const body = blocks[index]?.replace(/<!--.*?-->/g, '').trim()
-    if (body == null) {
-      return { ...scene }
-    }
-    return { ...scene, [mode]: body }
-  })
-  return { ...current, scenes }
-}
-
-type MergeDockNotice = { readonly level: 'info' | 'error'; readonly message: string }
-
-
-const computeStoryboardWarnings = (storyboard: Storyboard): string[] => {
-  const results: string[] = []
-  for (let index = 0; index < storyboard.scenes.length; index += 1) {
-    const scene = storyboard.scenes[index]!
-    if (!(scene.manual || scene.ai)) {
-      results.push(`#${index + 1} text empty`)
-    }
-    if (!scene.tone) {
-      results.push(`#${index + 1} tone missing`)
-    }
-  }
-  return results
-}
 
 function Checks(): JSX.Element {
   const warnings = useSB((state) => computeStoryboardWarnings(state.sb))
@@ -241,8 +171,8 @@ export function MergeDock({
     storeRef.current = createMergeDockViewStore(plan.initialTab, defaultPreference)
   }
   const store = storeRef.current
-  const activeTab = useStore(store, (state) => state.activeTab)
-  const preference = useStore(store, (state) => state.preference)
+  const activeTab = useMergeDockViewStore(store, (state) => state.activeTab)
+  const preference = useMergeDockViewStore(store, (state) => state.preference)
   const previousPrecisionRef = useRef(precision)
   const previousDiffEnabledRef = useRef(phasePlan.diff.enabled)
   useEffect(() => {
