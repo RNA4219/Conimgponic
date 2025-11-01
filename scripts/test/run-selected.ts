@@ -69,6 +69,7 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/app/autosave.*.test.tsx',
     'tests/app/*.spec.tsx'
   ],
+  AppToolbar: ['tests/app/AppToolbar.spec.tsx'],
   autosave: [
     'tests/app/autosave.*.test.ts',
     'tests/app/autosave.*.test.tsx',
