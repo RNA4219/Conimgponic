@@ -91,6 +91,22 @@ const diffMergeNoopCommand: QueueMergeCommand = async () => ({
   telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: false },
 })
 
+export function mergeMarkdownStoryboard(
+  current: Storyboard,
+  markdown: string,
+  mode: ImportMode,
+): Storyboard {
+  const blocks = markdown.split(/(?:^|\r?\n)##\s*Cut\s+\d+/).slice(1)
+  const scenes = current.scenes.map((scene, index) => {
+    const body = blocks[index]?.replace(/<!--.*?-->/g, '').trim()
+    if (body == null) {
+      return { ...scene }
+    }
+    return { ...scene, [mode]: body }
+  })
+  return { ...current, scenes }
+}
+
 type MergeDockNotice = { readonly level: 'info' | 'error'; readonly message: string }
 
 
@@ -351,15 +367,7 @@ export function MergeDock({
         } else if (file.name.endsWith('.csv')) {
           next = mergeCSV(current, text, mode)
         } else if (file.name.endsWith('.md')) {
-          const blocks = text.split(/\n##\s*Cut\s+\d+/).slice(1)
-          const scenes = current.scenes.map((scene, index) => {
-            const body = blocks[index]?.replace(/<!--.*?-->/g, '').trim()
-            if (body == null) {
-              return { ...scene }
-            }
-            return { ...scene, [mode]: body }
-          })
-          next = { ...current, scenes }
+          next = mergeMarkdownStoryboard(current, text, mode)
         } else {
           notify('error', 'Unsupported file type. Use .jsonl / .csv / .md')
           return

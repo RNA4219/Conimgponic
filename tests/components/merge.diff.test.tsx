@@ -17,6 +17,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createStore } from 'zustand/vanilla'
 
+import type { Storyboard } from '../../src/types'
+
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
 const mergeDockModule = await import('../../src/components/MergeDock')
 const mergePreferencesModule = await import('../../src/lib/merge/preferences.ts')
@@ -826,6 +828,35 @@ test('stable precision keeps diff merge preference as default when diff unlocks'
   })
 
   assert.equal(nextPreference, 'diff-merge')
+})
+
+test('mergeMarkdownStoryboard imports markdown that starts with a cut heading', () => {
+  const { mergeMarkdownStoryboard } = mergeDockModule as typeof mergeDockModule & {
+    mergeMarkdownStoryboard?: (current: Storyboard, markdown: string, mode: 'manual' | 'ai') => Storyboard
+  }
+
+  assert.ok(
+    mergeMarkdownStoryboard,
+    'Day8/workflow-cookbook/GUARDRAILS.md「変更は最小差分で行い、Public API を破壊しない。」と Day8/docs/day8/guides/07_contributing.md「1タスク=1ブランチ=1PR」遵守のため、Markdown インポート用ヘルパーを公開する',
+  )
+
+  const base: Storyboard = {
+    id: 'sb-1',
+    title: 'Test',
+    scenes: [
+      { id: 'cut-1', manual: '', ai: '', status: 'idle', assets: [] },
+      { id: 'cut-2', manual: '', ai: '', status: 'idle', assets: [] },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  const markdown = ['## Cut 1', 'Manual line 1', '', '## Cut 2', 'Manual line 2'].join('\n')
+
+  const imported = mergeMarkdownStoryboard!(base, markdown, 'manual')
+
+  assert.equal(imported.scenes[0]?.manual, 'Manual line 1')
+  assert.equal(imported.scenes[1]?.manual, 'Manual line 2')
 })
 
 test('stable precision preserves manual preference once diff guard lifts but allows override', () => {
