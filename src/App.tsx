@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSB } from './store'
 import type { Storyboard } from './types'
 import { LeftRight } from './components/LeftRightPanes'
@@ -16,12 +16,19 @@ import {
 import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { buildPackage } from './lib/package'
-import {
-  initAutoSave,
-  type AutoSaveInitResult,
-  type AutoSavePhaseGuardSnapshot
-} from './lib/autosave'
 import { getDay8Collector } from './telemetry/day8Collector'
+import {
+  useAutoSaveIntegration,
+  type AutoSaveActivationDecision
+} from './hooks/useAutoSaveIntegration'
+
+export {
+  planAutoSave,
+  installMergeDockAutoSaveBridge,
+  watchAutoSaveStoryboardDiffs
+} from './hooks/useAutoSaveIntegration'
+
+export type { AutoSaveActivationDecision } from './hooks/useAutoSaveIntegration'
 
 interface ToolbarNotifiers {
   readonly alert: (message: string) => void
@@ -212,94 +219,6 @@ export function HelpModal({ onClose }: { onClose: () => void }): React.ReactElem
   )
 }
 
-export type AutoSaveActivationDecision =
-  | {
-      readonly mode: 'manual-only'
-      readonly guard: AutoSavePhaseGuardSnapshot
-      readonly reason: 'phase-a0-failsafe' | 'feature-flag-disabled' | 'options-disabled'
-    }
-  | {
-      readonly mode: 'autosave'
-      readonly guard: AutoSavePhaseGuardSnapshot
-      readonly reason: 'feature-flag-enabled'
-    }
-
-type MergeDockWindow = Window & {
-  __mergeDockFlushNow?: () => void
-  __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
-}
-
-const resolveMergeDockWindow = (target?: Window): MergeDockWindow | undefined => {
-  if (target) {
-    return target as MergeDockWindow
-  }
-  if (typeof window === 'undefined') {
-    return undefined
-  }
-  return window as MergeDockWindow
-}
-
-const updateMergeDockSnapshot = (
-  runner: AutoSaveInitResult,
-  snapshotBox: { lastSuccessAt?: string }
-): void => {
-  const snapshot = runner.snapshot()
-  snapshotBox.lastSuccessAt = snapshot.lastSuccessAt
-}
-
-export const installMergeDockAutoSaveBridge = (
-  runner: AutoSaveInitResult,
-  target?: Window,
-): (() => void) => {
-  const mergeWindow = resolveMergeDockWindow(target)
-  if (!mergeWindow) {
-    return () => {}
-  }
-
-  const snapshotBox: { lastSuccessAt?: string } = {
-    lastSuccessAt: runner.snapshot().lastSuccessAt,
-  }
-
-  const flushWrapper = (): void => {
-    runner
-      .flushNow()
-      .then(() => {
-        updateMergeDockSnapshot(runner, snapshotBox)
-      })
-      .catch((error) => {
-        console.error('MergeDock: AutoSave flush failed', error)
-      })
-  }
-
-  mergeWindow.__mergeDockAutoSaveSnapshot = snapshotBox
-  mergeWindow.__mergeDockFlushNow = flushWrapper
-
-  const unsubscribe = runner.onEvent(() => {
-    updateMergeDockSnapshot(runner, snapshotBox)
-  })
-
-  return () => {
-    unsubscribe()
-    if (mergeWindow.__mergeDockFlushNow === flushWrapper) {
-      delete mergeWindow.__mergeDockFlushNow
-    }
-    if (mergeWindow.__mergeDockAutoSaveSnapshot === snapshotBox) {
-      delete mergeWindow.__mergeDockAutoSaveSnapshot
-    }
-  }
-}
-
-export function planAutoSave(plan: AutoSaveBootstrapPlan): AutoSaveActivationDecision {
-  if (plan.guard.optionsDisabled) {
-    return { mode: 'manual-only', guard: plan.guard, reason: 'options-disabled' }
-  }
-  if (!plan.guard.featureFlag.value) {
-    const reason = plan.failSafePhase === 'phase-a0' ? 'phase-a0-failsafe' : 'feature-flag-disabled'
-    return { mode: 'manual-only', guard: plan.guard, reason }
-  }
-  return { mode: 'autosave', guard: plan.guard, reason: 'feature-flag-enabled' }
-}
-
 export function publishAutoSaveGuard(decision: AutoSaveActivationDecision): void {
   if (decision.mode !== 'manual-only') {
     return
@@ -344,37 +263,6 @@ export function resolveMergeDockIntegration(
     mergeThreshold: threshold,
     workspace: options?.workspace ?? null
   }
-}
-
-export interface AutoSaveStoryboardStore {
-  readonly getState: () => { readonly sb: Storyboard }
-  readonly subscribe: (
-    listener: (state: { readonly sb: Storyboard }) => void
-  ) => () => void
-}
-
-export interface AutoSaveRunnerRef {
-  current: AutoSaveInitResult | null
-}
-
-export function watchAutoSaveStoryboardDiffs(
-  store: AutoSaveStoryboardStore,
-  runnerRef: AutoSaveRunnerRef,
-  runner: AutoSaveInitResult
-): () => void {
-  let previousSerialized = JSON.stringify(store.getState().sb)
-  return store.subscribe((state) => {
-    const serialized = JSON.stringify(state.sb)
-    if (serialized === previousSerialized) {
-      return
-    }
-    previousSerialized = serialized
-    if (runnerRef.current !== runner) {
-      return
-    }
-    const pendingBytes = serialized.length
-    runnerRef.current?.markDirty({ pendingBytes })
-  })
 }
 
 export interface ShortcutKeyEvent {
@@ -454,10 +342,10 @@ export default function App({ resolveOptions }: AppProps = {}){
   const [dockOpen, setDockOpen] = useState(()=> getDockOpenPreference())
   const [help, setHelp] = useState(false)
   const [base, setBase] = useState(OLLAMA_BASE)
-  const [autoSavePlan, setAutoSavePlan] = useState<AutoSaveBootstrapPlan | null>(null)
-  const [autoSaveDecision, setAutoSaveDecision] = useState<AutoSaveActivationDecision | null>(null)
-  const autoSaveRunner = useRef<AutoSaveInitResult | null>(null)
-  const mergeDockAutoSaveBridge = useRef<(() => void) | null>(null)
+  const { autoSavePlan, autoSaveDecision } = useAutoSaveIntegration({
+    resolveOptions: resolveOptions ?? null,
+    store: useSB,
+  })
   const mergeDockIntegration = resolveMergeDockIntegration(autoSavePlan, resolveOptions ?? null)
   const mergeDockFlags = mergeDockIntegration.flagSnapshot
   const toolbarNotifiers: ToolbarNotifiers = {
@@ -515,59 +403,6 @@ export default function App({ resolveOptions }: AppProps = {}){
     window.addEventListener('keydown', onKey)
     return ()=> window.removeEventListener('keydown', onKey)
   }, [])
-
-  useEffect(()=>{
-    const plan = resolveAutoSaveBootstrapPlan(resolveOptions ?? undefined)
-    setAutoSavePlan(plan)
-  }, [resolveOptions])
-
-  useEffect(()=>{
-    if (!autoSavePlan){
-      return
-    }
-
-    const decision = planAutoSave(autoSavePlan)
-    setAutoSaveDecision(decision)
-    if (decision.mode !== 'autosave'){
-      mergeDockAutoSaveBridge.current?.()
-      mergeDockAutoSaveBridge.current = null
-      const activeRunner = autoSaveRunner.current
-      autoSaveRunner.current = null
-      if (activeRunner){
-        void activeRunner.dispose()
-      }
-      return
-    }
-
-    const runner = initAutoSave(
-      () => useSB.getState().sb,
-      {
-        disabled: decision.guard.optionsDisabled
-      },
-      autoSavePlan.snapshot.autosave
-    )
-    autoSaveRunner.current = runner
-
-    mergeDockAutoSaveBridge.current?.()
-    const detachBridge = installMergeDockAutoSaveBridge(runner)
-    mergeDockAutoSaveBridge.current = detachBridge
-
-    const unsubscribe = watchAutoSaveStoryboardDiffs(useSB, autoSaveRunner, runner)
-
-    return ()=>{
-      unsubscribe()
-      if (mergeDockAutoSaveBridge.current === detachBridge){
-        mergeDockAutoSaveBridge.current()
-        mergeDockAutoSaveBridge.current = null
-      } else {
-        detachBridge()
-      }
-      if (autoSaveRunner.current === runner){
-        void autoSaveRunner.current?.dispose()
-        autoSaveRunner.current = null
-      }
-    }
-  }, [autoSavePlan])
 
   useEffect(()=>{
     if (!autoSaveDecision){
