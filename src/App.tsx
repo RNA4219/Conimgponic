@@ -36,6 +36,8 @@ import {
   type ToolbarSaveProjectRequest
 } from './toolbar/handlers'
 
+export { handleToolbarLoadProject, handleToolbarPackageExport }
+
 export {
   planAutoSave,
   installMergeDockAutoSaveBridge,
