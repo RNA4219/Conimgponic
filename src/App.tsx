@@ -28,19 +28,14 @@ import {
   useAutoSaveIntegration,
   type AutoSaveActivationDecision
 } from './hooks/useAutoSaveIntegration'
-import {
-  handleToolbarSaveProject,
-  handleToolbarLoadProject,
-  handleToolbarPackageExport,
-  type ToolbarNotifiers
-} from './toolbar/handlers'
+import * as toolbarHandlers from './toolbar/handlers'
 
 export {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
-  handleToolbarPackageExport,
-  type ToolbarNotifiers
-}
+  handleToolbarPackageExport
+} from './toolbar/handlers'
+export type { ToolbarNotifiers } from './toolbar/handlers'
 
 export {
   planAutoSave,
@@ -50,16 +45,18 @@ export {
 
 export type { AutoSaveActivationDecision } from './hooks/useAutoSaveIntegration'
 
-type ToolbarSaveProjectRequest = Parameters<typeof handleToolbarSaveProject>[0]
+type ToolbarSaveProjectRequest = Parameters<
+  typeof toolbarHandlers.handleToolbarSaveProject
+>[0]
 
 type ToolbarSave = ToolbarSaveProjectRequest['save']
 
 type SaveProjectButtonHandlerOptions =
-  | (ToolbarNotifiers & {
+  | (toolbarHandlers.ToolbarNotifiers & {
       readonly storyboard: Storyboard
       readonly save?: ToolbarSave
     })
-  | (ToolbarNotifiers & {
+  | (toolbarHandlers.ToolbarNotifiers & {
       readonly getStoryboard: () => Storyboard
       readonly saveJSONImpl?: ToolbarSave
     })
@@ -80,7 +77,7 @@ export async function handleSaveProjectButtonClick(
     return saveJSON
   })()
 
-  await handleToolbarSaveProject({
+  await toolbarHandlers.handleToolbarSaveProject({
     storyboard,
     save,
     alert,
@@ -503,7 +500,7 @@ export default function App({ resolveOptions }: AppProps = {}){
     return resolveMergeDockIntegration(mergeAlignedPlan, resolveOptions ?? null)
   }, [autoSavePlan, flagSnapshot.merge, resolveOptions])
   const mergeDockFlags = mergeDockIntegration.flagSnapshot
-  const toolbarNotifiers: ToolbarNotifiers = {
+  const toolbarNotifiers: toolbarHandlers.ToolbarNotifiers = {
     alert(message) {
       if (typeof window !== 'undefined' && typeof window.alert === 'function') {
         window.alert(message)
@@ -591,7 +588,7 @@ export default function App({ resolveOptions }: AppProps = {}){
         <button
           className="btn"
           onClick={() => {
-            void handleToolbarLoadProject({
+            void toolbarHandlers.handleToolbarLoadProject({
               load: (path: string) => loadJSON<Storyboard>(path),
               applyStoryboard(storyboard: Storyboard) {
                 useSB.setState({ sb: storyboard })
@@ -624,7 +621,7 @@ export default function App({ resolveOptions }: AppProps = {}){
         <button
           className="btn"
           onClick={() => {
-            void handleToolbarPackageExport({
+            void toolbarHandlers.handleToolbarPackageExport({
               storyboard: useSB.getState().sb,
               build: buildPackage,
               createDownload(content: string, currentStoryboard: Storyboard) {

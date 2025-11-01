@@ -442,6 +442,35 @@ describe('vscode extension telemetry contract (RED)', () => {
     const metricsUnion = readMetricsKeyUnionLiterals()
     deepStrictEqual(metricsEnum.slice().sort(), metricsUnion.slice().sort())
   })
+  test('merge.trace guardrail.metric enum は metricsKey 定義と TypeScript union を固定する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'merge.trace'
+    )
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'phase',
+      'collisions',
+      'processing_ms',
+      'guardrail',
+      'digest'
+    ])
+
+    assertOk(payloadSchema.properties, 'merge.trace payload schema must define properties')
+    const guardrailSchema = payloadSchema.properties.guardrail
+    assertOk(guardrailSchema, 'merge.trace payload schema must define guardrail')
+
+    const guardrailProperties = resolveSchemaProperties(guardrailSchema)
+    assertOk(guardrailProperties, 'merge.trace guardrail must define properties')
+
+    const metricSchema = resolveSchemaRef(guardrailProperties.metric)
+    assertOk(metricSchema?.enum, 'merge.trace guardrail.metric must enumerate metrics keys')
+
+    const guardrailMetrics = Array.from(metricSchema.enum).sort()
+    const metricsKeyEnum = loadMetricsKeyEnum().slice().sort()
+    deepStrictEqual(guardrailMetrics, metricsKeyEnum)
+
+    const metricsUnion = readMetricsKeyUnionLiterals().slice().sort()
+    deepStrictEqual(guardrailMetrics, metricsUnion)
+  })
   test('status.autosave telemetry は phase 情報と guard スナップショットを記録する', () => {
     const spec = findTelemetrySpec('status.autosave')
     assertOk(spec, 'status.autosave telemetry spec is missing')
@@ -2104,6 +2133,37 @@ test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクス�
     assertOk(
       exportResult.jsonlFields.includes('payload.summary.export_success_rate'),
       'export.result telemetry must expose summary.export_success_rate',
+    )
+  })
+
+  test('collect-metrics 契約は export_success_rate 指標を成功率ガードで監視する', () => {
+    const { inputRecord, notifications, phaseGates, telemetry } = COLLECT_METRICS_CONTRACT
+
+    strictEqual(
+      typeof inputRecord.export_success_rate,
+      'number',
+      'input record must define export_success_rate metric',
+    )
+
+    assertOk(
+      notifications.some((notification) => notification.metric === 'export_success_rate'),
+      'notifications must monitor export_success_rate breaches',
+    )
+
+    assertOk(
+      phaseGates
+        .flatMap((phase) => phase.guardrails)
+        .some(
+          (guard) => guard.metric === 'export_success_rate' && guard.comparator === 'gte',
+        ),
+      'phase gates must guard export_success_rate transitions',
+    )
+
+    const exportResult = telemetry.events.find((event) => event.event === 'export.result')
+    assertOk(exportResult, 'export.result telemetry spec must exist')
+    assertOk(
+      exportResult.jsonlFields.includes('payload.summary.export_success_rate'),
+      'export.result telemetry must emit summary.export_success_rate for success monitoring',
     )
   })
 

@@ -1104,21 +1104,102 @@ const safeRelease = async (lease: ProjectLockLease, options: WithProjectLockOpti
   }
 };
 export const withProjectLock: WithProjectLock = async (executor, options = {}) => {
-  const lease = await acquireProjectLock(options);
+  let lease = await acquireProjectLock(options);
+  let activeLease = lease;
   const releaseOnError = options.releaseOnError !== false;
-  try {
-    const result = await executor(lease);
+  let renewTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingRenew: Promise<void> | undefined;
+  let stopped = false;
+  let rejectRenewal: ((reason: unknown) => void) | undefined;
+  const renewalFailure = new Promise<never>((_, reject) => {
+    rejectRenewal = reject;
+  });
+  const renewalSignal = renewalFailure.catch((error) => {
+    throw error;
+  });
+
+  const clearRenewTimer = () => {
+    if (renewTimer) {
+      clearTimeout(renewTimer);
+      renewTimer = undefined;
+    }
+  };
+
+  const computeRenewInterval = (current: ProjectLockLease) =>
+    options.renewIntervalMs ?? Math.max(0, current.ttlMillis - HEARTBEAT_LEAD_MS);
+
+  const scheduleRenewal = () => {
+    if (stopped) return;
+    clearRenewTimer();
+    const interval = computeRenewInterval(activeLease);
+    renewTimer = setTimeout(() => {
+      if (stopped) return;
+      pendingRenew = renewProjectLock(activeLease, { signal: options.signal })
+        .then((refreshed) => {
+          activeLease = refreshed;
+          lease = refreshed;
+          pendingRenew = undefined;
+          if (!stopped) scheduleRenewal();
+        })
+        .catch((error) => {
+          pendingRenew = undefined;
+          stopped = true;
+          clearRenewTimer();
+          rejectRenewal?.(error);
+          throw error;
+        });
+    }, interval);
+  };
+
+  const stopRenewal = async () => {
+    stopped = true;
+    clearRenewTimer();
+    if (!pendingRenew) return;
+    try {
+      await pendingRenew;
+    } finally {
+      pendingRenew = undefined;
+    }
+  };
+
+  scheduleRenewal();
+
+  const finalize = async (result: unknown) => {
+    await stopRenewal();
     await safeRelease(lease, options, false);
     return result;
+  };
+
+  try {
+    const outcome = await Promise.race([executor(lease), renewalSignal]);
+    return (await finalize(outcome)) as Awaited<typeof outcome>;
   } catch (error) {
-    if (error instanceof ProjectLockError) {
-      emitError(error);
-      if (!error.retryable)
-        emitReadonly(reasonFromOperation(error.operation), error, options.onReadonly);
+    let failure: unknown = error;
+    try {
+      await stopRenewal();
+    } catch (renewError) {
+      failure = renewError;
     }
-    if (!releaseOnError) throw error;
-    await safeRelease(lease, options, false);
-    throw error;
+
+    if (failure instanceof ProjectLockError) {
+      emitError(failure);
+      if (!failure.retryable)
+        emitReadonly(reasonFromOperation(failure.operation), failure, options.onReadonly);
+    }
+
+    if (!releaseOnError) throw failure;
+
+    try {
+      await safeRelease(lease, options, false);
+    } catch (releaseError) {
+      failure = releaseError;
+    }
+
+    throw failure;
+  } finally {
+    stopped = true;
+    clearRenewTimer();
+    pendingRenew = undefined;
   }
 };
 export const projectLockApi:ProjectLockApi=Object.freeze({events:projectLockEvents,acquire:acquireProjectLock,renew:renewProjectLock,release:releaseProjectLock,withProjectLock});
