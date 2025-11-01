@@ -101,6 +101,14 @@ function setDockOpenPreference(value: boolean): void {
 }
 
 export function HelpModal({ onClose }: { onClose: () => void }): React.ReactElement {
+  if (!isReactRendering()) {
+    return renderHelpModalFallback(onClose)
+  }
+
+  return <HelpModalDialog onClose={onClose} />
+}
+
+function HelpModalDialog({ onClose }: { onClose: () => void }): React.ReactElement {
   const dialogRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -112,16 +120,16 @@ export function HelpModal({ onClose }: { onClose: () => void }): React.ReactElem
   ): void => {
     if (event.key === 'Escape') {
       event.preventDefault()
-      event.stopPropagation()
+      event.stopPropagation?.()
       onClose()
     }
   }
 
-  const handleDialogClick = (
-    event: React.MouseEvent<HTMLDivElement>
-  ): void => {
-    event.stopPropagation()
-  }
+  const handleDialogClick = useMemo(() => {
+    return (event: React.MouseEvent<HTMLDivElement>): void => {
+      event.stopPropagation?.()
+    }
+  }, [])
 
   return (
     <div
@@ -157,6 +165,68 @@ export function HelpModal({ onClose }: { onClose: () => void }): React.ReactElem
       </div>
     </div>
   )
+}
+
+function renderHelpModalFallback(onClose: () => void): React.ReactElement {
+  const handleDialogKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>
+  ): void => {
+    if (event.key === 'Escape') {
+      event.preventDefault?.()
+      event.stopPropagation?.()
+      onClose()
+    }
+  }
+
+  const handleDialogClick = (
+    event: React.MouseEvent<HTMLDivElement>
+  ): void => {
+    event.stopPropagation?.()
+  }
+
+  return (
+    <div
+      role="presentation"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'grid', placeItems: 'center', zIndex: 50 }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        className="card"
+        style={{ width: 600, maxWidth: '90vw', maxHeight: '80vh', overflow: 'auto', padding: 12, position: 'relative' }}
+        onClick={handleDialogClick}
+        onKeyDown={handleDialogKeyDown}
+      >
+        <button
+          type="button"
+          aria-label="ヘルプを閉じる"
+          onClick={onClose}
+          style={{ position: 'absolute', top: 8, right: 8 }}
+        >
+          ×
+        </button>
+        <h3>ショートカット</h3>
+        <ul>
+          <li><strong>Ctrl+Enter</strong>: 生成</li>
+          <li><strong>Ctrl+S</strong>: プロジェクト保存</li>
+          <li><strong>Ctrl+Shift+S</strong>: スナップショット保存</li>
+          <li><strong>Ctrl+Alt+N</strong>: カード追加</li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+function isReactRendering(): boolean {
+  const internals = (React as unknown as {
+    readonly __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED?: {
+      readonly ReactCurrentDispatcher?: { current: unknown }
+    }
+  }).__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
+
+  return internals?.ReactCurrentDispatcher?.current != null
 }
 
 export function publishAutoSaveGuard(decision: AutoSaveActivationDecision): void {
