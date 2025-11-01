@@ -21,6 +21,10 @@ import {
   useAutoSaveIntegration,
   type AutoSaveActivationDecision
 } from './hooks/useAutoSaveIntegration'
+import {
+  handleToolbarLoadProject,
+  handleToolbarPackageExport
+} from './toolbar/handlers'
 
 export {
   planAutoSave,
