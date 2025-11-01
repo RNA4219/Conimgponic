@@ -21,6 +21,7 @@ import type { Storyboard } from '../../src/types'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
 const mergeDockModule = await import('../../src/components/MergeDock')
+const mergeDomainModule = await import('../../src/components/merge-dock/domain')
 const mergePreferencesModule = await import('../../src/lib/merge/preferences.ts')
 const mergeThresholdModule = await import('../../src/lib/merge/threshold.ts')
 const {
@@ -32,7 +33,8 @@ const {
   shouldShowDiffBackupCTA,
   isDiffBackupCTAEligible,
   shouldEnableDiffInteraction,
-} = mergeDockModule as typeof mergeDockModule
+} = mergeDomainModule
+const exportedFromMergeDock = mergeDockModule as typeof mergeDockModule
 const {
   getDefaultPreference,
   sanitizePreference,
@@ -42,6 +44,12 @@ const {
 } = mergePreferencesModule
 const { resolveMergeThresholdSnapshot } = mergeThresholdModule
 type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
+
+test('MergeDock module re-exports domain helpers', () => {
+  assert.equal(exportedFromMergeDock.planMergeDockTabs, planMergeDockTabs)
+  assert.equal(exportedFromMergeDock.diffBackupPolicy, diffBackupPolicy)
+  assert.equal(exportedFromMergeDock.shouldRenderDiffBackupCTA, shouldRenderDiffBackupCTA)
+})
 
 test('resolveMergeThresholdSnapshot falls back to default threshold', () => {
   const snapshot = resolveMergeThresholdSnapshot({ workspace: null, storage: null })

@@ -19,6 +19,39 @@ export const readAutoSaveState = (target: MergeDockWindow | undefined): MergeDoc
   lastSuccessAt: target?.__mergeDockAutoSaveSnapshot?.lastSuccessAt,
 })
 
+export interface MergeDockAutoSaveHeartbeatState {
+  readonly autoSave: MergeDockAutoSaveState
+  readonly now: number
+}
+
+export interface MergeDockAutoSaveHeartbeatOptions {
+  readonly intervalMs?: number
+}
+
+export const startMergeDockAutoSaveHeartbeat = (
+  mergeWindow: MergeDockWindow | undefined,
+  listener: (state: MergeDockAutoSaveHeartbeatState) => void,
+  options?: MergeDockAutoSaveHeartbeatOptions,
+): (() => void) => {
+  let disposed = false
+  const intervalMs = options?.intervalMs ?? 5_000
+  const dispatch = () => {
+    if (disposed) return
+    listener({ autoSave: readAutoSaveState(mergeWindow), now: Date.now() })
+  }
+  dispatch()
+  if (intervalMs <= 0) {
+    return () => {
+      disposed = true
+    }
+  }
+  const interval = setInterval(dispatch, intervalMs)
+  return () => {
+    disposed = true
+    clearInterval(interval)
+  }
+}
+
 export function mergeMarkdownStoryboard(
   current: Storyboard,
   markdown: string,
