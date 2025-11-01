@@ -179,21 +179,21 @@ test('handleToolbarPackageExport がパッケージを生成してダウンロ�
   assert.deepEqual(downloads, ['{"title":"Package Export Success Test"}'])
 })
 
-test('Save Project ボタンハンドラが saveJSON 例外時にアラートとログを行う', async () => {
+test('Save Project ボタンハンドラが save 例外時にアラートとログを行う', async () => {
   const storyboard = createStoryboard('Toolbar Save Button Handler Failure Test')
   const alerts: string[] = []
   const logs: unknown[][] = []
 
   await handleSaveProjectButtonClick({
-    getStoryboard: () => storyboard,
+    storyboard,
+    save: async () => {
+      throw new Error('OPFS write failure')
+    },
     alert(message) {
       alerts.push(message)
     },
     consoleError(...args) {
       logs.push(args)
-    },
-    saveJSONImpl: async () => {
-      throw new Error('OPFS write failure')
     }
   })
 
@@ -201,4 +201,28 @@ test('Save Project ボタンハンドラが saveJSON 例外時にアラートと
   assert.match(alerts[0], /失敗/)
   assert.equal(logs.length, 1)
   assert.equal(logs[0]?.[0], 'Failed to save project to OPFS')
+})
+
+test('handleSaveProjectButtonClick が旧シグネチャを引き続き受け付ける', async () => {
+  const storyboard = createStoryboard('Toolbar Save Button Handler Legacy Signature Test')
+  const calls: Array<{ path: string; payload: Storyboard }> = []
+  const alerts: string[] = []
+
+  await handleSaveProjectButtonClick({
+    getStoryboard: () => storyboard,
+    alert(message) {
+      alerts.push(message)
+    },
+    consoleError() {
+      throw new Error('consoleError should not be called')
+    },
+    saveJSONImpl: async (path, payload) => {
+      calls.push({ path, payload })
+    }
+  })
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0]?.path, 'project/storyboard.json')
+  assert.equal(calls[0]?.payload.title, 'Toolbar Save Button Handler Legacy Signature Test')
+  assert.deepEqual(alerts, ['Saved to OPFS: project/storyboard.json'])
 })

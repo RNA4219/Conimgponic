@@ -16,7 +16,6 @@ import {
 import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { buildPackage } from './lib/package'
-import { handleToolbarLoadProject, handleToolbarPackageExport } from './toolbar/handlers'
 import { getDay8Collector } from './telemetry/day8Collector'
 import {
   useAutoSaveIntegration,
@@ -26,7 +25,8 @@ import {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
   handleToolbarPackageExport,
-  type ToolbarNotifiers
+  type ToolbarNotifiers,
+  type ToolbarSaveProjectRequest
 } from './toolbar/handlers'
 
 export {
@@ -37,20 +37,37 @@ export {
 
 export type { AutoSaveActivationDecision } from './hooks/useAutoSaveIntegration'
 
-interface SaveProjectButtonHandlerOptions extends ToolbarNotifiers {
-  readonly getStoryboard: () => Storyboard
-  readonly saveJSONImpl?: (path: string, storyboard: Storyboard) => Promise<void>
-}
+type ToolbarSave = ToolbarSaveProjectRequest['save']
 
-export async function handleSaveProjectButtonClick({
-  getStoryboard,
-  alert,
-  consoleError,
-  saveJSONImpl = saveJSON
-}: SaveProjectButtonHandlerOptions): Promise<void> {
+type SaveProjectButtonHandlerOptions =
+  | (ToolbarNotifiers & {
+      readonly storyboard: Storyboard
+      readonly save?: ToolbarSave
+    })
+  | (ToolbarNotifiers & {
+      readonly getStoryboard: () => Storyboard
+      readonly saveJSONImpl?: ToolbarSave
+    })
+
+export async function handleSaveProjectButtonClick(
+  options: SaveProjectButtonHandlerOptions
+): Promise<void> {
+  const { alert, consoleError } = options
+  const storyboard =
+    'storyboard' in options ? options.storyboard : options.getStoryboard()
+  const save: ToolbarSave = (() => {
+    if ('save' in options && options.save) {
+      return options.save
+    }
+    if ('saveJSONImpl' in options && options.saveJSONImpl) {
+      return options.saveJSONImpl
+    }
+    return saveJSON
+  })()
+
   await handleToolbarSaveProject({
-    storyboard: getStoryboard(),
-    save: saveJSONImpl,
+    storyboard,
+    save,
     alert,
     consoleError
   })
@@ -342,7 +359,7 @@ export default function App({ resolveOptions }: AppProps = {}){
           className="btn"
           onClick={() => {
             void handleSaveProjectButtonClick({
-              getStoryboard: () => useSB.getState().sb,
+              storyboard: useSB.getState().sb,
               ...toolbarNotifiers
             })
           }}
