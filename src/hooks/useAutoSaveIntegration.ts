@@ -11,7 +11,15 @@ import {
   type AutoSaveInitResult,
   type AutoSavePhaseGuardSnapshot,
 } from '../lib/autosave'
+import { getDay8Collector } from '../telemetry/day8Collector'
 import type { Storyboard } from '../types'
+import {
+  createKeyboardShortcutHandler,
+  createBrowserToolbarNotifiers,
+  type KeyboardShortcutHandlerOptions,
+  type ShortcutKeyEvent,
+  type ToolbarNotifiers,
+} from '../toolbar/handlers'
 
 export type AutoSaveActivationDecision =
   | {
@@ -61,6 +69,24 @@ export function planAutoSave(plan: AutoSaveBootstrapPlan): AutoSaveActivationDec
     return { mode: 'manual-only', guard: plan.guard, reason }
   }
   return { mode: 'autosave', guard: plan.guard, reason: 'feature-flag-enabled' }
+}
+
+export function publishAutoSaveGuard(decision: AutoSaveActivationDecision): void {
+  if (decision.mode !== 'manual-only') {
+    return
+  }
+  const collector = getDay8Collector()
+  if (!collector) {
+    return
+  }
+  collector.publish({
+    feature: 'autosave-diff-merge',
+    event: 'autosave.guard',
+    blocked: true,
+    reason: decision.reason,
+    guard: decision.guard,
+    ts: new Date().toISOString()
+  })
 }
 
 type MergeDockWindow = Window & {
@@ -288,4 +314,121 @@ export function useAutoSaveIntegration({
   }, [autoSavePlan, store, initAutoSaveImpl, installBridge, watchDiffs])
 
   return { autoSavePlan, autoSaveDecision }
+}
+
+export interface AutoSaveShortcutOptions {
+  readonly notifiers?: ToolbarNotifiers
+  readonly saveProject: (storyboard: Storyboard) => Promise<void>
+  readonly saveSnapshot: (storyboard: Storyboard) => Promise<void>
+  readonly addScene: () => void
+  readonly register?: (handler: (event: KeyboardEvent) => void) => () => void
+}
+
+export interface AutoSaveAppEffectsOptions {
+  readonly resolveOptions?: ResolveOptions | null
+  readonly store: AutoSaveStoryboardStore
+  readonly shortcut: AutoSaveShortcutOptions
+  readonly deps?: AutoSaveIntegrationDependencies & {
+    readonly publishGuard?: (decision: AutoSaveActivationDecision) => void
+    readonly createShortcutHandler?: (
+      options: KeyboardShortcutHandlerOptions
+    ) => (event: ShortcutKeyEvent) => Promise<void> | void
+  }
+}
+
+const defaultRegisterShortcut = (
+  handler: (event: KeyboardEvent) => void
+): (() => void) => {
+  if (typeof window === 'undefined') {
+    return () => {}
+  }
+  const wrapped = (event: KeyboardEvent): void => {
+    handler(event)
+  }
+  window.addEventListener('keydown', wrapped)
+  return () => {
+    window.removeEventListener('keydown', wrapped)
+  }
+}
+
+const resolveShortcutNotifiers = (notifiers?: ToolbarNotifiers): ToolbarNotifiers =>
+  notifiers ?? createBrowserToolbarNotifiers()
+
+export function registerAutoSaveShortcuts(
+  shortcut: AutoSaveShortcutOptions,
+  store: AutoSaveStoryboardStore,
+  handlerFactory: (options: KeyboardShortcutHandlerOptions) => (event: ShortcutKeyEvent) => Promise<void> | void
+): (() => void) | undefined {
+  const register = shortcut.register ?? defaultRegisterShortcut
+  const notifiers = resolveShortcutNotifiers(shortcut.notifiers)
+  const handler = handlerFactory({
+    getStoryboard: () => store.getState().sb,
+    saveProject: shortcut.saveProject,
+    saveSnapshot: shortcut.saveSnapshot,
+    addScene: shortcut.addScene,
+    alert: (message) => {
+      notifiers.alert(message)
+    },
+    consoleError: (message, error) => {
+      notifiers.consoleError(message, error)
+    }
+  })
+  return register((event: KeyboardEvent) => {
+    handler(event as ShortcutKeyEvent)
+  })
+}
+
+export function useAutoSaveAppEffects({
+  resolveOptions = null,
+  store,
+  shortcut,
+  deps
+}: AutoSaveAppEffectsOptions): UseAutoSaveIntegrationResult {
+  const integrationDeps = useMemo(() => deps, [deps])
+  const result = useAutoSaveIntegration({
+    resolveOptions,
+    store,
+    deps: integrationDeps
+  })
+
+  const publishGuardImpl = useMemo(
+    () => deps?.publishGuard ?? publishAutoSaveGuard,
+    [deps?.publishGuard]
+  )
+
+  useEffect(() => {
+    const decision = result.autoSaveDecision
+    if (!decision) {
+      return
+    }
+    publishGuardImpl(decision)
+  }, [publishGuardImpl, result.autoSaveDecision])
+
+  useEffect(() => {
+    const handlerFactory = deps?.createShortcutHandler ?? createKeyboardShortcutHandler
+    return registerAutoSaveShortcuts(shortcut, store, handlerFactory)
+  }, [
+    deps?.createShortcutHandler,
+    shortcut.register,
+    shortcut.notifiers,
+    shortcut.saveProject,
+    shortcut.saveSnapshot,
+    shortcut.addScene,
+    store
+  ])
+
+  useMemo(() => {
+    const handlerFactory = deps?.createShortcutHandler ?? createKeyboardShortcutHandler
+    registerAutoSaveShortcuts(shortcut, store, handlerFactory)
+  }, [
+    deps?.createShortcutHandler,
+    shortcut.register,
+    shortcut.notifiers,
+    shortcut.saveProject,
+    shortcut.saveSnapshot,
+    shortcut.addScene,
+    store
+  ])
+
+  return result
 }

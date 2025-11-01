@@ -292,7 +292,7 @@ test('App のツールバーが公式ハンドラを呼び出す', async () => {
   const loadHandlerSource = String(loadButton?.props.onClick)
   const exportHandlerSource = String(exportButton?.props.onClick)
 
-  assert.match(saveHandlerSource, /handleSaveProjectButtonClick/)
-  assert.match(loadHandlerSource, /handleToolbarLoadProject/)
-  assert.match(exportHandlerSource, /handleToolbarPackageExport/)
+  assert.match(saveHandlerSource, /toolbarActions\.saveProject/)
+  assert.match(loadHandlerSource, /toolbarActions\.loadProject/)
+  assert.match(exportHandlerSource, /toolbarActions\.exportPackage/)
 })
