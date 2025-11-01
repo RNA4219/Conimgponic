@@ -1832,31 +1832,30 @@ describe('vscode extension telemetry contract (RED)', () => {
       guardrailSchema.required,
       ['metric', 'observed', 'tolerance_pct', 'rollbackTo']
     )
-await t.test('merge.trace guardrail.metric は定義済みのすべてのメトリクスキーを列挙する', () => {
-  const guardrailProperties = resolveSchemaProperties(guardrailSchema)
-  assertOk(guardrailProperties, 'merge.trace guardrail must define properties')
 
-  const metricSchema = resolveSchemaRef(guardrailProperties.metric)
-  assertOk(metricSchema?.enum, 'merge.trace guardrail.metric must enumerate metrics keys')
+    const guardrailProperties = resolveSchemaProperties(guardrailSchema)
+    assertOk(guardrailProperties, 'merge.trace guardrail must define properties')
 
-  const allowedMetrics = new Set(metricSchema.enum)
-  const expectedMetrics = [
-    'autosave_p95',
-    'restore_success_rate',
-    'merge_auto_success_rate',
-    'ui_saved_rate',
-    'merge_processing_p95',
-    'export_latency_p95',
-    'export_success_rate'
-  ] as const
+    const metricSchema = resolveSchemaRef(guardrailProperties.metric)
+    assertOk(metricSchema?.enum, 'merge.trace guardrail.metric must enumerate metrics keys')
 
-  for (const metric of expectedMetrics) {
-    assertOk(
-      allowedMetrics.has(metric),
-      `merge.trace guardrail.metric enum must include ${metric}`,
-    )
-  }
-})
+    const allowedMetrics = new Set(metricSchema.enum)
+    const expectedMetrics = [
+      'autosave_p95',
+      'restore_success_rate',
+      'merge_auto_success_rate',
+      'ui_saved_rate',
+      'merge_processing_p95',
+      'export_latency_p95',
+      'export_success_rate'
+    ] as const
+
+    for (const metric of expectedMetrics) {
+      assertOk(
+        allowedMetrics.has(metric),
+        `merge.trace guardrail.metric enum must include ${metric}`,
+      )
+    }
 
   })
 
@@ -2047,12 +2046,10 @@ test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクス�
     )
     deepStrictEqual(failureErrorSchema.required, ['code', 'message', 'retryable'])
 
-    await t.test('export.result summary 指標の metricsKey enum は export 成功率を保持する', () => {
-      const metricsEnum = loadMetricsKeyEnum()
-      for (const metric of ['export_latency_p95', 'export_success_rate'] as const) {
-        assertOk(metricsEnum.includes(metric), `metricsKey enum must include ${metric}`)
-      }
-    })
+    const metricsEnum = loadMetricsKeyEnum()
+    for (const metric of ['export_latency_p95', 'export_success_rate'] as const) {
+      assertOk(metricsEnum.includes(metric), `metricsKey enum must include ${metric}`)
+    }
   })
 
   test('export.result telemetry は export_latency_p95 ガードで latency を監視する', () => {
