@@ -5,8 +5,6 @@ import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
 import type { Storyboard } from '../types'
-import { saveText, loadText, ensureDir } from '../lib/opfs'
-import { sha256Hex } from '../lib/hash'
 import { isBaseTabId } from '../lib/merge/phasePlan'
 import {
   getDefaultPreference,
@@ -27,6 +25,9 @@ import {
   resolveMergeDockPhasePlan,
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
+  startMergeDockAutoSaveHeartbeat,
+  type MergeDockAutoSaveHeartbeatOptions,
+  type MergeDockAutoSaveHeartbeatState,
   type MergeDockAutoSaveState,
   type MergeDockNotice,
   type MergeDockPhaseStats,
@@ -34,12 +35,17 @@ import {
   type MergeDockWindow,
   type MergeDockTabId,
   type WorkspaceConfiguration,
-} from './merge-dock/model'
+} from './merge-dock/domain'
 import {
   createMergeDockViewStore,
   useMergeDockViewStore,
   type MergeDockViewStore,
 } from './merge-dock/store'
+import {
+  loadLatestCompiledSnapshot,
+  MergeDockSnapshotError,
+  saveStoryboardSnapshot,
+} from './merge-dock/io'
 
 export {
   diffBackupPolicy,
@@ -51,116 +57,11 @@ export {
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
   mergeMarkdownStoryboard,
-} from './merge-dock/model'
+  startMergeDockAutoSaveHeartbeat,
+} from './merge-dock/domain'
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
-import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
-
-interface MergeDockViewState {
-  readonly activeTab: MergeDockTabId
-  readonly preference: MergeDockPreference
-  readonly setActiveTab: (tab: MergeDockTabId) => void
-  readonly setPreference: (preference: MergeDockPreference) => void
-}
-
-type MergeDockViewStore = StoreApi<MergeDockViewState>
-
-const createMergeDockViewStore = (
-  initialTab: MergeDockTabId,
-  preference: MergeDockPreference,
-): MergeDockViewStore =>
-  createStore<MergeDockViewState>((set) => ({
-    activeTab: initialTab,
-    preference,
-    setActiveTab: (tab) => set({ activeTab: tab }),
-    setPreference: (next) => set({ preference: next }),
-  }))
-
-type MergeDockAutoSaveState = DiffBackupAutoSaveState
-
-type MergeDockWindow = Window & {
-  __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
-  __mergeDockFlushNow?: () => void
-}
-
-const readAutoSaveState = (target: MergeDockWindow | undefined): MergeDockAutoSaveState => ({
-  flushNow: typeof target?.__mergeDockFlushNow === 'function' ? target.__mergeDockFlushNow : undefined,
-  lastSuccessAt: target?.__mergeDockAutoSaveSnapshot?.lastSuccessAt,
-})
-
-export interface MergeDockAutoSaveHeartbeatState {
-  readonly autoSave: MergeDockAutoSaveState
-  readonly now: number
-}
-
-export interface MergeDockAutoSaveHeartbeatOptions {
-  readonly intervalMs?: number
-}
-
-export const startMergeDockAutoSaveHeartbeat = (
-  mergeWindow: MergeDockWindow | undefined,
-  listener: (state: MergeDockAutoSaveHeartbeatState) => void,
-  options?: MergeDockAutoSaveHeartbeatOptions,
-): (() => void) => {
-  let disposed = false
-  const intervalMs = options?.intervalMs ?? 5_000
-  const dispatch = () => {
-    if (disposed) return
-    listener({ autoSave: readAutoSaveState(mergeWindow), now: Date.now() })
-  }
-  dispatch()
-  if (intervalMs <= 0) {
-    return () => {
-      disposed = true
-    }
-  }
-  const interval = setInterval(dispatch, intervalMs)
-  return () => {
-    disposed = true
-    clearInterval(interval)
-  }
-}
-
-const emptyDiffHunks: readonly MergeHunk[] = []
-
-const diffMergeNoopCommand: QueueMergeCommand = async () => ({
-  status: 'success',
-  hunkIds: [],
-  telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: false },
-})
-
-export function mergeMarkdownStoryboard(
-  current: Storyboard,
-  markdown: string,
-  mode: ImportMode,
-): Storyboard {
-  const blocks = markdown.split(/(?:^|\r?\n)##\s*Cut\s+\d+/).slice(1)
-  const scenes = current.scenes.map((scene, index) => {
-    const body = blocks[index]?.replace(/<!--.*?-->/g, '').trim()
-    if (body == null) {
-      return { ...scene }
-    }
-    return { ...scene, [mode]: body }
-  })
-  return { ...current, scenes }
-}
-
-type MergeDockNotice = { readonly level: 'info' | 'error'; readonly message: string }
-
-
-const computeStoryboardWarnings = (storyboard: Storyboard): string[] => {
-  const results: string[] = []
-  for (let index = 0; index < storyboard.scenes.length; index += 1) {
-    const scene = storyboard.scenes[index]!
-    if (!(scene.manual || scene.ai)) {
-      results.push(`#${index + 1} text empty`)
-    }
-    if (!scene.tone) {
-      results.push(`#${index + 1} tone missing`)
-    }
-  }
-  return results
-}
+import type { MergeHunk } from './diffMergeTypes.js'
 
 function Checks(): JSX.Element {
   const warnings = useSB((state) => computeStoryboardWarnings(state.sb))
@@ -538,19 +439,8 @@ export function MergeDock({
               type="button"
               onClick={async () => {
                 try {
-                  const ts = new Date().toISOString().replace(/[:.]/g, '-')
-                  const dir = `runs/${ts}`
-                  await ensureDir(dir)
-                  const md = toMarkdown(sb)
-                  const csv = toCSV(sb)
-                  const jsonl = toJSONL(sb)
-                  const h = await sha256Hex(md + '\n' + csv + '\n' + jsonl)
-                  await saveText(`${dir}/shotlist.md`, md)
-                  await saveText(`${dir}/shotlist.csv`, csv)
-                  await saveText(`${dir}/shotlist.jsonl`, jsonl)
-                  await saveText(`${dir}/meta.json`, JSON.stringify({ hash: h, title: sb.title }, null, 2))
-                  await saveText('runs/latest.txt', ts)
-                  notify('info', `Saved snapshot to OPFS: ${dir}`)
+                  const { directory } = await saveStoryboardSnapshot(sb)
+                  notify('info', `Saved snapshot to OPFS: ${directory}`)
                 } catch (error) {
                   console.error(error)
                   notify('error', 'Failed to save snapshot to OPFS.')
@@ -564,21 +454,20 @@ export function MergeDock({
               type="button"
               onClick={async () => {
                 try {
-                  const latest = await loadText('runs/latest.txt')
-                  if (!latest) {
+                  const snapshot = await loadLatestCompiledSnapshot()
+                  if (!snapshot) {
                     notify('error', 'No snapshot available.')
                     return
                   }
-                  const md = await loadText(`runs/${latest}/shotlist.md`)
-                  if (md == null) {
-                    notify('error', 'Missing compiled MD in the snapshot.')
-                    return
-                  }
-                  setCompiledOverride(md)
-                  notify('info', `Restored compiled snapshot from ${latest}.`)
+                  setCompiledOverride(snapshot.compiled)
+                  notify('info', `Restored compiled snapshot from ${snapshot.timestamp}.`)
                 } catch (error) {
                   console.error(error)
-                  notify('error', 'Failed to restore compiled snapshot.')
+                  const message =
+                    error instanceof MergeDockSnapshotError
+                      ? error.message
+                      : 'Failed to restore compiled snapshot.'
+                  notify('error', message)
                 }
               }}
             >

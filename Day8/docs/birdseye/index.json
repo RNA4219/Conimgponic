@@ -531,6 +531,14 @@
     ],
     [
       "src/components/MergeDock.tsx",
+      "src/components/merge-dock/domain.ts"
+    ],
+    [
+      "src/components/MergeDock.tsx",
+      "src/components/merge-dock/io.ts"
+    ],
+    [
+      "src/components/MergeDock.tsx",
       "src/lib/merge/phasePlan.ts"
     ],
     [
@@ -538,7 +546,7 @@
       "src/lib/merge.ts"
     ]
   ],
-  "generated_at": "2025-11-06T09:00:00Z",
+  "generated_at": "2025-11-07T00:00:00Z",
   "nodes": {
     "INSTALL.md": {
       "caps": "docs/birdseye/caps/INSTALL.md.json",
@@ -844,6 +852,16 @@
       "caps": "docs/birdseye/caps/src.components.MergeDock.tsx.json",
       "mtime": "2025-11-06T09:00:00Z",
       "role": "ui"
+    },
+    "src/components/merge-dock/domain.ts": {
+      "caps": "docs/birdseye/caps/src.components.merge-dock.domain.ts.json",
+      "mtime": "2025-11-07T00:00:00Z",
+      "role": "domain"
+    },
+    "src/components/merge-dock/io.ts": {
+      "caps": "docs/birdseye/caps/src.components.merge-dock.io.ts.json",
+      "mtime": "2025-11-07T00:00:00Z",
+      "role": "integration"
     },
     "src/lib/merge/phasePlan.ts": {
       "caps": "docs/birdseye/caps/src.lib.merge.phasePlan.ts.json",

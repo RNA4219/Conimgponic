@@ -4,14 +4,14 @@ import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import { MergeDock } from '../../src/components/MergeDock.tsx'
 import {
-  MergeDock,
   diffBackupPolicy,
   planMergeDockTabs,
   resolveMergeDockPhasePlan,
   shouldRenderDiffBackupCTA,
   startMergeDockAutoSaveHeartbeat,
-} from '../../src/components/MergeDock.tsx'
+} from '../../src/components/merge-dock/domain'
 import { DiffMergeView } from '../../src/components/DiffMergeView.tsx'
 import type { MergeHunk } from '../../src/components/diffMergeTypes.ts'
 import type { FlagSnapshot } from '../../src/config/flags.ts'

@@ -1,0 +1,33 @@
+{
+  "id": "src/components/merge-dock/io.ts",
+  "role": "integration",
+  "public_api": [
+    "saveStoryboardSnapshot",
+    "loadLatestCompiledSnapshot",
+    "MergeDockSnapshotError"
+  ],
+  "summary": "MergeDock の OPFS I/O 層。Storyboard を markdown/csv/jsonl へ書き出し、最新スナップショットのタイムスタンプとコンテンツを取得する。UI は成功/失敗メッセージのみ処理する。",
+  "deps_out": [
+    "src/lib/opfs.ts",
+    "src/lib/exporters.ts",
+    "src/lib/hash.ts"
+  ],
+  "deps_in": [
+    "src/components/MergeDock.tsx"
+  ],
+  "risks": [
+    "OPFS 構造の変更を反映しないと最新スナップショット検出が失敗する"
+  ],
+  "tests": [
+    "tests/components/merge.diff.test.tsx",
+    "tests/merge/merge-dock-tabs.test.ts"
+  ],
+  "maintenance": {
+    "refresh": "OPFS 保存パスやメタ情報を変えたら UI とテストの通知文言を更新し Birdseye を再生成する",
+    "tooling": [
+      "pnpm test --filter autotag:merge",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "2025-11-07T00:00:00Z"
+}

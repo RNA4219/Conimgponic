@@ -1,0 +1,37 @@
+{
+  "id": "src/components/merge-dock/domain.ts",
+  "role": "domain",
+  "public_api": [
+    "planMergeDockTabs",
+    "resolveMergeDockPhasePlan",
+    "shouldRenderDiffBackupCTA",
+    "startMergeDockAutoSaveHeartbeat",
+    "mergeMarkdownStoryboard",
+    "computeStoryboardWarnings"
+  ],
+  "summary": "MergeDock の非 UI ドメイン層。差分タブ計画、diff バックアップ判定、AutoSave ハートビート、Markdown マージなどの純粋ロジックを提供し、UI から再エクスポートされる。",
+  "deps_out": [
+    "src/lib/merge/phasePlan.ts",
+    "src/lib/merge/diffBackup.ts"
+  ],
+  "deps_in": [
+    "src/components/MergeDock.tsx",
+    "tests/components/merge.diff.test.tsx",
+    "tests/merge/merge-dock-tabs.test.ts"
+  ],
+  "risks": [
+    "UI 再エクスポートと直接 import の整合が崩れると API が二重管理になる"
+  ],
+  "tests": [
+    "tests/components/merge.diff.test.tsx",
+    "tests/merge/merge-dock-tabs.test.ts"
+  ],
+  "maintenance": {
+    "refresh": "計算ロジックやハートビート間隔を変更したら UI とテストの依存を更新し Birdseye を再生成する",
+    "tooling": [
+      "pnpm test --filter autotag:merge",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "2025-11-07T00:00:00Z"
+}
