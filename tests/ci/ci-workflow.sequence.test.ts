@@ -142,7 +142,8 @@ const expectedAuditReportRedirection =
   'pnpm audit --audit-level=moderate --json > audit-report.json';
 const expectedOsvReportOutputFlag = '--output osv-report.json';
 const expectedOsvPackageSpecifier = '@google/osv-scanner@1.7.3';
-const expectedOsvDlxPrefix = `pnpm dlx --package=${expectedOsvPackageSpecifier}`;
+const expectedOsvInstallCommand = `pnpm add --global ${expectedOsvPackageSpecifier}`;
+const expectedOsvExecPrefix = 'pnpm exec --global osv-scanner';
 const expectedPnpmAuditStepId = 'pnpm_audit';
 const expectedPnpmAuditExitCodeExport = 'echo "exit_code=$status" >> "$GITHUB_OUTPUT"';
 const expectedAuditFailureStepName = 'Fail when pnpm audit reports vulnerabilities';
@@ -646,8 +647,8 @@ describe('ci workflow build job', () => {
 
     assertLineIncludes(
       auditRunLines,
-      expectedOsvDlxPrefix,
-      'audit job must install osv-scanner via pnpm dlx with a pinned version',
+      expectedOsvInstallCommand,
+      'audit job must install osv-scanner via pnpm add --global with a pinned version',
     );
 
     assert.ok(
@@ -657,8 +658,8 @@ describe('ci workflow build job', () => {
 
     assertLineIncludes(
       auditRunLines,
-      'osv-scanner',
-      'audit job must run osv-scanner',
+      expectedOsvExecPrefix,
+      'audit job must run osv-scanner via pnpm exec --global',
     );
     assertLineIncludes(
       auditRunLines,
@@ -724,8 +725,8 @@ describe('ci workflow build job', () => {
 
     assertStepRunIncludesLine(
       osvScannerStep,
-      expectedOsvDlxPrefix,
-      'audit job must run osv-scanner via pnpm dlx with a pinned version',
+      expectedOsvExecPrefix,
+      'audit job must run osv-scanner via pnpm exec --global with a pinned version',
     );
 
     const failureStep = assertStepWithName(

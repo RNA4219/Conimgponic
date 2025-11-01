@@ -121,10 +121,11 @@ jobs:
       - name: Install osv-scanner
         run: |
           set -euo pipefail
-          pnpm dlx --package=@google/osv-scanner@1.7.3 osv-scanner --version
+          pnpm add --global @google/osv-scanner@1.7.3
+          pnpm exec --global osv-scanner --version
 
       - name: Run osv-scanner
-        run: pnpm dlx --package=@google/osv-scanner@1.7.3 osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
+        run: pnpm exec --global osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
 
       - name: Upload audit report
         if: always()
