@@ -3,9 +3,19 @@ import type { TestContext } from 'node:test'
 
 import { ENABLED_GUARD, scenario } from './setup'
 
-import { projectLockApi } from '../../../src/lib/locks'
+import { ProjectLockError, projectLockApi } from '../../../src/lib/locks'
 import type { AutoSaveError } from '../../../src/lib/autosave'
 import type { Storyboard } from '../../../src/types'
+
+type LockManagerLike = {
+  request(
+    name: string,
+    optionsOrCallback:
+      | { signal?: AbortSignal }
+      | ((lock: { release(): Promise<void> }) => Promise<unknown> | unknown),
+    callback?: (lock: { release(): Promise<void> }) => Promise<unknown> | unknown
+  ): Promise<unknown>
+}
 
 const makeStoryboard = (nodes: string[]): Storyboard => ({
   id: 'storyboard',
@@ -165,6 +175,33 @@ scenario(
     assert.equal(finalSnapshot.retryCount, 1)
     assert.equal(finalSnapshot.lastError?.code, rejectedError.code)
     assert.equal(finalSnapshot.lastError?.retryable, rejectedError.retryable)
+  }
+)
+
+scenario(
+  'aborting a pending web lock request yields a retryable acquisition error',
+  async (_t, _ctx) => {
+    const locks = (globalThis as { navigator: { locks: LockManagerLike } }).navigator.locks
+    const ready = createDeferred<void>()
+    const gate = createDeferred<void>()
+    const done = createDeferred<void>()
+    const holding = locks.request('project', async (lock) => {
+      ready.resolve()
+      await gate.promise
+      await lock.release()
+      done.resolve()
+    })
+    await ready.promise
+    const controller = new AbortController()
+    const attempt = projectLockApi.withProjectLock(async () => undefined, { signal: controller.signal })
+    controller.abort()
+    const rejection = await assert.rejects(attempt, (error): error is ProjectLockError => {
+      return error instanceof ProjectLockError && error.code === 'acquire-denied'
+    })
+    assert.equal(rejection.retryable, true)
+    gate.resolve()
+    await done.promise
+    await holding
   }
 )
 
