@@ -5,8 +5,6 @@ import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
 import type { Storyboard } from '../types'
-import { saveText, loadText, ensureDir } from '../lib/opfs'
-import { sha256Hex } from '../lib/hash'
 import { isBaseTabId } from '../lib/merge/phasePlan'
 import {
   getDefaultPreference,
@@ -27,6 +25,9 @@ import {
   resolveMergeDockPhasePlan,
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
+  startMergeDockAutoSaveHeartbeat,
+  type MergeDockAutoSaveHeartbeatOptions,
+  type MergeDockAutoSaveHeartbeatState,
   type MergeDockAutoSaveState,
   type MergeDockNotice,
   type MergeDockPhaseStats,
@@ -34,12 +35,17 @@ import {
   type MergeDockWindow,
   type MergeDockTabId,
   type WorkspaceConfiguration,
-} from './merge-dock/model'
+} from './merge-dock/domain'
 import {
   createMergeDockViewStore,
   useMergeDockViewStore,
   type MergeDockViewStore,
 } from './merge-dock/store'
+import {
+  loadLatestCompiledSnapshot,
+  MergeDockSnapshotError,
+  saveStoryboardSnapshot,
+} from './merge-dock/io'
 
 export {
   diffBackupPolicy,
@@ -51,7 +57,8 @@ export {
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
   mergeMarkdownStoryboard,
-} from './merge-dock/model'
+  startMergeDockAutoSaveHeartbeat,
+} from './merge-dock/domain'
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
 import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
@@ -522,19 +529,8 @@ export function MergeDock({
               type="button"
               onClick={async () => {
                 try {
-                  const ts = new Date().toISOString().replace(/[:.]/g, '-')
-                  const dir = `runs/${ts}`
-                  await ensureDir(dir)
-                  const md = toMarkdown(sb)
-                  const csv = toCSV(sb)
-                  const jsonl = toJSONL(sb)
-                  const h = await sha256Hex(md + '\n' + csv + '\n' + jsonl)
-                  await saveText(`${dir}/shotlist.md`, md)
-                  await saveText(`${dir}/shotlist.csv`, csv)
-                  await saveText(`${dir}/shotlist.jsonl`, jsonl)
-                  await saveText(`${dir}/meta.json`, JSON.stringify({ hash: h, title: sb.title }, null, 2))
-                  await saveText('runs/latest.txt', ts)
-                  notify('info', `Saved snapshot to OPFS: ${dir}`)
+                  const { directory } = await saveStoryboardSnapshot(sb)
+                  notify('info', `Saved snapshot to OPFS: ${directory}`)
                 } catch (error) {
                   console.error(error)
                   notify('error', 'Failed to save snapshot to OPFS.')
@@ -548,21 +544,20 @@ export function MergeDock({
               type="button"
               onClick={async () => {
                 try {
-                  const latest = await loadText('runs/latest.txt')
-                  if (!latest) {
+                  const snapshot = await loadLatestCompiledSnapshot()
+                  if (!snapshot) {
                     notify('error', 'No snapshot available.')
                     return
                   }
-                  const md = await loadText(`runs/${latest}/shotlist.md`)
-                  if (md == null) {
-                    notify('error', 'Missing compiled MD in the snapshot.')
-                    return
-                  }
-                  setCompiledOverride(md)
-                  notify('info', `Restored compiled snapshot from ${latest}.`)
+                  setCompiledOverride(snapshot.compiled)
+                  notify('info', `Restored compiled snapshot from ${snapshot.timestamp}.`)
                 } catch (error) {
                   console.error(error)
-                  notify('error', 'Failed to restore compiled snapshot.')
+                  const message =
+                    error instanceof MergeDockSnapshotError
+                      ? error.message
+                      : 'Failed to restore compiled snapshot.'
+                  notify('error', message)
                 }
               }}
             >

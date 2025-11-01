@@ -4,9 +4,11 @@
   "public_api": [
     "MergeDock"
   ],
-  "summary": "精緻マージ UI。Zustand ストアでタブ/プリファレンスを管理し、diff/backup/AutoSave 状態を組み合わせて操作パネルを描画する。window ブリッジ経由で AutoSave flush を露出する。",
+  "summary": "MergeDock の React UI レイヤー。zustand ストア (merge-dock/store.ts) とドメイン計算 (merge-dock/domain.ts)、OPFS I/O (merge-dock/io.ts) へ委譲し、描画とハンドラ接続のみを担う。window ブリッジ経由の AutoSave flush 表示を継続する。",
   "deps_out": [
-    "src/lib/merge/phasePlan.ts"
+    "src/components/merge-dock/domain.ts",
+    "src/components/merge-dock/io.ts",
+    "src/components/merge-dock/store.ts"
   ],
   "deps_in": [],
   "risks": [
@@ -18,7 +20,7 @@
     "tests/merge/merge-dock-tabs.test.ts"
   ],
   "maintenance": {
-    "refresh": "UI のタブ構成や AutoSave 連携を変更したら MergeDock.* テストとブリッジ仕様を更新し Birdseye を再生成する",
+    "refresh": "UI のタブ構成や委譲先 (domain/store/io) の契約を変えたら MergeDock.* テストを更新し Birdseye を再生成する",
     "tooling": [
       "pnpm test --filter autotag:merge",
       "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
