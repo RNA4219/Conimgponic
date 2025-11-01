@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -372,6 +373,27 @@ export function notifyFlagSnapshotRefresh(): void {
   window.dispatchEvent(new Event(FLAG_REFRESH_EVENT))
 }
 
+export function useFlagSnapshot(
+  resolveOptions?: ResolveOptions | null
+): FlagSnapshot {
+  const subscription = useMemo(
+    () => createFlagSnapshotSubscription(resolveOptions ?? null),
+    [resolveOptions]
+  )
+  const snapshot = useSyncExternalStore(
+    subscription.subscribe,
+    subscription.read,
+    subscription.read
+  )
+  useEffect(() => {
+    subscription.refresh()
+    return () => {
+      subscription.dispose()
+    }
+  }, [subscription])
+  return snapshot
+}
+
 export function resolveMergeDockIntegration(
   plan: AutoSaveBootstrapPlan | null,
   options?: ResolveOptions | null
@@ -463,35 +485,30 @@ export default function App({ resolveOptions }: AppProps = {}){
   const [dockOpen, setDockOpen] = useState(()=> getDockOpenPreference())
   const [help, setHelp] = useState(false)
   const [base, setBase] = useState(OLLAMA_BASE)
-  const flagSubscription = useMemo(
-    () => createFlagSnapshotSubscription(resolveOptions ?? null),
-    [resolveOptions]
-  )
-  const flagSnapshot = useSyncExternalStore(
-    flagSubscription.subscribe,
-    flagSubscription.read,
-    flagSubscription.read
-  )
-  useEffect(() => {
-    flagSubscription.refresh()
-    return () => {
-      flagSubscription.dispose()
-    }
-  }, [flagSubscription])
-  const autoSaveDeps = useMemo(
-    () => ({
-      resolvePlan: () => resolveAutoSaveBootstrapPlan(resolveOptions ?? undefined)
-    }),
-    [resolveOptions, flagSnapshot.updatedAt]
+  const resolvedOptions = resolveOptions ?? null
+  const flagSnapshot = useFlagSnapshot(resolvedOptions)
+  const resolvePlan = useCallback(() => {
+    return resolveAutoSaveBootstrapPlan(resolvedOptions ?? undefined)
+  }, [
+    resolvedOptions,
+    flagSnapshot.autosave.enabled,
+    flagSnapshot.autosave.source,
+    flagSnapshot.merge.precision,
+    flagSnapshot.merge.source,
+    flagSnapshot.merge.threshold
+  ])
+  const integrationDeps = useMemo(
+    () => ({ resolvePlan }),
+    [resolvePlan]
   )
   const { autoSavePlan, autoSaveDecision } = useAutoSaveIntegration({
-    resolveOptions: resolveOptions ?? null,
+    resolveOptions: resolvedOptions,
     store: useSB,
-    deps: autoSaveDeps
+    deps: integrationDeps
   })
   const mergeDockIntegration = useMemo(() => {
     if (!autoSavePlan) {
-      return resolveMergeDockIntegration(null, resolveOptions ?? null)
+      return resolveMergeDockIntegration(null, resolvedOptions)
     }
     const mergeAlignedPlan: AutoSaveBootstrapPlan =
       autoSavePlan.snapshot.merge === flagSnapshot.merge
@@ -500,8 +517,8 @@ export default function App({ resolveOptions }: AppProps = {}){
             ...autoSavePlan,
             snapshot: { ...autoSavePlan.snapshot, merge: flagSnapshot.merge }
           }
-    return resolveMergeDockIntegration(mergeAlignedPlan, resolveOptions ?? null)
-  }, [autoSavePlan, flagSnapshot.merge, resolveOptions])
+    return resolveMergeDockIntegration(mergeAlignedPlan, resolvedOptions)
+  }, [autoSavePlan, flagSnapshot.merge, resolvedOptions])
   const mergeDockFlags = mergeDockIntegration.flagSnapshot
   const toolbarNotifiers: ToolbarNotifiers = {
     alert(message) {
