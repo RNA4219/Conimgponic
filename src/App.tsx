@@ -36,7 +36,11 @@ import {
   type ToolbarSaveProjectRequest
 } from './toolbar/handlers'
 
-export { handleToolbarLoadProject, handleToolbarPackageExport }
+export {
+  handleToolbarSaveProject,
+  handleToolbarLoadProject,
+  handleToolbarPackageExport
+} from './toolbar/handlers'
 
 export {
   planAutoSave,
