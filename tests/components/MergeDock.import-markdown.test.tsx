@@ -1,0 +1,55 @@
+/// <reference types="node" />
+
+const tsNodeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+if (tsNodeEnv) {
+  tsNodeEnv.TS_NODE_IGNORE_DIAGNOSTICS = '2304,2307,2578,2580,5097'
+}
+
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import type { Storyboard } from '../../src/types'
+
+const mergeDockModule = await import('../../src/components/MergeDock')
+
+const { mergeMarkdownStoryboard } = mergeDockModule as typeof mergeDockModule & {
+  mergeMarkdownStoryboard?: (
+    current: Storyboard,
+    markdown: string,
+    mode: 'manual' | 'ai',
+  ) => Storyboard
+}
+
+test('MergeDock mergeMarkdownStoryboard updates scenes when markdown starts with a cut heading containing CRLF', () => {
+  assert.ok(
+    mergeMarkdownStoryboard,
+    'Day8/workflow-cookbook/GUARDRAILS.md と Day8/docs/day8/guides/07_contributing.md の最小差分原則に従い、Markdown インポートヘルパーをエクスポートする',
+  )
+
+  const base: Storyboard = {
+    id: 'sb-merge-crlf',
+    title: 'Storyboard',
+    scenes: [
+      { id: 'cut-1', manual: 'original manual 1', ai: 'original ai 1', status: 'idle', assets: [] },
+      { id: 'cut-2', manual: 'original manual 2', ai: 'original ai 2', status: 'idle', assets: [] },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  const markdown = [
+    '## Cut 1',
+    'Manual line 1',
+    'Manual line 1b',
+    '',
+    '## Cut 2',
+    'Manual line 2',
+  ].join('\r\n')
+
+  const imported = mergeMarkdownStoryboard!(base, markdown, 'manual')
+
+  assert.equal(imported.scenes[0]?.manual, 'Manual line 1\nManual line 1b')
+  assert.equal(imported.scenes[1]?.manual, 'Manual line 2')
+  assert.equal(imported.scenes[0]?.ai, 'original ai 1')
+  assert.equal(imported.scenes[1]?.ai, 'original ai 2')
+})
