@@ -26,18 +26,16 @@ import {
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
   startMergeDockAutoSaveHeartbeat,
-  type MergeDockPhaseStats,
-  type MergeDockPreference,
-  type MergeDockTabId,
-  type WorkspaceConfiguration,
-} from './merge-dock/domain'
-import {
   type MergeDockAutoSaveHeartbeatOptions,
   type MergeDockAutoSaveHeartbeatState,
   type MergeDockAutoSaveState,
   type MergeDockNotice,
+  type MergeDockPhaseStats,
+  type MergeDockPreference,
+  type MergeDockTabId,
   type MergeDockWindow,
-} from './merge-dock/model'
+  type WorkspaceConfiguration,
+} from './merge-dock/domain'
 import {
   createMergeDockViewStore,
   useMergeDockViewStore,
@@ -64,6 +62,7 @@ export {
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
 import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
+
 
 function Checks(): JSX.Element {
   const warnings = useSB((state) => computeStoryboardWarnings(state.sb))
