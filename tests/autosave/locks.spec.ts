@@ -903,6 +903,118 @@ scenario(
 )
 
 scenario(
+  'LOCK-WITH-04: withProjectLock renews lease and auto releases on completion and failure',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      switch (event.type) {
+        case 'lock:attempt':
+        case 'lock:acquired':
+        case 'lock:renew-scheduled':
+        case 'lock:renewed':
+        case 'lock:release-requested':
+        case 'lock:released':
+          events.push(event)
+          break
+        default:
+          break
+      }
+    })
+    t.after(unsubscribe)
+
+    const waitForEvent = <T extends ProjectLockEvent['type']>(type: T) =>
+      new Promise<Extract<ProjectLockEvent, { type: T }>>((resolve) => {
+        const release = projectLockEvents.subscribe((event) => {
+          if (event.type === type) {
+            release()
+            resolve(event as Extract<ProjectLockEvent, { type: T }>)
+          }
+        })
+      })
+
+    const firstRunEventsLength = events.length
+
+    await projectLockApi.withProjectLock(async (lease) => {
+      assert.equal(lease.strategy, 'file-lock')
+
+      const expectedInterval = lease.ttlMillis - 5_000
+      assert.equal(lease.nextHeartbeatAt - Date.now(), expectedInterval)
+
+      const renewed = waitForEvent('lock:renewed')
+      t.mock.timers.tick(expectedInterval)
+      await Promise.resolve()
+      const refreshed = await renewed
+      assert.equal(refreshed.lease.renewAttempt, 1)
+      assert.equal(refreshed.lease.strategy, 'file-lock')
+      assert.equal(refreshed.lease.nextHeartbeatAt - Date.now(), expectedInterval)
+    }, { preferredStrategy: 'file-lock' })
+
+    const firstRunEvents = events.slice(firstRunEventsLength)
+    const eventTypes = firstRunEvents.map((event) => event.type)
+    assert.ok(eventTypes.indexOf('lock:attempt') >= 0, 'acquire attempt must be recorded')
+    assert.ok(eventTypes.indexOf('lock:acquired') > eventTypes.indexOf('lock:attempt'), 'lock must be acquired')
+    assert.ok(eventTypes.includes('lock:renewed'), 'renew event must be emitted')
+    assert.ok(
+      eventTypes.indexOf('lock:release-requested') > eventTypes.indexOf('lock:renewed'),
+      'release must occur after renewal'
+    )
+    assert.ok(eventTypes.at(-1) === 'lock:released', 'lock must be released at the end')
+
+    const scheduleEvents = firstRunEvents.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:renew-scheduled' }>
+        => event.type === 'lock:renew-scheduled'
+    )
+    assert.ok(scheduleEvents.length >= 2, 'initial and refreshed renew schedules must be emitted')
+    const acquireSchedule = scheduleEvents[0]
+    assert.equal(acquireSchedule.nextHeartbeatInMs, acquireSchedule.lease.ttlMillis - 5_000)
+    const refreshedSchedule = scheduleEvents.at(-1)!
+    assert.equal(refreshedSchedule.nextHeartbeatInMs, refreshedSchedule.lease.ttlMillis - 5_000)
+
+    assert.equal(
+      ctx.opfs.files.has(FALLBACK_LOCK_PATH),
+      false,
+      'fallback lock file must be removed after automatic release'
+    )
+
+    events.length = 0
+
+    const failure = new Error('executor failure')
+    const rejection = await assert.rejects(async () => {
+      await projectLockApi.withProjectLock(async (lease) => {
+        const expectedInterval = lease.ttlMillis - 5_000
+        const renewed = waitForEvent('lock:renewed')
+        t.mock.timers.tick(expectedInterval)
+        await Promise.resolve()
+        await renewed
+        throw failure
+      }, { preferredStrategy: 'file-lock' })
+    })
+    assert.strictEqual(rejection, failure, 'withProjectLock must propagate executor failure')
+
+    assert.equal(
+      events.map((event) => event.type).includes('lock:release-requested'),
+      true,
+      'release must be requested even when executor fails'
+    )
+    assert.equal(
+      events.map((event) => event.type).includes('lock:released'),
+      true,
+      'lock must be released even when executor fails'
+    )
+    assert.equal(
+      ctx.opfs.files.has(FALLBACK_LOCK_PATH),
+      false,
+      'fallback lock file must be removed after failure cleanup'
+    )
+  }
+)
+
+scenario(
   'AS-LK-16: withProjectLock retains lease when releaseOnError=false',
   {
     navigator: { locks: undefined }
