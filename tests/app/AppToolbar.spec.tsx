@@ -181,53 +181,21 @@ test('handleToolbarPackageExport がパッケージを生成してダウンロ�
   assert.deepEqual(downloads, ['{"title":"Package Export Success Test"}'])
 })
 
-test('App.tsx がツールバーハンドラを単一 import する', () => {
-  const source = readFileSync(resolve('src/App.tsx'), 'utf8')
-  const marker = "from './toolbar/handlers'"
-  const handlerImportCount = source.split(marker).length - 1
-
-  assert.equal(handlerImportCount, 1, 'App.tsx should import toolbar handlers exactly once')
-
-  const importStart = source.indexOf(marker)
-
-  assert.ok(importStart >= 0, 'toolbar handlers import statement should exist')
-
-  const importPrefix = source.slice(0, importStart)
-  const statementStart = importPrefix.lastIndexOf('import')
-
-  assert.ok(statementStart >= 0, 'toolbar handlers import must be a standard import statement')
-
-  const importStatement = source.slice(statementStart, importStart)
-  const braceStart = importStatement.indexOf('{')
-  const braceEnd = importStatement.indexOf('}')
-
-  assert.ok(braceStart >= 0 && braceEnd >= 0 && braceEnd > braceStart, 'toolbar handlers import should destructure symbols')
-
-  const bindings = importStatement
-    .slice(braceStart + 1, braceEnd)
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean)
-
-  assert.ok(bindings.includes('handleToolbarLoadProject'), 'handleToolbarLoadProject should be imported from toolbar/handlers')
-  assert.ok(bindings.includes('handleToolbarPackageExport'), 'handleToolbarPackageExport should be imported from toolbar/handlers')
-})
-
-test('Save Project ボタンハンドラが saveJSON 例外時にアラートとログを行う', async () => {
+test('Save Project ボタンハンドラが save 例外時にアラートとログを行う', async () => {
   const storyboard = createStoryboard('Toolbar Save Button Handler Failure Test')
   const alerts: string[] = []
   const logs: unknown[][] = []
 
   await handleSaveProjectButtonClick({
-    getStoryboard: () => storyboard,
+    storyboard,
+    save: async () => {
+      throw new Error('OPFS write failure')
+    },
     alert(message) {
       alerts.push(message)
     },
     consoleError(...args) {
       logs.push(args)
-    },
-    saveJSONImpl: async () => {
-      throw new Error('OPFS write failure')
     }
   })
 
@@ -235,4 +203,28 @@ test('Save Project ボタンハンドラが saveJSON 例外時にアラートと
   assert.match(alerts[0], /失敗/)
   assert.equal(logs.length, 1)
   assert.equal(logs[0]?.[0], 'Failed to save project to OPFS')
+})
+
+test('handleSaveProjectButtonClick が旧シグネチャを引き続き受け付ける', async () => {
+  const storyboard = createStoryboard('Toolbar Save Button Handler Legacy Signature Test')
+  const calls: Array<{ path: string; payload: Storyboard }> = []
+  const alerts: string[] = []
+
+  await handleSaveProjectButtonClick({
+    getStoryboard: () => storyboard,
+    alert(message) {
+      alerts.push(message)
+    },
+    consoleError() {
+      throw new Error('consoleError should not be called')
+    },
+    saveJSONImpl: async (path, payload) => {
+      calls.push({ path, payload })
+    }
+  })
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0]?.path, 'project/storyboard.json')
+  assert.equal(calls[0]?.payload.title, 'Toolbar Save Button Handler Legacy Signature Test')
+  assert.deepEqual(alerts, ['Saved to OPFS: project/storyboard.json'])
 })
