@@ -16,7 +16,6 @@ import {
 import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { buildPackage } from './lib/package'
-import { handleToolbarLoadProject, handleToolbarPackageExport } from './toolbar/handlers'
 import { getDay8Collector } from './telemetry/day8Collector'
 import {
   useAutoSaveIntegration,

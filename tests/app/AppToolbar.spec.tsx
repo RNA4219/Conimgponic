@@ -1,6 +1,8 @@
 /// <reference types="node" />
 
 import { strict as assert } from 'node:assert'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import test from 'node:test'
 
 import {
@@ -177,6 +179,38 @@ test('handleToolbarPackageExport がパッケージを生成してダウンロ�
   })
 
   assert.deepEqual(downloads, ['{"title":"Package Export Success Test"}'])
+})
+
+test('App.tsx がツールバーハンドラを単一 import する', () => {
+  const source = readFileSync(resolve('src/App.tsx'), 'utf8')
+  const marker = "from './toolbar/handlers'"
+  const handlerImportCount = source.split(marker).length - 1
+
+  assert.equal(handlerImportCount, 1, 'App.tsx should import toolbar handlers exactly once')
+
+  const importStart = source.indexOf(marker)
+
+  assert.ok(importStart >= 0, 'toolbar handlers import statement should exist')
+
+  const importPrefix = source.slice(0, importStart)
+  const statementStart = importPrefix.lastIndexOf('import')
+
+  assert.ok(statementStart >= 0, 'toolbar handlers import must be a standard import statement')
+
+  const importStatement = source.slice(statementStart, importStart)
+  const braceStart = importStatement.indexOf('{')
+  const braceEnd = importStatement.indexOf('}')
+
+  assert.ok(braceStart >= 0 && braceEnd >= 0 && braceEnd > braceStart, 'toolbar handlers import should destructure symbols')
+
+  const bindings = importStatement
+    .slice(braceStart + 1, braceEnd)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+  assert.ok(bindings.includes('handleToolbarLoadProject'), 'handleToolbarLoadProject should be imported from toolbar/handlers')
+  assert.ok(bindings.includes('handleToolbarPackageExport'), 'handleToolbarPackageExport should be imported from toolbar/handlers')
 })
 
 test('Save Project ボタンハンドラが saveJSON 例外時にアラートとログを行う', async () => {
