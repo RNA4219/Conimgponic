@@ -1,4 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from 'react'
 import { useSB } from './store'
 import type { Storyboard } from './types'
 import { LeftRight } from './components/LeftRightPanes'
@@ -9,6 +15,7 @@ import {
   OLLAMA_BASE,
   setOllamaBase,
   resolveAutoSaveBootstrapPlan,
+  resolveFlags,
   type AutoSaveBootstrapPlan,
   type FlagSnapshot,
   type ResolveOptions
@@ -167,6 +174,109 @@ export interface MergeDockIntegrationSnapshot {
   readonly workspace: ResolveOptions['workspace'] | null
 }
 
+const FLAG_REFRESH_EVENT = 'conimg:flags:refresh'
+
+const FLAG_STORAGE_KEYS = new Set([
+  'autosave.enabled',
+  'merge.precision',
+  'flag:autoSave.enabled',
+  'flag:merge.precision'
+])
+
+type FlagSnapshotListener = (snapshot: FlagSnapshot) => void
+
+export interface FlagSnapshotSubscription {
+  readonly read: () => FlagSnapshot
+  readonly subscribe: (listener: FlagSnapshotListener) => () => void
+  readonly refresh: () => void
+  readonly dispose: () => void
+}
+
+export function createFlagSnapshotSubscription(
+  options?: ResolveOptions | null
+): FlagSnapshotSubscription {
+  const listeners = new Set<FlagSnapshotListener>()
+  let disposed = false
+  let current = resolveFlags(options ?? undefined)
+
+  const notify = (snapshot: FlagSnapshot): void => {
+    current = snapshot
+    for (const listener of listeners) {
+      listener(snapshot)
+    }
+  }
+
+  const refresh = (): void => {
+    if (disposed) {
+      return
+    }
+    notify(resolveFlags(options ?? undefined))
+  }
+
+  const handleStorage = (event: StorageEvent): void => {
+    if (disposed) {
+      return
+    }
+    if (event.key === null || FLAG_STORAGE_KEYS.has(event.key)) {
+      refresh()
+    }
+  }
+
+  const handleRefreshEvent: EventListener = () => {
+    if (!disposed) {
+      refresh()
+    }
+  }
+
+  const handleVisibilityChange = (): void => {
+    if (!disposed) {
+      refresh()
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener(FLAG_REFRESH_EVENT, handleRefreshEvent)
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+  }
+
+  const read = (): FlagSnapshot => current
+
+  const subscribe = (listener: FlagSnapshotListener): (() => void) => {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+    }
+  }
+
+  const dispose = (): void => {
+    if (disposed) {
+      return
+    }
+    disposed = true
+    listeners.clear()
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener(FLAG_REFRESH_EVENT, handleRefreshEvent)
+    }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }
+
+  return { read, subscribe, refresh, dispose }
+}
+
+export function notifyFlagSnapshotRefresh(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.dispatchEvent(new Event(FLAG_REFRESH_EVENT))
+}
+
 export function resolveMergeDockIntegration(
   plan: AutoSaveBootstrapPlan | null,
   options?: ResolveOptions | null
@@ -258,11 +368,45 @@ export default function App({ resolveOptions }: AppProps = {}){
   const [dockOpen, setDockOpen] = useState(()=> getDockOpenPreference())
   const [help, setHelp] = useState(false)
   const [base, setBase] = useState(OLLAMA_BASE)
+  const flagSubscription = useMemo(
+    () => createFlagSnapshotSubscription(resolveOptions ?? null),
+    [resolveOptions]
+  )
+  const flagSnapshot = useSyncExternalStore(
+    flagSubscription.subscribe,
+    flagSubscription.read,
+    flagSubscription.read
+  )
+  useEffect(() => {
+    flagSubscription.refresh()
+    return () => {
+      flagSubscription.dispose()
+    }
+  }, [flagSubscription])
+  const autoSaveDeps = useMemo(
+    () => ({
+      resolvePlan: () => resolveAutoSaveBootstrapPlan(resolveOptions ?? undefined)
+    }),
+    [resolveOptions, flagSnapshot.updatedAt]
+  )
   const { autoSavePlan, autoSaveDecision } = useAutoSaveIntegration({
     resolveOptions: resolveOptions ?? null,
     store: useSB,
+    deps: autoSaveDeps
   })
-  const mergeDockIntegration = resolveMergeDockIntegration(autoSavePlan, resolveOptions ?? null)
+  const mergeDockIntegration = useMemo(() => {
+    if (!autoSavePlan) {
+      return resolveMergeDockIntegration(null, resolveOptions ?? null)
+    }
+    const mergeAlignedPlan: AutoSaveBootstrapPlan =
+      autoSavePlan.snapshot.merge === flagSnapshot.merge
+        ? autoSavePlan
+        : {
+            ...autoSavePlan,
+            snapshot: { ...autoSavePlan.snapshot, merge: flagSnapshot.merge }
+          }
+    return resolveMergeDockIntegration(mergeAlignedPlan, resolveOptions ?? null)
+  }, [autoSavePlan, flagSnapshot.merge, resolveOptions])
   const mergeDockFlags = mergeDockIntegration.flagSnapshot
   const toolbarNotifiers: ToolbarNotifiers = {
     alert(message) {
