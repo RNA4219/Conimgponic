@@ -442,6 +442,35 @@ describe('vscode extension telemetry contract (RED)', () => {
     const metricsUnion = readMetricsKeyUnionLiterals()
     deepStrictEqual(metricsEnum.slice().sort(), metricsUnion.slice().sort())
   })
+  test('merge.trace guardrail.metric enum は metricsKey 定義と TypeScript union を固定する', () => {
+    const thenClause = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'merge.trace'
+    )
+    const payloadSchema = assertPayloadSchema(thenClause, [
+      'phase',
+      'collisions',
+      'processing_ms',
+      'guardrail',
+      'digest'
+    ])
+
+    assertOk(payloadSchema.properties, 'merge.trace payload schema must define properties')
+    const guardrailSchema = payloadSchema.properties.guardrail
+    assertOk(guardrailSchema, 'merge.trace payload schema must define guardrail')
+
+    const guardrailProperties = resolveSchemaProperties(guardrailSchema)
+    assertOk(guardrailProperties, 'merge.trace guardrail must define properties')
+
+    const metricSchema = resolveSchemaRef(guardrailProperties.metric)
+    assertOk(metricSchema?.enum, 'merge.trace guardrail.metric must enumerate metrics keys')
+
+    const guardrailMetrics = Array.from(metricSchema.enum).sort()
+    const metricsKeyEnum = loadMetricsKeyEnum().slice().sort()
+    deepStrictEqual(guardrailMetrics, metricsKeyEnum)
+
+    const metricsUnion = readMetricsKeyUnionLiterals().slice().sort()
+    deepStrictEqual(guardrailMetrics, metricsUnion)
+  })
   test('status.autosave telemetry は phase 情報と guard スナップショットを記録する', () => {
     const spec = findTelemetrySpec('status.autosave')
     assertOk(spec, 'status.autosave telemetry spec is missing')
