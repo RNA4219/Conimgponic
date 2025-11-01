@@ -65,21 +65,6 @@ import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
 import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
 
-
-const computeStoryboardWarnings = (storyboard: Storyboard): string[] => {
-  const results: string[] = []
-  for (let index = 0; index < storyboard.scenes.length; index += 1) {
-    const scene = storyboard.scenes[index]!
-    if (!(scene.manual || scene.ai)) {
-      results.push(`#${index + 1} text empty`)
-    }
-    if (!scene.tone) {
-      results.push(`#${index + 1} tone missing`)
-    }
-  }
-  return results
-}
-
 function Checks(): JSX.Element {
   const warnings = useSB((state) => computeStoryboardWarnings(state.sb))
   const snapshot = Reflect.get(globalThis, '__conimgponic_sb_snapshot__') as Storyboard | undefined
