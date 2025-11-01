@@ -1,19 +1,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import React from 'react'
 
 import type { KeyboardEvent } from 'react'
 
 describe('HelpModal accessibility', () => {
-  it('exposes keyboard activation for overlay dismissal', async () => {
+  it('exposes keyboard activation for dialog dismissal', async () => {
     const module = (await import('../../src/App.tsx')) as {
-      readonly HelpModal?: (props: { readonly onClose: () => void }) => {
-        readonly props: {
-          readonly role?: string
-          readonly tabIndex?: number
-          readonly onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void
-          readonly onClick?: (event: unknown) => void
-        }
-      }
+      readonly HelpModal?: (props: { readonly onClose: () => void }) => React.ReactElement
     }
 
     const { HelpModal } = module
@@ -32,12 +26,19 @@ describe('HelpModal accessibility', () => {
       }
     })
 
-    assert.equal(element.props.role, 'button')
-    assert.equal(element.props.tabIndex, 0)
-    assert.equal(typeof element.props.onKeyDown, 'function')
+    assert.equal(element.props.role, 'presentation')
 
-    element.props.onKeyDown?.({
-      key: 'Enter',
+    const dialogElement = React.Children.toArray(element.props.children).find((child): child is React.ReactElement => {
+      return React.isValidElement(child) && child.props.role === 'dialog'
+    })
+
+    assert.ok(dialogElement, 'HelpModal must render a dialog element')
+    assert.equal(dialogElement.props['aria-modal'], 'true')
+    assert.equal(dialogElement.props.tabIndex, -1)
+    assert.equal(typeof dialogElement.props.onKeyDown, 'function')
+
+    dialogElement.props.onKeyDown?.({
+      key: 'Escape',
       preventDefault: () => {
         prevented += 1
       }
