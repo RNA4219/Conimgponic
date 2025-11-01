@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useSB } from './store'
 import type { Storyboard } from './types'
 import { LeftRight } from './components/LeftRightPanes'
@@ -16,6 +16,7 @@ import {
 import { saveJSON, loadJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { buildPackage } from './lib/package'
+import { handleToolbarLoadProject, handleToolbarPackageExport } from './toolbar/handlers'
 import { getDay8Collector } from './telemetry/day8Collector'
 import {
   useAutoSaveIntegration,
@@ -93,25 +94,52 @@ function setDockOpenPreference(value: boolean): void {
 }
 
 export function HelpModal({ onClose }: { onClose: () => void }): React.ReactElement {
-  const handleKeyDown = (
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    dialogRef.current?.focus()
+  }, [])
+
+  const handleDialogKeyDown = (
     event: React.KeyboardEvent<HTMLDivElement>
   ): void => {
-    if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
+    if (event.key === 'Escape') {
       event.preventDefault()
+      event.stopPropagation()
       onClose()
     }
   }
 
+  const handleDialogClick = (
+    event: React.MouseEvent<HTMLDivElement>
+  ): void => {
+    event.stopPropagation()
+  }
+
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-label="ヘルプを閉じる"
-      style={{position:'fixed', inset:0, background:'rgba(0,0,0,.35)', display:'grid', placeItems:'center', zIndex:50}}
+      role="presentation"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'grid', placeItems: 'center', zIndex: 50 }}
       onClick={onClose}
-      onKeyDown={handleKeyDown}
     >
-      <div className="card" style={{width:600, maxWidth:'90vw', maxHeight:'80vh', overflow:'auto', padding:12}} onClick={e=>e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        className="card"
+        style={{ width: 600, maxWidth: '90vw', maxHeight: '80vh', overflow: 'auto', padding: 12, position: 'relative' }}
+        onClick={handleDialogClick}
+        onKeyDown={handleDialogKeyDown}
+      >
+        <button
+          type="button"
+          aria-label="ヘルプを閉じる"
+          onClick={onClose}
+          style={{ position: 'absolute', top: 8, right: 8 }}
+        >
+          ×
+        </button>
         <h3>ショートカット</h3>
         <ul>
           <li><strong>Ctrl+Enter</strong>: 生成</li>
@@ -342,8 +370,8 @@ export default function App({ resolveOptions }: AppProps = {}){
           className="btn"
           onClick={() => {
             void handleToolbarLoadProject({
-              load: (path) => loadJSON<Storyboard>(path),
-              applyStoryboard(storyboard) {
+              load: (path: string) => loadJSON<Storyboard>(path),
+              applyStoryboard(storyboard: Storyboard) {
                 useSB.setState({ sb: storyboard })
               },
               ...toolbarNotifiers
@@ -377,7 +405,7 @@ export default function App({ resolveOptions }: AppProps = {}){
             void handleToolbarPackageExport({
               storyboard: useSB.getState().sb,
               build: buildPackage,
-              createDownload(content, currentStoryboard) {
+              createDownload(content: string, currentStoryboard: Storyboard) {
                 const blob = new Blob([content], { type: 'application/json' })
                 const anchor = document.createElement('a')
                 anchor.href = URL.createObjectURL(blob)
