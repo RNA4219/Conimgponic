@@ -26,6 +26,17 @@ interface LockRequestOptions {
   readonly signal?: AbortSignal
 }
 
+interface LockQueueEntry {
+  readonly name: string
+  readonly handler: LockRequestCallback
+  readonly options: LockRequestOptions
+  readonly originalSecondArg: LockRequestOptions | LockRequestCallback
+  readonly signal?: AbortSignal
+  resolve(value: unknown): void
+  reject(reason?: unknown): void
+  onAbort?: () => void
+}
+
 interface LockManagerLike {
   request(
     name: string,
@@ -271,16 +282,75 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
   const navigatorValue = {
     storage: opfs.storage,
     locks: {
-      async request(
-        _: string,
-        optionsOrCallback: LockRequestOptions | LockRequestCallback,
-        callback?: LockRequestCallback
-      ){
-        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
-        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
-        return handler({ async release(){} })
-      },
-      ...overrides.locks
+      ...(() => {
+        const overrideLocks = overrides.locks ?? {}
+        const overrideRequest = overrideLocks.request?.bind(overrideLocks)
+        const queue: LockQueueEntry[] = []
+        let active: LockQueueEntry | null = null
+        const abortError = (): Error =>
+          typeof DOMException === 'function'
+            ? new DOMException('Lock request aborted', 'AbortError')
+            : Object.assign(new Error('Lock request aborted'), { name: 'AbortError' })
+        const schedule = () => {
+          if (active || queue.length === 0) return
+          active = queue.shift()!
+          run(active)
+        }
+        const run = (entry: LockQueueEntry) => {
+          if (entry.signal && entry.onAbort) entry.signal.removeEventListener('abort', entry.onAbort)
+          if (entry.signal?.aborted) { entry.reject(abortError()); active = null; schedule(); return }
+          let releaseCalled = false
+          let releaseResolve: (() => void) | undefined
+          const released = new Promise<void>((resolve) => (releaseResolve = resolve))
+          const release = async () => { if (!releaseCalled) { releaseCalled = true; releaseResolve?.() } }
+          const wrapHandle = (lock?: LockHandleLike): LockHandleLike & { released: Promise<void> } => {
+            const incoming = lock && typeof lock === 'object' ? lock : undefined
+            const releaseSource = incoming && typeof incoming.release === 'function' ? incoming.release.bind(incoming) : undefined
+            return { ...(incoming ?? {}), release: async () => { if (releaseSource) { const maybe = releaseSource(); if (maybe && typeof (maybe as Promise<unknown>).then === 'function') await maybe } await release() }, released }
+          }
+          const execution =
+            overrideRequest === undefined
+              ? entry.handler(wrapHandle())
+              : typeof entry.originalSecondArg === 'function'
+                  ? overrideRequest(entry.name, (lock) => entry.handler(wrapHandle(lock as LockHandleLike)))
+                  : overrideRequest(
+                      entry.name,
+                      entry.originalSecondArg as LockRequestOptions,
+                      (lock) => entry.handler(wrapHandle(lock as LockHandleLike))
+                    )
+          Promise.resolve(execution).then(entry.resolve, entry.reject).finally(async () => {
+            if (!releaseCalled) await release()
+            await released
+            active = null
+            schedule()
+          })
+        }
+        const request: LockManagerLike['request'] = (name, optionsOrCallback, callback) => {
+          const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+          if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+          const options =
+            typeof optionsOrCallback === 'function' ? ({} as LockRequestOptions) : (optionsOrCallback ?? {})
+          const entry: LockQueueEntry = { name, handler, options, originalSecondArg: typeof optionsOrCallback === 'function' ? optionsOrCallback : options, signal: options.signal, resolve: () => undefined, reject: () => undefined }
+          return new Promise<unknown>((resolve, reject) => {
+            entry.resolve = resolve
+            entry.reject = reject
+            if (entry.signal?.aborted) { reject(abortError()); return }
+            if (entry.signal) {
+              const onAbort = () => {
+                const index = queue.indexOf(entry)
+                if (index !== -1) { queue.splice(index, 1); reject(abortError()); schedule() }
+              }
+              entry.onAbort = onAbort
+              entry.signal.addEventListener('abort', onAbort, { once: true })
+            }
+            queue.push(entry)
+            schedule()
+          })
+        }
+        return { ...overrideLocks, request }
+      })()
+
+
     },
     ...overrides.navigator
   }

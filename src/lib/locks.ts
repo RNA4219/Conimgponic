@@ -369,7 +369,7 @@ const createAbortError = (
 ): ProjectLockError => {
   if (!base.retryable) return base;
   const cause = base.cause ?? signal?.reason ?? base;
-  return makeError('acquire-denied', 'Project lock acquisition aborted', 'acquire', false, cause);
+  return makeError('acquire-denied', 'Project lock acquisition aborted', 'acquire', true, cause);
 };
 
 const emitError = (error: ProjectLockError) => {
