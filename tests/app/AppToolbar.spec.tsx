@@ -11,9 +11,9 @@ import { renderToString } from 'react-dom/server'
 import {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
-  handleToolbarPackageExport
-} from '../../src/toolbar/handlers'
-import { handleSaveProjectButtonClick } from '../../src/App'
+  handleToolbarPackageExport,
+  handleSaveProjectButtonClick
+} from '../../src/App'
 import { useSB } from '../../src/store'
 import type { Storyboard } from '../../src/types'
 
