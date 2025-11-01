@@ -11,7 +11,7 @@ export const AUTOSAVE_POLICY = policy.AUTOSAVE_POLICY
 export const AUTOSAVE_DEFAULTS = policy.AUTOSAVE_DEFAULTS
 export const AUTOSAVE_MAX_BYTES = policy.AUTOSAVE_MAX_BYTES
 export const resolveAutoSavePolicy = policy.resolveAutoSavePolicy
-export { resolveCollectorPhase }
+export { resolveCollectorPhase } from './autosave/collector-phase.ts'
 export type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.ts'
 export type { AutoSaveSchedulerContract } from './autosave/scheduler.ts'
 export {

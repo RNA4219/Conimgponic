@@ -6,7 +6,12 @@ import {
   type AutoSaveHistorySummary,
   type AutoSaveIndicatorLockState,
   AUTOSAVE_INDICATOR_MESSAGE_SPEC,
-  deriveAutoSaveIndicatorViewModel
+  AUTOSAVE_PHASE_STATE_MAP,
+  deriveAutoSaveIndicatorViewModel,
+  resolveAutoSaveIndicatorMessageSpecKey,
+  buildAutoSaveIndicatorHistoryView,
+  buildAutoSaveIndicatorBanner,
+  buildAutoSaveIndicatorToast
 } from '../../../src/lib/autosave/indicatorViewModel'
 
 describe('deriveAutoSaveIndicatorViewModel', () => {
@@ -90,5 +95,48 @@ describe('deriveAutoSaveIndicatorViewModel', () => {
     assert.equal(viewModel.history.canOpen, true)
     assert.equal(viewModel.toast?.variant, 'warning')
     assert.equal(viewModel.toast?.message, expectedToastMessage)
+  })
+
+  test('ヘルパー関数でメッセージ種別・履歴・バナー・トーストを計算できる', () => {
+    const snapshot: AutoSaveStatusSnapshot = {
+      phase: 'error',
+      retryCount: 3,
+      pendingBytes: 0,
+      lastSuccessAt: '2024-05-01T00:00:00Z',
+      lastError: { code: 'fatal-error', retryable: false, message: '致命的エラー' }
+    }
+
+    const messageKey = resolveAutoSaveIndicatorMessageSpecKey({
+      snapshot,
+      isReadOnly: false
+    })
+    assert.equal(messageKey, 'fatalFailure')
+
+    const historyView = buildAutoSaveIndicatorHistoryView({
+      base: AUTOSAVE_PHASE_STATE_MAP.error.history,
+      historySummary: undefined,
+      isReadOnly: false,
+      messageSpec: AUTOSAVE_INDICATOR_MESSAGE_SPEC[messageKey!],
+      readonlyNote: AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.notes[0]
+    })
+    assert.equal(historyView.access, 'available')
+    assert.equal(historyView.canOpen, true)
+
+    const banner = buildAutoSaveIndicatorBanner({
+      isReadOnly: false,
+      lockState: undefined,
+      effectiveLockEvent: undefined,
+      messageSpec: AUTOSAVE_INDICATOR_MESSAGE_SPEC[messageKey!],
+      messageSpecKey: messageKey,
+      snapshot
+    })
+    assert.ok(banner)
+    assert.equal(banner?.variant, 'error')
+
+    const toast = buildAutoSaveIndicatorToast({
+      messageSpec: AUTOSAVE_INDICATOR_MESSAGE_SPEC[messageKey!],
+      snapshot
+    })
+    assert.equal(toast, undefined)
   })
 })

@@ -118,4 +118,26 @@ describe('AutoSaveIndicator view model (RED scenarios)', () => {
     assert.ok(viewModel.banner)
     assert.match(viewModel.banner?.message ?? '', /閲覧専用モードに切り替わりました/u)
   })
+
+  it('FatalError: 重大エラーで履歴は開けるがエラーバナーを表示する', () => {
+    // R: 致命的エラー状態を準備
+    const snapshot = createSnapshot({
+      phase: 'error',
+      retryCount: 0,
+      lastError: { code: 'fatal', retryable: false, message: '保存に失敗しました' }
+    })
+
+    // E: ビューモデルを生成
+    const viewModel = deriveAutoSaveIndicatorViewModel({
+      snapshot,
+      historySummary: HISTORY_BASELINE
+    })
+
+    // D: エラーバナーと履歴アクセスの条件を固定
+    assert.equal(viewModel.history.access, 'available')
+    assert.equal(viewModel.history.canOpen, true)
+    assert.ok(viewModel.banner)
+    assert.equal(viewModel.banner?.variant, 'error')
+    assert.match(viewModel.banner?.message ?? '', /保存に失敗しました/u)
+  })
 })

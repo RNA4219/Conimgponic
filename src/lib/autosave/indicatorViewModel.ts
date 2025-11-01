@@ -254,6 +254,171 @@ export interface DeriveAutoSaveIndicatorViewModelOptions {
   readonly lockState?: AutoSaveIndicatorLockState
 }
 
+export interface ResolveAutoSaveIndicatorMessageSpecKeyOptions {
+  readonly snapshot: AutoSaveStatusSnapshot
+  readonly isReadOnly: boolean
+}
+
+export function resolveAutoSaveIndicatorMessageSpecKey({
+  snapshot,
+  isReadOnly
+}: ResolveAutoSaveIndicatorMessageSpecKeyOptions): AutoSaveIndicatorMessageSpecKey | null {
+  if (isReadOnly) {
+    return 'readonlyEntered'
+  }
+  if (snapshot.phase === 'error' && snapshot.lastError && snapshot.lastError.retryable === false) {
+    return 'fatalFailure'
+  }
+  if (snapshot.lastError?.retryable) {
+    return 'retryableFailure'
+  }
+  if (snapshot.phase === 'idle') {
+    return 'success'
+  }
+  return null
+}
+
+export interface BuildAutoSaveIndicatorHistoryViewOptions {
+  readonly base: AutoSavePhaseHistoryRequirement
+  readonly historySummary?: AutoSaveHistorySummary
+  readonly isReadOnly: boolean
+  readonly messageSpec: AutoSaveIndicatorMessageSpecEntry | null
+  readonly readonlyNote: string
+}
+
+export function buildAutoSaveIndicatorHistoryView({
+  base,
+  historySummary,
+  isReadOnly,
+  messageSpec,
+  readonlyNote
+}: BuildAutoSaveIndicatorHistoryViewOptions): AutoSavePhaseHistoryRequirement & {
+  readonly usageWarning?: string
+  readonly canOpen: boolean
+} {
+  if (isReadOnly) {
+    return {
+      access: 'disabled',
+      note: readonlyNote,
+      usageWarning: undefined,
+      canOpen: false
+    }
+  }
+
+  const baseAccess = base.access
+  let access = baseAccess
+  let note = base.note
+  if (messageSpec?.historyAccess) {
+    access = messageSpec.historyAccess
+  }
+  if (messageSpec?.notes && messageSpec.notes.length > 0) {
+    note = messageSpec.notes[0]
+  }
+
+  const canOpen = access === 'available'
+  const usageWarning = canOpen && baseAccess !== 'hidden'
+    ? resolveHistoryUsageWarning(historySummary)
+    : undefined
+
+  return {
+    access,
+    note,
+    usageWarning,
+    canOpen
+  }
+}
+
+export interface BuildAutoSaveIndicatorBannerOptions {
+  readonly isReadOnly: boolean
+  readonly lockState?: AutoSaveIndicatorLockState
+  readonly effectiveLockEvent?: ProjectLockEvent
+  readonly messageSpec: AutoSaveIndicatorMessageSpecEntry | null
+  readonly messageSpecKey: AutoSaveIndicatorMessageSpecKey | null
+  readonly snapshot: AutoSaveStatusSnapshot
+}
+
+export function buildAutoSaveIndicatorBanner({
+  isReadOnly,
+  lockState,
+  effectiveLockEvent,
+  messageSpec,
+  messageSpecKey,
+  snapshot
+}: BuildAutoSaveIndicatorBannerOptions): AutoSaveIndicatorBanner | undefined {
+  if (isReadOnly) {
+    const readonlyReason = lockState?.reason ??
+      (effectiveLockEvent?.type === 'lock:readonly-entered' ? effectiveLockEvent.reason : undefined)
+    const reasonLabel = resolveReadonlyReasonLabel(readonlyReason)
+    const template = messageSpec?.banner?.message ??
+      AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.banner?.message ??
+      '閲覧専用モードに切り替わりました（{{reasonLabel}}）'
+    const variant = messageSpec?.banner?.variant ??
+      AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.banner?.variant ??
+      'warning'
+    return {
+      variant,
+      message: renderTemplate(template, { reasonLabel })
+    }
+  }
+
+  if (messageSpecKey === 'fatalFailure' && messageSpec?.banner) {
+    return {
+      variant: messageSpec.banner.variant,
+      message: renderTemplate(messageSpec.banner.message, {
+        'lastError.message': snapshot.lastError?.message ?? ''
+      })
+    }
+  }
+
+  return undefined
+}
+
+export interface BuildAutoSaveIndicatorToastOptions {
+  readonly messageSpec: AutoSaveIndicatorMessageSpecEntry | null
+  readonly snapshot: AutoSaveStatusSnapshot
+}
+
+export function buildAutoSaveIndicatorToast({
+  messageSpec,
+  snapshot
+}: BuildAutoSaveIndicatorToastOptions): AutoSaveIndicatorToast | undefined {
+  if (messageSpec?.toast) {
+    return {
+      variant: messageSpec.toast.variant,
+      message: renderTemplate(messageSpec.toast.message, {
+        'error.message': snapshot.lastError?.message ?? '',
+        retryCount: snapshot.retryCount.toString()
+      })
+    }
+  }
+
+  if (snapshot.retryCount >= RETRY_LABEL_THRESHOLD && snapshot.phase === 'awaiting-lock') {
+    return { variant: 'warning', message: `ロック取得を再試行中です (${snapshot.retryCount})` }
+  }
+
+  return undefined
+}
+
+function resolveHistoryUsageWarning(historySummary?: AutoSaveHistorySummary): string | undefined {
+  if (!historySummary) {
+    return undefined
+  }
+  const generationsRatio = historySummary.maxGenerations
+    ? historySummary.totalGenerations / historySummary.maxGenerations
+    : 0
+  const bytesRatio = historySummary.maxBytes ? historySummary.totalBytes / historySummary.maxBytes : 0
+  if (historySummary.overflowDetected || historySummary.totalGenerations >= historySummary.maxGenerations) {
+    return '履歴の世代数が上限に達しました。古い履歴から順に削除されます。'
+  }
+  if (bytesRatio >= 1 || historySummary.totalBytes >= historySummary.maxBytes) {
+    return '履歴の保存容量が上限に達しました。自動で容量調整を実行しています。'
+  }
+  if (generationsRatio >= HISTORY_USAGE_WARNING_RATIO || bytesRatio >= HISTORY_USAGE_WARNING_RATIO) {
+    return '履歴の利用率が 90% を超えています。不要な世代を整理してください。'
+  }
+  return undefined
+}
+
 export function deriveAutoSaveIndicatorViewModel({
   snapshot,
   historySummary,
@@ -267,21 +432,7 @@ export function deriveAutoSaveIndicatorViewModel({
   const effectiveLockEvent = lockState?.lastEvent ?? lockEvent
   const isReadOnly =
     lockState?.mode === 'readonly' || effectiveLockEvent?.type === 'lock:readonly-entered'
-  const messageSpecKey: AutoSaveIndicatorMessageSpecKey | null = (() => {
-    if (isReadOnly) {
-      return 'readonlyEntered'
-    }
-    if (snapshot.phase === 'error' && snapshot.lastError && snapshot.lastError.retryable === false) {
-      return 'fatalFailure'
-    }
-    if (snapshot.lastError?.retryable) {
-      return 'retryableFailure'
-    }
-    if (snapshot.phase === 'idle') {
-      return 'success'
-    }
-    return null
-  })()
+  const messageSpecKey = resolveAutoSaveIndicatorMessageSpecKey({ snapshot, isReadOnly })
   const messageSpec: AutoSaveIndicatorMessageSpecEntry | null = messageSpecKey
     ? AUTOSAVE_INDICATOR_MESSAGE_SPEC[messageSpecKey]
     : null
@@ -300,95 +451,30 @@ export function deriveAutoSaveIndicatorViewModel({
   const isAnimating = ANIMATING_PHASES.has(snapshot.phase) && !isReadOnly
   const lastSavedAt = snapshot.lastSuccessAt
 
-  const historyUsage = (() => {
-    if (!historySummary || base.history.access === 'hidden') {
-      return undefined
-    }
-    const generationsRatio = historySummary.maxGenerations
-      ? historySummary.totalGenerations / historySummary.maxGenerations
-      : 0
-    const bytesRatio = historySummary.maxBytes ? historySummary.totalBytes / historySummary.maxBytes : 0
-    if (historySummary.overflowDetected || historySummary.totalGenerations >= historySummary.maxGenerations) {
-      return '履歴の世代数が上限に達しました。古い履歴から順に削除されます。'
-    }
-    if (bytesRatio >= 1 || historySummary.totalBytes >= historySummary.maxBytes) {
-      return '履歴の保存容量が上限に達しました。自動で容量調整を実行しています。'
-    }
-    if (generationsRatio >= HISTORY_USAGE_WARNING_RATIO || bytesRatio >= HISTORY_USAGE_WARNING_RATIO) {
-      return '履歴の利用率が 90% を超えています。不要な世代を整理してください。'
-    }
-    return undefined
-  })()
+  const readonlyNote = messageSpec?.notes?.[0] ??
+    AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.notes[0] ??
+    base.history.note
+  const historyView = buildAutoSaveIndicatorHistoryView({
+    base: base.history,
+    historySummary,
+    isReadOnly,
+    messageSpec,
+    readonlyNote
+  })
 
-  const historyView = (() => {
-    if (isReadOnly) {
-      const readonlyNote = messageSpec?.notes?.[0] ?? AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.notes[0] ?? base.history.note
-      return {
-        access: 'disabled' as const,
-        note: readonlyNote,
-        usageWarning: undefined,
-        canOpen: false
-      }
-    }
-    let access = base.history.access
-    let note = base.history.note
-    if (messageSpec?.historyAccess) {
-      access = messageSpec.historyAccess
-    }
-    if (messageSpec?.notes && messageSpec.notes.length > 0) {
-      note = messageSpec.notes[0]
-    }
-    const canOpen = access === 'available'
-    return {
-      access,
-      note,
-      usageWarning: canOpen ? historyUsage : undefined,
-      canOpen
-    }
-  })()
+  const banner = buildAutoSaveIndicatorBanner({
+    isReadOnly,
+    lockState,
+    effectiveLockEvent,
+    messageSpec,
+    messageSpecKey,
+    snapshot
+  })
 
-  const banner = (() => {
-    if (isReadOnly) {
-      const readonlyReason = lockState?.reason ??
-        (effectiveLockEvent?.type === 'lock:readonly-entered' ? effectiveLockEvent.reason : undefined)
-      const reasonLabel = resolveReadonlyReasonLabel(readonlyReason)
-      const template = messageSpec?.banner?.message ??
-        AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.banner?.message ??
-        '閲覧専用モードに切り替わりました（{{reasonLabel}}）'
-      const variant = messageSpec?.banner?.variant ??
-        AUTOSAVE_INDICATOR_MESSAGE_SPEC.readonlyEntered.banner?.variant ??
-        'warning'
-      return {
-        variant,
-        message: renderTemplate(template, { 'reasonLabel': reasonLabel })
-      }
-    }
-    if (messageSpecKey === 'fatalFailure' && messageSpec?.banner) {
-      return {
-        variant: messageSpec.banner.variant,
-        message: renderTemplate(messageSpec.banner.message, {
-          'lastError.message': snapshot.lastError?.message ?? ''
-        })
-      }
-    }
-    return undefined
-  })()
-
-  const toast = (() => {
-    if (messageSpec?.toast) {
-      return {
-        variant: messageSpec.toast.variant,
-        message: renderTemplate(messageSpec.toast.message, {
-          'error.message': snapshot.lastError?.message ?? '',
-          retryCount: snapshot.retryCount.toString()
-        })
-      }
-    }
-    if (snapshot.retryCount >= RETRY_LABEL_THRESHOLD && snapshot.phase === 'awaiting-lock') {
-      return { variant: 'warning' as const, message: `ロック取得を再試行中です (${snapshot.retryCount})` }
-    }
-    return undefined
-  })()
+  const toast = buildAutoSaveIndicatorToast({
+    messageSpec,
+    snapshot
+  })
 
   return {
     statusLabel,
