@@ -1193,6 +1193,7 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
     const outcome = await Promise.race([executor(lease), renewalSignal]);
     return (await finalize(outcome)) as Awaited<typeof outcome>;
   } catch (error) {
+    let failure: unknown = error;
     if (error instanceof ProjectLockError) {
       if (error.retryable || !hasErrorEventBeenEmitted(error)) emitError(error);
       if (!error.retryable)
