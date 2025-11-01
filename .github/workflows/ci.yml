@@ -36,7 +36,13 @@ jobs:
       - name: Install Syft
         run: |
           set -euo pipefail
-          pnpm dlx --package=@anchore/syft@1.16.0 syft --version
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b "$HOME/.local/bin" v1.16.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Verify Syft installation
+        run: |
+          set -euo pipefail
+          syft version
       - name: Generate SBOM
         id: generate_sbom
         continue-on-error: true
@@ -46,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          pnpm dlx --package=@anchore/syft@1.16.0 syft packages . -o spdx-json=sbom.json |& tee sbom.log
+          syft packages . -o spdx-json=sbom.json |& tee sbom.log
           status=$?
           set -e
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
