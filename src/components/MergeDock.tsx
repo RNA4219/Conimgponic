@@ -83,6 +83,39 @@ const readAutoSaveState = (target: MergeDockWindow | undefined): MergeDockAutoSa
   lastSuccessAt: target?.__mergeDockAutoSaveSnapshot?.lastSuccessAt,
 })
 
+export interface MergeDockAutoSaveHeartbeatState {
+  readonly autoSave: MergeDockAutoSaveState
+  readonly now: number
+}
+
+export interface MergeDockAutoSaveHeartbeatOptions {
+  readonly intervalMs?: number
+}
+
+export const startMergeDockAutoSaveHeartbeat = (
+  mergeWindow: MergeDockWindow | undefined,
+  listener: (state: MergeDockAutoSaveHeartbeatState) => void,
+  options?: MergeDockAutoSaveHeartbeatOptions,
+): (() => void) => {
+  let disposed = false
+  const intervalMs = options?.intervalMs ?? 5_000
+  const dispatch = () => {
+    if (disposed) return
+    listener({ autoSave: readAutoSaveState(mergeWindow), now: Date.now() })
+  }
+  dispatch()
+  if (intervalMs <= 0) {
+    return () => {
+      disposed = true
+    }
+  }
+  const interval = setInterval(dispatch, intervalMs)
+  return () => {
+    disposed = true
+    clearInterval(interval)
+  }
+}
+
 const emptyDiffHunks: readonly MergeHunk[] = []
 
 const diffMergeNoopCommand: QueueMergeCommand = async () => ({
@@ -168,28 +201,20 @@ export function MergeDock({
   const [autoSave, setAutoSave] = useState<MergeDockAutoSaveState>(() => readAutoSaveState(mergeWindow))
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    if (!mergeWindow) return
-    let disposed = false
-    const syncAutoSave = () => {
-      if (disposed) return
-      const next = readAutoSaveState(mergeWindow)
+    const stop = startMergeDockAutoSaveHeartbeat(mergeWindow, ({ autoSave: nextAutoSave, now: nextNow }) => {
+      setNow(nextNow)
       setAutoSave((previous) => {
-        if (previous.flushNow === next.flushNow && previous.lastSuccessAt === next.lastSuccessAt) {
+        if (
+          previous.flushNow === nextAutoSave.flushNow &&
+          previous.lastSuccessAt === nextAutoSave.lastSuccessAt
+        ) {
           return previous
         }
-        return next
+        return nextAutoSave
       })
-    }
-    const tick = () => {
-      if (disposed) return
-      setNow(Date.now())
-      syncAutoSave()
-    }
-    tick()
-    const interval = setInterval(tick, 5_000)
+    })
     return () => {
-      disposed = true
-      clearInterval(interval)
+      stop()
     }
   }, [mergeWindow])
   const { precision, threshold } = useMergeThreshold({

@@ -6,8 +6,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import {
   MergeDock,
+  diffBackupPolicy,
   planMergeDockTabs,
   resolveMergeDockPhasePlan,
+  shouldRenderDiffBackupCTA,
+  startMergeDockAutoSaveHeartbeat,
 } from '../../src/components/MergeDock.tsx'
 import { DiffMergeView } from '../../src/components/DiffMergeView.tsx'
 import type { MergeHunk } from '../../src/components/diffMergeTypes.ts'
@@ -357,6 +360,105 @@ test('merge-ui: diff backup CTA toggles after autosave refresh bridge', () => {
       value: originalWindow,
     })
     Date.now = originalDateNow
+  }
+})
+
+test('merge-ui: diff backup CTA surfaces after heartbeat threshold via timers', (t) => {
+  t.mock.timers.enable({
+    apis: ['Date', 'setInterval'],
+    now: new Date('2024-05-01T00:10:00.000Z').getTime(),
+  })
+
+  const originalWindow = globalThis.window
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  const mockWindow = {
+    localStorage: storage,
+  } as typeof window & {
+    __mergeDockFlushNow?: () => void
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+
+  const runnerSnapshot = { lastSuccessAt: '2024-05-01T00:10:00.000Z' }
+  const runner: AutoSaveInitResult = {
+    snapshot: () => ({
+      phase: 'idle',
+      lastSuccessAt: runnerSnapshot.lastSuccessAt,
+      retryCount: 0,
+    }),
+    flushNow: () => Promise.resolve(),
+    dispose: () => Promise.resolve(),
+    markDirty: () => undefined,
+    onEvent: () => () => undefined,
+  }
+
+  const detachBridge = installMergeDockAutoSaveBridge(runner, mockWindow as unknown as Window)
+
+  const phasePlan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    lastTab: 'diff',
+    autoAppliedRate: null,
+    phaseStats: { reviewBandCount: 1, conflictBandCount: 1 },
+  })
+  const ctaStates: boolean[] = []
+
+  const stopHeartbeat = startMergeDockAutoSaveHeartbeat(
+    mockWindow,
+    ({ autoSave, now }) => {
+      ctaStates.push(
+        shouldRenderDiffBackupCTA({
+          diffPlan: phasePlan.diff,
+          tabPlan: phasePlan.tabs,
+          policy: diffBackupPolicy,
+          precision: 'stable',
+          activeTab: 'diff',
+          autoSave,
+          now,
+        }),
+      )
+    },
+    { intervalMs: 1_000 },
+  )
+
+  try {
+    assert.deepEqual(ctaStates, [false])
+
+    t.mock.timers.tick(5 * 60 * 1000 - 1_000)
+    assert.equal(ctaStates.at(-1), false)
+
+    t.mock.timers.tick(2_000)
+    assert.equal(ctaStates.at(-1), true)
+  } finally {
+    stopHeartbeat()
+    detachBridge()
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+    t.mock.timers.reset()
   }
 })
 
