@@ -127,12 +127,14 @@ export const createVsCodeMergeBridge = (dependencies: MergeBridgeDependencies): 
         if (resolvedPrecision !== undefined) {
           return resolvedPrecision
         }
+        let computedPrecision: MergePrecision
         try {
-          resolvedPrecision = engine.resolveProfile(profile).precision
+          computedPrecision = engine.resolveProfile(profile).precision
         } catch {
-          resolvedPrecision = profile.precision
+          computedPrecision = profile.precision ?? precision
         }
-        return resolvedPrecision
+        resolvedPrecision = computedPrecision
+        return computedPrecision
       }
       const { hub, dispose } = createEventHub()
       const detachAutoSaveLock = attachAutoSaveLockEvents(hub)
