@@ -212,6 +212,21 @@ export class ProjectLockError extends Error {
   }
 }
 
+const notifiedLockErrors = new WeakSet<ProjectLockError>();
+const readonlyNotifiedLockErrors = new WeakSet<ProjectLockError>();
+
+const hasErrorEventBeenEmitted = (error: ProjectLockError): boolean => notifiedLockErrors.has(error);
+
+const markErrorEventEmitted = (error: ProjectLockError): void => {
+  notifiedLockErrors.add(error);
+};
+
+const hasReadonlyEventBeenEmitted = (error: ProjectLockError): boolean => readonlyNotifiedLockErrors.has(error);
+
+const markReadonlyEventEmitted = (error: ProjectLockError): void => {
+  readonlyNotifiedLockErrors.add(error);
+};
+
 export interface ProjectLockStateTransition {
   readonly state:
     | 'idle'
@@ -374,6 +389,7 @@ const createAbortError = (
 
 const emitError = (error: ProjectLockError) => {
   projectLockEvents.emit({ type: 'lock:error', operation: error.operation, error, retryable: error.retryable });
+  markErrorEventEmitted(error);
 };
 
 const awaitBackoff = (delayMs: number, signal?: AbortSignal): Promise<void> => {
@@ -439,7 +455,10 @@ const emitReadonly = (
   error: ProjectLockError,
   onReadonly?: (err: ProjectLockError) => void
 ) => {
-  projectLockEvents.emit({ type: 'lock:readonly-entered', reason, lastError: error, retryable: false });
+  if (!hasReadonlyEventBeenEmitted(error)) {
+    projectLockEvents.emit({ type: 'lock:readonly-entered', reason, lastError: error, retryable: false });
+    markReadonlyEventEmitted(error);
+  }
   onReadonly?.(error);
 };
 
@@ -1174,11 +1193,10 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
     const outcome = await Promise.race([executor(lease), renewalSignal]);
     return (await finalize(outcome)) as Awaited<typeof outcome>;
   } catch (error) {
-    let failure: unknown = error;
-    try {
-      await stopRenewal();
-    } catch (renewError) {
-      failure = renewError;
+    if (error instanceof ProjectLockError) {
+      if (error.retryable || !hasErrorEventBeenEmitted(error)) emitError(error);
+      if (!error.retryable)
+        emitReadonly(reasonFromOperation(error.operation), error, options.onReadonly);
     }
 
     if (failure instanceof ProjectLockError) {
