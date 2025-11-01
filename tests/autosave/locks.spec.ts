@@ -1026,6 +1026,57 @@ scenario(
 )
 
 scenario(
+  'AS-LK-18: withProjectLock does not duplicate lock:error notifications',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      if (event.type === 'lock:error' || event.type === 'lock:readonly-entered') {
+        events.push(event)
+      }
+    })
+    t.after(unsubscribe)
+
+    await projectLockApi
+      .withProjectLock(async (lease) => {
+        assert.equal(
+          ctx.opfs.files.has(FALLBACK_LOCK_PATH),
+          true,
+          'fallback lock file must exist before renew failure is simulated'
+        )
+        ctx.opfs.files.delete(FALLBACK_LOCK_PATH)
+        await renewProjectLock(lease)
+      }, { preferredStrategy: 'file-lock' })
+      .then(
+        () => {
+          assert.fail('withProjectLock must reject when renewProjectLock throws')
+        },
+        (error) => {
+          assert.ok(error instanceof ProjectLockError, 'error must propagate as ProjectLockError')
+          assert.equal(error.retryable, false, 'non-retryable errors must retain retryable=false')
+          assert.equal(error.code, 'lease-stale', 'renew failures must surface the lease-stale code')
+        }
+      )
+
+    const errorEvents = events.filter((event) => event.type === 'lock:error')
+    assert.equal(
+      errorEvents.length,
+      1,
+      'lock:error must be emitted exactly once for non-retryable renew failures'
+    )
+
+    const readonlyEvents = events.filter((event) => event.type === 'lock:readonly-entered')
+    assert.equal(
+      readonlyEvents.length,
+      1,
+      'lock:readonly-entered must be emitted exactly once when downgrading to read-only'
+    )
+  }
+)
+
+scenario(
   'AS-LK-12: Fallback acquisition aborts during pending write without creating lock file',
   {
     navigator: { locks: undefined }
