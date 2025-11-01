@@ -10,6 +10,12 @@ function isNotFoundError(error: unknown): boolean {
   if (error instanceof DOMException) {
     return error.name === 'NotFoundError'
   }
+  if (error instanceof Error) {
+    const message = error.message.trim().toLowerCase()
+    if (message === 'missing file' || message === 'file not found') {
+      return true
+    }
+  }
   if (!error || typeof error !== 'object') {
     return false
   }

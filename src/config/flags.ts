@@ -155,8 +155,14 @@ const defaultEnv = (() => {
   }
   return metaEnv
 })()
-const defaultStorage: Pick<Storage, 'getItem'> | null =
-  typeof localStorage !== 'undefined' ? localStorage : null
+const readDefaultStorage = (): Pick<Storage, 'getItem'> | null => {
+  const scope = globalThis as { localStorage?: Storage }
+  const storage = scope.localStorage
+  if (storage && typeof storage.getItem === 'function') {
+    return { getItem: storage.getItem.bind(storage) }
+  }
+  return null
+}
 
 const WORKSPACE_KEY_PREFIX = 'conimg.' as const
 
@@ -295,7 +301,7 @@ export function resolveFlag<T>(
   const storageOption = options.storage
   const storage =
     storageOption === undefined
-      ? defaultStorage
+      ? readDefaultStorage()
       : storageOption === null
         ? null
         : storageOption
@@ -488,7 +494,7 @@ function resolveMergeThreshold(
   const storageOption = options?.storage
   const storage =
     storageOption === undefined
-      ? defaultStorage
+      ? readDefaultStorage()
       : storageOption === null
         ? null
         : storageOption
