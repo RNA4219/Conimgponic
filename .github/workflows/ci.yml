@@ -129,11 +129,17 @@ jobs:
       - name: Install osv-scanner
         run: |
           set -euo pipefail
-          pnpm add --global @google/osv-scanner@1.7.3
-          pnpm exec --global osv-scanner --version
+          OSV_SCANNER_VERSION="1.7.3"
+          BIN_DIR="$HOME/.local/bin"
+          mkdir -p "$BIN_DIR"
+          curl -sSfL "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_${OSV_SCANNER_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C "$BIN_DIR" osv-scanner
+          chmod +x "$BIN_DIR/osv-scanner"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+          osv-scanner --version
 
       - name: Run osv-scanner
-        run: pnpm exec --global osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
+        run: osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
 
       - name: Upload audit report
         if: always()
