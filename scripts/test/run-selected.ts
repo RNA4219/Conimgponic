@@ -118,6 +118,7 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/components/*.spec.tsx',
   ],
   'merge.diff': ['tests/components/merge.diff.test.tsx'],
+  'opfs load error propagation': ['tests/lib/opfs.load-errors.test.ts'],
   golden: ['tests/export/golden*.test.ts'],
   collector: [
     'tests/plugins/*.test.ts',
