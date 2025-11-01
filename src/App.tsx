@@ -38,9 +38,9 @@ import {
 export {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
-  handleToolbarPackageExport,
-  type ToolbarNotifiers
-}
+  handleToolbarPackageExport
+} from './toolbar/handlers'
+export type { ToolbarNotifiers } from './toolbar/handlers'
 
 export {
   planAutoSave,
