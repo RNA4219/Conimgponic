@@ -134,6 +134,17 @@ test('encodeGuardTelemetry marks localStorage guard as QA phase', () => {
   assert.deepEqual(telemetry, { current: 'A-1', rollbackTo: 'A-0' });
 });
 
+test('encodeGuardTelemetry escalates workspace guard to release phase', () => {
+  const guard = {
+    featureFlag: { value: true, source: 'workspace' as const },
+    optionsDisabled: false
+  };
+
+  const telemetry = encodeGuardTelemetry(guard);
+
+  assert.deepEqual(telemetry, { current: 'A-2', rollbackTo: 'A-1' });
+});
+
 test('createInitialState assigns counters and identifiers deterministically', () => {
   const state = createInitialState({
     featureFlag: { value: false, source: 'env' },

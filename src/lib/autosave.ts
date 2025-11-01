@@ -3,17 +3,18 @@ import type { FlagSnapshot, WorkspaceConfiguration } from '../config/flags.js'
 import type { Storyboard } from '../types'
 import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
-import { AUTOSAVE_HISTORY_ROTATION_PLAN, type AutoSaveHistoryEntry } from './autosave/persistence.ts'
-import * as policy from './autosave/policy.ts'
-import type { AutoSavePolicy } from './autosave/policy.ts'
+import { AUTOSAVE_HISTORY_ROTATION_PLAN, type AutoSaveHistoryEntry } from './autosave/persistence.js'
+import * as policy from './autosave/policy.js'
+import type { AutoSavePolicy } from './autosave/policy.js'
+import { resolveCollectorPhase } from './autosave/collector-phase.js'
 
 export const AUTOSAVE_POLICY = policy.AUTOSAVE_POLICY
 export const AUTOSAVE_DEFAULTS = policy.AUTOSAVE_DEFAULTS
 export const AUTOSAVE_MAX_BYTES = policy.AUTOSAVE_MAX_BYTES
 export const resolveAutoSavePolicy = policy.resolveAutoSavePolicy
-export { resolveCollectorPhase } from './autosave/collector-phase.ts'
-export type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.ts'
-export type { AutoSaveSchedulerContract } from './autosave/scheduler.ts'
+export { resolveCollectorPhase } from './autosave/collector-phase.js'
+export type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.js'
+export type { AutoSaveSchedulerContract } from './autosave/scheduler.js'
 export {
   AUTOSAVE_HISTORY_ROTATION_PLAN
 }
@@ -21,7 +22,7 @@ export type {
   AutoSaveHistoryEntry,
   AutoSaveHistoryRotationPlan,
   AutoSavePersistenceContract
-} from './autosave/persistence.ts'
+} from './autosave/persistence.js'
 
 export type StoryboardProvider = () => Storyboard
 

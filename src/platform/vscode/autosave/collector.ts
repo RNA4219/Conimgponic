@@ -3,7 +3,7 @@ import type {
   AutoSavePhaseGuardSnapshot,
   AutoSaveSnapshotRequestMessage
 } from '../../../lib/autosave';
-import { resolveCollectorPhase } from '../../../lib/autosave/collector-phase.js';
+import { resolveCollectorPhase as resolveCollectorPhaseCore } from '../../../lib/autosave/collector-phase.js';
 import { publishSnapshotResult as defaultPublishSnapshotResult } from '../../../telemetry/day8Collector.js';
 import type {
   RolloutPhase,
@@ -90,24 +90,7 @@ export const ZERO_FLUSH_LATENCY: AutoSaveTelemetryEventProperties['performance']
   flush_latency_ms: 0
 } as const;
 
-export { resolveCollectorPhase };
-export const resolveCollectorPhase = (
-  guard: AutoSavePhaseGuardSnapshot
-): RolloutPhase => {
-  if (!guard.featureFlag.value || guard.optionsDisabled) {
-    return 'A-0';
-  }
-  switch (guard.featureFlag.source) {
-    case 'env':
-    case 'localStorage':
-      // Phase 行列: QA 向け localStorage 上書きは Phase A-1 として集計する。
-      return 'A-1';
-    case 'workspace':
-      return 'A-2';
-    default:
-      return 'A-0';
-  }
-};
+export { resolveCollectorPhaseCore as resolveCollectorPhase };
 
 export const resolveGuardRollbackPhase = (phase: RolloutPhase): RolloutPhase => {
   switch (phase) {
@@ -127,7 +110,7 @@ export const resolveGuardRollbackPhase = (phase: RolloutPhase): RolloutPhase => 
 export const encodeGuardTelemetry = (
   guard: AutoSavePhaseGuardSnapshot
 ): AutoSaveTelemetryGuardProperties => {
-  const current = resolveCollectorPhase(guard);
+  const current = resolveCollectorPhaseCore(guard);
   return { current, rollbackTo: resolveGuardRollbackPhase(current) };
 };
 
@@ -243,7 +226,7 @@ export const publishCollectorSnapshotResult = (
 ): void => {
   const { publishSnapshotResult = defaultPublishSnapshotResult } = dependencies;
   publishSnapshotResult({
-    phase: resolveCollectorPhase(guard),
+    phase: resolveCollectorPhaseCore(guard),
     status: payload.status,
     detail: payload.detail,
     snapshot: payload.snapshot,
