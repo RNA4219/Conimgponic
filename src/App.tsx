@@ -26,15 +26,7 @@ import {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
   handleToolbarPackageExport,
-  notifyOpfsFailure,
   type ToolbarNotifiers
-} from './toolbar/handlers'
-
-export {
-  handleToolbarSaveProject,
-  handleToolbarLoadProject,
-  handleToolbarPackageExport,
-  notifyOpfsFailure
 } from './toolbar/handlers'
 
 export {
@@ -56,21 +48,12 @@ export async function handleSaveProjectButtonClick({
   consoleError,
   saveJSONImpl = saveJSON
 }: SaveProjectButtonHandlerOptions): Promise<void> {
-  try {
-    await handleToolbarSaveProject({
-      storyboard: getStoryboard(),
-      save: saveJSONImpl,
-      alert,
-      consoleError
-    })
-  } catch (error) {
-    notifyOpfsFailure(
-      { alert, consoleError },
-      'OPFS 保存に失敗しました',
-      'Failed to save project to OPFS',
-      error
-    )
-  }
+  await handleToolbarSaveProject({
+    storyboard: getStoryboard(),
+    save: saveJSONImpl,
+    alert,
+    consoleError
+  })
 }
 
 function getDockOpenPreference(): boolean {
