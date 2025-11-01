@@ -21,22 +21,32 @@ import {
   type FlagSnapshot,
   type ResolveOptions
 } from './config'
-import { saveJSON, loadJSON } from './lib/opfs'
+import { saveJSON } from './lib/opfs'
 import { TemplatesMenu } from './components/TemplatesMenu'
-import { buildPackage } from './lib/package'
-import { getDay8Collector } from './telemetry/day8Collector'
 import {
-  useAutoSaveIntegration,
+  useAutoSaveAppEffects,
   type AutoSaveActivationDecision
 } from './hooks/useAutoSaveIntegration'
-import * as toolbarHandlers from './toolbar/handlers'
+import {
+  handleToolbarSaveProject,
+  handleToolbarLoadProject,
+  handleToolbarPackageExport,
+  createToolbarActions,
+  createBrowserToolbarNotifiers,
+  type ToolbarNotifiers
+} from './toolbar/handlers'
 
 export {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
-  handleToolbarPackageExport
+  handleToolbarPackageExport,
+  createKeyboardShortcutHandler
 } from './toolbar/handlers'
-export type { ToolbarNotifiers } from './toolbar/handlers'
+export type {
+  ToolbarNotifiers,
+  ShortcutKeyEvent,
+  KeyboardShortcutHandlerOptions
+} from './toolbar/handlers'
 
 export {
   planAutoSave,
@@ -44,20 +54,20 @@ export {
   watchAutoSaveStoryboardDiffs
 } from './hooks/useAutoSaveIntegration'
 
+export { publishAutoSaveGuard } from './hooks/useAutoSaveIntegration'
+
 export type { AutoSaveActivationDecision } from './hooks/useAutoSaveIntegration'
 
-type ToolbarSaveProjectRequest = Parameters<
-  typeof toolbarHandlers.handleToolbarSaveProject
->[0]
+type ToolbarSaveProjectRequest = Parameters<typeof handleToolbarSaveProject>[0]
 
 type ToolbarSave = ToolbarSaveProjectRequest['save']
 
 type SaveProjectButtonHandlerOptions =
-  | (toolbarHandlers.ToolbarNotifiers & {
+  | (ToolbarNotifiers & {
       readonly storyboard: Storyboard
       readonly save?: ToolbarSave
     })
-  | (toolbarHandlers.ToolbarNotifiers & {
+  | (ToolbarNotifiers & {
       readonly getStoryboard: () => Storyboard
       readonly saveJSONImpl?: ToolbarSave
     })
@@ -78,7 +88,7 @@ export async function handleSaveProjectButtonClick(
     return saveJSON
   })()
 
-  await toolbarHandlers.handleToolbarSaveProject({
+  await handleToolbarSaveProject({
     storyboard,
     save,
     alert,
@@ -235,24 +245,6 @@ function isReactRendering(): boolean {
   return internals?.ReactCurrentDispatcher?.current != null
 }
 
-export function publishAutoSaveGuard(decision: AutoSaveActivationDecision): void {
-  if (decision.mode !== 'manual-only') {
-    return
-  }
-  const collector = getDay8Collector()
-  if (!collector) {
-    return
-  }
-  collector.publish({
-    feature: 'autosave-diff-merge',
-    event: 'autosave.guard',
-    blocked: true,
-    reason: decision.reason,
-    guard: decision.guard,
-    ts: new Date().toISOString()
-  })
-}
-
 export function resolveAutoSaveBootstrapPlanForApp(
   applyPlan: (plan: AutoSaveBootstrapPlan) => void
 ): AutoSaveBootstrapPlan {
@@ -405,74 +397,6 @@ export function resolveMergeDockIntegration(
   }
 }
 
-export interface ShortcutKeyEvent {
-  readonly key: string
-  readonly ctrlKey: boolean
-  readonly shiftKey: boolean
-  readonly altKey: boolean
-  preventDefault(): void
-}
-
-export interface KeyboardShortcutHandlerOptions {
-  readonly getStoryboard: () => Storyboard
-  readonly saveProject: (storyboard: Storyboard) => Promise<void>
-  readonly saveSnapshot: (storyboard: Storyboard) => Promise<void>
-  readonly addScene: () => void
-  readonly alert: (message: string) => void
-  readonly consoleError: (message: string, error: unknown) => void
-}
-
-export function createKeyboardShortcutHandler(
-  options: KeyboardShortcutHandlerOptions
-): (event: ShortcutKeyEvent) => Promise<void> | void {
-  const {
-    getStoryboard,
-    saveProject,
-    saveSnapshot,
-    addScene,
-    alert: alertUser,
-    consoleError
-  } = options
-
-  function notifyFailure(error: unknown): void {
-    const detail = error instanceof Error ? error.message : String(error)
-    alertUser(`保存に失敗しました: ${detail}`)
-    consoleError('Keyboard shortcut handler failed', error)
-  }
-
-  return (event) => {
-    try {
-      if (!event.ctrlKey) {
-        return
-      }
-
-      const key = event.key.toLowerCase()
-      if (key === 's' && !event.shiftKey) {
-        event.preventDefault()
-        const storyboard = getStoryboard()
-        return saveProject(storyboard).catch((error) => {
-          notifyFailure(error)
-        })
-      }
-
-      if (key === 's' && event.shiftKey) {
-        event.preventDefault()
-        const storyboard = getStoryboard()
-        return saveSnapshot(storyboard).catch((error) => {
-          notifyFailure(error)
-        })
-      }
-
-      if (key === 'n' && event.altKey) {
-        event.preventDefault()
-        addScene()
-      }
-    } catch (error) {
-      notifyFailure(error)
-    }
-  }
-}
-
 export interface AppProps {
   readonly resolveOptions?: ResolveOptions | null
 }
@@ -498,9 +422,60 @@ export default function App({ resolveOptions }: AppProps = {}){
     () => ({ resolvePlan }),
     [resolvePlan]
   )
-  const { autoSavePlan, autoSaveDecision } = useAutoSaveIntegration({
+  const saveProjectForShortcut = useCallback(async (storyboard: Storyboard) => {
+    await saveJSON('project/storyboard.json', storyboard)
+  }, [])
+
+  const saveSnapshotForShortcut = useCallback(async (storyboard: Storyboard) => {
+    const { ensureDir, saveText } = await import('./lib/opfs')
+    const { toMarkdown, toCSV, toJSONL } = await import('./lib/exporters')
+    const { sha256Hex } = await import('./lib/hash')
+    const ts = new Date().toISOString().replace(/[:.]/g, '-')
+    const dir = `runs/${ts}`
+    await ensureDir(dir)
+    const md = toMarkdown(storyboard)
+    const csv = toCSV(storyboard)
+    const jsonl = toJSONL(storyboard)
+    const hash = await sha256Hex(`${md}\n${csv}\n${jsonl}`)
+    await saveText(`${dir}/shotlist.md`, md)
+    await saveText(`${dir}/shotlist.csv`, csv)
+    await saveText(`${dir}/shotlist.jsonl`, jsonl)
+    await saveText(
+      `${dir}/meta.json`,
+      JSON.stringify({ hash, title: storyboard.title }, null, 2)
+    )
+    await saveText('runs/latest.txt', ts)
+  }, [])
+
+  const toolbarNotifiers = useMemo(() => createBrowserToolbarNotifiers(), [])
+  const toolbarStore = useMemo(
+    () => ({
+      getStoryboard: () => useSB.getState().sb,
+      applyStoryboard(storyboard: Storyboard) {
+        useSB.setState({ sb: storyboard })
+      }
+    }),
+    []
+  )
+  const toolbarActions = useMemo(
+    () =>
+      createToolbarActions({
+        store: toolbarStore,
+        notifiers: toolbarNotifiers
+      }),
+    [toolbarStore, toolbarNotifiers]
+  )
+  const isBrowser = typeof window !== 'undefined'
+
+  const { autoSavePlan } = useAutoSaveAppEffects({
     resolveOptions: resolvedOptions,
     store: useSB,
+    shortcut: {
+      notifiers: toolbarNotifiers,
+      saveProject: saveProjectForShortcut,
+      saveSnapshot: saveSnapshotForShortcut,
+      addScene
+    },
     deps: integrationDeps
   })
   const mergeDockIntegration = useMemo(() => {
@@ -517,69 +492,6 @@ export default function App({ resolveOptions }: AppProps = {}){
     return resolveMergeDockIntegration(mergeAlignedPlan, resolvedOptions)
   }, [autoSavePlan, flagSnapshot.merge, resolvedOptions])
   const mergeDockFlags = mergeDockIntegration.flagSnapshot
-  const toolbarNotifiers: toolbarHandlers.ToolbarNotifiers = {
-    alert(message) {
-      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-        window.alert(message)
-      }
-    },
-    consoleError(message, error) {
-      console.error(message, error)
-    }
-  }
-
-  useEffect(()=>{
-    const handler = createKeyboardShortcutHandler({
-      getStoryboard: () => useSB.getState().sb,
-      async saveProject(storyboard) {
-        await saveJSON('project/storyboard.json', storyboard)
-      },
-      async saveSnapshot(storyboard) {
-        const { ensureDir, saveText } = await import('./lib/opfs')
-        const { toMarkdown, toCSV, toJSONL } = await import('./lib/exporters')
-        const { sha256Hex } = await import('./lib/hash')
-        const ts = new Date().toISOString().replace(/[:.]/g,'-')
-        const dir = `runs/${ts}`
-        await ensureDir(dir)
-        const md = toMarkdown(storyboard)
-        const csv = toCSV(storyboard)
-        const jsonl = toJSONL(storyboard)
-        const hash = await sha256Hex(`${md}\n${csv}\n${jsonl}`)
-        await saveText(`${dir}/shotlist.md`, md)
-        await saveText(`${dir}/shotlist.csv`, csv)
-        await saveText(`${dir}/shotlist.jsonl`, jsonl)
-        await saveText(
-          `${dir}/meta.json`,
-          JSON.stringify({ hash, title: storyboard.title }, null, 2)
-        )
-        await saveText('runs/latest.txt', ts)
-      },
-      addScene() {
-        useSB.getState().addScene()
-      },
-      alert(message) {
-        window.alert(message)
-      },
-      consoleError(message, error) {
-        console.error(message, error)
-      }
-    })
-
-    function onKey(event: KeyboardEvent): void {
-      handler(event)
-    }
-
-    window.addEventListener('keydown', onKey)
-    return ()=> window.removeEventListener('keydown', onKey)
-  }, [])
-
-  useEffect(()=>{
-    if (!autoSaveDecision){
-      return
-    }
-    publishAutoSaveGuard(autoSaveDecision)
-  }, [autoSaveDecision])
-
   return (
     <div className="app">
       <div className="toolbar">
@@ -594,10 +506,7 @@ export default function App({ resolveOptions }: AppProps = {}){
         <button
           className="btn"
           onClick={() => {
-            void handleSaveProjectButtonClick({
-              storyboard: useSB.getState().sb,
-              ...toolbarNotifiers
-            })
+            void toolbarActions.saveProject()
           }}
         >
           Save Project
@@ -605,13 +514,7 @@ export default function App({ resolveOptions }: AppProps = {}){
         <button
           className="btn"
           onClick={() => {
-            void toolbarHandlers.handleToolbarLoadProject({
-              load: (path: string) => loadJSON<Storyboard>(path),
-              applyStoryboard(storyboard: Storyboard) {
-                useSB.setState({ sb: storyboard })
-              },
-              ...toolbarNotifiers
-            })
+            void toolbarActions.loadProject()
           }}
         >
           Load Project
@@ -638,21 +541,7 @@ export default function App({ resolveOptions }: AppProps = {}){
         <button
           className="btn"
           onClick={() => {
-            void toolbarHandlers.handleToolbarPackageExport({
-              storyboard: useSB.getState().sb,
-              build: buildPackage,
-              createDownload(content: string, currentStoryboard: Storyboard) {
-                const blob = new Blob([content], { type: 'application/json' })
-                const anchor = document.createElement('a')
-                anchor.href = URL.createObjectURL(blob)
-                anchor.download = `${currentStoryboard.title || 'project'}.imgponic.json`
-                anchor.click()
-                setTimeout(() => {
-                  URL.revokeObjectURL(anchor.href)
-                }, 2000)
-              },
-              ...toolbarNotifiers
-            })
+            void toolbarActions.exportPackage()
           }}
         >
           Package Export
@@ -663,13 +552,15 @@ export default function App({ resolveOptions }: AppProps = {}){
         <LeftRight />
         <StoryboardList />
       </div>
-      <div className="dock" style={{display: dockOpen?'block':'none'}}>
-        <MergeDock
-          flags={mergeDockFlags}
-          mergeThreshold={mergeDockIntegration.mergeThreshold}
-          workspace={mergeDockIntegration.workspace}
-        />
-      </div>
+      {isBrowser ? (
+        <div className="dock" style={{display: dockOpen?'block':'none'}}>
+          <MergeDock
+            flags={mergeDockFlags}
+            mergeThreshold={mergeDockIntegration.mergeThreshold}
+            workspace={mergeDockIntegration.workspace}
+          />
+        </div>
+      ) : null}
       {help && <HelpModal onClose={()=>setHelp(false)} />}
     </div>
   )
