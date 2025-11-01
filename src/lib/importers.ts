@@ -27,6 +27,8 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
       const seed = normalizeNumber(o.seed)
       const take = normalizeNumber(o.take)
       const rating = normalizeSceneRating(o.rating)
+      const text = normalizeSceneText(o.text)
+
       if (i != null){
         const sc = next.scenes[i]
         const patch: Partial<Scene> & Record<ImportMode, string> = {
@@ -39,12 +41,13 @@ export function mergeJSONL(sb: Storyboard, text: string, mode: ImportMode = 'man
           manual: sc.manual,
           ai: sc.ai
         }
-        if (typeof o.text === 'string') {
-          patch[mode] = o.text
+        if (text !== undefined) {
+          patch[mode] = text
         }
         next.scenes[i] = { ...sc, ...patch }
       }else{
-        next.scenes.push({ id, manual: mode==='manual'? String(o.text||''):'', ai: mode==='ai'? String(o.text||''):'', status:'idle', seed: seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take: take, rating })
+        const sceneText = text ?? ''
+        next.scenes.push({ id, manual: mode==='manual'? sceneText:'', ai: mode==='ai'? sceneText:'', status:'idle', seed: seed, tone:o.tone, assets: [], slate:o.slate, shot:o.shot, take: take, rating })
         if (!idx.has(id)) {
           idx.set(id, next.scenes.length - 1)
         }
@@ -149,6 +152,14 @@ function parseCSVLine(line: string){
   }
   out.push(cur)
   return out
+}
+
+function normalizeSceneText(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value
+  }
+
+  return undefined
 }
 
 function normalizeNumber(value: unknown): number | undefined {
