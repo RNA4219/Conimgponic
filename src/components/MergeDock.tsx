@@ -26,16 +26,18 @@ import {
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
   startMergeDockAutoSaveHeartbeat,
+  type MergeDockPhaseStats,
+  type MergeDockPreference,
+  type MergeDockTabId,
+  type WorkspaceConfiguration,
+} from './merge-dock/domain'
+import {
   type MergeDockAutoSaveHeartbeatOptions,
   type MergeDockAutoSaveHeartbeatState,
   type MergeDockAutoSaveState,
   type MergeDockNotice,
-  type MergeDockPhaseStats,
-  type MergeDockPreference,
   type MergeDockWindow,
-  type MergeDockTabId,
-  type WorkspaceConfiguration,
-} from './merge-dock/domain'
+} from './merge-dock/model'
 import {
   createMergeDockViewStore,
   useMergeDockViewStore,
@@ -62,81 +64,6 @@ export {
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
 import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
-
-interface MergeDockViewState {
-  readonly activeTab: MergeDockTabId
-  readonly preference: MergeDockPreference
-  readonly setActiveTab: (tab: MergeDockTabId) => void
-  readonly setPreference: (preference: MergeDockPreference) => void
-}
-
-type MergeDockViewStore = StoreApi<MergeDockViewState>
-
-const createMergeDockViewStore = (
-  initialTab: MergeDockTabId,
-  preference: MergeDockPreference,
-): MergeDockViewStore =>
-  createStore<MergeDockViewState>((set) => ({
-    activeTab: initialTab,
-    preference,
-    setActiveTab: (tab) => set({ activeTab: tab }),
-    setPreference: (next) => set({ preference: next }),
-  }))
-
-type MergeDockAutoSaveState = DiffBackupAutoSaveState
-
-type MergeDockWindow = Window & {
-  __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
-  __mergeDockFlushNow?: () => void
-}
-
-const readAutoSaveState = (target: MergeDockWindow | undefined): MergeDockAutoSaveState => ({
-  flushNow: typeof target?.__mergeDockFlushNow === 'function' ? target.__mergeDockFlushNow : undefined,
-  lastSuccessAt: target?.__mergeDockAutoSaveSnapshot?.lastSuccessAt,
-})
-
-export interface MergeDockAutoSaveHeartbeatState {
-  readonly autoSave: MergeDockAutoSaveState
-  readonly now: number
-}
-
-export interface MergeDockAutoSaveHeartbeatOptions {
-  readonly intervalMs?: number
-}
-
-export const startMergeDockAutoSaveHeartbeat = (
-  mergeWindow: MergeDockWindow | undefined,
-  listener: (state: MergeDockAutoSaveHeartbeatState) => void,
-  options?: MergeDockAutoSaveHeartbeatOptions,
-): (() => void) => {
-  let disposed = false
-  const intervalMs = options?.intervalMs ?? 5_000
-  const dispatch = () => {
-    if (disposed) return
-    listener({ autoSave: readAutoSaveState(mergeWindow), now: Date.now() })
-  }
-  dispatch()
-  if (intervalMs <= 0) {
-    return () => {
-      disposed = true
-    }
-  }
-  const interval = setInterval(dispatch, intervalMs)
-  return () => {
-    disposed = true
-    clearInterval(interval)
-  }
-}
-
-const emptyDiffHunks: readonly MergeHunk[] = []
-
-const diffMergeNoopCommand: QueueMergeCommand = async () => ({
-  status: 'success',
-  hunkIds: [],
-  telemetry: { collectorSurface: 'diff-merge.hunk-list', analyzerSurface: 'diff-merge.queue', retryable: false },
-})
-
-type MergeDockNotice = { readonly level: 'info' | 'error'; readonly message: string }
 
 
 const computeStoryboardWarnings = (storyboard: Storyboard): string[] => {

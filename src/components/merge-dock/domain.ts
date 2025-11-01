@@ -1,32 +1,29 @@
 import type { ImportMode } from '../../lib/importers'
 import type { Storyboard } from '../../types'
-import type { DiffBackupAutoSaveState } from '../../lib/merge/diffBackup'
 import type { MergeDockTabId } from '../../lib/merge/phasePlan'
 
 import type { MergeHunk, QueueMergeCommand } from '../diffMergeTypes.js'
 
-export type MergeDockNotice = { readonly level: 'info' | 'error'; readonly message: string }
+import {
+  type MergeDockAutoSaveHeartbeatOptions,
+  type MergeDockAutoSaveHeartbeatState,
+  type MergeDockAutoSaveState,
+  type MergeDockNotice,
+  type MergeDockWindow,
+} from './model'
 
-export type MergeDockAutoSaveState = DiffBackupAutoSaveState
-
-export type MergeDockWindow = Window & {
-  __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
-  __mergeDockFlushNow?: () => void
-}
+export type {
+  MergeDockAutoSaveHeartbeatOptions,
+  MergeDockAutoSaveHeartbeatState,
+  MergeDockAutoSaveState,
+  MergeDockNotice,
+  MergeDockWindow,
+} from './model'
 
 export const readAutoSaveState = (target: MergeDockWindow | undefined): MergeDockAutoSaveState => ({
   flushNow: typeof target?.__mergeDockFlushNow === 'function' ? target.__mergeDockFlushNow : undefined,
   lastSuccessAt: target?.__mergeDockAutoSaveSnapshot?.lastSuccessAt,
 })
-
-export interface MergeDockAutoSaveHeartbeatState {
-  readonly autoSave: MergeDockAutoSaveState
-  readonly now: number
-}
-
-export interface MergeDockAutoSaveHeartbeatOptions {
-  readonly intervalMs?: number
-}
 
 export const startMergeDockAutoSaveHeartbeat = (
   mergeWindow: MergeDockWindow | undefined,
