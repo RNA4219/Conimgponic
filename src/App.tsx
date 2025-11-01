@@ -21,6 +21,13 @@ import {
   useAutoSaveIntegration,
   type AutoSaveActivationDecision
 } from './hooks/useAutoSaveIntegration'
+import {
+  handleToolbarSaveProject,
+  handleToolbarLoadProject,
+  handleToolbarPackageExport,
+  notifyOpfsFailure,
+  type ToolbarNotifiers
+} from './toolbar/handlers'
 
 export {
   planAutoSave,
@@ -29,47 +36,6 @@ export {
 } from './hooks/useAutoSaveIntegration'
 
 export type { AutoSaveActivationDecision } from './hooks/useAutoSaveIntegration'
-
-interface ToolbarNotifiers {
-  readonly alert: (message: string) => void
-  readonly consoleError: (message: string, error: unknown) => void
-}
-
-function formatOpfsError(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-  return String(error)
-}
-
-function notifyOpfsFailure(
-  notifiers: ToolbarNotifiers,
-  alertPrefix: string,
-  consoleMessage: string,
-  error: unknown
-): void {
-  notifiers.alert(`${alertPrefix}: ${formatOpfsError(error)}`)
-  notifiers.consoleError(consoleMessage, error)
-}
-
-export async function handleToolbarSaveProject(
-  {
-    storyboard,
-    save,
-    alert: alertUser,
-    consoleError
-  }: ToolbarNotifiers & {
-    readonly storyboard: Storyboard
-    readonly save: (path: string, storyboard: Storyboard) => Promise<void>
-  }
-): Promise<void> {
-  try {
-    await save('project/storyboard.json', storyboard)
-    alertUser('Saved to OPFS: project/storyboard.json')
-  } catch (error) {
-    notifyOpfsFailure({ alert: alertUser, consoleError }, 'OPFS 保存に失敗しました', 'Failed to save project to OPFS', error)
-  }
-}
 
 interface SaveProjectButtonHandlerOptions extends ToolbarNotifiers {
   readonly getStoryboard: () => Storyboard
