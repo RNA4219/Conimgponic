@@ -3,15 +3,15 @@
 ## メタデータ
 
 ```yaml
-task_id: 20250119-03
+task_id: 20251101-03
 repo: local://Conimgponic
 base_branch: main
 work_branch: refactor/app-toolbar-save-handler
 priority: P1
 langs: [typescript]
 status: proposed
-last_reviewed_at: 2025-01-19
-next_review_due: 2025-01-26
+last_reviewed_at: 2025-11-01
+next_review_due: 2025-11-08
 ```
 
 ## Objective
@@ -37,7 +37,7 @@ next_review_due: 2025-01-26
 ## Tests
 
 - `pnpm test -- tests/app/AppToolbar.spec.tsx`
-- 2025-01-19: GREEN (`pnpm test -- tests/app/AppToolbar.spec.tsx`)
+- 2025-11-01: GREEN (`pnpm test -- tests/app/AppToolbar.spec.tsx`)
 
 ## Notes
 
