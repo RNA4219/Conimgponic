@@ -37,7 +37,7 @@ const setSnapshot = (sb: Storyboard): void => {
 }
 
 const createSBStore = (): UseSBStore => {
-  const store = create<State>()((set, get)=> ({
+  const store = create<State>()((set) => ({
   sb: { id: 'sb-1', title: 'New Storyboard', scenes: [], selection: [], version: 1, tokens: {
     cinematic: "cinematic tone, dynamic camera, subtle color grading",
     noir: "film noir tone, high contrast lighting, 50mm lens, smoke-filled room",

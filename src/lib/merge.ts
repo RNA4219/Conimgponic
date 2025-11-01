@@ -31,7 +31,6 @@ import {
   DEFAULT_THRESHOLD,
   PRECISION_CONFIG,
   PRECISION_FALLBACK,
-  PRECISION_THRESHOLD_CLAMP,
   resolvePrecision,
   resolveThreshold,
 } from './merge/profile';

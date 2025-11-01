@@ -7,19 +7,15 @@ import {
   DEFAULT_FLAG_SNAPSHOT,
   FEATURE_FLAG_DEFINITIONS,
   FlagResolutionError,
-  MergePrecision,
   resolveFeatureFlag,
   resolveFlags
 } from '../../src/config/flags'
-import type { MergePrecision } from '../../src/config/flags'
+import type { FeatureFlagValue, MergePrecision } from '../../src/config/flags'
 
 type Expect<T extends true> = T
-type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() =>
-  T extends B ? 1 : 2
-    ? ((<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2)
-        ? true
-        : false)
-    : false
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)
+  ? ((<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2) ? true : false)
+  : false
 
 const mergePrecisionSnapshotForTypes = resolveFeatureFlag('merge.precision')
 

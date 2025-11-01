@@ -178,7 +178,7 @@ export interface DiffMergeViewProps {
   readonly autoApplied?: DiffMergeAutoAppliedState
   readonly disabled?: boolean
 }
-interface DiffMergeViewContentProps extends Omit<DiffMergeViewProps, 'disabled'> {}
+type DiffMergeViewContentProps = Omit<DiffMergeViewProps, 'disabled'>
 
 const DiffMergeViewDisabled: React.FC<Pick<DiffMergeViewProps, 'precision'>> = ({ precision }) => (
   <section
