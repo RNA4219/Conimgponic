@@ -2107,6 +2107,37 @@ test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクス�
     )
   })
 
+  test('collect-metrics 契約は export_success_rate 指標を成功率ガードで監視する', () => {
+    const { inputRecord, notifications, phaseGates, telemetry } = COLLECT_METRICS_CONTRACT
+
+    strictEqual(
+      typeof inputRecord.export_success_rate,
+      'number',
+      'input record must define export_success_rate metric',
+    )
+
+    assertOk(
+      notifications.some((notification) => notification.metric === 'export_success_rate'),
+      'notifications must monitor export_success_rate breaches',
+    )
+
+    assertOk(
+      phaseGates
+        .flatMap((phase) => phase.guardrails)
+        .some(
+          (guard) => guard.metric === 'export_success_rate' && guard.comparator === 'gte',
+        ),
+      'phase gates must guard export_success_rate transitions',
+    )
+
+    const exportResult = telemetry.events.find((event) => event.event === 'export.result')
+    assertOk(exportResult, 'export.result telemetry spec must exist')
+    assertOk(
+      exportResult.jsonlFields.includes('payload.summary.export_success_rate'),
+      'export.result telemetry must emit summary.export_success_rate for success monitoring',
+    )
+  })
+
   test('collect-metrics 契約は ui_saved_rate 欠落を RED で検知し status.autosave guardrail を固定する', () => {
     const { inputRecord, notifications, phaseGates, telemetry } = COLLECT_METRICS_CONTRACT
 
