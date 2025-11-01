@@ -8,7 +8,7 @@
     "workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
-  "generated_at": "2025-10-20T20:29:16Z",
+  "generated_at": "00001",
   "id": "workflow-cookbook/logs/test.jsonl",
   "maintenance": {
     "refresh": "CIのテストログ形式が変わったらサンプルレコードを更新。",

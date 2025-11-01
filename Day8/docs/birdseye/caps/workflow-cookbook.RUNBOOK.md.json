@@ -18,6 +18,7 @@
   ],
   "deps_in": [
     "docs/ROADMAP_AND_SPECS.md",
+    "docs/day8/spec/02_spec.md",
     "workflow-cookbook/BLUEPRINT.md",
     "workflow-cookbook/GUARDRAILS.md",
     "workflow-cookbook/HUB.codex.md",
@@ -37,7 +38,7 @@
     "workflow-cookbook/tools/codemap/README.md",
     "workflow-cookbook/tools/codemap/update.py"
   ],
-  "generated_at": "2025-10-20T20:29:16Z",
+  "generated_at": "00001",
   "id": "workflow-cookbook/RUNBOOK.md",
   "maintenance": {
     "refresh": "Preparation/Execution/Verificationの各手順を更新した際は Birdseye index/caps と CHECKLISTS を同時更新。",

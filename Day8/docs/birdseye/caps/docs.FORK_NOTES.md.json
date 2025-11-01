@@ -1,16 +1,10 @@
 {
   "deps_in": [
-    "docs/README.md",
     "docs/UPSTREAM.md",
     "docs/UPSTREAM_WEEKLY_LOG.md"
   ],
-  "deps_out": [
-    "docs/birdseye/index.json",
-    "docs/birdseye/hot.json",
-    "docs/Release_Checklist.md",
-    "NOTICE"
-  ],
-  "generated_at": "2025-11-20T09:30:00Z",
+  "deps_out": [],
+  "generated_at": "00001",
   "id": "docs/FORK_NOTES.md",
   "maintenance": {
     "refresh": "Katamari 本家 Fork Notes や Day8 固有依存の更新を取り込んだら、本ページ・Birdseye・ライセンス表記を同時に更新する。",

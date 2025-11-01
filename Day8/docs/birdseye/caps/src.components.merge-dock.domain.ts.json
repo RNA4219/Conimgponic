@@ -10,14 +10,9 @@
     "computeStoryboardWarnings"
   ],
   "summary": "MergeDock の非 UI ドメイン層。差分タブ計画、diff バックアップ判定、AutoSave ハートビート、Markdown マージなどの純粋ロジックを提供し、UI から再エクスポートされる。",
-  "deps_out": [
-    "src/lib/merge/phasePlan.ts",
-    "src/lib/merge/diffBackup.ts"
-  ],
+  "deps_out": [],
   "deps_in": [
-    "src/components/MergeDock.tsx",
-    "tests/components/merge.diff.test.tsx",
-    "tests/merge/merge-dock-tabs.test.ts"
+    "src/components/MergeDock.tsx"
   ],
   "risks": [
     "UI 再エクスポートと直接 import の整合が崩れると API が二重管理になる"
@@ -33,5 +28,5 @@
       "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
     ]
   },
-  "generated_at": "2025-11-07T00:00:00Z"
+  "generated_at": "00001"
 }

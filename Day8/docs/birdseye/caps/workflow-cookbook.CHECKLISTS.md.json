@@ -9,6 +9,9 @@
   ],
   "deps_in": [
     "docs/ROADMAP_AND_SPECS.md",
+    "docs/Release_Checklist.md",
+    "docs/addenda/M_Versioning_Release.md",
+    "docs/day8/spec/02_spec.md",
     "workflow-cookbook/EVALUATION.md",
     "workflow-cookbook/GUARDRAILS.md",
     "workflow-cookbook/HUB.codex.md",
@@ -19,7 +22,7 @@
   "deps_out": [
     "workflow-cookbook/TASK.codex.md"
   ],
-  "generated_at": "2025-10-20T20:29:16Z",
+  "generated_at": "00001",
   "id": "workflow-cookbook/CHECKLISTS.md",
   "maintenance": {
     "refresh": "チェック項目変更時は Runbook / Task Seed と Katamari docs/Release_Checklist.md を同期。",

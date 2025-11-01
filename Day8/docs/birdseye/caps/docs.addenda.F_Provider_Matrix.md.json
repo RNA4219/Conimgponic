@@ -1,14 +1,11 @@
 {
   "deps_in": [
     "docs/README.md",
+    "docs/addenda/D_Trim_Design.md",
     "docs/day8/spec/02_spec.md"
   ],
-  "deps_out": [
-    "docs/day8/spec/02_spec.md",
-    "docs/addenda/G_Security_Privacy.md",
-    "docs/addenda/H_Deploy_Guide.md"
-  ],
-  "generated_at": "2025-10-26T00:00:00Z",
+  "deps_out": [],
+  "generated_at": "00001",
   "id": "docs/addenda/F_Provider_Matrix.md",
   "maintenance": {
     "refresh": "プロバイダー構成やモデル既定値を更新したら本文と Birdseye の summary/risks/edges を再生成する。",

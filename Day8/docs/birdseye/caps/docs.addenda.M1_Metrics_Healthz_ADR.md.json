@@ -10,18 +10,10 @@
     "out::docs/birdseye/hot.json"
   ],
   "deps_in": [
-    "workflow-cookbook/GUARDRAILS.md",
-    "docs/day8/ops/04_ops.md",
-    "workflow-cookbook/CHECKLISTS.md"
+    "docs/day8/spec/02_spec.md"
   ],
-  "deps_out": [
-    "docs/day8/ops/04_ops.md",
-    "docs/ROADMAP_AND_SPECS.md",
-    "workflow-cookbook/CHECKLISTS.md",
-    "docs/birdseye/index.json",
-    "docs/birdseye/hot.json"
-  ],
-  "generated_at": "2025-10-31T09:30:00Z",
+  "deps_out": [],
+  "generated_at": "00001",
   "id": "docs/addenda/M1_Metrics_Healthz_ADR.md",
   "maintenance": {
     "refresh": "Katamari 側 M1 ADR の更新や Day8 MetricsRegistry 実装が進んだ際に、本 addendum の計画・タイムラインを見直し、ops/roadmap/checklist 反映と同時に Birdseye を再同期する。",

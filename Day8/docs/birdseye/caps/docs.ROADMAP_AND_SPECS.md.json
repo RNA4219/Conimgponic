@@ -17,21 +17,25 @@
     "README.md"
   ],
   "deps_out": [
+    "docs/Architecture_ASCII.md",
+    "docs/BIRDSEYE.md",
+    "docs/Release_Checklist.md",
     "docs/UPSTREAM.md",
+    "docs/addenda/G_Security_Privacy.md",
+    "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
+    "docs/adr/0002-jsonl-event-contract.md",
+    "docs/adr/0003-propose-only-governance.md",
+    "docs/adr/README.md",
+    "docs/day8/spec/01_requirements.md",
     "workflow-cookbook/BLUEPRINT.md",
     "workflow-cookbook/CHECKLISTS.md",
     "workflow-cookbook/EVALUATION.md",
     "workflow-cookbook/GUARDRAILS.md",
     "workflow-cookbook/RUNBOOK.md",
     "workflow-cookbook/SAFETY.md",
-    "workflow-cookbook/TASK.codex.md",
-    "docs/Architecture_ASCII.md",
-    "docs/adr/README.md",
-    "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
-    "docs/adr/0002-jsonl-event-contract.md",
-    "docs/adr/0003-propose-only-governance.md"
+    "workflow-cookbook/TASK.codex.md"
   ],
-  "generated_at": "2025-11-05T09:00:00Z",
+  "generated_at": "00001",
   "id": "docs/ROADMAP_AND_SPECS.md",
   "maintenance": {
     "refresh": "Guardrails 承認後にクロスリンクと Birdseye（ノード追加→Capsule更新→hot.json更新→generated_at揃え）を同時更新し、ガバナンス差分と整合させる。",

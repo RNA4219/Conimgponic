@@ -1,5 +1,6 @@
 {
   "deps_in": [
+    "docs/day8/spec/02_spec.md",
     "workflow-cookbook/GUARDRAILS.md"
   ],
   "deps_out": [
@@ -11,7 +12,7 @@
     "workflow-cookbook/scripts/",
     "workflow-cookbook/tools/"
   ],
-  "generated_at": "2025-10-20T20:29:16Z",
+  "generated_at": "00001",
   "id": "workflow-cookbook/SECURITY.md",
   "katamari": {
     "dependencies": {

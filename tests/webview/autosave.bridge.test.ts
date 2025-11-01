@@ -1,9 +1,13 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+
 import type {
   AutoSaveBridgeMessage,
   AutoSaveBridgePhase,
   AutoSavePhaseGuardSnapshot,
   AutoSaveStatusState
 } from '../../src/lib/autosave'
+import { resolveAutoSaveGuard } from '../../src/lib/autosave/guard'
 
 export interface AutoSaveBridgeSequenceStep {
   readonly fromPhase: AutoSaveBridgePhase
@@ -132,3 +136,15 @@ export const integrationCases: readonly AutoSaveBridgeIntegrationCase[] = [
     ]
   }
 ] as const
+
+test('bridge integration guards remain stable after guard resolution', () => {
+  for (const integrationCase of integrationCases) {
+    const { guard, snapshotSource } = resolveAutoSaveGuard({
+      flagSnapshot: integrationCase.guard,
+      fallbackOptionsDisabled: integrationCase.guard.optionsDisabled,
+      policyDisabled: !integrationCase.guard.featureFlag.value && integrationCase.guard.optionsDisabled
+    })
+    assert.equal(snapshotSource, 'provided')
+    assert.deepEqual(guard, integrationCase.guard)
+  }
+})

@@ -12,18 +12,13 @@
   ],
   "deps_in": [
     "docs/README.md",
+    "docs/addenda/D_Trim_Design.md",
+    "docs/addenda/H_Deploy_Guide.md",
     "docs/day8/ops/04_ops.md",
-    "docs/addenda/H_Deploy_Guide.md"
+    "docs/day8/spec/02_spec.md"
   ],
-  "deps_out": [
-    "docs/day8/spec/02_spec.md",
-    "docs/day8/examples/10_examples.md",
-    "workflow-cookbook/scripts/analyze.py",
-    "tools/ci/check_governance_gate.py",
-    "docs/birdseye/index.json",
-    "docs/birdseye/hot.json"
-  ],
-  "generated_at": "2025-10-30T12:30:00Z",
+  "deps_out": [],
+  "generated_at": "00001",
   "id": "docs/addenda/L_Config_Reference.md",
   "maintenance": {
     "refresh": "環境変数や設定ファイルが追加・変更されたら Appendix L を更新し、関連する ops/H アップデートと同時に Birdseye (index→caps→hot→generated_at) を再同期する。",
