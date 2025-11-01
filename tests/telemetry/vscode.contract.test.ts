@@ -2709,29 +2709,29 @@ test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクス�
     )
     deepStrictEqual(pluginsBackoffSchema, { type: 'number', minimum: 0 })
   })
-  test('plugins telemetry は pluginId/action/result/duration_ms を Reporter JSONL に固定する', () => {
-    const completed = findTelemetrySpec('plugins.completed')
-    assertOk(completed, 'plugins.completed telemetry spec is missing')
-    const failed = findTelemetrySpec('plugins.failed')
-    assertOk(failed, 'plugins.failed telemetry spec is missing')
+test('plugins telemetry は pluginId/action/result/duration_ms を Reporter JSONL に固定する', () => {
+  const completed = findTelemetrySpec('plugins.completed')
+  assertOk(completed, 'plugins.completed telemetry spec is missing')
+  const failed = findTelemetrySpec('plugins.failed')
+  assertOk(failed, 'plugins.failed telemetry spec is missing')
 
-    const requiredFields = [
-      'payload.pluginId',
-      'payload.action',
-      'payload.result',
-      'payload.duration_ms'
-    ] as const
+  const requiredFields = [
+    'payload.pluginId',
+    'payload.action',
+    'payload.result',
+    'payload.duration_ms'
+  ] as const
 
-    for (const field of requiredFields) {
-      assertOk(
-        completed.jsonlFields.includes(field),
-        `plugins.completed must require ${field} in Reporter JSONL`
-      )
-      assertOk(
-        failed.jsonlFields.includes(field),
-        `plugins.failed must require ${field} in Reporter JSONL`
-      )
-    }
-  })
-  test.todo('JSONL 再試行は最大 3 回、指数バックオフ 0.1/0.3/0.9s で Collector -> Analyzer -> Reporter が整合することを検証する')
+  for (const field of requiredFields) {
+    assertOk(
+      completed.jsonlFields.includes(field),
+      `plugins.completed must require ${field} in Reporter JSONL`
+    )
+    assertOk(
+      failed.jsonlFields.includes(field),
+      `plugins.failed must require ${field} in Reporter JSONL`
+    )
+  }
 })
+
+test.todo('JSONL 再試行は最大 3 回、指数バックオフ 0.1/0.3/0.9s で Collector -> Analyzer -> Reporter が整合することを検証する')
