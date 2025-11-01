@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from 'zustand'
-import { createStore, type StoreApi } from 'zustand/vanilla'
 
 import type { FlagSnapshot } from '../config'
 import { useSB } from '../store'
@@ -9,13 +7,7 @@ import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importe
 import type { Storyboard } from '../types'
 import { saveText, loadText, ensureDir } from '../lib/opfs'
 import { sha256Hex } from '../lib/hash'
-import {
-  diffBackupPolicy,
-  isBaseTabId,
-  resolveMergeDockPhasePlan,
-  type MergeDockPhaseStats,
-  type MergeDockTabId,
-} from '../lib/merge/phasePlan'
+import { isBaseTabId } from '../lib/merge/phasePlan'
 import {
   getDefaultPreference,
   persistMergeDockActiveTab,
@@ -23,17 +15,31 @@ import {
   resolvePreferenceSelection,
   sanitizeMergeDockActiveTab,
   sanitizePreference,
-  type MergeDockPreference,
 } from '../lib/merge/mergeDockPreference'
+import { useMergeThreshold } from '../lib/merge/threshold'
 import {
-  useMergeThreshold,
-  type WorkspaceConfiguration,
-} from '../lib/merge/threshold'
-import {
+  computeStoryboardWarnings,
+  diffBackupPolicy,
+  diffMergeNoopCommand,
+  emptyDiffHunks,
+  mergeMarkdownStoryboard,
+  readAutoSaveState,
+  resolveMergeDockPhasePlan,
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
-  type DiffBackupAutoSaveState,
-} from '../lib/merge/diffBackup'
+  type MergeDockAutoSaveState,
+  type MergeDockNotice,
+  type MergeDockPhaseStats,
+  type MergeDockPreference,
+  type MergeDockWindow,
+  type MergeDockTabId,
+  type WorkspaceConfiguration,
+} from './merge-dock/model'
+import {
+  createMergeDockViewStore,
+  useMergeDockViewStore,
+  type MergeDockViewStore,
+} from './merge-dock/store'
 
 export {
   diffBackupPolicy,
@@ -41,12 +47,11 @@ export {
   resolveMergeDockPhasePlan,
   resolveMergeThresholdPlan,
   shouldShowDiffBackupCTA,
-} from '../lib/merge/phasePlan'
-export {
   isDiffBackupCTAEligible,
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
-} from '../lib/merge/diffBackup'
+  mergeMarkdownStoryboard,
+} from './merge-dock/model'
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
 import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
@@ -82,6 +87,39 @@ const readAutoSaveState = (target: MergeDockWindow | undefined): MergeDockAutoSa
   flushNow: typeof target?.__mergeDockFlushNow === 'function' ? target.__mergeDockFlushNow : undefined,
   lastSuccessAt: target?.__mergeDockAutoSaveSnapshot?.lastSuccessAt,
 })
+
+export interface MergeDockAutoSaveHeartbeatState {
+  readonly autoSave: MergeDockAutoSaveState
+  readonly now: number
+}
+
+export interface MergeDockAutoSaveHeartbeatOptions {
+  readonly intervalMs?: number
+}
+
+export const startMergeDockAutoSaveHeartbeat = (
+  mergeWindow: MergeDockWindow | undefined,
+  listener: (state: MergeDockAutoSaveHeartbeatState) => void,
+  options?: MergeDockAutoSaveHeartbeatOptions,
+): (() => void) => {
+  let disposed = false
+  const intervalMs = options?.intervalMs ?? 5_000
+  const dispatch = () => {
+    if (disposed) return
+    listener({ autoSave: readAutoSaveState(mergeWindow), now: Date.now() })
+  }
+  dispatch()
+  if (intervalMs <= 0) {
+    return () => {
+      disposed = true
+    }
+  }
+  const interval = setInterval(dispatch, intervalMs)
+  return () => {
+    disposed = true
+    clearInterval(interval)
+  }
+}
 
 const emptyDiffHunks: readonly MergeHunk[] = []
 
@@ -168,28 +206,20 @@ export function MergeDock({
   const [autoSave, setAutoSave] = useState<MergeDockAutoSaveState>(() => readAutoSaveState(mergeWindow))
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    if (!mergeWindow) return
-    let disposed = false
-    const syncAutoSave = () => {
-      if (disposed) return
-      const next = readAutoSaveState(mergeWindow)
+    const stop = startMergeDockAutoSaveHeartbeat(mergeWindow, ({ autoSave: nextAutoSave, now: nextNow }) => {
+      setNow(nextNow)
       setAutoSave((previous) => {
-        if (previous.flushNow === next.flushNow && previous.lastSuccessAt === next.lastSuccessAt) {
+        if (
+          previous.flushNow === nextAutoSave.flushNow &&
+          previous.lastSuccessAt === nextAutoSave.lastSuccessAt
+        ) {
           return previous
         }
-        return next
+        return nextAutoSave
       })
-    }
-    const tick = () => {
-      if (disposed) return
-      setNow(Date.now())
-      syncAutoSave()
-    }
-    tick()
-    const interval = setInterval(tick, 5_000)
+    })
     return () => {
-      disposed = true
-      clearInterval(interval)
+      stop()
     }
   }, [mergeWindow])
   const { precision, threshold } = useMergeThreshold({
@@ -240,8 +270,8 @@ export function MergeDock({
     storeRef.current = createMergeDockViewStore(plan.initialTab, defaultPreference)
   }
   const store = storeRef.current
-  const activeTab = useStore(store, (state) => state.activeTab)
-  const preference = useStore(store, (state) => state.preference)
+  const activeTab = useMergeDockViewStore(store, (state) => state.activeTab)
+  const preference = useMergeDockViewStore(store, (state) => state.preference)
   const previousPrecisionRef = useRef(precision)
   const previousDiffEnabledRef = useRef(phasePlan.diff.enabled)
   useEffect(() => {

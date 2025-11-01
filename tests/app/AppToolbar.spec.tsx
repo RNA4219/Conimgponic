@@ -5,12 +5,15 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
+import React from 'react'
+import { renderToString } from 'react-dom/server'
+
 import {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
-  handleToolbarPackageExport
-} from '../../src/toolbar/handlers'
-import { handleSaveProjectButtonClick } from '../../src/App'
+  handleToolbarPackageExport,
+  handleSaveProjectButtonClick
+} from '../../src/App'
 import { useSB } from '../../src/store'
 import type { Storyboard } from '../../src/types'
 
@@ -227,4 +230,69 @@ test('handleSaveProjectButtonClick が旧シグネチャを引き続き受け付
   assert.equal(calls[0]?.path, 'project/storyboard.json')
   assert.equal(calls[0]?.payload.title, 'Toolbar Save Button Handler Legacy Signature Test')
   assert.deepEqual(alerts, ['Saved to OPFS: project/storyboard.json'])
+})
+
+test('App のツールバーが公式ハンドラを呼び出す', async () => {
+  const appModule = await import('../../src/App.tsx')
+  const App = appModule.default
+
+  assert.equal(typeof App, 'function', 'App のデフォルトエクスポートが必要です')
+
+  let renderedTree: React.ReactElement | null = null
+
+  function Capture(): React.ReactElement {
+    const element = App()
+    assert.equal(React.isValidElement(element), true, 'App は React 要素を返す必要があります')
+    renderedTree = element
+    return element
+  }
+
+  renderToString(React.createElement(Capture))
+
+  assert.ok(renderedTree, 'App のレンダリング結果を取得できませんでした')
+
+  function findButton(node: React.ReactNode, label: string): React.ReactElement | null {
+    if (!React.isValidElement(node)) {
+      return null
+    }
+
+    if (node.type === 'button') {
+      const text = React.Children.toArray(node.props.children)
+        .map((child) => (typeof child === 'string' ? child : ''))
+        .join('')
+        .trim()
+      if (text === label) {
+        return node
+      }
+    }
+
+    for (const child of React.Children.toArray(node.props.children)) {
+      const found = findButton(child, label)
+      if (found) {
+        return found
+      }
+    }
+
+    return null
+  }
+
+  const saveButton = findButton(renderedTree, 'Save Project')
+  const loadButton = findButton(renderedTree, 'Load Project')
+  const exportButton = findButton(renderedTree, 'Package Export')
+
+  assert.ok(saveButton, 'Save Project ボタンが見つかりません')
+  assert.ok(loadButton, 'Load Project ボタンが見つかりません')
+  assert.ok(exportButton, 'Package Export ボタンが見つかりません')
+
+  assert.equal(typeof saveButton?.props.onClick, 'function', 'Save Project ボタンのハンドラが必要です')
+  assert.equal(typeof loadButton?.props.onClick, 'function', 'Load Project ボタンのハンドラが必要です')
+  assert.equal(typeof exportButton?.props.onClick, 'function', 'Package Export ボタンのハンドラが必要です')
+
+  const saveHandlerSource = String(saveButton?.props.onClick)
+  const loadHandlerSource = String(loadButton?.props.onClick)
+  const exportHandlerSource = String(exportButton?.props.onClick)
+
+  assert.match(saveHandlerSource, /handleSaveProjectButtonClick/)
+  assert.match(loadHandlerSource, /handleToolbarLoadProject/)
+  assert.match(exportHandlerSource, /handleToolbarPackageExport/)
 })
