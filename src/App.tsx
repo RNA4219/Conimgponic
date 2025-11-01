@@ -32,11 +32,15 @@ import {
   handleToolbarSaveProject,
   handleToolbarLoadProject,
   handleToolbarPackageExport,
-  type ToolbarNotifiers,
-  type ToolbarSaveProjectRequest
+  type ToolbarNotifiers
 } from './toolbar/handlers'
 
-export { handleToolbarLoadProject, handleToolbarPackageExport }
+export {
+  handleToolbarSaveProject,
+  handleToolbarLoadProject,
+  handleToolbarPackageExport,
+  type ToolbarNotifiers
+}
 
 export {
   planAutoSave,
@@ -45,6 +49,8 @@ export {
 } from './hooks/useAutoSaveIntegration'
 
 export type { AutoSaveActivationDecision } from './hooks/useAutoSaveIntegration'
+
+type ToolbarSaveProjectRequest = Parameters<typeof handleToolbarSaveProject>[0]
 
 type ToolbarSave = ToolbarSaveProjectRequest['save']
 
