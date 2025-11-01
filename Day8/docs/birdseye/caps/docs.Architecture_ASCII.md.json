@@ -1,15 +1,10 @@
 {
   "deps_in": [
-    "docs/README.md",
     "docs/ROADMAP_AND_SPECS.md",
     "docs/day8/design/03_architecture.md"
   ],
-  "deps_out": [
-    "docs/day8/design/03_architecture.md",
-    "docs/birdseye/index.json",
-    "docs/ROADMAP_AND_SPECS.md"
-  ],
-  "generated_at": "2025-10-25T12:00:00Z",
+  "deps_out": [],
+  "generated_at": "00001",
   "id": "docs/Architecture_ASCII.md",
   "maintenance": {
     "refresh": "アーキテクチャ構成や Birdseye のノードを更新したら ASCII 図とリンクを本 Capsule と同じコミットで揃える。",

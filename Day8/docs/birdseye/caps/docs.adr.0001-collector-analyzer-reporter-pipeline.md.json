@@ -1,18 +1,12 @@
 {
   "deps_in": [
-    "docs/adr/README.md",
     "docs/README.md",
     "docs/ROADMAP_AND_SPECS.md",
     "docs/day8/design/03_architecture.md",
     "workflow-cookbook/GUARDRAILS.md"
   ],
-  "deps_out": [
-    "docs/day8/design/03_architecture.md",
-    "workflow-cookbook/GUARDRAILS.md",
-    "docs/day8/ops/04_ops.md",
-    "docs/birdseye/index.json"
-  ],
-  "generated_at": "2025-11-05T09:00:00Z",
+  "deps_out": [],
+  "generated_at": "00001",
   "id": "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
   "maintenance": {
     "refresh": "Collector/Analyzer/Reporter の責務に変更があればアーキテクチャ図と Birdseye のエッジを同時更新する。",

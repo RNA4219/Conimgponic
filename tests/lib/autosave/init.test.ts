@@ -9,6 +9,7 @@ import {
 } from './setup'
 
 import type { AutoSaveError } from '../../../src/lib/autosave'
+import { resolveAutoSaveGuard } from '../../../src/lib/autosave/guard'
 import type { Storyboard } from '../../../src/types'
 
 const makeStoryboard = (nodes: string[]): Storyboard => ({
@@ -237,5 +238,29 @@ scenario(
     await assert.rejects(runner.flushNow(), isAutoSaveError({ code: 'lock-unavailable', retryable: true }))
     assert.equal(runner.snapshot().phase, 'backoff')
     assert.equal(runner.snapshot().retryCount, 1)
+  }
+)
+
+scenario(
+  'resolveAutoSaveGuard は入力スナップショットの source/optionsDisabled を保持する',
+  async (_t: TestContext, { initAutoSave }) => {
+    const providedGuard = {
+      featureFlag: { value: true, source: 'workspace' as const },
+      optionsDisabled: true
+    }
+    const { guard, snapshotSource } = resolveAutoSaveGuard({
+      flagSnapshot: providedGuard,
+      policyDisabled: false,
+      fallbackOptionsDisabled: true
+    })
+    assert.equal(snapshotSource, 'provided')
+    assert.deepEqual(guard, providedGuard)
+
+    const runner = initAutoSave(() => makeStoryboard(['guard-preserved']), { disabled: false }, guard)
+    runner.markDirty({ pendingBytes: 512 })
+    const schedule = runner.snapshot()
+    assert.equal(schedule.phase, 'disabled')
+    assert.equal(schedule.lastError?.code, undefined)
+    assert.equal(guard.featureFlag.source, 'workspace')
   }
 )

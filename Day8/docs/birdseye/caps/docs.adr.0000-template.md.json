@@ -1,9 +1,7 @@
 {
-  "deps_in": [
-    "docs/adr/README.md"
-  ],
+  "deps_in": [],
   "deps_out": [],
-  "generated_at": "2025-11-05T09:00:00Z",
+  "generated_at": "00001",
   "id": "docs/adr/0000-template.md",
   "maintenance": {
     "refresh": "テンプレートに変更が入ったら既存 ADR への適用方針を README に追記する。",

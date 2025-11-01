@@ -7,11 +7,7 @@
     "MergeDockSnapshotError"
   ],
   "summary": "MergeDock の OPFS I/O 層。Storyboard を markdown/csv/jsonl へ書き出し、最新スナップショットのタイムスタンプとコンテンツを取得する。UI は成功/失敗メッセージのみ処理する。",
-  "deps_out": [
-    "src/lib/opfs.ts",
-    "src/lib/exporters.ts",
-    "src/lib/hash.ts"
-  ],
+  "deps_out": [],
   "deps_in": [
     "src/components/MergeDock.tsx"
   ],
@@ -29,5 +25,5 @@
       "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
     ]
   },
-  "generated_at": "2025-11-07T00:00:00Z"
+  "generated_at": "00001"
 }

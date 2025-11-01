@@ -5,6 +5,7 @@ import { ENABLED_GUARD, scenario } from './setup'
 
 import { ProjectLockError, projectLockApi } from '../../../src/lib/locks'
 import type { AutoSaveError } from '../../../src/lib/autosave'
+import { createAutoSaveScheduler } from '../../../src/lib/autosave/scheduler'
 import type { Storyboard } from '../../../src/types'
 
 type LockManagerLike = {
@@ -240,4 +241,61 @@ scenario('flushNow stays awaiting-lock until dispose finalizes disabled phase', 
   await flush
   await disposing
   assert.equal(runner.snapshot().phase, 'disabled')
+})
+
+scenario('createAutoSaveScheduler handles flushNow/backoff sequencing', async (t, ctx) => {
+  const { AUTOSAVE_POLICY } = ctx
+  t.mock.timers.enable({ apis: ['setTimeout'], now: 0 })
+  const flushes: Array<'change' | 'flushNow'> = []
+  let backoffResumed = 0
+  const scheduler = createAutoSaveScheduler(
+    {
+      onFlush: async (reason) => {
+        flushes.push(reason)
+      }
+    },
+    {
+      debounceMs: AUTOSAVE_POLICY.debounceMs,
+      idleMs: AUTOSAVE_POLICY.idleMs
+    }
+  )
+  scheduler.start()
+  scheduler.scheduleFlush('change')
+  t.mock.timers.tick(AUTOSAVE_POLICY.debounceMs + AUTOSAVE_POLICY.idleMs - 1)
+  await Promise.resolve()
+  assert.deepEqual(flushes, [])
+  t.mock.timers.tick(1)
+  await Promise.resolve()
+  assert.deepEqual(flushes, ['change'])
+
+  scheduler.scheduleFlush('flushNow')
+  assert.deepEqual(flushes, ['change', 'flushNow'])
+
+  scheduler.enterBackoff({
+    delayMs: 1000,
+    reason: 'change',
+    attempt: 1,
+    onReady: () => {
+      backoffResumed++
+      scheduler.scheduleFlush('change')
+    }
+  })
+  scheduler.scheduleFlush('flushNow')
+  t.mock.timers.tick(1000)
+  await Promise.resolve()
+  assert.equal(backoffResumed, 0)
+
+  scheduler.enterBackoff({
+    delayMs: 500,
+    reason: 'change',
+    attempt: 1,
+    onReady: () => {
+      backoffResumed++
+      scheduler.scheduleFlush('change')
+    }
+  })
+  t.mock.timers.tick(500)
+  await Promise.resolve()
+  assert.ok(backoffResumed >= 1)
+  assert.equal(flushes.at(-1), 'change')
 })

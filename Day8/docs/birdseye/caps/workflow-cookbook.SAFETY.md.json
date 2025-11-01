@@ -14,6 +14,7 @@
   ],
   "deps_in": [
     "docs/ROADMAP_AND_SPECS.md",
+    "docs/day8/spec/02_spec.md",
     "docs/safety.md",
     "workflow-cookbook/GUARDRAILS.md",
     "workflow-cookbook/SECURITY.md"
@@ -24,7 +25,7 @@
     "workflow-cookbook/EVALUATION.md",
     "workflow-cookbook/RUNBOOK.md"
   ],
-  "generated_at": "2025-10-20T20:29:16Z",
+  "generated_at": "00001",
   "id": "workflow-cookbook/SAFETY.md",
   "maintenance": {
     "refresh": "月次レビューまたは安全例外/RCA 更新時に本文と Birdseye (index/hot/caps) を再生成し、generated_at を同期する。",

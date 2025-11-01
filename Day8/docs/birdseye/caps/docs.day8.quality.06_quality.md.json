@@ -1,12 +1,12 @@
 {
   "deps_in": [
-    "docs/day8/quality/06_quality.md"
+    "docs/addenda/C_Persona_Schema.md",
+    "docs/addenda/D_Trim_Design.md"
   ],
   "deps_out": [
-    "docs/addenda/I_Test_Cases.md",
-    "docs/addenda/K_Accessibility_UX.md"
+    "docs/addenda/I_Test_Cases.md"
   ],
-  "generated_at": "2025-02-24T09:00:00Z",
+  "generated_at": "00001",
   "id": "docs/day8/quality/06_quality.md",
   "maintenance": {
     "refresh": "品質メトリクスやテスト導線を更新したら付録および Birdseye index.json を揃える。",

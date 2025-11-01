@@ -8,7 +8,7 @@
   "deps_out": [
     "src/components/merge-dock/domain.ts",
     "src/components/merge-dock/io.ts",
-    "src/components/merge-dock/store.ts"
+    "src/lib/merge/phasePlan.ts"
   ],
   "deps_in": [],
   "risks": [
@@ -26,5 +26,5 @@
       "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
     ]
   },
-  "generated_at": "2025-11-06T09:00:00Z"
+  "generated_at": "00001"
 }

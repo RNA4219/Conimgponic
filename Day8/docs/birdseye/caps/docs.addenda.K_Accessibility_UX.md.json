@@ -8,16 +8,10 @@
     "out::docs/birdseye/index.json"
   ],
   "deps_in": [
-    "docs/README.md",
-    "docs/day8/quality/06_quality.md",
-    "docs/addenda/I_Test_Cases.md"
+    "docs/README.md"
   ],
-  "deps_out": [
-    "workflow-cookbook/GUARDRAILS.md",
-    "workflow-cookbook/EVALUATION.md",
-    "docs/birdseye/index.json"
-  ],
-  "generated_at": "2025-02-24T09:00:00Z",
+  "deps_out": [],
+  "generated_at": "00001",
   "id": "docs/addenda/K_Accessibility_UX.md",
   "maintenance": {
     "refresh": "CLI/レポート/ドキュメントのアクセシビリティ要件を更新したら Appendix K → 06_quality.md → I_Test_Cases.md → Birdseye の順で差分を反映する。",

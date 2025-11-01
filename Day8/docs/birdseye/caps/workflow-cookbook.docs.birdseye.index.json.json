@@ -3,7 +3,7 @@
     "README.md",
     "workflow-cookbook/RUNBOOK.md"
   ],
-  "generated_at": "2025-10-20T20:29:16Z",
+  "generated_at": "00001",
   "id": "workflow-cookbook/docs/birdseye/index.json",
   "katamari": {
     "dependencies": {
@@ -38,5 +38,6 @@
       "orbit::Guardrails/Runbook/Evaluation など主要運用文書への導線を維持し、LLM の探索コストを一定に保つ。"
     ]
   },
-  "role": "visualization"
+  "role": "visualization",
+  "deps_out": []
 }

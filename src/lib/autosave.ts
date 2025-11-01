@@ -1,12 +1,21 @@
-import { workspaceKeyCandidates } from '../config/flags.js'
-import type { FlagSnapshot, WorkspaceConfiguration } from '../config/flags.js'
+import type { FlagSnapshot } from '../config/flags.js'
 import type { Storyboard } from '../types'
-import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
-import { AUTOSAVE_HISTORY_ROTATION_PLAN, type AutoSaveHistoryEntry } from './autosave/persistence.js'
+import {
+  AUTOSAVE_HISTORY_ROTATION_PLAN,
+  createAutoSavePersistence,
+  sanitizeTimestamp,
+  type AutoSaveHistoryEntry
+} from './autosave/persistence.js'
 import * as policy from './autosave/policy.js'
 import type { AutoSavePolicy } from './autosave/policy.js'
 import { resolveCollectorPhase } from './autosave/collector-phase.js'
+import { createAutoSaveScheduler } from './autosave/scheduler.js'
+import {
+  resolveAutoSaveGuard,
+  readImportMetaEnv,
+  type AutoSaveInitGuardInput
+} from './autosave/guard.js'
 
 export const AUTOSAVE_POLICY = policy.AUTOSAVE_POLICY
 export const AUTOSAVE_DEFAULTS = policy.AUTOSAVE_DEFAULTS
@@ -54,49 +63,6 @@ type AssertTrue<T extends true> = T
 type _AutoSaveOptionsPolicyInvariant = AssertTrue<
   AutoSaveOptions extends { readonly policy?: unknown } ? false : true
 >
-
-const readWorkspaceValue = (
-  workspace: WorkspaceConfiguration | null | undefined,
-  key: string
-): unknown => {
-  if (!workspace) {
-    return undefined
-  }
-  const candidates = workspaceKeyCandidates(key)
-  const candidateWithGetter = workspace as { get?: (name: string) => unknown }
-  if (typeof candidateWithGetter.get === 'function') {
-    for (const candidate of candidates) {
-      const value = candidateWithGetter.get(candidate)
-      if (value !== undefined) {
-        return value
-      }
-    }
-  }
-  const recordWorkspace = workspace as Record<string, unknown>
-  for (const candidate of candidates) {
-    if (Object.prototype.hasOwnProperty.call(recordWorkspace, candidate)) {
-      return recordWorkspace[candidate]
-    }
-  }
-  for (const candidate of candidates) {
-    const resolved = candidate.split('.').reduce<unknown>((current, segment) => {
-      if (!current || typeof current !== 'object') {
-        return undefined
-      }
-      const record = current as Record<string, unknown>
-      return segment in record ? record[segment] : undefined
-    }, workspace)
-    if (resolved !== undefined) {
-      return resolved
-    }
-  }
-  return undefined
-}
-
-const LOCAL_STORAGE_GUARD_KEYS = Object.freeze([
-  'autosave.enabled',
-  'flag:autoSave.enabled'
-] as const)
 
 export type AutoSaveErrorCode =
   | 'lock-unavailable'
@@ -243,16 +209,6 @@ type BuildMetadataScope = {
   process?: { env?: Record<string, unknown> }
 }
 
-const readImportMetaEnv = (): Record<string, unknown> | undefined => {
-  try {
-    const meta = import.meta as { env?: unknown }
-    const env = meta?.env
-    return typeof env === 'object' && env !== null ? (env as Record<string, unknown>) : undefined
-  } catch {
-    return undefined
-  }
-}
-
 const resolveBuildSha = (): string | undefined => {
   const scope = globalThis as BuildMetadataScope
   const importMetaEnv = readImportMetaEnv()
@@ -357,16 +313,6 @@ const publishScheduleRequestedCollectorEvent = (event: AutoSaveScheduleRequested
     retry_count: event.retryCount
   })
 }
-
-interface AutoSaveFlagSnapshot {
-  readonly autosave: {
-    readonly enabled: boolean
-    readonly phase?: string
-    readonly source?: string
-  }
-}
-
-type AutoSaveInitGuardInput = AutoSaveFlagSnapshot | AutoSaveFlagSnapshot['autosave'] | AutoSavePhaseGuardSnapshot
 
 export interface AutoSaveBridgeEnvelope<TType extends string, TPayload> {
   readonly type: TType
@@ -909,18 +855,6 @@ export const AUTOSAVE_ERROR_TEST_MATRIX: readonly AutoSaveErrorScenario[] = Obje
   }
 ])
 
-const AUTOSAVE_DIRECTORY = 'project/autosave'
-const CURRENT_PATH = `${AUTOSAVE_DIRECTORY}/current.json`
-const INDEX_PATH = `${AUTOSAVE_DIRECTORY}/index.json`
-const HISTORY_DIRECTORY = `${AUTOSAVE_DIRECTORY}/history`
-const sanitizeTimestamp = (ts: string) => ts.replace(/[:.]/g, '-')
-
-interface AutoSaveIndexPayload {
-  readonly current: AutoSaveHistoryEntry | null
-  readonly history: readonly AutoSaveHistoryEntry[]
-  readonly generation: number | null
-}
-
 const createAutoSaveError = (
   code: AutoSaveErrorCode,
   message: string,
@@ -960,36 +894,10 @@ const isAutoSaveError = (value: unknown): value is AutoSaveError => {
   return candidate.name === 'AutoSaveError' || candidate.name === 'Error'
 }
 
-const parseIndexFile = (value: unknown): AutoSaveIndexPayload => {
-  if (!value || typeof value !== 'object') return { current: null, history: [], generation: null }
-  const input = value as Record<string, unknown>
-  const current = input.current as AutoSaveHistoryEntry | null | undefined
-  const history = Array.isArray(input.history) ? (input.history as AutoSaveHistoryEntry[]) : []
-  const generation = input.generation
-  const normalizedGeneration =
-    typeof generation === 'number' && Number.isFinite(generation)
-      ? Math.max(0, Math.trunc(generation))
-      : null
-  return {
-    current: current && current.location === 'current'
-      ? { ...current, retained: current.retained !== false, location: 'current' as const }
-      : null,
-    history: history
-      .filter((entry) => entry?.location === 'history')
-      .map((entry) => ({ ...entry, retained: entry.retained !== false, location: 'history' as const })),
-    generation: normalizedGeneration
-  }
-}
-
-const loadIndex = async (): Promise<AutoSaveIndexPayload> => {
-  const text = await loadText(INDEX_PATH)
-  if (!text) return { current: null, history: [], generation: null }
-  try {
-    return parseIndexFile(JSON.parse(text))
-  } catch (error) {
-    throw createAutoSaveError('data-corrupted', 'Failed to parse autosave index', false, error)
-  }
-}
+const sharedPersistence = createAutoSavePersistence({
+  makeError: (code, message, retryable, cause, context) =>
+    createAutoSaveError(code, message, retryable, cause, context)
+})
 
 /**
  * AutoSave スケジューラを初期化する。
@@ -1004,111 +912,6 @@ export function initAutoSave(
   flagSnapshot?: AutoSaveInitGuardInput
 ): AutoSaveInitResult {
   const policy = resolveAutoSavePolicy()
-  const truthy = /^(1|true)$/i, falsy = /^(0|false)$/i
-  const asBool = (value: unknown): boolean | null => {
-    if (typeof value === 'boolean') {
-      return value
-    }
-    if (typeof value === 'number') {
-      if (value === 1) return true
-      if (value === 0) return false
-    }
-    if (typeof value === 'string') {
-      const normalized = value.trim()
-      if (truthy.test(normalized)) return true
-      if (falsy.test(normalized)) return false
-    }
-    return null
-  }
-  const guardSource = (value: unknown): AutoSavePhaseGuardSnapshot['featureFlag']['source'] =>
-    value === 'env' || value === 'workspace' || value === 'localStorage' || value === 'default' ? value : 'default'
-  const resolveGuardFromEnvironment = (
-    fallbackOptionsDisabled: boolean
-  ): AutoSavePhaseGuardSnapshot => {
-    const scope = globalThis as typeof globalThis & {
-      __AUTOSAVE_ENABLED__?: boolean
-      __AUTOSAVE_WORKSPACE__?: WorkspaceConfiguration | null
-      localStorage?: { getItem?: (key: string) => string | null }
-      process?: { env?: Record<string, unknown> }
-    }
-    const runtimeEnv =
-      typeof scope.__AUTOSAVE_ENABLED__ === 'boolean' ? scope.__AUTOSAVE_ENABLED__ : null
-    const importMetaEnv = readImportMetaEnv()
-    const envVar = asBool(
-      importMetaEnv?.VITE_AUTOSAVE_ENABLED ?? scope.process?.env?.VITE_AUTOSAVE_ENABLED
-    )
-    const env = runtimeEnv ?? envVar
-    if (env != null) {
-      return {
-        featureFlag: { value: env, source: 'env' },
-        optionsDisabled: fallbackOptionsDisabled
-      }
-    }
-    const workspaceValue = asBool(
-      readWorkspaceValue(scope.__AUTOSAVE_WORKSPACE__ ?? null, 'conimg.autosave.enabled')
-    )
-    if (workspaceValue != null) {
-      return {
-        featureFlag: { value: workspaceValue, source: 'workspace' },
-        optionsDisabled: fallbackOptionsDisabled
-      }
-    }
-    if (scope.localStorage && typeof scope.localStorage.getItem === 'function') {
-      for (const key of LOCAL_STORAGE_GUARD_KEYS) {
-        const storage = asBool(scope.localStorage.getItem(key))
-        if (storage != null) {
-          return {
-            featureFlag: { value: storage, source: 'localStorage' },
-            optionsDisabled: fallbackOptionsDisabled
-          }
-        }
-      }
-    }
-    return {
-      featureFlag: { value: !policy.disabled, source: 'default' },
-      optionsDisabled: fallbackOptionsDisabled
-    }
-  }
-  const normalizeGuard = (
-    candidate: AutoSaveInitGuardInput | undefined,
-    fallbackOptionsDisabled: boolean
-  ): AutoSavePhaseGuardSnapshot | null => {
-    if (!candidate || typeof candidate !== 'object') return null
-    if ('featureFlag' in candidate && candidate.featureFlag && typeof candidate.featureFlag === 'object') {
-      const guard = candidate as AutoSavePhaseGuardSnapshot
-      if (typeof guard.featureFlag?.value === 'boolean') {
-        return {
-          featureFlag: {
-            value: guard.featureFlag.value,
-            source: guardSource(guard.featureFlag.source)
-          },
-          optionsDisabled: !!guard.optionsDisabled
-        }
-      }
-    }
-    const record = candidate as Record<string, unknown>
-    if ('autosave' in record && record.autosave && typeof record.autosave === 'object') {
-      const auto = record.autosave as { enabled?: unknown; source?: unknown }
-      return {
-        featureFlag: {
-          value: !!auto?.enabled,
-          source: guardSource(auto?.source)
-        },
-        optionsDisabled: fallbackOptionsDisabled
-      }
-    }
-    if ('enabled' in record) {
-      const auto = record as { enabled?: unknown; source?: unknown }
-      return {
-        featureFlag: {
-          value: !!auto.enabled,
-          source: guardSource(auto.source)
-        },
-        optionsDisabled: fallbackOptionsDisabled
-      }
-    }
-    return null
-  }
   const makeError = (
     code: AutoSaveErrorCode,
     message: string,
@@ -1137,29 +940,13 @@ export function initAutoSave(
     return Object.keys(detail).length > 0 ? detail : null
   }
   const disabledError = () => makeError('disabled', 'AutoSave is disabled', false)
-  const removeFile = async (path: string) => {
-    const segs = path.split('/').filter(Boolean)
-    const name = segs.pop()
-    if (!name) {
-      return
-    }
-    try {
-      await (await ensureDir(segs.join('/'))).removeEntry(name)
-    } catch (removeError) {
-      if (removeError instanceof DOMException && removeError.name === 'NotFoundError') {
-        return
-      }
-      console.warn('Failed to remove autosave artefact', removeError)
-    }
-  }
-  const renameFile = async (tmp: string, target: string) => {
-    const data = await loadText(tmp)
-    if (data == null) throw makeError('write-failed', `Missing artefact ${tmp}`, true)
-    await saveText(target, data); await removeFile(tmp)
-  }
+  const persistence = sharedPersistence
   const fallbackOptionsDisabled = options?.disabled === true
-  const guardSnapshot = normalizeGuard(flagSnapshot, fallbackOptionsDisabled)
-  const guard = guardSnapshot ?? resolveGuardFromEnvironment(fallbackOptionsDisabled)
+  const { guard } = resolveAutoSaveGuard({
+    flagSnapshot,
+    fallbackOptionsDisabled,
+    policyDisabled: policy.disabled
+  })
   const flagEnabled = guard.featureFlag.value
   const effectiveOptionsDisabled = guard.optionsDisabled
   const guardAllowsDirtyExposure = flagEnabled && !effectiveOptionsDisabled
@@ -1279,12 +1066,7 @@ export function initAutoSave(
   let loadGenerationPromise: Promise<number> | null = null
   let disposed = false
   let disposing = false
-  let retryTimer: ReturnType<typeof setTimeout> | null = null
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-  let idleTimer: ReturnType<typeof setTimeout> | null = null
-  let resolveBackoff: (() => void) | null = null
   let inFlightFlush: Promise<void> | null = null
-  let inFlightBackoff: Promise<void> | null = null
   let disposePromise: Promise<void> | null = null
   let inflightQueueCount = 0
   const ensureNextGeneration = async (): Promise<number> => {
@@ -1292,7 +1074,8 @@ export function initAutoSave(
       return nextGeneration
     }
     if (!loadGenerationPromise) {
-      loadGenerationPromise = loadIndex()
+      loadGenerationPromise = persistence
+        .loadIndex()
         .then((index) => {
           const base = typeof index.generation === 'number' ? index.generation + 1 : 0
           nextGeneration = base
@@ -1305,105 +1088,24 @@ export function initAutoSave(
     return loadGenerationPromise
   }
 
-  const updateIndex = async (
-    ts: string,
-    bytes: number,
-    payload: string,
-    generation: number
-  ): Promise<{
-    readonly history: AutoSaveHistoryEntry[]
-    readonly totalBytes: number
-    readonly evicted: number
-  }> => {
-    const path = INDEX_PATH
-    const tmp = `${path}.tmp`
-    const historyKey = sanitizeTimestamp(ts)
-    const normalizeHistoryEntry = (value: unknown): AutoSaveHistoryEntry | null => {
-      if (!value || typeof value !== 'object') return null
-      const record = value as { ts?: unknown; bytes?: unknown; retained?: unknown }
-      if (typeof record.ts !== 'string' || typeof record.bytes !== 'number' || !Number.isFinite(record.bytes)) {
-        return null
-      }
-      return { ts: record.ts, bytes: record.bytes, location: 'history', retained: record.retained !== false }
-    }
-    const rawIndex = await loadJSON(path)
-    const parsed = parseIndexFile(rawIndex)
-    const seen = new Set<string>()
-    const history: AutoSaveHistoryEntry[] = []
-    const pushHistory = (entry: AutoSaveHistoryEntry | null | undefined) => {
-      if (!entry || entry.ts === ts || seen.has(entry.ts)) return
-      seen.add(entry.ts)
-      history.push({ ts: entry.ts, bytes: entry.bytes, location: 'history', retained: entry.retained !== false })
-    }
-    parsed.history.forEach((entry) => pushHistory(entry))
-    if (parsed.current) {
-      pushHistory({
-        ts: parsed.current.ts,
-        bytes: parsed.current.bytes,
-        location: 'history',
-        retained: parsed.current.retained
-      })
-    }
-    if (rawIndex && typeof rawIndex === 'object' && Array.isArray((rawIndex as { entries?: unknown }).entries)) {
-      for (const legacy of (rawIndex as { entries: unknown[] }).entries) {
-        pushHistory(normalizeHistoryEntry(legacy))
-      }
-    }
-    const nextHistory: AutoSaveHistoryEntry[] = [
-      { ts, bytes, location: 'history', retained: true },
-      ...history
-    ]
-    let total = nextHistory.reduce((sum, entry) => sum + entry.bytes, 0)
-    let evicted = 0
-    while (
-      (nextHistory.length > policy.maxGenerations || total > policy.maxBytes) &&
-      nextHistory.length > 0
-    ) {
-      const drop = nextHistory.pop()!
-      total -= drop.bytes
-      evicted += 1
-      await removeFile(`${HISTORY_DIRECTORY}/${sanitizeTimestamp(drop.ts)}.json`)
-    }
-    if (total > policy.maxBytes) {
-      throw makeError('history-overflow', 'Unable to satisfy AutoSave history retention policy', false, undefined, {
-        totalBytes: total
-      })
-    }
-    const historyTmp = `${HISTORY_DIRECTORY}/${historyKey}.json.tmp`
-    await saveText(historyTmp, payload)
-    await renameFile(historyTmp, `${HISTORY_DIRECTORY}/${historyKey}.json`)
-    const normalizedHistory = nextHistory.map((entry) => ({ ...entry, retained: entry.retained !== false }))
-    await saveJSON(tmp, {
-      current: { ts, bytes, location: 'current' as const, retained: true },
-      history: normalizedHistory,
-      entries: normalizedHistory,
-      generation: Math.max(0, Math.trunc(generation))
-    })
-    await renameFile(tmp, path)
-    return { history: normalizedHistory, totalBytes: total, evicted }
-  }
-  const clearDebounceTimer = () => {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer)
-      debounceTimer = null
-    }
-  }
-  const clearIdleTimer = () => {
-    if (idleTimer) {
-      clearTimeout(idleTimer)
-      idleTimer = null
-    }
-  }
-  const resetSchedule = () => {
-    clearDebounceTimer()
-    clearIdleTimer()
-  }
   const trimPendingQueue = () => {
     const overflow = pendingQueue.length - AUTOSAVE_QUEUE_POLICY.maxPending
     if (overflow > 0) {
       pendingQueue.splice(inflightQueueCount, overflow)
     }
   }
+  const scheduler = createAutoSaveScheduler(
+    {
+      onFlush: (reason) => {
+        if (reason === 'flushNow') {
+          return startFlush('manual')
+        }
+        return startFlush('auto')
+      }
+    },
+    { debounceMs: policy.debounceMs, idleMs: policy.idleMs }
+  )
+  scheduler.start()
   const enqueueRetryEntry = (reason: AutoSaveQueueEntry['reason'], retries: number): void => {
     const entry: AutoSaveQueueEntry = {
       ts: new Date().toISOString(),
@@ -1443,7 +1145,8 @@ export function initAutoSave(
       throw disabledError()
     }
     const payload = JSON.stringify(storyboard, null, 2)
-    pendingBytes = encoder.encode(payload).length; phase = 'awaiting-lock'
+    pendingBytes = encoder.encode(payload).length
+    phase = 'awaiting-lock'
     const flushStartedAt = Date.now()
     try {
       await projectLockApi.withProjectLock(async (lease) => {
@@ -1467,14 +1170,25 @@ export function initAutoSave(
             }
           }
         })
-        phase = 'writing-current'; await saveText('project/autosave/current.json.tmp', payload); await renameFile('project/autosave/current.json.tmp', 'project/autosave/current.json')
-        phase = 'updating-index'; const ts = new Date().toISOString(); const flushRetryCount = retryCount; emitRunnerEvent(
+        phase = 'writing-current'
+        const writeResult = await persistence.writeCurrent(payload)
+        pendingBytes = writeResult.bytes
+        phase = 'updating-index'
+        const ts = new Date().toISOString()
+        const flushRetryCount = retryCount
+        emitRunnerEvent(
           'write-succeeded',
           'writing-current',
           { at: ts, payload: { bytes: pendingBytes, retryCount: flushRetryCount, generation } }
-        );
-        const indexResult = await updateIndex(ts, pendingBytes, payload, generation)
-        phase = 'gc';
+        )
+        const indexResult = await persistence.persistHistory({
+          ts,
+          payload,
+          bytes: pendingBytes,
+          generation,
+          policy
+        })
+        phase = 'gc'
         lastSuccessAt = ts;
         const savedBytes = pendingBytes
         const durationMs = Date.now() - flushStartedAt
@@ -1528,8 +1242,7 @@ export function initAutoSave(
           phase = 'disabled';
         } else if (!disposing && backlog > 0) {
           phase = 'debouncing';
-          resetSchedule();
-          scheduleDebounce();
+          void scheduler.scheduleFlush('change')
         } else {
           phase = 'idle';
         }
@@ -1609,37 +1322,18 @@ export function initAutoSave(
             reason: 'retry-scheduled',
             delay_ms: delay
           })
-          const wait = new Promise<void>((resolve) => {
-            const settle = () => {
-              if (resolveBackoff === settle) {
-                resolveBackoff = null
-              }
-              if (retryTimer) {
-                clearTimeout(retryTimer)
-                retryTimer = null
-              }
-              resolve()
-            }
-            resolveBackoff = settle
-            retryTimer = setTimeout(settle, delay)
-          })
-          inFlightBackoff = wait
-          void wait
-            .then(() => {
-              if (inFlightBackoff === wait) {
-                inFlightBackoff = null
-              }
+          scheduler.enterBackoff({
+            delayMs: delay,
+            reason: source === 'manual' ? 'flushNow' : 'change',
+            attempt: nextAttempt,
+            onReady: () => {
               if (disposing || disposed) {
                 return
               }
               enqueueRetryEntry(source === 'manual' ? 'flushNow' : 'change', nextAttempt)
               void startFlush('auto').catch(() => undefined)
-            })
-            .catch(() => {
-              if (inFlightBackoff === wait) {
-                inFlightBackoff = null
-              }
-            })
+            }
+          })
           if (disposing) {
             return
           }
@@ -1714,14 +1408,6 @@ export function initAutoSave(
       }
       throw disabledError()
     }
-    if (source === 'manual') {
-      if (retryTimer) {
-        clearTimeout(retryTimer)
-        retryTimer = null
-      }
-    } else if (retryTimer) {
-      return
-    }
     const queuedCount = Math.max(0, pendingQueue.length - inflightQueueCount)
     if (source === 'auto' && queuedCount === 0) {
       return
@@ -1748,24 +1434,6 @@ export function initAutoSave(
       }
     }
   }
-  const scheduleIdleFlush = () => {
-    if (disposed || disposing) return
-    clearIdleTimer()
-    idleTimer = setTimeout(() => {
-      idleTimer = null
-      if (disposed || disposing) return
-      void startFlush('auto').catch(() => undefined)
-    }, policy.idleMs)
-  }
-  const scheduleDebounce = () => {
-    if (disposed || disposing) return
-    clearDebounceTimer()
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null
-      if (disposed || disposing) return
-      scheduleIdleFlush()
-    }, policy.debounceMs)
-  }
   const resolveSnapshotPhase = (): AutoSavePhase => {
     if (disposed || disposing) {
       return 'disabled'
@@ -1787,8 +1455,7 @@ export function initAutoSave(
     snapshot,
     flushNow: async () => {
       if (disposed || disposing) throw disabledError()
-      resetSchedule()
-      await startFlush('manual')
+      await scheduler.scheduleFlush('flushNow')
     },
     dispose: async () => {
       if (disposePromise) {
@@ -1798,21 +1465,15 @@ export function initAutoSave(
       const pendingBeforeDispose = pendingQueue.length
       disposing = true
       const pendingFlush = inFlightFlush
-      const pendingBackoff = inFlightBackoff
       disposePromise = (async () => {
-        const finishBackoff = resolveBackoff
-        resolveBackoff = null
-        if (retryTimer) {
-          clearTimeout(retryTimer)
-          retryTimer = null
+        await scheduler.dispose()
+        if (pendingFlush) {
+          try {
+            await pendingFlush
+          } catch {
+            // ignore flush errors on dispose
+          }
         }
-        if (finishBackoff) {
-          finishBackoff()
-        }
-        await Promise.all(
-          [pendingFlush, pendingBackoff].filter((candidate): candidate is Promise<void> => Boolean(candidate))
-        )
-        resetSchedule()
         if (cancellationPhase !== 'disabled') {
           emitRunnerEvent('cancelled', cancellationPhase, {
             payload: { reason: 'dispose', pending: pendingBeforeDispose }
@@ -1904,8 +1565,7 @@ export function initAutoSave(
       if (phase === 'idle' || phase === 'debouncing') {
         phase = 'debouncing'
       }
-      resetSchedule()
-      scheduleDebounce()
+      void scheduler.scheduleFlush('change')
     }
   }
 }
@@ -1924,13 +1584,13 @@ export async function restorePrompt(): Promise<
   | null
   | { ts: string; bytes: number; source: 'current' | 'history'; location: string }
 > {
-  const index = await loadIndex()
+  const index = await sharedPersistence.loadIndex()
   if (index.current) {
     return {
       ts: index.current.ts,
       bytes: index.current.bytes,
       source: 'current',
-      location: CURRENT_PATH
+      location: AUTOSAVE_HISTORY_ROTATION_PLAN.currentFile
     }
   }
   if (!index.history.length) return null
@@ -1939,7 +1599,7 @@ export async function restorePrompt(): Promise<
     ts: latest.ts,
     bytes: latest.bytes,
     source: 'history',
-    location: `${HISTORY_DIRECTORY}/${sanitizeTimestamp(latest.ts)}.json`
+    location: `${AUTOSAVE_HISTORY_ROTATION_PLAN.targetDirectory}/history/${sanitizeTimestamp(latest.ts)}.json`
   }
 }
 
@@ -1950,7 +1610,7 @@ export async function restorePrompt(): Promise<
  * 例外: `code='data-corrupted'` の `AutoSaveError` を throw。
  */
 export async function restoreFromCurrent(): Promise<boolean> {
-  const text = await loadText(CURRENT_PATH)
+  const text = await sharedPersistence.readCurrent()
   if (!text) return false
   try {
     JSON.parse(text)
@@ -1969,7 +1629,7 @@ export async function restoreFromCurrent(): Promise<boolean> {
 export async function restoreFrom(ts: string): Promise<boolean> {
   try {
     return await projectLockApi.withProjectLock(async () => {
-      const text = await loadText(`${HISTORY_DIRECTORY}/${sanitizeTimestamp(ts)}.json`)
+      const text = await sharedPersistence.readHistory(ts)
       if (!text) {
         throw createAutoSaveError('history-overflow', 'Missing autosave history payload', false, undefined, {
           ts
@@ -2001,7 +1661,7 @@ export async function restoreFrom(ts: string): Promise<boolean> {
 export async function listHistory(): Promise<
   { ts: string; bytes: number; location: 'history'; retained: boolean }[]
 > {
-  const index = await loadIndex()
+  const index = await sharedPersistence.loadIndex()
   const historyEntries = index.history
     .filter((entry): entry is AutoSaveHistoryEntry & { location: 'history' } => entry.location === 'history')
     .map((entry) => ({ ...entry, location: 'history' as const }))

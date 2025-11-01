@@ -1,16 +1,13 @@
 {
-  "deps_in": [
-    "docs/ROADMAP_AND_SPECS.md",
+  "deps_in": [],
+  "deps_out": [
+    "docs/Architecture_ASCII.md",
+    "docs/addenda/B_UI_Mock.md",
     "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
     "docs/adr/0002-jsonl-event-contract.md",
     "docs/adr/0003-propose-only-governance.md"
   ],
-  "deps_out": [
-    "docs/Architecture_ASCII.md",
-    "docs/addenda/B_UI_Mock.md",
-    "docs/adr/README.md"
-  ],
-  "generated_at": "2025-11-05T09:00:00Z",
+  "generated_at": "00001",
   "id": "docs/day8/design/03_architecture.md",
   "maintenance": {
     "refresh": "コンポーネント構成が変わったら ADR と Birdseye のリンクを同時に更新する。",

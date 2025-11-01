@@ -9,15 +9,11 @@
   ],
   "deps_in": [
     "docs/README.md",
-    "docs/day8/security/05_security.md",
-    "docs/safety.md"
+    "docs/ROADMAP_AND_SPECS.md",
+    "docs/addenda/D_Trim_Design.md"
   ],
-  "deps_out": [
-    "workflow-cookbook/SECURITY.md",
-    "workflow-cookbook/SAFETY.md",
-    "docs/birdseye/hot.json"
-  ],
-  "generated_at": "2025-10-22T09:00:00Z",
+  "deps_out": [],
+  "generated_at": "00001",
   "id": "docs/addenda/G_Security_Privacy.md",
   "maintenance": {
     "refresh": "Secrets/ログ/通信/OAuth の運用ルールが変わったら Appendix G → 05_security.md → SAFETY の順で更新し、index/hot/caps の generated_at を同期。",

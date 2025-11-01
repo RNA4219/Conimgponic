@@ -4,9 +4,10 @@
     "docs/ROADMAP_AND_SPECS.md"
   ],
   "deps_out": [
+    "docs/FORK_NOTES.md",
     "docs/UPSTREAM_WEEKLY_LOG.md"
   ],
-  "generated_at": "2025-10-20T20:29:16Z",
+  "generated_at": "00001",
   "id": "docs/UPSTREAM.md",
   "maintenance": {
     "refresh": "subtree 取り込み後にチェックリストと週次ログの記述を必ず最新化する。",

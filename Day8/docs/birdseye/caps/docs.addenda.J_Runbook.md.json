@@ -1,14 +1,10 @@
 {
   "deps_in": [
-    "docs/addenda/J_Runbook.md"
+    "docs/README.md",
+    "docs/day8/spec/02_spec.md"
   ],
-  "deps_out": [
-    "docs/day8/ops/04_ops.md",
-    "docs/day8/perf/03_performance.md",
-    "docs/addenda/G_Security_Privacy.md",
-    "workflow-cookbook/RUNBOOK.md"
-  ],
-  "generated_at": "2025-02-22T00:00:00Z",
+  "deps_out": [],
+  "generated_at": "00001",
   "id": "docs/addenda/J_Runbook.md",
   "maintenance": {
     "refresh": "新しい代表事象や初動手順を追加したら、関連する Ops/Perf/Security ドキュメントと Birdseye エッジを同時更新する。",

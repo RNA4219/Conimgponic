@@ -19,6 +19,8 @@
     "workflow-cookbook/HUB.codex.md"
   ],
   "deps_out": [
+    "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
+    "docs/adr/0003-propose-only-governance.md",
     "workflow-cookbook/BLUEPRINT.md",
     "workflow-cookbook/CHECKLISTS.md",
     "workflow-cookbook/EVALUATION.md",
@@ -27,11 +29,9 @@
     "workflow-cookbook/SECURITY.md",
     "workflow-cookbook/TASK.codex.md",
     "workflow-cookbook/scripts/",
-    "workflow-cookbook/tools/",
-    "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
-    "docs/adr/0003-propose-only-governance.md"
+    "workflow-cookbook/tools/"
   ],
-  "generated_at": "2025-11-05T09:00:00Z",
+  "generated_at": "00001",
   "id": "workflow-cookbook/GUARDRAILS.md",
   "maintenance": {
     "refresh": "ガードレール更新時は関連資料とBirdseye(インデックス/カプセル)を同時更新する。",
