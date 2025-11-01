@@ -24,7 +24,24 @@
     "tooling": [
       "pnpm test --filter autotag:autosave",
       "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
-    ]
+    ],
+    "refactor": {
+      "reason": "ホスト連携/telemetry/状態遷移が同居して 800 行を超え、workflow-cookbook/GUARDRAILS.md の責務分離と docs/day8/guides/07_contributing.md の衝突回避ガイドに沿ったモジュール化が必要。",
+      "candidates": [
+        {
+          "task": "TASK.vscode-autosave-channel",
+          "objective": "VS Code API 呼び出しと window ブリッジ制御を src/platform/vscode/autosave/channel.ts へ抽出し、副作用とテスト対象を限定"
+        },
+        {
+          "task": "TASK.vscode-autosave-state-machine",
+          "objective": "statusPhaseForState 近辺の状態遷移ロジックを src/platform/vscode/autosave/stateMachine.ts に切り出し、再試行ポリシーの型付けを厳格化"
+        }
+      ],
+      "guardrails": [
+        "workflow-cookbook/GUARDRAILS.md#実装原則",
+        "Day8/docs/day8/guides/07_contributing.md#タスク化（衝突回避）"
+      ]
+    }
   },
-  "generated_at": "2025-11-06T09:00:00Z"
+  "generated_at": "2025-11-08T00:00:00Z"
 }
