@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useState } from 'react'
 import { useSB } from './store'
 import type { Storyboard } from './types'
 import { LeftRight } from './components/LeftRightPanes'
@@ -77,11 +77,7 @@ function setDockOpenPreference(value: boolean): void {
 }
 
 export function HelpModal({ onClose }: { onClose: () => void }): React.ReactElement {
-  const dialogRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    dialogRef.current?.focus()
-  }, [])
+  const titleId = 'help-modal-title'
 
   const handleDialogKeyDown = (
     event: React.KeyboardEvent<HTMLDivElement>
@@ -106,9 +102,9 @@ export function HelpModal({ onClose }: { onClose: () => void }): React.ReactElem
       onClick={onClose}
     >
       <div
-        ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
         tabIndex={-1}
         className="card"
         style={{ width: 600, maxWidth: '90vw', maxHeight: '80vh', overflow: 'auto', padding: 12, position: 'relative' }}
@@ -118,12 +114,13 @@ export function HelpModal({ onClose }: { onClose: () => void }): React.ReactElem
         <button
           type="button"
           aria-label="ヘルプを閉じる"
+          autoFocus
           onClick={onClose}
           style={{ position: 'absolute', top: 8, right: 8 }}
         >
           ×
         </button>
-        <h3>ショートカット</h3>
+        <h3 id={titleId}>ショートカット</h3>
         <ul>
           <li><strong>Ctrl+Enter</strong>: 生成</li>
           <li><strong>Ctrl+S</strong>: プロジェクト保存</li>
