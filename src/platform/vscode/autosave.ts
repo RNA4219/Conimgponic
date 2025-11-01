@@ -301,7 +301,6 @@ const computeLagSeconds = (
   return Math.max(0, Math.floor(diffMs / 1000))
 }
 
-}
 
 type SnapshotResultDetailPhase = AutoSaveStatusSnapshot['phase']
 
@@ -371,18 +370,6 @@ const createSnapshotPayload = (
       ? lastSuccessAt
       : fallbackTs
 })
-
-type SnapshotResultCollectorPayload =
-  | {
-      readonly status: 'success'
-      readonly detail: SnapshotResultSuccessDetail
-      readonly snapshot: SnapshotResultSnapshot
-    }
-  | {
-      readonly status: 'failure'
-      readonly detail: SnapshotResultFailureDetail
-      readonly snapshot?: SnapshotResultSnapshot
-    }
 
 const handleNonRetryableError = (
   options: AutoSaveHostBridgeOptions,

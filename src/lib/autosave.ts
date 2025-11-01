@@ -5,7 +5,7 @@ import { ensureDir, loadJSON, loadText, saveJSON, saveText } from './opfs'
 import { projectLockApi, ProjectLockError } from './locks'
 import { AUTOSAVE_HISTORY_ROTATION_PLAN, type AutoSaveHistoryEntry } from './autosave/persistence.ts'
 import * as policy from './autosave/policy.ts'
-import type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.ts'
+import type { AutoSavePolicy } from './autosave/policy.ts'
 
 export const AUTOSAVE_POLICY = policy.AUTOSAVE_POLICY
 export const AUTOSAVE_DEFAULTS = policy.AUTOSAVE_DEFAULTS
