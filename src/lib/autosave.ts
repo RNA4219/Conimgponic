@@ -7,8 +7,13 @@ import {
   sanitizeTimestamp,
   type AutoSaveHistoryEntry
 } from './autosave/persistence.js'
-import * as policy from './autosave/policy.js'
-import type { AutoSavePolicy } from './autosave/policy.js'
+import {
+  AUTOSAVE_POLICY,
+  AUTOSAVE_DEFAULTS,
+  AUTOSAVE_MAX_BYTES,
+  resolveAutoSavePolicy,
+  type AutoSavePolicy
+} from './autosave/policy.js'
 import { resolveCollectorPhase } from './autosave/collector-phase.js'
 import { createAutoSaveScheduler } from './autosave/scheduler.js'
 import {
@@ -17,10 +22,7 @@ import {
   type AutoSaveInitGuardInput
 } from './autosave/guard.js'
 
-export const AUTOSAVE_POLICY = policy.AUTOSAVE_POLICY
-export const AUTOSAVE_DEFAULTS = policy.AUTOSAVE_DEFAULTS
-export const AUTOSAVE_MAX_BYTES = policy.AUTOSAVE_MAX_BYTES
-export const resolveAutoSavePolicy = policy.resolveAutoSavePolicy
+export { AUTOSAVE_POLICY, AUTOSAVE_DEFAULTS, AUTOSAVE_MAX_BYTES, resolveAutoSavePolicy }
 export { resolveCollectorPhase } from './autosave/collector-phase.js'
 export type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.js'
 export type { AutoSaveSchedulerContract } from './autosave/scheduler.js'
