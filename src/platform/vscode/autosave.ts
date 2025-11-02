@@ -4,8 +4,7 @@ import type {
   AutoSaveSnapshotRequestMessage,
   AutoSaveSnapshotResultPayload,
   AutoSaveStatusState,
-  AutoSavePolicy,
-  AutoSaveError
+  AutoSavePolicy
 } from '../../lib/autosave'
 import { resolveFlags } from '../../config/index.js'
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
@@ -18,7 +17,6 @@ import type {
   AutoSaveAtomicWriteResult,
   AutoSaveTelemetryEvent,
   AutoSaveTelemetryEventInput,
-  AutoSaveTelemetryLockStrategy,
   AutoSaveWarnEvent,
 } from './autosave/collector.js'
 import {
