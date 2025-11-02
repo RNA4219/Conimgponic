@@ -578,6 +578,22 @@
     {
       "if": {
         "properties": {
+          "event": { "const": "plugins.completed" }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "result": { "type": "string", "const": "success" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "event": { "const": "plugins.failed" }
         }
       },
