@@ -503,6 +503,7 @@ export function isViewModelEqual(a: AutoSaveIndicatorViewModel, b: AutoSaveIndic
   }
   return (
     a.statusLabel === b.statusLabel &&
+    a.label === b.label &&
     a.description === b.description &&
     a.indicator === b.indicator &&
     a.isAnimating === b.isAnimating &&
