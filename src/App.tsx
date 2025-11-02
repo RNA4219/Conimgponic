@@ -256,6 +256,7 @@ export function resolveAutoSaveBootstrapPlanForApp(
 export interface MergeDockIntegrationSnapshot {
   readonly flagSnapshot: Pick<FlagSnapshot, 'merge'>
   readonly mergeThreshold: number | null
+  readonly autoAppliedRate: number | null
   readonly workspace: ResolveOptions['workspace'] | null
 }
 
@@ -383,6 +384,160 @@ export function useFlagSnapshot(
   return snapshot
 }
 
+const MERGE_COLLECTOR_STORAGE_KEYS = [
+  'workflow-cookbook:collector:merge_auto_success_rate',
+  'workflow-cookbook:collector:merge.autoAppliedRate',
+  'merge.autoAppliedRate',
+] as const
+
+const expandWorkspaceKeys = (key: string): readonly string[] => {
+  if (key.startsWith('conimg.')) {
+    const trimmed = key.slice('conimg.'.length)
+    return trimmed ? [key, trimmed] : [key]
+  }
+  return key ? [key, `conimg.${key}`] : [key]
+}
+
+const WORKSPACE_AUTO_APPLIED_KEYS = [
+  'merge.autoAppliedRate',
+  'merge.auto_success_rate',
+  'metrics.merge.autoAppliedRate',
+  'metrics.merge_auto_success_rate',
+] as const
+
+const coerceAutoAppliedRate = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+    const parsed = Number.parseFloat(trimmed)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+    try {
+      const json = JSON.parse(trimmed) as unknown
+      return coerceAutoAppliedRate(json)
+    } catch {
+      return null
+    }
+  }
+  if (Array.isArray(value) && value.length > 0) {
+    return coerceAutoAppliedRate(value[0])
+  }
+  if (value && typeof value === 'object') {
+    const record = value as { [key: string]: unknown }
+    return (
+      coerceAutoAppliedRate(record.autoAppliedRate) ??
+      coerceAutoAppliedRate(record.merge_auto_success_rate) ??
+      coerceAutoAppliedRate(record.value) ??
+      null
+    )
+  }
+  return null
+}
+
+const readWorkspaceAutoAppliedRate = (
+  workspace: ResolveOptions['workspace'] | null | undefined,
+): number | null => {
+  if (!workspace) {
+    return null
+  }
+  const withGetter = workspace as { get?: <T = unknown>(key: string) => T | undefined }
+  for (const key of WORKSPACE_AUTO_APPLIED_KEYS) {
+    const candidates = expandWorkspaceKeys(key)
+    if (typeof withGetter.get === 'function') {
+      for (const candidate of candidates) {
+        try {
+          const value = withGetter.get(candidate)
+          const rate = coerceAutoAppliedRate(value)
+          if (rate !== null) {
+            return rate
+          }
+        } catch (error) {
+          if (!candidate.startsWith('conimg.')) {
+            throw error
+          }
+        }
+      }
+    }
+
+    const record = workspace as Record<string, unknown>
+    for (const candidate of candidates) {
+      if (Object.prototype.hasOwnProperty.call(record, candidate)) {
+        const rate = coerceAutoAppliedRate(record[candidate])
+        if (rate !== null) {
+          return rate
+        }
+      }
+    }
+
+    for (const candidate of candidates) {
+      const segments = candidate.split('.')
+      let current: unknown = workspace
+      for (const segment of segments) {
+        if (!current || typeof current !== 'object') {
+          current = undefined
+          break
+        }
+        current = (current as Record<string, unknown>)[segment]
+      }
+      const rate = coerceAutoAppliedRate(current)
+      if (rate !== null) {
+        return rate
+      }
+    }
+  }
+  return null
+}
+
+const readStorageAutoAppliedRate = (): number | null => {
+  const scope = globalThis as { localStorage?: Storage }
+  const storage = scope.localStorage
+  if (!storage || typeof storage.getItem !== 'function') {
+    return null
+  }
+  for (const key of MERGE_COLLECTOR_STORAGE_KEYS) {
+    try {
+      const raw = storage.getItem(key)
+      const rate = coerceAutoAppliedRate(raw)
+      if (rate !== null) {
+        return rate
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+const resolveCollectorAutoAppliedRate = (
+  plan: AutoSaveBootstrapPlan | null,
+  options?: ResolveOptions | null,
+): number | null => {
+  const mergeSnapshot = plan?.snapshot.merge as
+    | (FlagSnapshot['merge'] & {
+        autoAppliedRate?: unknown
+        metrics?: { autoAppliedRate?: unknown; merge_auto_success_rate?: unknown }
+      })
+    | undefined
+  const planRate =
+    coerceAutoAppliedRate(mergeSnapshot?.autoAppliedRate) ??
+    coerceAutoAppliedRate(mergeSnapshot?.metrics?.autoAppliedRate) ??
+    coerceAutoAppliedRate(mergeSnapshot?.metrics?.merge_auto_success_rate)
+  if (planRate !== null) {
+    return planRate
+  }
+  const workspaceRate = readWorkspaceAutoAppliedRate(options?.workspace)
+  if (workspaceRate !== null) {
+    return workspaceRate
+  }
+  return readStorageAutoAppliedRate()
+}
+
 export function resolveMergeDockIntegration(
   plan: AutoSaveBootstrapPlan | null,
   options?: ResolveOptions | null
@@ -393,6 +548,7 @@ export function resolveMergeDockIntegration(
   return {
     flagSnapshot,
     mergeThreshold: threshold,
+    autoAppliedRate: resolveCollectorAutoAppliedRate(plan, options),
     workspace: options?.workspace ?? null
   }
 }
@@ -557,6 +713,7 @@ export default function App({ resolveOptions }: AppProps = {}){
           <MergeDock
             flags={mergeDockFlags}
             mergeThreshold={mergeDockIntegration.mergeThreshold}
+            autoAppliedRate={mergeDockIntegration.autoAppliedRate}
             workspace={mergeDockIntegration.workspace}
           />
         </div>

@@ -225,8 +225,7 @@ export const resolveMergeDockPhasePlan = ({
   const shouldHideDiff = !diffConfigured
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
-  const shouldDemoteDiff =
-    diffConfigured && meetsTarget === false && (precision !== 'stable' || phaseBRequired)
+  const shouldDemoteDiff = diffConfigured && meetsTarget === false
 
   let tabPlanSource: MergeDockTabPlan = baseTabPlan
   if (shouldDemoteDiff && precision === 'stable') {
