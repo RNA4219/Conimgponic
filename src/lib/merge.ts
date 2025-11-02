@@ -1,1 +1,1 @@
-export * from './merge/index.ts';
+export * from './merge/index';

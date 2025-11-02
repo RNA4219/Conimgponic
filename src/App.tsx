@@ -580,11 +580,13 @@ export function resolveMergeDockIntegration(
   const threshold = plan?.snapshot.merge.threshold ?? snapshot.merge.threshold ?? null
   const flagSnapshot: Pick<FlagSnapshot, 'merge'> = { merge: snapshot.merge }
   const workspace = options?.workspace ?? null
+  const phaseStats = resolveWorkspacePhaseStats(workspace)
   return {
     flagSnapshot,
     mergeThreshold: threshold,
     autoAppliedRate: resolveCollectorAutoAppliedRate(plan, options),
-    workspace: options?.workspace ?? null
+    workspace,
+    phaseStats
   }
 }
 
