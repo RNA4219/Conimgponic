@@ -2398,7 +2398,12 @@ scenario(
     }
   },
   async (t) => {
-    const uuids = ['lease-release-reject', 'owner-release-reject']
+    const uuids = [
+      'lease-release-reject',
+      'owner-release-reject',
+      'lease-release-reject-direct',
+      'owner-release-reject-direct'
+    ]
     t.mock.method(crypto, 'randomUUID', () => {
       const value = uuids.shift()
       if (!value) throw new Error('uuid exhausted')
@@ -2444,6 +2449,47 @@ scenario(
     }
     assert.equal(errorEvent.retryable, true)
     assert.equal(errorEvent.error.code, 'release-failed')
+
+    events.length = 0
+
+    const directLease = await acquireProjectLock({ preferredStrategy: 'web-lock', retry: false })
+
+    const directError = (await assert.rejects(async () => releaseProjectLock(directLease))) as ProjectLockError
+    assert.equal(directError.code, 'release-failed')
+    assert.equal(directError.retryable, true)
+
+    const releaseRequestedIndex = events.findIndex(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:release-requested' }>
+        => event.type === 'lock:release-requested' && event.lease.leaseId === directLease.leaseId
+    )
+    assert.notEqual(
+      releaseRequestedIndex,
+      -1,
+      'lock:release-requested must emit before releaseProjectLock failure'
+    )
+
+    const directErrorIndex = events.findIndex(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }>
+        => event.type === 'lock:error' && event.error === directError
+    )
+    assert.notEqual(directErrorIndex, -1, 'lock:error must emit for releaseProjectLock failure')
+    assert.ok(
+      directErrorIndex > releaseRequestedIndex,
+      'lock:error must follow lock:release-requested for releaseProjectLock failure'
+    )
+
+    const readonlyIndex = events.findIndex(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
+        =>
+          event.type === 'lock:readonly-entered' &&
+          event.reason === 'release-failed' &&
+          event.lastError === directError
+    )
+    assert.notEqual(readonlyIndex, -1, 'lock:readonly-entered must emit after releaseProjectLock failure')
+    assert.ok(
+      readonlyIndex > directErrorIndex,
+      'lock:readonly-entered must follow lock:error for releaseProjectLock failure'
+    )
   }
 )
 

@@ -350,6 +350,17 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     return rememberReleaseFailure(lease.leaseId, error, attempts, readonlyNotified, nextDelay);
   };
 
+  const handleFailure = (error: ProjectLockError): never => {
+    const state = processFailure(error);
+    emitError(state.lastError);
+    if (!state.readonlyNotified && !shouldDeferReadonlyForRelease(state.lastError, state.attempts)) {
+      state.readonlyNotified = true;
+      releaseFailures.set(lease.leaseId, state);
+      emitReadonly('release-failed', state.lastError, options.onReadonly);
+    }
+    throw state.lastError;
+  };
+
   if (currentState?.nextDelayMs) {
     await awaitReleaseDelay(currentState.nextDelayMs, options.signal);
   }
@@ -382,8 +393,7 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
       error instanceof ProjectLockError
         ? error
         : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
-    const state = processFailure(projectError);
-    throw state.lastError;
+    handleFailure(projectError);
   }
 };
 
