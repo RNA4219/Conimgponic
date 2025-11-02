@@ -10,7 +10,7 @@
     "workflow-cookbook/HUB.codex.md",
     "workflow-cookbook/docs/birdseye/index.json"
   ],
-  "generated_at": "00004",
+  "generated_at": "00006",
   "id": "README.md",
   "maintenance": {
     "refresh": "README.md を更新したら docs/birdseye/index.json とカプセルを同一コミットで再生成する。",

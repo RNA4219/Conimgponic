@@ -13,7 +13,7 @@
     "workflow-cookbook/SECURITY.md"
   ],
   "deps_out": [],
-  "generated_at": "00004",
+  "generated_at": "00006",
   "id": "workflow-cookbook/TASK.codex.md",
   "maintenance": {
     "refresh": "テンプレのゲート条件が変わったら関連チェックリスト/Runbookへ反映。",

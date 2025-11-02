@@ -9,7 +9,7 @@
     "workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
-  "generated_at": "00004",
+  "generated_at": "00006",
   "id": "workflow-cookbook/reports/today.md",
   "maintenance": {
     "refresh": "レポート項目が変わったら analyze.py と CHECKLISTS を更新。",

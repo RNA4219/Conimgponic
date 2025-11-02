@@ -11,7 +11,7 @@
   "deps_out": [
     "docs/seeds/README.md"
   ],
-  "generated_at": "00004",
+  "generated_at": "00006",
   "id": "docs/TASKS.md",
   "maintenance": {
     "refresh": "Katamari テンプレート（背景/手順/検証ログ/フォローアップ）の更新や Guardrails 差分を反映したら index/caps/hot を同じコミットで再生成する。",
