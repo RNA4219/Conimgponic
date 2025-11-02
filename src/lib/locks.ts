@@ -514,6 +514,12 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
     if (!releaseOnError) throw failure;
 
     try {
+      await stopRenewal();
+    } catch (renewalError) {
+      failure = renewalError;
+    }
+
+    try {
       await safeRelease(lease, options, false);
     } catch (releaseError) {
       failure = releaseError;
