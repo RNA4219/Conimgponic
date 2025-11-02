@@ -1189,6 +1189,61 @@ scenario(
 )
 
 scenario(
+  'AS-LK-19: withProjectLock suppresses duplicate lock:error when executor throws ProjectLockError',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t) => {
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      if (event.type === 'lock:error' || event.type === 'lock:readonly-entered') {
+        events.push(event)
+      }
+    })
+    t.after(unsubscribe)
+
+    const failure = new ProjectLockError('renew-failed', 'Executor requested readonly downgrade', {
+      operation: 'renew',
+      retryable: false,
+    })
+
+    await assert.rejects(
+      () =>
+        projectLockApi.withProjectLock(
+          async () => {
+            throw failure
+          },
+          { preferredStrategy: 'file-lock' },
+        ),
+      (error: unknown) => {
+        assert.strictEqual(
+          error,
+          failure,
+          'withProjectLock must propagate ProjectLockError thrown by executor without wrapping',
+        )
+        return true
+      },
+    )
+
+    const errorEvents = events.filter((event) => event.type === 'lock:error')
+    assert.equal(errorEvents.length, 1, 'lock:error must be emitted once per ProjectLockError failure')
+    assert.strictEqual(errorEvents[0]?.error, failure, 'lock:error must reference the original error instance')
+
+    const readonlyEvents = events.filter((event) => event.type === 'lock:readonly-entered')
+    assert.equal(
+      readonlyEvents.length,
+      1,
+      'lock:readonly-entered must be emitted once when executor throws non-retryable ProjectLockError',
+    )
+    assert.strictEqual(
+      readonlyEvents[0]?.lastError,
+      failure,
+      'lock:readonly-entered must reference the original error instance',
+    )
+  },
+)
+
+scenario(
   'AS-LK-12: Fallback acquisition aborts during pending write without creating lock file',
   {
     navigator: { locks: undefined }
