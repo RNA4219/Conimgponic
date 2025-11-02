@@ -144,7 +144,7 @@ describe('createVscodeAutoSaveBridge', () => {
       }
     })
 
-    assert.equal(sent.length, 1, 'create 時に送る初回メッセージは bridge.bootstrap のみ')
+    assert.equal(sent.length, 2, '初期メッセージは bridge.bootstrap と bridge.ready の 2 件')
     const bootstrap = sent[0]
     assert.ok(bootstrap && isBootstrapMessage(bootstrap), 'bridge.bootstrap メッセージが必要')
     assert.equal(bootstrap.payload.version, 1)
@@ -177,6 +177,17 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(bootstrap.payload.flags.autosave.value, snapshot.autosave.value)
     assert.equal(bootstrap.payload.flags.autosave.source, snapshot.autosave.source)
     assert.equal(bootstrap.payload.flags.merge.source, snapshot.merge.source)
+
+    const ready = sent[1]
+    assert.equal(ready?.type, 'bridge.ready', 'bootstrap 直後に bridge.ready を送信する')
+    const expectedAccepted = expectedGuard.featureFlag.value && !expectedGuard.optionsDisabled
+    assert.equal(ready?.payload.accepted, expectedAccepted)
+    const expectedReason = expectedAccepted
+      ? undefined
+      : expectedGuard.featureFlag.value
+        ? 'options-disabled'
+        : 'feature-flag-disabled'
+    assert.equal(ready?.payload.reason, expectedReason)
 
     const state = bridge.inspectState()
     assert.strictEqual(state.guard, expectedGuard, 'ブートストラップ後の guard 状態は initialGuard と一致する')
@@ -238,7 +249,7 @@ describe('createVscodeAutoSaveBridge', () => {
       }
     })
 
-    assert.equal(sent.length, 1, 'bridge.bootstrap メッセージが 1 件送出される')
+    assert.equal(sent.length, 2, 'bootstrap/ready の 2 メッセージを送出する')
     const bootstrap = sent[0]
     assert.ok(bootstrap && isBootstrapMessage(bootstrap), '初回メッセージは bridge.bootstrap')
     assert.deepEqual(
@@ -246,6 +257,48 @@ describe('createVscodeAutoSaveBridge', () => {
       expectedFlags,
       'flags 未指定時も resolveFlags のスナップショットを共有する'
     )
+    const ready = sent[1]
+    assert.equal(ready?.type, 'bridge.ready')
+    const expectedAccepted = expectedGuard.featureFlag.value && !expectedGuard.optionsDisabled
+    assert.equal(ready?.payload.accepted, expectedAccepted)
+    const expectedReason = expectedAccepted
+      ? undefined
+      : expectedGuard.featureFlag.value
+        ? 'options-disabled'
+        : 'feature-flag-disabled'
+    assert.equal(ready?.payload.reason, expectedReason)
+  })
+
+  it('bridge.ready.accepted=false で snapshot.request を抑止する', () => {
+    const sent: AutoSaveBridgeMessage[] = []
+    const bridge = createVscodeAutoSaveBridge({
+      policy: AUTOSAVE_POLICY,
+      initialGuard: guardReadonly,
+      now: () => new Date('2024-01-05T00:00:00.000Z'),
+      sendMessage: (message) => sent.push(message),
+      atomicWrite: async () => {
+        throw new Error('guard 拒否時は atomicWrite を呼び出さない')
+      }
+    })
+
+    const ready = sent.find((message) => message.type === 'bridge.ready')
+    assert.ok(ready, 'bridge.ready メッセージを送る')
+    assert.equal(ready.payload.accepted, false)
+    assert.equal(ready.payload.reason, 'options-disabled')
+
+    bridge.reportDirty(1024, guardReadonly)
+
+    const snapshotRequests = sent.filter((message) => message.type === 'snapshot.request')
+    assert.equal(snapshotRequests.length, 0, 'guard 拒否時は snapshot.request を送出しない')
+    const statuses = sent.filter((message): message is AutoSaveStatusMessage => message.type === 'status.autosave')
+    assert.deepEqual(
+      statuses.map((message) => message.payload.state),
+      ['disabled'],
+      'disabled 状態を維持する'
+    )
+
+    const state = bridge.inspectState()
+    assert.equal(state.status, 'disabled')
   })
 
   it('emits dirty→saving→saved status transitions with atomic write', async () => {
@@ -2700,9 +2753,11 @@ describe('createVscodeAutoSaveBridge', () => {
     )
     await bridge.handleSnapshotRequest(request)
 
-    const nonBootstrap = sent.filter((message) => message.type !== 'bridge.bootstrap')
+    const postHandshake = sent.filter(
+      (message) => message.type !== 'bridge.bootstrap' && message.type !== 'bridge.ready'
+    )
     assert.equal(
-      nonBootstrap.length,
+      postHandshake.length,
       2,
       'guard 無効化ショートサーキットは snapshot.result と status.autosave を送る'
     )

@@ -30,6 +30,7 @@ import {
 } from './autosave/collector.js'
 import {
   createBootstrapMessage,
+  createBridgeReadyMessage,
   createSnapshotResultMessage,
   createStatusMessage,
   PHASE_SNAPSHOT,
@@ -135,14 +136,29 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     resolveFlags({ workspace: options.workspace ?? null, clock: options.now })
   const bootstrapReqId = nextReqId(state)
   const bootstrapCorrelationId = nextCorrelationId(state)
+  const bootstrapTs = toIsoTimestamp(options.now)
   options.sendMessage(
     createBootstrapMessage(
       bootstrapReqId,
       bootstrapCorrelationId,
-      toIsoTimestamp(options.now),
+      bootstrapTs,
       options.policy,
       options.initialGuard,
       bootstrapFlags
+    )
+  )
+
+  const readyAccepted = isGuardEnabled(state.guard)
+  const readyReason = readyAccepted ? undefined : resolveGuardBlockedReason(state.guard)
+  const readyReqId = nextReqId(state)
+  const readyCorrelationId = nextCorrelationId(state)
+  options.sendMessage(
+    createBridgeReadyMessage(
+      readyReqId,
+      readyCorrelationId,
+      bootstrapTs,
+      readyAccepted,
+      readyReason
     )
   )
 
