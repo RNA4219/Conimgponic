@@ -11,20 +11,22 @@ import {
   DEFAULT_LICENSE_ALLOWLIST,
   DOCUMENTED_LICENSE_ALLOWLIST,
   extractDocumentedLicenseAllowlist,
+  SPEC_REQUIRED_LICENSES,
   readDocumentedLicenseAllowlist,
+  validateDocumentedLicenseAllowlist,
 } from '../../scripts/license/verify.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const CI_SPEC_PATH = resolve(__dirname, '../../docs/CI-SPEC.md');
+const REQUIRED_LICENSES = [...SPEC_REQUIRED_LICENSES];
 
 describe('CI license allowlist documentation', () => {
   test('extracts documented allowlist entries from CI spec', async () => {
     const markdown = await readFile(CI_SPEC_PATH, 'utf8');
     const extracted = extractDocumentedLicenseAllowlist(markdown);
-    const minimal = ['MIT', 'BSD', 'Apache-2.0'];
 
-    for (const license of minimal) {
+    for (const license of REQUIRED_LICENSES) {
       assert.ok(
         extracted.includes(license),
         `CI spec must document ${license} in license allowlist (actual: ${extracted.join(', ')})`,
@@ -38,6 +40,15 @@ describe('CI license allowlist documentation', () => {
     assert.deepEqual(new Set(documented), DOCUMENTED_LICENSE_ALLOWLIST);
   });
 
+  test('documents required license allowlist entries', () => {
+    for (const license of REQUIRED_LICENSES) {
+      assert.ok(
+        DOCUMENTED_LICENSE_ALLOWLIST.has(license),
+        `DOCUMENTED_LICENSE_ALLOWLIST must include required license ${license}`,
+      );
+    }
+  });
+
   test('default license allowlist covers documented licenses', () => {
     for (const license of DOCUMENTED_LICENSE_ALLOWLIST) {
       assert.ok(
@@ -45,5 +56,15 @@ describe('CI license allowlist documentation', () => {
         `DEFAULT_LICENSE_ALLOWLIST must include documented license ${license}`,
       );
     }
+  });
+
+  test('validateDocumentedLicenseAllowlist enforces required licenses', () => {
+    assert.throws(() => {
+      validateDocumentedLicenseAllowlist(new Set(['MIT', 'Apache-2.0']));
+    }, /must document required license allowlist entries/);
+
+    assert.doesNotThrow(() => {
+      validateDocumentedLicenseAllowlist(DOCUMENTED_LICENSE_ALLOWLIST);
+    });
   });
 });
