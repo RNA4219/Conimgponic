@@ -4,6 +4,13 @@ import assert from 'node:assert/strict';
 
 import { normalizeAtomicWriteError } from '../../../../src/platform/vscode/autosave/error.js';
 import {
+  createBootstrapMessage,
+  createSnapshotResultMessage,
+  createStatusMessage,
+  toIsoTimestamp
+} from '../../../../src/platform/vscode/autosave/bootstrap.js';
+import { resolveSnapshotTelemetryPhase } from '../../../../src/platform/vscode/autosave/guard.js';
+import {
   createSnapshotFailureDetail,
   createSnapshotSuccessDetail,
   encodeGuardTelemetry,
@@ -36,6 +43,79 @@ test('normalizeAtomicWriteError maps DOMException with retry flag', () => {
     // @ts-expect-error intentional cleanup of test shim
     delete globalThis.DOMException;
   }
+});
+
+test('createBootstrapMessage preserves guard snapshot and flags', () => {
+  const ts = toIsoTimestamp(() => new Date('2024-01-01T00:00:00.000Z'));
+  const message = createBootstrapMessage(
+    'req-1',
+    'corr-1',
+    ts,
+    {
+      debounceMs: 1,
+      idleMs: 1,
+      maxGenerations: 1,
+      maxBytes: 1,
+      disabled: false
+    },
+    {
+      featureFlag: { value: true, source: 'env' },
+      optionsDisabled: false
+    },
+    { auto: { enabled: true } }
+  );
+
+  assert.equal(message.type, 'bridge.bootstrap');
+  assert.deepEqual(message.payload.guard.featureFlag, {
+    value: true,
+    source: 'env'
+  });
+  assert.deepEqual(message.payload.flags, { auto: { enabled: true } });
+});
+
+test('resolveSnapshotTelemetryPhase escalates local storage guard phase', () => {
+  const guard = {
+    featureFlag: { value: true, source: 'localStorage' as const },
+    optionsDisabled: false
+  };
+
+  const phase = resolveSnapshotTelemetryPhase(guard, 'A-2');
+
+  assert.equal(phase, 'B-0');
+});
+
+test('createSnapshotResultMessage keeps request correlation identifiers', () => {
+  const message = createSnapshotResultMessage(
+    {
+      reqId: 'req-2',
+      correlationId: 'corr-2',
+      payload: { guard: { featureFlag: { value: true, source: 'env' }, optionsDisabled: false } }
+    } as AutoSaveSnapshotRequestMessage,
+    '2024-01-01T00:00:00.000Z',
+    { ok: true, bytes: 1, generation: 1, retainedBytes: 1, lastSuccessAt: '2024-01-01T00:00:00.000Z' }
+  );
+
+  assert.equal(message.reqId, 'req-2');
+  assert.equal(message.correlationId, 'corr-2');
+});
+
+test('createStatusMessage normalizes status phase metadata', () => {
+  const message = createStatusMessage(
+    'req-3',
+    'corr-3',
+    '2024-01-01T00:00:01.000Z',
+    'A-1',
+    'dirty',
+    {
+      featureFlag: { value: true, source: 'env' },
+      optionsDisabled: false
+    },
+    2,
+    '2024-01-01T00:00:00.000Z'
+  );
+
+  assert.equal(message.payload.phase, 'debouncing');
+  assert.equal(message.payload.retryCount, 2);
 });
 
 test('createSnapshotFailureDetail normalizes message and code', () => {
