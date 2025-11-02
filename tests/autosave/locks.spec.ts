@@ -2398,7 +2398,12 @@ scenario(
     }
   },
   async (t) => {
-    const uuids = ['lease-release-reject', 'owner-release-reject']
+    const uuids = [
+      'lease-release-reject',
+      'owner-release-reject',
+      'lease-release-reject-direct',
+      'owner-release-reject-direct'
+    ]
     t.mock.method(crypto, 'randomUUID', () => {
       const value = uuids.shift()
       if (!value) throw new Error('uuid exhausted')
@@ -2444,6 +2449,47 @@ scenario(
     }
     assert.equal(errorEvent.retryable, true)
     assert.equal(errorEvent.error.code, 'release-failed')
+
+    events.length = 0
+
+    const directLease = await acquireProjectLock({ preferredStrategy: 'web-lock', retry: false })
+
+    const directError = (await assert.rejects(async () => releaseProjectLock(directLease))) as ProjectLockError
+    assert.equal(directError.code, 'release-failed')
+    assert.equal(directError.retryable, true)
+
+    const releaseRequestedIndex = events.findIndex(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:release-requested' }>
+        => event.type === 'lock:release-requested' && event.lease.leaseId === directLease.leaseId
+    )
+    assert.notEqual(
+      releaseRequestedIndex,
+      -1,
+      'lock:release-requested must emit before releaseProjectLock failure'
+    )
+
+    const directErrorIndex = events.findIndex(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }>
+        => event.type === 'lock:error' && event.error === directError
+    )
+    assert.notEqual(directErrorIndex, -1, 'lock:error must emit for releaseProjectLock failure')
+    assert.ok(
+      directErrorIndex > releaseRequestedIndex,
+      'lock:error must follow lock:release-requested for releaseProjectLock failure'
+    )
+
+    const readonlyIndex = events.findIndex(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
+        =>
+          event.type === 'lock:readonly-entered' &&
+          event.reason === 'release-failed' &&
+          event.lastError === directError
+    )
+    assert.notEqual(readonlyIndex, -1, 'lock:readonly-entered must emit after releaseProjectLock failure')
+    assert.ok(
+      readonlyIndex > directErrorIndex,
+      'lock:readonly-entered must follow lock:error for releaseProjectLock failure'
+    )
   }
 )
 
@@ -3387,6 +3433,80 @@ scenario(
         => event.type === 'lock:error' && event.operation === 'release'
     )
     assert.equal(errorEventsSecond.length, 3, 'three failures must emit three lock:error events')
+  }
+)
+
+scenario(
+  'AS-LK-09k: existing Web Lock release error triggers readonly downgrade immediately',
+  {
+    locks: {
+      async request(_key, optionsOrCallback, callback) {
+        const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+        if (typeof handler !== 'function') throw new TypeError('Lock request callback missing')
+
+        const handle: LockHandleLike & { released: Promise<void> } = {
+          async release() {
+            throw new Error('handle.release must not be invoked when release error is prepopulated')
+          },
+          released: Promise.resolve(),
+        }
+
+        await handler(handle)
+        throw new Error('navigator.locks.request rejected before release invocation')
+      },
+    },
+  },
+  async (t) => {
+    const uuids = ['lease-release-existing-error', 'owner-release-existing-error']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock', retry: false })
+
+    const readonlyCalls: ProjectLockError[] = []
+    await assert.rejects(
+      projectLockApi.release(lease, {
+        onReadonly(error) {
+          readonlyCalls.push(error)
+        },
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ProjectLockError)
+        assert.equal(error.code, 'release-failed')
+        return true
+      }
+    )
+
+    assert.equal(
+      readonlyCalls.length,
+      1,
+      'onReadonly must fire once when Web Lock handle reports an existing release error'
+    )
+    assert.equal(readonlyCalls[0]?.code, 'release-failed')
+
+    const errorEvents = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }> => event.type === 'lock:error'
+    )
+    assert.equal(errorEvents.length, 1, 'existing release error must emit one lock:error event')
+    assert.equal(errorEvents[0]?.operation, 'release')
+    assert.equal(errorEvents[0]?.error.code, 'release-failed')
+
+    const readonlyEvents = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
+        => event.type === 'lock:readonly-entered'
+    )
+    assert.equal(readonlyEvents.length, 1, 'existing release error must emit one lock:readonly-entered event')
+    assert.equal(readonlyEvents[0]?.reason, 'release-failed')
+    assert.equal(readonlyEvents[0]?.lastError.code, 'release-failed')
   }
 )
 

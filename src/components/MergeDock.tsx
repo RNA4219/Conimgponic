@@ -64,6 +64,23 @@ import { DiffMergeView } from './DiffMergeView'
 import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
 
 
+export type MergeDockImportKind = 'jsonl' | 'csv' | 'markdown'
+
+export const resolveMergeDockImportKind = (fileName: string): MergeDockImportKind | null => {
+  const normalized = fileName.toLowerCase()
+  if (normalized.endsWith('.jsonl')) {
+    return 'jsonl'
+  }
+  if (normalized.endsWith('.csv')) {
+    return 'csv'
+  }
+  if (normalized.endsWith('.md')) {
+    return 'markdown'
+  }
+  return null
+}
+
+
 function Checks(): JSX.Element {
   const warnings = useSB((state) => computeStoryboardWarnings(state.sb))
   const snapshot = Reflect.get(globalThis, '__conimgponic_sb_snapshot__') as Storyboard | undefined
@@ -293,12 +310,13 @@ export function MergeDock({
       try {
         const text = await readFileAsText(file)
         const current = useSB.getState().sb
+        const kind = resolveMergeDockImportKind(file.name)
         let next: Storyboard | null = null
-        if (file.name.endsWith('.jsonl')) {
+        if (kind === 'jsonl') {
           next = mergeJSONL(current, text, mode)
-        } else if (file.name.endsWith('.csv')) {
+        } else if (kind === 'csv') {
           next = mergeCSV(current, text, mode)
-        } else if (file.name.endsWith('.md')) {
+        } else if (kind === 'markdown') {
           next = mergeMarkdownStoryboard(current, text, mode)
         } else {
           notify('error', 'Unsupported file type. Use .jsonl / .csv / .md')

@@ -12,12 +12,13 @@ import type { Storyboard } from '../../src/types'
 
 const mergeDockModule = await import('../../src/components/MergeDock')
 
-const { mergeMarkdownStoryboard } = mergeDockModule as typeof mergeDockModule & {
+const { mergeMarkdownStoryboard, resolveMergeDockImportKind } = mergeDockModule as typeof mergeDockModule & {
   mergeMarkdownStoryboard?: (
     current: Storyboard,
     markdown: string,
     mode: 'manual' | 'ai',
   ) => Storyboard
+  resolveMergeDockImportKind?: (fileName: string) => 'jsonl' | 'csv' | 'markdown' | null
 }
 
 test('MergeDock mergeMarkdownStoryboard updates scenes when markdown starts with a cut heading containing CRLF', () => {
@@ -52,6 +53,17 @@ test('MergeDock mergeMarkdownStoryboard updates scenes when markdown starts with
   assert.equal(imported.scenes[1]?.manual, 'Manual line 2')
   assert.equal(imported.scenes[0]?.ai, 'original ai 1')
   assert.equal(imported.scenes[1]?.ai, 'original ai 2')
+})
+
+test('MergeDock resolveMergeDockImportKind accepts uppercase storyboard import extensions', () => {
+  assert.ok(
+    resolveMergeDockImportKind,
+    'Day8/workflow-cookbook/GUARDRAILS.md の「テスト駆動」を守り、MergeDock のインポート判定を事前に RED 化する',
+  )
+
+  assert.equal(resolveMergeDockImportKind!('update.JSONL'), 'jsonl')
+  assert.equal(resolveMergeDockImportKind!('update.CSV'), 'csv')
+  assert.equal(resolveMergeDockImportKind!('update.MD'), 'markdown')
 })
 
 test('MergeDock mergeMarkdownStoryboard strips inline multi-line HTML comments without leaking fragments', () => {
