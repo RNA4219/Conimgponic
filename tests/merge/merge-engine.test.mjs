@@ -9,6 +9,46 @@ import {
 } from '../../src/lib/merge/index.ts'
 import { projectLockEvents } from '../../src/lib/locks.ts'
 
+test('MG-U-02: conflict emits non-retryable event', () => {
+  const sharedText = 'ΔΞΠΩΛΨΦΘΚΓΔΞΠΩΛΨΦΘΚΓΔΞΠΩΛΨΦΘΚΓ'
+  const manualText = 'manualdraftzetaspectraltrajectorymanualdraftzetaspectraltrajectory'
+  const input = {
+    base: sharedText,
+    ours: manualText,
+    theirs: sharedText,
+    sceneId: 'scene-mg-u-02',
+  }
+
+  const publishedEvents = []
+  const events = {
+    publish: (event) => {
+      publishedEvents.push(event)
+    },
+    subscribe: () => () => undefined,
+  }
+
+  const telemetryEvents = []
+  const result = DEFAULT_MERGE_ENGINE.merge3(input, {
+    profile: { precision: 'beta' },
+    events,
+    telemetry: (event) => telemetryEvents.push(event),
+  })
+
+  const conflictEvents = publishedEvents.filter((event) => event.type === 'merge:conflict-detected')
+  assert.equal(conflictEvents.length, 1)
+  const [conflictEvent] = conflictEvents
+
+  assert.equal(result.stats.conflictDecisions, 1)
+  assert.equal(result.stats.autoDecisions, 0)
+
+  const betaProfile = DEFAULT_MERGE_ENGINE.resolveProfile({ precision: 'beta' })
+  assert.equal(result.trace.summary.threshold, betaProfile.threshold)
+  assert.ok(result.trace.entries.some((entry) => entry.stage === 'decide'))
+
+  assert.equal(conflictEvent.retryable, false)
+  assert.equal(conflictEvent.hunk.manual, manualText)
+})
+
 test('MG-U-04: abort signal preempts merge execution and surfaces MergeError contract', async (t) => {
   const input = {
     base: 'Base content',
