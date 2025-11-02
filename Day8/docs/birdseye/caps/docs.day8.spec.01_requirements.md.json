@@ -4,7 +4,7 @@
     "docs/ROADMAP_AND_SPECS.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/day8/spec/01_requirements.md",
   "maintenance": {
     "refresh": "要件の固定事項や受入基準を更新したら README / ROADMAP / Birdseye (index+hot) を同じコミットで再同期する。",

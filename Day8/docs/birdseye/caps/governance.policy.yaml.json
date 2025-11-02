@@ -1,7 +1,7 @@
 {
   "deps_in": [],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "governance/policy.yaml",
   "maintenance": {
     "refresh": "禁止パスや権限ポリシーを更新した際は Guardrails・Evaluation・Checklist と Birdseye index/caps を同時更新。",

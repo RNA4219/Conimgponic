@@ -6,7 +6,7 @@
     "docs/ROADMAP_AND_SPECS.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/BIRDSEYE.md",
   "maintenance": {
     "refresh": "Birdseye ノード追加時は index/caps/hot を同時更新し、フォールバック手順を最新化する。",

@@ -31,7 +31,7 @@
     "workflow-cookbook/scripts/",
     "workflow-cookbook/tools/"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "workflow-cookbook/GUARDRAILS.md",
   "maintenance": {
     "refresh": "ガードレール更新時は関連資料とBirdseye(インデックス/カプセル)を同時更新する。",

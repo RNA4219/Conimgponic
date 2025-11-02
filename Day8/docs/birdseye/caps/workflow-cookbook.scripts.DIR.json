@@ -4,7 +4,7 @@
     "workflow-cookbook/SECURITY.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "workflow-cookbook/scripts/",
   "maintenance": {
     "refresh": "スクリプト仕様を変更したらガードレールと整合させ、Birdseye カプセルを再生成する。",

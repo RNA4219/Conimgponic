@@ -7,7 +7,7 @@
     "docs/FORK_NOTES.md",
     "docs/UPSTREAM_WEEKLY_LOG.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/UPSTREAM.md",
   "maintenance": {
     "refresh": "subtree 取り込み後にチェックリストと週次ログの記述を必ず最新化する。",

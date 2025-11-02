@@ -7,7 +7,7 @@
     "docs/addenda/M_Versioning_Release.md",
     "workflow-cookbook/CHECKLISTS.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/Release_Checklist.md",
   "maintenance": {
     "refresh": "Release フローや Birdseye 更新順が変わったら docs/README.md・ROADMAP と合わせて更新し、codemap コマンドの出力を PR に添付する。",

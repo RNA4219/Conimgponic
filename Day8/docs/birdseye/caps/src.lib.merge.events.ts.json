@@ -1,0 +1,17 @@
+{
+  "id": "src/lib/merge/events.ts",
+  "role": "application",
+  "public_api": [
+    "attachAutoSaveLockEvents"
+  ],
+  "summary": "Merge イベントハブへ AutoSave ロック取得/解放の転送と Day8 Collector 連携を担う。",
+  "deps_out": [
+    "src/lib/locks.ts",
+    "src/lib/merge/types.ts"
+  ],
+  "deps_in": [
+    "src/lib/merge/engine.ts",
+    "src/lib/merge/index.ts"
+  ],
+  "generated_at": "00004"
+}

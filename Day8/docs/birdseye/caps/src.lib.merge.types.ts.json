@@ -1,0 +1,26 @@
+{
+  "id": "src/lib/merge/types.ts",
+  "role": "library",
+  "public_api": [
+    "MergeEngine",
+    "MergeResult",
+    "MergePlan",
+    "MergeDecisionEvent",
+    "MergeProfile"
+  ],
+  "summary": "マージエンジン全体で共有する型定義群。イベント/プラン/トレース/スコア契約を一元化する。",
+  "deps_out": [
+    "src/lib/locks.ts"
+  ],
+  "deps_in": [
+    "src/lib/merge/engine.ts",
+    "src/lib/merge/events.ts",
+    "src/lib/merge/index.ts",
+    "src/lib/merge/plan.ts",
+    "src/lib/merge/profile-resolver.ts",
+    "src/lib/merge/profile.ts",
+    "src/lib/merge/scoring.ts",
+    "src/lib/merge/sections.ts"
+  ],
+  "generated_at": "00004"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "src/lib/merge/profile-resolver.ts",
+  "role": "application",
+  "public_api": [
+    "DEFAULT_MERGE_PROFILE",
+    "resolveProfile",
+    "DEFAULT_MAX_PROCESSING_MILLIS",
+    "DEFAULT_SECTION_SIZE_HINT"
+  ],
+  "summary": "精緻マージのプロファイル初期値と閾値解決ロジックを提供し、precision/threshold 環境変数を正規化する。",
+  "deps_out": [
+    "src/lib/merge/profile.ts",
+    "src/lib/merge/types.ts"
+  ],
+  "deps_in": [
+    "src/lib/merge/engine.ts",
+    "src/lib/merge/index.ts"
+  ],
+  "generated_at": "00004"
+}

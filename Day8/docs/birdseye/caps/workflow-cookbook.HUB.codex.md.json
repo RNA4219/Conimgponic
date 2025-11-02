@@ -20,7 +20,7 @@
     "workflow-cookbook/RUNBOOK.md",
     "workflow-cookbook/TASK.codex.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "workflow-cookbook/HUB.codex.md",
   "maintenance": {
     "refresh": "入力分類や優先度ルールが変わったら対応資料の該当節を揃える。",

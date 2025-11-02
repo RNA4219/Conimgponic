@@ -7,7 +7,7 @@
     "docs/adr/0002-jsonl-event-contract.md",
     "docs/adr/0003-propose-only-governance.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/day8/design/03_architecture.md",
   "maintenance": {
     "refresh": "コンポーネント構成が変わったら ADR と Birdseye のリンクを同時に更新する。",

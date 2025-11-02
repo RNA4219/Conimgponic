@@ -8,7 +8,7 @@
     "docs/adr/0002-jsonl-event-contract.md",
     "docs/adr/0003-propose-only-governance.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/day8/ops/04_ops.md",
   "maintenance": {
     "refresh": "Ops 手順を更新したら ADR 参照と Birdseye の整合を確認する。",

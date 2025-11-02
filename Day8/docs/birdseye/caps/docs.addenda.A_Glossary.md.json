@@ -1,7 +1,7 @@
 {
   "deps_in": [],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/addenda/A_Glossary.md",
   "maintenance": {
     "refresh": "Collector や Reflection DSL の項目を追加・改訂した際は本文と Birdseye カプセルの summary/risks を揃える。",

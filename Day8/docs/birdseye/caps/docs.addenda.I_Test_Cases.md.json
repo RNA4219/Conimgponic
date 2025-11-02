@@ -4,7 +4,7 @@
     "docs/day8/spec/02_spec.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/addenda/I_Test_Cases.md",
   "maintenance": {
     "refresh": "テスト観点を更新したら Quality ドキュメントと Birdseye エッジを同時に見直す。",

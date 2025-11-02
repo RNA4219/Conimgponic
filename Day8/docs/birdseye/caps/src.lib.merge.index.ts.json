@@ -1,0 +1,28 @@
+{
+  "id": "src/lib/merge/index.ts",
+  "role": "application",
+  "public_api": [
+    "DEFAULT_MERGE_ENGINE",
+    "attachAutoSaveLockEvents",
+    "buildMergePlan",
+    "createQueueMergeCommand",
+    "resolveProfile",
+    "DEFAULT_MERGE_PROFILE",
+    "DEFAULT_SCORING_STRATEGY"
+  ],
+  "summary": "Merge API 集約モジュール。サブモジュール（engine/events/plan/profile/scoring/sections/types）を再公開し、既存の merge.ts エントリーポイント互換 API を維持する。",
+  "deps_out": [
+    "src/lib/merge/engine.ts",
+    "src/lib/merge/events.ts",
+    "src/lib/merge/plan.ts",
+    "src/lib/merge/profile-resolver.ts",
+    "src/lib/merge/profile.ts",
+    "src/lib/merge/scoring.ts",
+    "src/lib/merge/sections.ts",
+    "src/lib/merge/types.ts"
+  ],
+  "deps_in": [
+    "src/lib/merge.ts"
+  ],
+  "generated_at": "00004"
+}

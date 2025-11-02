@@ -18,7 +18,7 @@
     "docs/day8/spec/02_spec.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/addenda/L_Config_Reference.md",
   "maintenance": {
     "refresh": "環境変数や設定ファイルが追加・変更されたら Appendix L を更新し、関連する ops/H アップデートと同時に Birdseye (index→caps→hot→generated_at) を再同期する。",

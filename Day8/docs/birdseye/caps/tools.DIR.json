@@ -3,7 +3,7 @@
     "README.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "tools/",
   "maintenance": {
     "refresh": "CI スクリプトを更新したら対応する Birdseye カプセルを再生成し、ガードレールとの整合を確認する。",

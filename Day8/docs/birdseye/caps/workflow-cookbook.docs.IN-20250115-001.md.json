@@ -9,7 +9,7 @@
     "workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "workflow-cookbook/docs/IN-20250115-001.md",
   "maintenance": {
     "refresh": "新規インシデント追加時はRUNBOOK/チェックリストとリンク整合を確認。",

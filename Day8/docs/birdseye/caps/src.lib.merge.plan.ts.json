@@ -1,0 +1,18 @@
+{
+  "id": "src/lib/merge/plan.ts",
+  "role": "application",
+  "public_api": [
+    "buildMergePlan",
+    "createQueueMergeCommand",
+    "getPrecisionUiState"
+  ],
+  "summary": "ハンク決定結果を UI/キュー用プランへ変換し、Precision ごとの Phase/バンド集計を返す。",
+  "deps_out": [
+    "src/lib/merge/types.ts"
+  ],
+  "deps_in": [
+    "src/lib/merge/engine.ts",
+    "src/lib/merge/index.ts"
+  ],
+  "generated_at": "00004"
+}

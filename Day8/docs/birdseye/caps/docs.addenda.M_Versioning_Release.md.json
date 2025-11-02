@@ -7,7 +7,7 @@
   "deps_out": [
     "workflow-cookbook/CHECKLISTS.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/addenda/M_Versioning_Release.md",
   "maintenance": {
     "refresh": "semver ラベルやタグ命名が変わった場合は Release Checklist と workflow-cookbook/CHECKLISTS.md を同じ PR で更新する。",

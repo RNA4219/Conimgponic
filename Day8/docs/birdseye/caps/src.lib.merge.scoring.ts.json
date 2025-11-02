@@ -1,0 +1,18 @@
+{
+  "id": "src/lib/merge/scoring.ts",
+  "role": "application",
+  "public_api": [
+    "DEFAULT_SCORING_STRATEGY"
+  ],
+  "summary": "トークン化済みセクションの類似度計算とスコア正規化を担い、precision 重み付けを適用する。",
+  "deps_out": [
+    "src/lib/merge/profile.ts",
+    "src/lib/merge/sections.ts",
+    "src/lib/merge/types.ts"
+  ],
+  "deps_in": [
+    "src/lib/merge/engine.ts",
+    "src/lib/merge/index.ts"
+  ],
+  "generated_at": "00004"
+}

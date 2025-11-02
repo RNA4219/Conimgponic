@@ -6,7 +6,7 @@
     "workflow-cookbook/GUARDRAILS.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
   "maintenance": {
     "refresh": "Collector/Analyzer/Reporter の責務に変更があればアーキテクチャ図と Birdseye のエッジを同時更新する。",

@@ -7,7 +7,7 @@
     "workflow-cookbook/GUARDRAILS.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/adr/0003-propose-only-governance.md",
   "maintenance": {
     "refresh": "propose-only 制約に例外が出たら Release チェックリストと policy.yaml を同時に更新する。",

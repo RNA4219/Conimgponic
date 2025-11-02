@@ -6,7 +6,7 @@
     "docs/day8/ops/04_ops.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/adr/0002-jsonl-event-contract.md",
   "maintenance": {
     "refresh": "JSONL スキーマやチェックサム方針を更新したら Collector/Analyzer の実装と共に見直す。",

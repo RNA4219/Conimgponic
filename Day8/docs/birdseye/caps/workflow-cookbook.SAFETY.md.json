@@ -25,7 +25,7 @@
     "workflow-cookbook/EVALUATION.md",
     "workflow-cookbook/RUNBOOK.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "workflow-cookbook/SAFETY.md",
   "maintenance": {
     "refresh": "月次レビューまたは安全例外/RCA 更新時に本文と Birdseye (index/hot/caps) を再生成し、generated_at を同期する。",

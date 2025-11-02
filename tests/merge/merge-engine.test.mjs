@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DEFAULT_MERGE_ENGINE, MergeError } from '../../src/lib/merge.ts'
+import {
+  DEFAULT_MERGE_ENGINE,
+  MergeError,
+} from '../../src/lib/merge.ts'
+import {
+  attachAutoSaveLockEvents,
+  buildMergePlan,
+  createQueueMergeCommand,
+  getPrecisionUiState,
+} from '../../src/lib/merge/index.ts'
 
 test('MG-U-04: abort signal preempts merge execution and surfaces MergeError contract', async (t) => {
   const input = {
@@ -206,5 +215,76 @@ test('MG-U-05: rerun keeps resolved result stable', () => {
     )
   } finally {
     process.env.MERGE_PRECISION = originalPrecision
+  }
+})
+
+test('MG-U-06: split modules retain merge engine orchestration', async () => {
+  const sceneId = 'mg-u-06-scene'
+  const base = ['Intro scene baseline', '', 'Resolution baseline'].join('\n')
+  const ours = ['Intro scene manual tweak', '', 'Resolution baseline'].join('\n')
+  const theirs = ['Intro scene ai tweak', '', 'Resolution alternative'].join('\n')
+  const sections = ['intro', 'resolution']
+
+  const events = []
+  const listeners = new Set()
+  const eventHub = {
+    publish: (event) => {
+      events.push(event)
+      listeners.forEach((listener) => listener(event))
+    },
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+
+  const detachLock = attachAutoSaveLockEvents(eventHub)
+  const queued = []
+  const scoringSequence = [
+    { jaccard: 0.99, cosine: 0.99, blended: 0.99 },
+    { jaccard: 0.1, cosine: 0.1, blended: 0.1 },
+  ]
+  const fallbackScore = scoringSequence[scoringSequence.length - 1]
+  const scoringQueue = scoringSequence.slice()
+  const scoring = () => scoringQueue.shift() ?? fallbackScore
+  const baselineProfile = DEFAULT_MERGE_ENGINE.resolveProfile()
+
+  try {
+    const result = DEFAULT_MERGE_ENGINE.merge3(
+      { base, ours, theirs, sections, sceneId },
+      {
+        events: eventHub,
+        queueMergeCommand: (command) => queued.push(command),
+        scoring,
+      },
+    )
+
+    assert.ok(result.plan, 'plan should be generated even after module split')
+    assert.equal(queued.length, 1, 'queue command should be emitted once')
+    assert.deepEqual(queued[0], createQueueMergeCommand(result.plan))
+
+    const planFromBuilder = buildMergePlan(result.hunks, result.stats, baselineProfile, sceneId)
+    if (planFromBuilder.kind === 'error') {
+      assert.equal(planFromBuilder.plan.precision, result.plan.precision)
+      assert.fail('Expected successful plan from buildMergePlan')
+    }
+
+    assert.deepEqual(
+      result.plan.summary,
+      planFromBuilder.plan.summary,
+      'plan summaries should match buildMergePlan output',
+    )
+
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ['merge:auto-applied', 'merge:conflict-detected'],
+      'event hub should observe auto and conflict decisions',
+    )
+
+    const precisionState = getPrecisionUiState(result.plan.precision)
+    assert.equal(precisionState.allowsAutoApply, true)
+    assert.equal(precisionState.requiresReview, false)
+  } finally {
+    detachLock?.()
   }
 })

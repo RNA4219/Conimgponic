@@ -10,7 +10,7 @@
     "docs/day8/quality/06_quality.md",
     "workflow-cookbook/scripts/analyze.py"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/addenda/D_Trim_Design.md",
   "maintenance": {
     "refresh": "圧縮戦略や保持率 SLO を更新したら Appendix D 本文と Birdseye の edges/caps を同一タイムスタンプで再生成する。",

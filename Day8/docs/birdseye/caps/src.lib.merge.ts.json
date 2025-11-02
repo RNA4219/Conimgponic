@@ -8,7 +8,9 @@
     "DEFAULT_MERGE_ENGINE"
   ],
   "summary": "精緻マージエンジンの中核。セクション分割→スコアリング→自動/レビュー判定を統合し、AutoSave ロックとの同期と telemetry フックを提供する。",
-  "deps_out": [],
+  "deps_out": [
+    "src/lib/merge/index.ts"
+  ],
   "deps_in": [
     "src/lib/merge/phasePlan.ts"
   ],
@@ -45,5 +47,5 @@
       ]
     }
   },
-  "generated_at": "00001"
+  "generated_at": "00004"
 }

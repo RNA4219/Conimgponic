@@ -22,7 +22,7 @@
   "deps_out": [
     "workflow-cookbook/TASK.codex.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "workflow-cookbook/CHECKLISTS.md",
   "maintenance": {
     "refresh": "チェック項目変更時は Runbook / Task Seed と Katamari docs/Release_Checklist.md を同期。",

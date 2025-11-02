@@ -14,7 +14,7 @@
   "deps_out": [
     "workflow-cookbook/RUNBOOK.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "workflow-cookbook/BLUEPRINT.md",
   "maintenance": {
     "refresh": "課題や制約が変わったら RUNBOOK/EVALUATION の該当節も同時更新。",

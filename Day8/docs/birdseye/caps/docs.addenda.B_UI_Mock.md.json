@@ -4,7 +4,7 @@
     "docs/day8/design/03_architecture.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/addenda/B_UI_Mock.md",
   "maintenance": {
     "refresh": "CLI やレポートのレイアウトを変更したら ASCII モックとリンク先を更新し、Birdseye summary/maintenance/generated_at を揃える。",

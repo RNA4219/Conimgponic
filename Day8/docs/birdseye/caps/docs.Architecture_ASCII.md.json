@@ -4,7 +4,7 @@
     "docs/day8/design/03_architecture.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/Architecture_ASCII.md",
   "maintenance": {
     "refresh": "アーキテクチャ構成や Birdseye のノードを更新したら ASCII 図とリンクを本 Capsule と同じコミットで揃える。",

@@ -10,7 +10,7 @@
     "workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "workflow-cookbook/tools/codemap/update.py",
   "maintenance": {
     "refresh": "スキーマやフィールドが増減したら update.py の正規化処理と関連Capsを同時更新。",

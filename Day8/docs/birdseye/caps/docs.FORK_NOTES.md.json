@@ -4,7 +4,7 @@
     "docs/UPSTREAM_WEEKLY_LOG.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00004",
   "id": "docs/FORK_NOTES.md",
   "maintenance": {
     "refresh": "Katamari 本家 Fork Notes や Day8 固有依存の更新を取り込んだら、本ページ・Birdseye・ライセンス表記を同時に更新する。",
