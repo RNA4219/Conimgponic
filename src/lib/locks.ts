@@ -430,6 +430,21 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
     if (stopped) return;
     clearRenewTimer();
     const interval = computeRenewInterval(activeLease);
+    const nextHeartbeatInMs = Math.max(0, interval);
+    if (options.renewIntervalMs !== undefined) {
+      const scheduledLease: ProjectLockLease = {
+        ...activeLease,
+        heartbeatIntervalMs: nextHeartbeatInMs,
+        nextHeartbeatAt: Date.now() + nextHeartbeatInMs,
+      };
+      activeLease = scheduledLease;
+      lease = scheduledLease;
+      projectLockEvents.emit({
+        type: 'lock:renew-scheduled',
+        lease: scheduledLease,
+        nextHeartbeatInMs,
+      });
+    }
     renewTimer = setTimeout(() => {
       if (stopped) return;
       pendingRenew = renewProjectLock(activeLease, { signal: options.signal })
