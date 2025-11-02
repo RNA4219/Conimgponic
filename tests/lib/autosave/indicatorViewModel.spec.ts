@@ -11,7 +11,8 @@ import {
   resolveAutoSaveIndicatorMessageSpecKey,
   buildAutoSaveIndicatorHistoryView,
   buildAutoSaveIndicatorBanner,
-  buildAutoSaveIndicatorToast
+  buildAutoSaveIndicatorToast,
+  isViewModelEqual
 } from '../../../src/lib/autosave/indicatorViewModel'
 
 describe('deriveAutoSaveIndicatorViewModel', () => {
@@ -138,5 +139,23 @@ describe('deriveAutoSaveIndicatorViewModel', () => {
       snapshot
     })
     assert.equal(toast, undefined)
+  })
+
+  test('ステータスラベルが変化すれば新しいビューモデルとして扱う', () => {
+    const snapshot: AutoSaveStatusSnapshot = {
+      phase: 'idle',
+      retryCount: 0,
+      pendingBytes: 0,
+      lastSuccessAt: '2024-05-01T00:00:00Z'
+    }
+
+    const baseViewModel = deriveAutoSaveIndicatorViewModel({ snapshot })
+    const mutatedViewModel = {
+      ...baseViewModel,
+      label: '表示ラベルが変わった',
+      statusLabel: '表示ラベルが変わった'
+    }
+
+    assert.equal(isViewModelEqual(baseViewModel, mutatedViewModel), false)
   })
 })
