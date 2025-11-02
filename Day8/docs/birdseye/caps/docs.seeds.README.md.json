@@ -3,7 +3,7 @@
     "docs/TASKS.md"
   ],
   "deps_out": [],
-  "generated_at": "00003",
+  "generated_at": "00004",
   "id": "docs/seeds/README.md",
   "maintenance": {
     "refresh": "Seed 配置ガイドを変更した際は Task Seed 運用方針との整合を確認し、Birdseye の依存関係を更新する。",

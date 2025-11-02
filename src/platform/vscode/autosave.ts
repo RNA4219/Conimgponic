@@ -1,17 +1,12 @@
 import type {
-  AutoSaveBridgeBootstrapMessage,
   AutoSaveBridgeMessage,
-  AutoSaveEnvelopePhase,
   AutoSavePhaseGuardSnapshot,
   AutoSaveSnapshotRequestMessage,
-  AutoSaveSnapshotResultMessage,
   AutoSaveSnapshotResultPayload,
-  AutoSaveStatusMessage,
   AutoSaveStatusState,
   AutoSavePolicy,
   AutoSaveError
 } from '../../lib/autosave'
-import { resolveCollectorPhase } from '../../lib/autosave/collector-phase.js'
 import { resolveFlags } from '../../config/index.js'
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
 import {
@@ -23,7 +18,6 @@ import type {
   AutoSaveAtomicWriteResult,
   AutoSaveTelemetryEvent,
   AutoSaveTelemetryEventInput,
-  AutoSaveTelemetryEventProperties,
   AutoSaveTelemetryLockStrategy,
   AutoSaveWarnEvent,
 } from './autosave/collector.js'
@@ -32,10 +26,20 @@ import {
   createSnapshotFailureDetail,
   createSnapshotPayload,
   createSnapshotSuccessDetail,
-  encodeGuardTelemetry,
   publishCollectorSnapshotResult,
   ZERO_FLUSH_LATENCY
 } from './autosave/collector.js'
+import {
+  createBootstrapMessage,
+  createSnapshotResultMessage,
+  createStatusMessage,
+  PHASE_SNAPSHOT,
+  PHASE_STATUS,
+  toIsoTimestamp
+} from './autosave/bootstrap.js'
+import { resolveSnapshotTelemetryPhase } from './autosave/guard.js'
+import { formatTelemetryEvent, type AutoSaveTelemetryContext } from './autosave/telemetry.js'
+import { emitWarn, handleNonRetryableError } from './autosave/errors.js'
 import {
   clampHistory,
   computeFlushLatencyMs,
@@ -66,8 +70,6 @@ export type {
 } from './autosave/collector.js'
 export { resolveCollectorPhase } from '../../lib/autosave/collector-phase.js'
 export { statusPhaseForState } from './autosave/state.js'
-
-const toIso = (input: Date): string => input.toISOString()
 
 /**
  * Collector テレメトリに付与される拡張プロパティ。
@@ -109,274 +111,15 @@ export interface AutoSaveHostBridge {
   readonly inspectState: () => AutoSaveHostStateSnapshot
 }
 
-interface AutoSaveTelemetryContext {
-  readonly before: AutoSaveStatusState
-  readonly after: AutoSaveStatusState
-  readonly guard: AutoSavePhaseGuardSnapshot
-  readonly lockStrategy?: AutoSaveTelemetryLockStrategy
-}
-
-const API_VERSION = 1
-const PHASE_BOOTSTRAP: AutoSaveEnvelopePhase = 'A-0'
-const PHASE_STATUS: AutoSaveEnvelopePhase = 'A-1'
-const PHASE_SNAPSHOT: AutoSaveEnvelopePhase = 'A-2'
-
-const createBootstrapMessage = (
-  reqId: string,
-  correlationId: string,
-  ts: string,
-  policy: AutoSavePolicy,
-  guard: AutoSavePhaseGuardSnapshot,
-  flags: FlagSnapshot
-): AutoSaveBridgeBootstrapMessage => ({
-  type: 'bridge.bootstrap',
-  apiVersion: API_VERSION,
-  phase: PHASE_BOOTSTRAP,
-  bridgePhase: 'bootstrap',
-  reqId,
-  correlationId,
-  ts,
-  payload: {
-    version: 1,
-    policy,
-    guard,
-    flags
-  }
-})
-
-const createStatusMessage = (
-  reqId: string,
-  correlationId: string,
-  ts: string,
-  envelopePhase: AutoSaveEnvelopePhase,
-  state: AutoSaveStatusState,
-  guard: AutoSavePhaseGuardSnapshot,
-  retryCount: number,
-  lastSuccessAt: string | undefined,
-  pendingBytes?: number,
-  attemptOverride?: number
-): AutoSaveStatusMessage => ({
-  type: 'status.autosave',
-  apiVersion: API_VERSION,
-  phase: envelopePhase,
-  bridgePhase: 'status.autosave',
-  reqId,
-  correlationId,
-  ts,
-  payload: {
-    state,
-    phase: statusPhaseForState(state),
-    retryCount,
-    lastSuccessAt,
-    pendingBytes,
-    guard,
-    attempt: attemptOverride ?? retryCount + 1
-  }
-})
-
-const createSnapshotResultMessage = (
-  request: AutoSaveSnapshotRequestMessage,
-  ts: string,
-  payload: AutoSaveSnapshotResultPayload
-): AutoSaveSnapshotResultMessage => ({
-  type: 'snapshot.result',
-  apiVersion: API_VERSION,
-  phase: request.phase ?? PHASE_SNAPSHOT,
-  bridgePhase: 'snapshot.result',
-  reqId: request.reqId,
-  correlationId: request.correlationId,
-  ts,
-  payload
-})
-
-const emitTelemetry = (
+const dispatchTelemetry = (
   options: AutoSaveHostBridgeOptions,
   event: AutoSaveTelemetryEventInput,
   context: AutoSaveTelemetryContext
 ): void => {
-  const phaseBefore = statusPhaseForState(context.before)
-  const phaseAfter = statusPhaseForState(context.after)
-  const rawProperties = event.properties ?? {}
-  const providedRetryCount =
-    typeof (rawProperties as { retryCount?: unknown }).retryCount === 'number'
-      ? (rawProperties as { retryCount: number }).retryCount
-      : undefined
-  const providedDetail = rawProperties.detail
-  const detailFromProperties =
-    typeof providedDetail === 'object' && providedDetail !== null
-      ? { ...(providedDetail as Record<string, unknown>) }
-      : undefined
-  const detailRetry =
-    detailFromProperties && typeof (detailFromProperties as { retry_count?: unknown }).retry_count === 'number'
-      ? (detailFromProperties as { retry_count: number }).retry_count
-      : undefined
-  const normalizedDetail: AutoSaveTelemetryEventProperties['detail'] | undefined = (() => {
-    const candidate =
-      typeof detailRetry === 'number'
-        ? detailRetry
-        : typeof providedRetryCount === 'number'
-          ? providedRetryCount
-          : undefined
-    if (!detailFromProperties && (typeof candidate !== 'number' || Number.isNaN(candidate))) {
-      return undefined
-    }
-    const detailPayload: Record<string, unknown> = detailFromProperties ? { ...detailFromProperties } : {}
-    if (typeof candidate === 'number' && !Number.isNaN(candidate)) {
-      detailPayload.retry_count = Math.max(0, Math.trunc(candidate))
-    }
-    return Object.keys(detailPayload).length > 0
-      ? (detailPayload as AutoSaveTelemetryEventProperties['detail'])
-      : undefined
-  })()
-  const detailWithPhase: AutoSaveTelemetryEventProperties['detail'] | undefined =
-    event.name === 'autosave.status'
-      ? ({ ...(normalizedDetail ?? {}), phase: phaseAfter } as AutoSaveTelemetryEventProperties['detail'])
-      : normalizedDetail
-  const guardTelemetry =
-    event.name === 'autosave.status' || event.name === 'autosave.guard'
-      ? encodeGuardTelemetry(context.guard)
-      : undefined
-  const phaseStep =
-    event.name === 'autosave.status' ? statusPhaseForState(context.after) : undefined
-  const properties: AutoSaveTelemetryEventProperties = {
-    ...rawProperties,
-    ...(detailWithPhase ? { detail: detailWithPhase } : {}),
-    ...(guardTelemetry ? { guard: guardTelemetry } : {}),
-    ...(phaseStep ? { phase_step: phaseStep } : {}),
-    phaseBefore,
-    phaseAfter,
-    flagSource: context.guard.featureFlag.source,
-    lockStrategy: context.lockStrategy ?? 'none'
+  if (!options.telemetry) {
+    return
   }
-  options.telemetry?.({ ...event, properties })
-}
-
-const emitWarn = (options: AutoSaveHostBridgeOptions, event: AutoSaveWarnEvent): void => {
-  options.warn?.(event)
-}
-
-const handleNonRetryableError = (
-  options: AutoSaveHostBridgeOptions,
-  state: InternalState,
-  request: AutoSaveSnapshotRequestMessage,
-  error: AutoSaveError,
-  previousStatus: AutoSaveStatusState
-): void => {
-  const guardForTelemetry = state.guard
-  const errorEnvelopePhase = request.phase ?? PHASE_SNAPSHOT
-  const requestDebounceMs =
-    typeof request.payload.debounceMs === 'number'
-      ? request.payload.debounceMs
-      : options.policy.debounceMs
-  const retryCountBeforeReset = state.retryCount
-  const attempt = retryCountBeforeReset + 1
-  state.status = 'error'
-  const errorTimestamp = options.now()
-  const ts = toIso(errorTimestamp)
-  const flushLatencyMs = computeFlushLatencyMs(state, errorTimestamp.getTime())
-  state.flushStartedAtMs = undefined
-  options.sendMessage(
-    createSnapshotResultMessage(request, ts, { ok: false, error })
-  )
-  const statusPhase = statusPhaseForState(state.status)
-  publishCollectorSnapshotResult(request, guardForTelemetry, ts, {
-    status: 'failure',
-    detail: createSnapshotFailureDetail(
-      flushLatencyMs,
-      retryCountBeforeReset,
-      error.retryable,
-      error.code,
-      error.message,
-      computeLagSeconds(state.lastSuccessAt, ts),
-      statusPhase
-    )
-  })
-  emitTelemetry(
-    options,
-    {
-      name: 'autosave.snapshot.result',
-      properties: {
-        ok: false,
-        status: 'failure',
-        code: error.code,
-        retryable: error.retryable,
-        correlationId: request.correlationId,
-        retryCount: retryCountBeforeReset,
-        phase: errorEnvelopePhase,
-        performance: createFlushLatencyPerformance(flushLatencyMs),
-        detail: { phase: statusPhase }
-      }
-    },
-    { before: previousStatus, after: state.status, guard: guardForTelemetry }
-  )
-  options.sendMessage(
-    createStatusMessage(
-      request.reqId,
-      request.correlationId,
-      ts,
-      errorEnvelopePhase,
-      'error',
-      state.guard,
-      retryCountBeforeReset,
-      state.lastSuccessAt
-    )
-  )
-  emitTelemetry(
-    options,
-    {
-      name: 'autosave.status',
-      properties: {
-        state: 'error',
-        correlationId: request.correlationId,
-        retryCount: retryCountBeforeReset,
-        phase: errorEnvelopePhase,
-        performance: createFlushLatencyPerformance(flushLatencyMs),
-        debounce_ms: requestDebounceMs,
-        latency_ms: flushLatencyMs,
-        attempt,
-        phase_step: statusPhaseForState(state.status)
-      }
-    },
-    { before: previousStatus, after: state.status, guard: guardForTelemetry }
-  )
-  const statusBeforeDisable = state.status
-  state.status = 'disabled'
-  state.guard = {
-    featureFlag: state.guard.featureFlag,
-    optionsDisabled: true
-  }
-  options.sendMessage(
-    createStatusMessage(
-      request.reqId,
-      request.correlationId,
-      ts,
-      PHASE_STATUS,
-      'disabled',
-      state.guard,
-      retryCountBeforeReset,
-      state.lastSuccessAt
-    )
-  )
-  emitTelemetry(
-    options,
-    {
-      name: 'autosave.status',
-      properties: {
-        state: 'disabled',
-        correlationId: request.correlationId,
-        retryCount: retryCountBeforeReset,
-        phase: PHASE_STATUS,
-        performance: createFlushLatencyPerformance(flushLatencyMs),
-        debounce_ms: requestDebounceMs,
-        latency_ms: flushLatencyMs,
-        attempt,
-        phase_step: statusPhaseForState(state.status)
-      }
-    },
-    { before: statusBeforeDisable, after: state.status, guard: state.guard }
-  )
-  state.retryCount = 0
-  state.forceDisabled = true
+  options.telemetry(formatTelemetryEvent(event, context))
 }
 
 export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): AutoSaveHostBridge => {
@@ -391,7 +134,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     createBootstrapMessage(
       bootstrapReqId,
       bootstrapCorrelationId,
-      toIso(options.now()),
+      toIsoTimestamp(options.now),
       options.policy,
       options.initialGuard,
       bootstrapFlags
@@ -404,7 +147,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     state.guard = mergeGuard(state.guard, guard, shouldForceDisable)
     const now = options.now()
     const nowMs = now.getTime()
-    const ts = toIso(now)
+    const ts = toIsoTimestamp(() => now)
     const correlationId = nextCorrelationId(state)
     const envelopePhase = PHASE_STATUS
     const latencyMs = computeFlushLatencyMs(state, nowMs)
@@ -427,7 +170,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       )
       const attempt = state.retryCount + 1
       const phaseStep = statusPhaseForState(state.status)
-      emitTelemetry(
+      dispatchTelemetry(
         options,
         {
           name: 'autosave.status',
@@ -446,7 +189,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         },
         { before: previousStatus, after: state.status, guard: state.guard }
       )
-      emitTelemetry(
+      dispatchTelemetry(
         options,
         {
           name: 'autosave.guard',
@@ -478,25 +221,25 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     )
     const attempt = state.retryCount + 1
     const phaseStep = statusPhaseForState(state.status)
-      emitTelemetry(
-        options,
-        {
-          name: 'autosave.status',
-          properties: {
-            state: 'dirty',
-            pendingBytes,
-            correlationId,
-            retryCount: state.retryCount,
-            phase: envelopePhase,
-            performance: flushLatency,
-            debounce_ms: options.policy.debounceMs,
-            latency_ms: latencyMs,
-            attempt,
-            phase_step: phaseStep
-          }
-        },
-        { before: previousStatus, after: state.status, guard: state.guard }
-      )
+    dispatchTelemetry(
+      options,
+      {
+        name: 'autosave.status',
+        properties: {
+          state: 'dirty',
+          pendingBytes,
+          correlationId,
+          retryCount: state.retryCount,
+          phase: envelopePhase,
+          performance: flushLatency,
+          debounce_ms: options.policy.debounceMs,
+          latency_ms: latencyMs,
+          attempt,
+          phase_step: phaseStep
+        }
+      },
+      { before: previousStatus, after: state.status, guard: state.guard }
+    )
   }
 
   const handleSnapshotRequest = async (request: AutoSaveSnapshotRequestMessage): Promise<void> => {
@@ -511,12 +254,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         : options.policy.debounceMs
     state.guard = mergeGuard(state.guard, incomingGuard, shouldForceDisable)
     const requestEnvelopePhase = request.phase ?? PHASE_SNAPSHOT
-    const guardPhase = resolveCollectorPhase(state.guard)
-    const telemetryPhase =
-      state.guard.featureFlag.source === 'localStorage' && state.guard.featureFlag.value
-        ? guardPhase
-        : requestEnvelopePhase
-    const ts = toIso(requestStartedAt)
+    const telemetryPhase = resolveSnapshotTelemetryPhase(state.guard, requestEnvelopePhase)
+    const ts = toIsoTimestamp(() => requestStartedAt)
     if (!isGuardEnabled(state.guard)) {
       state.status = 'disabled'
       state.retryCount = 0
@@ -539,7 +278,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           statusPhase
         )
       })
-      emitTelemetry(
+      dispatchTelemetry(
         options,
         {
           name: 'autosave.snapshot.result',
@@ -571,7 +310,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       )
       const attempt = state.retryCount + 1
       const phaseStep = statusPhaseForState(state.status)
-      emitTelemetry(
+      dispatchTelemetry(
         options,
         {
           name: 'autosave.status',
@@ -589,7 +328,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
       )
-      emitTelemetry(
+      dispatchTelemetry(
         options,
         {
           name: 'autosave.guard',
@@ -629,7 +368,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const savingLatencyMs = computeFlushLatencyMs(state, requestStartedAtMs)
     const savingAttempt = state.retryCount + 1
     const savingPhaseStep = statusPhaseForState(state.status)
-    emitTelemetry(
+    dispatchTelemetry(
       options,
       {
         name: 'autosave.status',
@@ -668,7 +407,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         const retryTimestamp = options.now()
         const retryLatency = computeFlushLatencyMs(state, retryTimestamp.getTime())
         state.flushStartedAtMs = undefined
-        const retryTs = toIso(retryTimestamp)
+        const retryTs = toIsoTimestamp(() => retryTimestamp)
         options.sendMessage(createSnapshotResultMessage(request, retryTs, writeResult))
         const statusPhase = statusPhaseForState(state.status)
         publishCollectorSnapshotResult(request, state.guard, retryTs, {
@@ -697,7 +436,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         )
         const backoffAttempt = state.retryCount + 1
         const backoffPhaseStep = statusPhaseForState(state.status)
-        emitTelemetry(
+        dispatchTelemetry(
           options,
           {
             name: 'autosave.status',
@@ -715,7 +454,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
           },
           { before: statusBeforeBackoff, after: state.status, guard: state.guard }
         )
-        emitTelemetry(
+        dispatchTelemetry(
           options,
           {
             name: 'autosave.snapshot.result',
@@ -735,12 +474,23 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         )
         return
       }
-      handleNonRetryableError(options, state, request, writeResult.error, state.status)
+      handleNonRetryableError(
+        {
+          now: options.now,
+          sendMessage: options.sendMessage,
+          dispatchTelemetry: (event, context) => dispatchTelemetry(options, event, context),
+          policy: options.policy
+        },
+        state,
+        request,
+        writeResult.error,
+        state.status
+      )
       return
     }
 
     if (writeResult.lockStrategy === 'file-lock') {
-      emitWarn(options, {
+      emitWarn(options.warn, {
         code: 'autosave.lock.fallback',
         details: { reqId: request.reqId, strategy: writeResult.lockStrategy, correlationId: request.correlationId }
       })
@@ -758,7 +508,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     const successTimestamp = options.now()
     const successLatency = computeFlushLatencyMs(state, successTimestamp.getTime())
     state.flushStartedAtMs = undefined
-    const successTs = toIso(successTimestamp)
+    const successTs = toIsoTimestamp(() => successTimestamp)
     const payload: AutoSaveSnapshotResultPayload = {
       ok: true,
       bytes: writeResult.bytes,
@@ -788,7 +538,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     })
     const savedAttempt = retryCountForSnapshot + 1
     const savedPhaseStep = statusPhaseForState(state.status)
-    emitTelemetry(
+    dispatchTelemetry(
       options,
       {
         name: 'autosave.snapshot.result',
@@ -820,7 +570,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         savedAttempt
       )
     )
-    emitTelemetry(
+    dispatchTelemetry(
       options,
       {
         name: 'autosave.status',

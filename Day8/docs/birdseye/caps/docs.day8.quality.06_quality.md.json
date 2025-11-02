@@ -6,7 +6,7 @@
   "deps_out": [
     "docs/addenda/I_Test_Cases.md"
   ],
-  "generated_at": "00003",
+  "generated_at": "00004",
   "id": "docs/day8/quality/06_quality.md",
   "maintenance": {
     "refresh": "品質メトリクスやテスト導線を更新したら付録および Birdseye index.json を揃える。",
