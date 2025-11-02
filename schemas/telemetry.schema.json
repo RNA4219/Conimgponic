@@ -588,7 +588,8 @@
             "additionalProperties": false,
             "properties": {
               "sandboxViolation": { "type": "boolean", "const": true },
-              "next_backoff_ms": { "type": "number", "minimum": 0 }
+              "next_backoff_ms": { "type": "number", "minimum": 0 },
+              "result": { "type": "string", "const": "failure" }
             },
             "required": [
               "pluginId",

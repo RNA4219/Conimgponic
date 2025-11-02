@@ -279,6 +279,7 @@ export interface PluginEventPayload {
 }
 
 export interface PluginFailedPayload extends PluginEventPayload {
+  readonly result: 'failure';
   readonly sandboxViolation: true;
   readonly next_backoff_ms: number;
 }
