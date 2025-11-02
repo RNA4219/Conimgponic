@@ -2871,13 +2871,29 @@ describe('plugins telemetry 契約', () => {
     )
   })
 
-  test("plugins.completed payload.result に 'failure' を与えると JSON Schema 検証が失敗する", () => {
-    const completedThen = findConditional(
-      (entry) => entry.if?.properties?.event?.const === 'plugins.completed',
-    )
-    assertOk(completedThen.properties, 'plugins.completed conditional must define properties')
-    const payloadSchema = completedThen.properties.payload
-    assertOk(payloadSchema, 'plugins.completed conditional must define payload schema')
+test('Collector 契約は plugins.completed telemetry result を success のみに固定する', () => {
+  const collectMetricsSource = readFileSync(
+    new URL('../../scripts/monitor/collect-metrics.ts', import.meta.url),
+    'utf-8',
+  )
+  const match = collectMetricsSource.match(
+    /export type PluginCompletedPayload[\s\S]*?};/,
+  )
+  assertOk(match, 'PluginCompletedPayload definition missing in contract source')
+  assertOk(
+    /readonly result: 'success';/.test(match[0]),
+    'PluginCompletedPayload must restrict result to success in contract source',
+  )
+  assertOk(
+    !match[0].includes("'failure'"),
+    'PluginCompletedPayload must not allow failure result in contract source',
+  )
+})
+
+test('plugins.completed telemetry result は success のみ許容される', () => {
+  const completedThen = findConditional(
+    (entry) => entry.if?.properties?.event?.const === 'plugins.completed'
+  )
 
     const payloadProperties = resolveSchemaProperties(payloadSchema)
     assertOk(payloadProperties, 'plugins.completed payload must define properties')
