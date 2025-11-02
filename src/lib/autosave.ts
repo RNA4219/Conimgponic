@@ -195,7 +195,7 @@ interface Day8CollectorLike {
   publish(event: Record<string, unknown>): void
 }
 
-type AutoSaveDisabledReason = 'feature-flag-disabled' | 'options-disabled'
+export type AutoSaveDisabledReason = 'feature-flag-disabled' | 'options-disabled'
 
 const resolveDay8Collector = (): Day8CollectorLike | undefined => {
   const scope = globalThis as { Day8Collector?: unknown }
@@ -230,7 +230,7 @@ const resolveBuildSha = (): string | undefined => {
   return undefined
 }
 
-const publishGuardCollectorEvent = (
+export const publishGuardCollectorEvent = (
   guard: AutoSavePhaseGuardSnapshot,
   reason: AutoSaveDisabledReason
 ): void => {

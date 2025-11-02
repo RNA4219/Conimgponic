@@ -25,6 +25,7 @@ import {
 } from '../../src/platform/vscode/autosave'
 import type {
   Day8Collector,
+  Day8CollectorAutoSaveGuardEvent,
   Day8CollectorEvent,
   Day8CollectorSnapshotResultEvent
 } from '../../src/telemetry/day8Collector'
@@ -41,6 +42,11 @@ const guardEnabled: AutoSavePhaseGuardSnapshot = {
 const guardReadonly: AutoSavePhaseGuardSnapshot = {
   featureFlag: { value: true, source: 'env' },
   optionsDisabled: true
+}
+
+const guardFeatureFlagDisabled: AutoSavePhaseGuardSnapshot = {
+  featureFlag: { value: false, source: 'env' },
+  optionsDisabled: false
 }
 
 const guardLocalStorage: AutoSavePhaseGuardSnapshot = {
@@ -2709,6 +2715,57 @@ describe('createVscodeAutoSaveBridge', () => {
     assert.equal(disabledTelemetry.properties?.state, 'disabled')
     assert.equal(disabledTelemetry.properties?.phase, 'A-1')
     assert.deepEqual(disabledTelemetry.properties?.performance, { flush_latency_ms: 0 })
+  })
+
+  it('Phase guard 無効化ショートサーキットで autosave.guard イベントを 1 度だけ送信する', async () => {
+    const captured: Day8CollectorAutoSaveGuardEvent[] = []
+    const scope = globalThis as { Day8Collector?: Day8Collector }
+    const previousCollector = scope.Day8Collector
+    scope.Day8Collector = {
+      publish: (event: Day8CollectorEvent) => {
+        if (event.event === 'autosave.guard') {
+          captured.push(event as Day8CollectorAutoSaveGuardEvent)
+        }
+      }
+    } as Day8Collector
+
+    try {
+      const bridge = createVscodeAutoSaveBridge({
+        policy: AUTOSAVE_POLICY,
+        initialGuard: guardEnabled,
+        flags: createDefaultFlags(),
+        now: () => new Date('2024-01-01T00:00:00.000Z'),
+        sendMessage: () => {
+          /* noop */
+        },
+        atomicWrite: async () => {
+          assert.fail('guard 無効化ショートサーキットでは atomicWrite を呼ばない')
+        }
+      })
+
+      await bridge.handleSnapshotRequest(
+        createRequest('req-guard-disabled', 'corr-guard-disabled', guardFeatureFlagDisabled, 0, 0)
+      )
+
+      assert.equal(
+        captured.length,
+        1,
+        'Phase guard 無効化ショートサーキットは autosave.guard を 1 度だけ送信する'
+      )
+      const guardEvent = captured[0]
+      assert.ok(guardEvent, 'autosave.guard イベントが必要')
+      assert.equal(guardEvent.event, 'autosave.guard')
+      assert.equal(guardEvent.blocked, true)
+      assert.equal(guardEvent.reason, 'feature-flag-disabled')
+      assert.deepEqual(guardEvent.guard, guardFeatureFlagDisabled)
+      assert.match(guardEvent.ts, /^\d{4}-\d{2}-\d{2}T/)
+    } finally {
+      if (previousCollector) {
+        scope.Day8Collector = previousCollector
+      } else {
+        delete scope.Day8Collector
+      }
+    }
   })
 
   it('localStorage フラグガードで current phase を A-1 として報告する', async () => {
