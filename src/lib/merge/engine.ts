@@ -202,7 +202,7 @@ export const DEFAULT_MERGE_ENGINE: MergeEngine = {
             type: decision.hunk.decision === 'auto' ? 'merge:auto-applied' : 'merge:conflict-detected',
             hunk: decision.hunk,
             sceneId: input.sceneId ?? 'unknown',
-            retryable: decision.hunk.decision !== 'auto',
+            retryable: decision.hunk.decision !== 'auto' && decision.hunk.locked,
             trace: buildTrace(input.sceneId, stages, profile, decisions.map((entry) => entry.hunk)),
           };
           options.events.publish(event);
