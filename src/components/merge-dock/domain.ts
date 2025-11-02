@@ -60,7 +60,8 @@ export function mergeMarkdownStoryboard(
     if (body == null) {
       return { ...scene }
     }
-    return { ...scene, [mode]: body }
+    const normalized = body.replace(/\r\n/g, '\n')
+    return { ...scene, [mode]: normalized }
   })
   return { ...current, scenes }
 }

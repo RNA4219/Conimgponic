@@ -546,326 +546,326 @@
       "src/lib/merge.ts"
     ]
   ],
-  "generated_at": "00002",
+  "generated_at": "00003",
   "nodes": {
     "INSTALL.md": {
       "caps": "docs/birdseye/caps/INSTALL.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "setup"
     },
     "README.md": {
       "caps": "docs/birdseye/caps/README.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "overview"
     },
     "docs/BIRDSEYE.md": {
       "caps": "docs/birdseye/caps/docs.BIRDSEYE.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "guide"
     },
     "docs/README.md": {
       "caps": "docs/birdseye/caps/docs.README.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "index"
     },
     "docs/ROADMAP_AND_SPECS.md": {
       "caps": "docs/birdseye/caps/docs.ROADMAP_AND_SPECS.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "roadmap"
     },
     "docs/Architecture_ASCII.md": {
       "caps": "docs/birdseye/caps/docs.Architecture_ASCII.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "architecture"
     },
     "docs/TASKS.md": {
       "caps": "docs/birdseye/caps/docs.TASKS.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "tasks"
     },
     "docs/Release_Checklist.md": {
       "caps": "docs/birdseye/caps/docs.Release_Checklist.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "checklist"
     },
     "docs/FORK_NOTES.md": {
       "caps": "docs/birdseye/caps/docs.FORK_NOTES.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "guide"
     },
     "docs/addenda/A_Glossary.md": {
       "caps": "docs/birdseye/caps/docs.addenda.A_Glossary.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "glossary"
     },
     "docs/addenda/F_Provider_Matrix.md": {
       "caps": "docs/birdseye/caps/docs.addenda.F_Provider_Matrix.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "provider"
     },
     "docs/UPSTREAM.md": {
       "caps": "docs/birdseye/caps/docs.UPSTREAM.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "operations"
     },
     "docs/UPSTREAM_WEEKLY_LOG.md": {
       "caps": "docs/birdseye/caps/docs.UPSTREAM_WEEKLY_LOG.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "log"
     },
     "docs/addenda/H_Deploy_Guide.md": {
       "caps": "docs/birdseye/caps/docs.addenda.H_Deploy_Guide.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "guide"
     },
     "docs/addenda/L_Config_Reference.md": {
       "caps": "docs/birdseye/caps/docs.addenda.L_Config_Reference.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "configuration"
     },
     "docs/addenda/M_Versioning_Release.md": {
       "caps": "docs/birdseye/caps/docs.addenda.M_Versioning_Release.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "release"
     },
     "docs/day8/README.md": {
       "caps": "docs/birdseye/caps/docs.day8.README.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "overview"
     },
     "docs/safety.md": {
       "caps": "docs/birdseye/caps/docs.safety.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "safety"
     },
     "docs/seeds/README.md": {
       "caps": "docs/birdseye/caps/docs.seeds.README.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "seeds"
     },
     "scripts/": {
       "caps": "docs/birdseye/caps/scripts.DIR.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "automation"
     },
     "tools/": {
       "caps": "docs/birdseye/caps/tools.DIR.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "automation"
     },
     "workflow-cookbook/BLUEPRINT.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.BLUEPRINT.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "requirements"
     },
     "workflow-cookbook/CHECKLISTS.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.CHECKLISTS.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "checklist"
     },
     "workflow-cookbook/EVALUATION.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.EVALUATION.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "quality"
     },
     "workflow-cookbook/GUARDRAILS.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.GUARDRAILS.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "guardrail"
     },
     "workflow-cookbook/HUB.codex.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.HUB.codex.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "orchestration"
     },
     "workflow-cookbook/RUNBOOK.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.RUNBOOK.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "operations"
     },
     "workflow-cookbook/SAFETY.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.SAFETY.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "safety"
     },
     "workflow-cookbook/SECURITY.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.SECURITY.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "guardrail"
     },
     "workflow-cookbook/TASK.codex.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.TASK.codex.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "tasks"
     },
     "workflow-cookbook/docs/IN-20250115-001.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.docs.IN-20250115-001.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "incident"
     },
     "workflow-cookbook/docs/birdseye/index.json": {
       "caps": "docs/birdseye/caps/workflow-cookbook.docs.birdseye.index.json.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "visualization"
     },
     "workflow-cookbook/logs/test.jsonl": {
       "caps": "docs/birdseye/caps/workflow-cookbook.logs.test.jsonl.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "log"
     },
     "workflow-cookbook/reports/issue_suggestions.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.reports.issue_suggestions.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "report"
     },
     "workflow-cookbook/reports/today.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.reports.today.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "report"
     },
     "workflow-cookbook/scripts/": {
       "caps": "docs/birdseye/caps/workflow-cookbook.scripts.DIR.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "automation"
     },
     "workflow-cookbook/scripts/analyze.py": {
       "caps": "docs/birdseye/caps/workflow-cookbook.scripts.analyze.py.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "analytics"
     },
     "workflow-cookbook/tools/": {
       "caps": "docs/birdseye/caps/workflow-cookbook.tools.DIR.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "automation"
     },
     "workflow-cookbook/tools/codemap/README.md": {
       "caps": "docs/birdseye/caps/workflow-cookbook.tools.codemap.README.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "guide"
     },
     "workflow-cookbook/tools/codemap/update.py": {
       "caps": "docs/birdseye/caps/workflow-cookbook.tools.codemap.update.py.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "automation"
     },
     "docs/addenda/C_Persona_Schema.md": {
       "caps": "docs/birdseye/caps/docs.addenda.C_Persona_Schema.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "persona"
     },
     "docs/addenda/I_Test_Cases.md": {
       "caps": "docs/birdseye/caps/docs.addenda.I_Test_Cases.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "quality"
     },
     "docs/addenda/J_Runbook.md": {
       "caps": "docs/birdseye/caps/docs.addenda.J_Runbook.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "operations"
     },
     "docs/addenda/G_Security_Privacy.md": {
       "caps": "docs/birdseye/caps/docs.addenda.G_Security_Privacy.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "security"
     },
     "docs/day8/quality/06_quality.md": {
       "caps": "docs/birdseye/caps/docs.day8.quality.06_quality.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "quality"
     },
     "docs/addenda/K_Accessibility_UX.md": {
       "caps": "docs/birdseye/caps/docs.addenda.K_Accessibility_UX.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "ux"
     },
     "docs/addenda/B_UI_Mock.md": {
       "caps": "docs/birdseye/caps/docs.addenda.B_UI_Mock.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "design"
     },
     "docs/day8/spec/02_spec.md": {
       "caps": "docs/birdseye/caps/docs.day8.spec.02_spec.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "spec"
     },
     "docs/day8/design/03_architecture.md": {
       "caps": "docs/birdseye/caps/docs.day8.design.03_architecture.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "architecture"
     },
     "docs/day8/ops/04_ops.md": {
       "caps": "docs/birdseye/caps/docs.day8.ops.04_ops.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "operations"
     },
     "docs/adr/README.md": {
       "caps": "docs/birdseye/caps/docs.adr.README.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "adr"
     },
     "docs/adr/0000-template.md": {
       "caps": "docs/birdseye/caps/docs.adr.0000-template.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "adr-template"
     },
     "docs/adr/0001-collector-analyzer-reporter-pipeline.md": {
       "caps": "docs/birdseye/caps/docs.adr.0001-collector-analyzer-reporter-pipeline.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "adr"
     },
     "docs/adr/0002-jsonl-event-contract.md": {
       "caps": "docs/birdseye/caps/docs.adr.0002-jsonl-event-contract.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "adr"
     },
     "docs/adr/0003-propose-only-governance.md": {
       "caps": "docs/birdseye/caps/docs.adr.0003-propose-only-governance.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "adr"
     },
     "docs/day8/spec/01_requirements.md": {
       "caps": "docs/birdseye/caps/docs.day8.spec.01_requirements.md.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "requirements"
     },
     "src/lib/autosave.ts": {
       "caps": "docs/birdseye/caps/src.lib.autosave.ts.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "application"
     },
     "src/platform/vscode/autosave.ts": {
       "caps": "docs/birdseye/caps/src.platform.vscode.autosave.ts.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "integration"
     },
     "src/lib/merge.ts": {
       "caps": "docs/birdseye/caps/src.lib.merge.ts.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "application"
     },
     "src/lib/merge/mergeDockAutoSaveBridge.ts": {
       "caps": "docs/birdseye/caps/src.lib.merge.mergeDockAutoSaveBridge.ts.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "integration"
     },
     "src/components/MergeDock.tsx": {
       "caps": "docs/birdseye/caps/src.components.MergeDock.tsx.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "ui"
     },
     "src/components/merge-dock/domain.ts": {
       "caps": "docs/birdseye/caps/src.components.merge-dock.domain.ts.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "domain"
     },
     "src/components/merge-dock/io.ts": {
       "caps": "docs/birdseye/caps/src.components.merge-dock.io.ts.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "integration"
     },
     "src/lib/merge/phasePlan.ts": {
       "caps": "docs/birdseye/caps/src.lib.merge.phasePlan.ts.json",
-      "mtime": "00002",
+      "mtime": "00003",
       "role": "application"
     }
   }
