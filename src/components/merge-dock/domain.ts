@@ -49,6 +49,17 @@ export const startMergeDockAutoSaveHeartbeat = (
   }
 }
 
+const CRLF_PATTERN = /\r\n/g
+const COMMENT_BLOCK_WITH_BOUNDARIES_PATTERN = /\n?<!--[\s\S]*?-->\n?/g
+const EXCESS_NEWLINES_PATTERN = /\n{3,}/g
+
+const sanitizeMarkdownImportBlock = (block: string): string =>
+  block
+    .replace(CRLF_PATTERN, '\n')
+    .replace(COMMENT_BLOCK_WITH_BOUNDARIES_PATTERN, '\n')
+    .replace(EXCESS_NEWLINES_PATTERN, '\n\n')
+    .trim()
+
 export function mergeMarkdownStoryboard(
   current: Storyboard,
   markdown: string,
@@ -56,11 +67,11 @@ export function mergeMarkdownStoryboard(
 ): Storyboard {
   const blocks = markdown.split(/(?:^|\r?\n)##\s*Cut\s+\d+/).slice(1)
   const scenes = current.scenes.map((scene, index) => {
-    const body = blocks[index]?.replace(/<!--.*?-->/g, '').trim()
-    if (body == null) {
+    const block = blocks[index]
+    if (block == null) {
       return { ...scene }
     }
-    const normalized = body.replace(/\r\n/g, '\n')
+    const normalized = sanitizeMarkdownImportBlock(block)
     return { ...scene, [mode]: normalized }
   })
   return { ...current, scenes }
