@@ -366,7 +366,13 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
   }
 
   if (existingReleaseError && !currentState) {
-    handleFailure(existingReleaseError);
+    const state = processFailure(existingReleaseError);
+    emitError(state.lastError);
+    if (!state.readonlyNotified) {
+      emitReadonly('release-failed', state.lastError, options.onReadonly);
+      rememberReleaseFailure(lease.leaseId, state.lastError, state.attempts, true, state.nextDelayMs);
+    }
+    throw state.lastError;
   }
 
   projectLockEvents.emit({ type: 'lock:release-requested', lease });
