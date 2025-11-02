@@ -1322,6 +1322,122 @@ scenario(
 )
 
 scenario(
+  'AS-LK-20: withProjectLock emits single lock:error for retryable renewal failures',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t, ctx) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      if (event.type === 'lock:error') {
+        events.push(event)
+      }
+    })
+    t.after(unsubscribe)
+
+    const originalGetDirectory = ctx.opfs.storage.getDirectory
+    let writeCount = 0
+    const wrapDirectory = (
+      directory: Awaited<ReturnType<typeof originalGetDirectory>>,
+      prefix: string,
+    ): Awaited<ReturnType<typeof originalGetDirectory>> => {
+      const getDirectoryHandle = directory.getDirectoryHandle.bind(directory)
+      const getFileHandle = directory.getFileHandle.bind(directory)
+      const removeEntry = directory.removeEntry.bind(directory)
+      const entries = directory.entries.bind(directory)
+      return {
+        async getDirectoryHandle(name: string, options?: { create?: boolean }) {
+          const next = await getDirectoryHandle(name, options as { create?: boolean })
+          const nextPrefix = prefix ? `${prefix}/${name}` : name
+          return wrapDirectory(next, nextPrefix)
+        },
+        async getFileHandle(name: string, options?: { create?: boolean }) {
+          const handle = await getFileHandle(name, options as { create?: boolean })
+          const filePath = prefix ? `${prefix}/${name}` : name
+          if (filePath === FALLBACK_LOCK_PATH) {
+            const createWritable = handle.createWritable.bind(handle)
+            const getFile = handle.getFile.bind(handle)
+            return {
+              async createWritable() {
+                const writable = await createWritable()
+                const write = writable.write.bind(writable)
+                const close = writable.close.bind(writable)
+                return {
+                  async write(data: string) {
+                    writeCount += 1
+                    if (writeCount >= 2) {
+                      throw new Error('Mock fallback renew write failure')
+                    }
+                    await write(data)
+                  },
+                  async close() {
+                    await close()
+                  },
+                }
+              },
+              async getFile() {
+                return getFile()
+              },
+            }
+          }
+          return handle
+        },
+        async removeEntry(name: string) {
+          return removeEntry(name)
+        },
+        async *entries() {
+          for await (const entry of entries()) {
+            yield entry
+          }
+        },
+      }
+    }
+    ctx.opfs.storage.getDirectory = async () => wrapDirectory(await originalGetDirectory(), '')
+    t.after(() => {
+      ctx.opfs.storage.getDirectory = originalGetDirectory
+    })
+
+    let capturedError: ProjectLockError | undefined
+    await assert.rejects(
+      () =>
+        projectLockApi.withProjectLock(
+          async () => {
+            t.mock.timers.tick(150)
+            await Promise.resolve()
+            await Promise.resolve()
+          },
+          { preferredStrategy: 'file-lock', renewIntervalMs: 150 },
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof ProjectLockError, 'executor must surface ProjectLockError failures')
+        assert.equal(error.retryable, true, 'retryable renew failures must retain retryable=true')
+        assert.equal(error.code, 'renew-failed', 'renew failures must expose renew-failed code')
+        capturedError = error
+        return true
+      },
+    )
+
+    const rejection = capturedError
+    assert.ok(rejection, 'withProjectLock must reject with captured ProjectLockError')
+    const failure = rejection!
+
+    const errorEvents = events.filter((event) => event.type === 'lock:error')
+    assert.equal(
+      errorEvents.length,
+      1,
+      'lock:error must be emitted exactly once for retryable renew failures',
+    )
+    assert.strictEqual(
+      errorEvents[0]?.error,
+      failure,
+      'lock:error must reference the original ProjectLockError instance',
+    )
+  },
+)
+
+scenario(
   'AS-LK-12: Fallback acquisition aborts during pending write without creating lock file',
   {
     navigator: { locks: undefined }

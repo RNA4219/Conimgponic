@@ -489,8 +489,13 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
   } catch (error) {
     let failure: unknown = error;
     let readonlyEmitted = false;
+    const notifyErrorOnce = (projectError: ProjectLockError) => {
+      if (!hasErrorEventBeenEmitted(projectError)) {
+        emitError(projectError);
+      }
+    };
     if (error instanceof ProjectLockError) {
-      if (error.retryable || !hasErrorEventBeenEmitted(error)) emitError(error);
+      notifyErrorOnce(error);
       if (!error.retryable) {
         emitReadonly(reasonFromOperation(error.operation), error, options.onReadonly);
         readonlyEmitted = true;
@@ -501,7 +506,7 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
       failure instanceof ProjectLockError &&
       (!(error instanceof ProjectLockError) || failure !== error)
     ) {
-      if (failure.retryable || !hasErrorEventBeenEmitted(failure)) emitError(failure);
+      notifyErrorOnce(failure);
       if (!failure.retryable && !readonlyEmitted)
         emitReadonly(reasonFromOperation(failure.operation), failure, options.onReadonly);
     }
