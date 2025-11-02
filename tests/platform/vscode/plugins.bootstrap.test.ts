@@ -12,9 +12,11 @@ import {
 
 import {
   bootstrapPluginBridge,
+  normalizePluginManifest,
   type PluginBridgeBackingState,
   type PluginCollector,
   type PluginCollectorEvent,
+  type PluginManifest,
   type PluginPhaseGuard,
 } from '../../../src/platform/vscode/plugins/index.js';
 
@@ -248,4 +250,32 @@ test('bootstrapPluginBridge publishes flag resolution telemetry for plan snapsho
   });
 
   restorePerformance();
+});
+
+test('normalizePluginManifest clones mutable manifest collections', () => {
+  const manifest: PluginManifest = {
+    id: 'sample.plugin',
+    version: '1.2.3',
+    engines: { vscode: '1.35.0' },
+    'conimg-api': '1',
+    permissions: ['fs:read'],
+    hooks: ['onCompile'],
+  };
+
+  const normalized = normalizePluginManifest(manifest);
+
+  assert.deepEqual(normalized.permissions, manifest.permissions);
+  assert.notStrictEqual(normalized.permissions, manifest.permissions);
+  assert.deepEqual(normalized.hooks, manifest.hooks);
+  assert.notStrictEqual(normalized.hooks, manifest.hooks);
+
+  const defaults = normalizePluginManifest({
+    id: manifest.id,
+    version: manifest.version,
+    engines: manifest.engines,
+    'conimg-api': manifest['conimg-api'],
+  });
+
+  assert.deepEqual(defaults.permissions, []);
+  assert.deepEqual(defaults.hooks, []);
 });

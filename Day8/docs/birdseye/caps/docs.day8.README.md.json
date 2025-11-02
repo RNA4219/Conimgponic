@@ -3,7 +3,7 @@
     "docs/README.md"
   ],
   "deps_out": [],
-  "generated_at": "00003",
+  "generated_at": "00004",
   "id": "docs/day8/README.md",
   "maintenance": {
     "refresh": "構成が変わったら Birdseye カプセルの deps_out を最新化する。",

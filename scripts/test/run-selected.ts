@@ -136,6 +136,16 @@ const FILTER_TARGETS: Record<string, readonly string[]> = {
     'tests/platform/vscode/*reload*.test.ts',
     'tests/platform/vscode/**/*reload*.test.ts',
   ],
+  plugins: [
+    'tests/plugins/*.test.ts',
+    'tests/plugins/*.test.tsx',
+    'tests/plugins/**/*.test.ts',
+    'tests/plugins/**/*.test.tsx',
+    'tests/platform/vscode/plugins.*.test.ts',
+    'tests/platform/vscode/plugins.*.test.tsx',
+    'tests/platform/vscode/*reload*.test.ts',
+    'tests/platform/vscode/**/*reload*.test.ts',
+  ],
   config: [
     'tests/config/*.test.ts',
     'tests/config/**/*.test.ts',
