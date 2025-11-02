@@ -71,6 +71,27 @@ describe('ci workflow build job', () => {
       throw error;
     }
   });
+
+  test('build job install command matches CI spec first command', async () => {
+    const workflow = await loadWorkflow();
+    const buildSteps = expectJobSteps(workflow.jobs?.build, 'build job must exist');
+    const buildRun = buildSteps.find(
+      (step) => typeof step.run === 'string' && step.run.includes('pnpm --reporter ndjson -s build'),
+    );
+    if (!buildRun || typeof buildRun.run !== 'string') throw new Error('build job must run pnpm --reporter ndjson -s build');
+    const buildRunIndex = buildSteps.indexOf(buildRun);
+    if (buildRunIndex < 0) throw new Error('build job must define build step index');
+    const installExpectation = await loadBuildInstallExpectation();
+    const installStep = findInstallStep(buildSteps, installExpectation, buildRunIndex);
+    if (!installStep || typeof installStep.run !== 'string') {
+      throw new Error('build job must include install step defined by CI spec');
+    }
+    const normalizedRun = installStep.run.trim().replace(/\s+/gu, ' ');
+    assert.ok(
+      normalizedRun.startsWith(installExpectation),
+      `build job install step must start with CI spec command "${installExpectation}"`,
+    );
+  });
 });
 async function loadBuildInstallExpectation(): Promise<string> {
   const specSource = await readFile(new URL('../../docs/CI-SPEC.md', import.meta.url), 'utf8');
@@ -92,7 +113,7 @@ async function loadBuildInstallExpectation(): Promise<string> {
   if (!firstCommand) {
     throw new Error('CI spec build job must specify install command before build');
   }
-  return firstCommand;
+  return normalizeInstallCommand(firstCommand);
 }
 function canonicalizeInstallCommand(command: string): string {
   const trimmed = command.trim();
@@ -110,6 +131,23 @@ function canonicalizeInstallCommand(command: string): string {
     throw new Error('build install expectation must resolve to pnpm install');
   }
   return `${tokens[0]} ${tokens[1]}`;
+}
+function normalizeInstallCommand(command: string): string {
+  const canonical = canonicalizeInstallCommand(command);
+  const normalized = command.replace(/\s+/gu, ' ').trim();
+  const tokens = normalized.split(' ');
+  const extras = tokens.slice(2).filter((token) => token.length > 0);
+  if (!extras.includes('--frozen-lockfile')) {
+    extras.push('--frozen-lockfile');
+  }
+  const dedupedExtras: string[] = [];
+  const seen = new Set<string>();
+  for (const token of extras) {
+    if (seen.has(token)) continue;
+    seen.add(token);
+    dedupedExtras.push(token);
+  }
+  return [canonical, ...dedupedExtras].join(' ');
 }
 function findInstallStep(steps: StepConfig[], canonicalInstall: string, buildRunIndex: number): StepConfig | undefined {
   if (buildRunIndex < 0) return undefined;
