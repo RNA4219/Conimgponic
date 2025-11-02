@@ -73,6 +73,7 @@ export function readDocumentedLicenseAllowlist(): string[] {
 }
 
 export const DOCUMENTED_LICENSE_ALLOWLIST = new Set<string>(readDocumentedLicenseAllowlist())
+export const SPEC_REQUIRED_LICENSES = new Set<string>(['MIT', 'BSD', 'Apache-2.0'])
 
 function assertDocumentedAllowlistCoverage(
   allowlist: ReadonlySet<string>,
@@ -86,7 +87,28 @@ function assertDocumentedAllowlistCoverage(
   }
 }
 
-assertDocumentedAllowlistCoverage(DEFAULT_LICENSE_ALLOWLIST, DOCUMENTED_LICENSE_ALLOWLIST)
+function assertSpecRequiredLicenses(
+  documented: ReadonlySet<string>,
+  required: ReadonlySet<string>,
+): void {
+  const missing = [...required].filter((license) => !documented.has(license))
+  if (missing.length > 0) {
+    throw new Error(
+      `CI-SPEC.md must document required license allowlist entries: ${missing.join(', ')}`,
+    )
+  }
+}
+
+export function validateDocumentedLicenseAllowlist(
+  documented: ReadonlySet<string>,
+  allowlist: ReadonlySet<string> = DEFAULT_LICENSE_ALLOWLIST,
+  required: ReadonlySet<string> = SPEC_REQUIRED_LICENSES,
+): void {
+  assertSpecRequiredLicenses(documented, required)
+  assertDocumentedAllowlistCoverage(allowlist, documented)
+}
+
+validateDocumentedLicenseAllowlist(DOCUMENTED_LICENSE_ALLOWLIST)
 
 const REPORT_FILENAME = 'license-report.json'
 const SUMMARY_FILENAME = 'license-summary.json'
