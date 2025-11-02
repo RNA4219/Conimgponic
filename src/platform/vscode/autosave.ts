@@ -1,3 +1,4 @@
+import { publishGuardCollectorEvent } from '../../lib/autosave'
 import type {
   AutoSaveBridgeMessage,
   AutoSavePhaseGuardSnapshot,
@@ -120,6 +121,12 @@ const dispatchTelemetry = (
   options.telemetry(formatTelemetryEvent(event, context))
 }
 
+const publishGuardBlockedCollectorEvent = (
+  guard: AutoSavePhaseGuardSnapshot
+): void => {
+  publishGuardCollectorEvent(guard, resolveGuardBlockedReason(guard))
+}
+
 export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): AutoSaveHostBridge => {
   const state: InternalState = createInitialState(options.initialGuard)
 
@@ -200,6 +207,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         },
         { before: previousStatus, after: state.status, guard: state.guard }
       )
+      publishGuardBlockedCollectorEvent(state.guard)
       return
     }
     state.status = 'dirty'
@@ -340,6 +348,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
         },
         { before: statusBeforeRequest, after: state.status, guard: state.guard }
       )
+      publishGuardBlockedCollectorEvent(state.guard)
       return
     }
 
