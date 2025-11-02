@@ -26,5 +26,5 @@
       "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
     ]
   },
-  "generated_at": "00004"
+  "generated_at": "00006"
 }

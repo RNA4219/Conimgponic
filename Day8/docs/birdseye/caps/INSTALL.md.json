@@ -3,7 +3,7 @@
     "README.md"
   ],
   "deps_out": [],
-  "generated_at": "00004",
+  "generated_at": "00006",
   "id": "INSTALL.md",
   "maintenance": {
     "refresh": "インストール手順を更新したら Birdseye の対象ノードを同じコミットで再収集する。",

@@ -1,0 +1,34 @@
+{
+  "id": "src/lib/locks/webLock.ts",
+  "role": "integration",
+  "public_api": [
+    "WebLockHandleEntry",
+    "acquireViaWebLock",
+    "getWebLockHandle",
+    "clearWebLockHandle"
+  ],
+  "summary": "ブラウザの Web Locks API でプロジェクトロックを取得/解放するアダプタ。navigator.locks.request の lifecycle を監視し、release エラーをキャッシュして retry/readonly 判定へ橋渡しする。",
+  "deps_out": [
+    "src/lib/locks/shared.ts"
+  ],
+  "deps_in": [
+    "src/lib/locks.ts"
+  ],
+  "risks": [
+    "release promise の監視を怠ると Web Lock 解放失敗が握り潰され fallback cleanup も走らない",
+    "navigator.locks 未対応環境で retryable 設定を誤ると即 readonly に落ちて復帰不能になる"
+  ],
+  "tests": [
+    "tests/autosave/locks.spec.ts",
+    "tests/extensions/vscode/autosave-bridge.spec.ts",
+    "tests/lib/autosave/restore.flow.test.ts"
+  ],
+  "maintenance": {
+    "refresh": "Web Locks ハンドル処理や release エラーの扱いを変えたら locks.spec.ts の Web Lock ケースと vscode ブリッジテストを確認し、Birdseye を同期する",
+    "tooling": [
+      "pnpm test --filter autotag:autosave",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "00006"
+}

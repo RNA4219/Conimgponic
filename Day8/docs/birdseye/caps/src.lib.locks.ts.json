@@ -1,0 +1,38 @@
+{
+  "id": "src/lib/locks.ts",
+  "role": "application",
+  "public_api": [
+    "acquireProjectLock",
+    "renewProjectLock",
+    "releaseProjectLock",
+    "withProjectLock",
+    "projectLockApi",
+    "projectLockEvents"
+  ],
+  "summary": "Web Locks とフォールバックファイルを束ねるプロジェクトロック API。取得/更新/解放のリトライ制御と lock:* イベント発火を統合し、AutoSave へ一貫したロック状態と readonly 降格シグナルを提供する。",
+  "deps_out": [
+    "src/lib/locks/shared.ts",
+    "src/lib/locks/fallbackLock.ts",
+    "src/lib/locks/webLock.ts"
+  ],
+  "deps_in": [
+    "src/lib/autosave.ts"
+  ],
+  "risks": [
+    "Web Lock とフォールバックの状態遷移が乖離すると lock:error／readonly 降格が重複発火し AutoSave が停止する",
+    "release 再試行のキャッシュが破綻すると stale lease が残り diff/AutoSave 双方で編集不能になる"
+  ],
+  "tests": [
+    "tests/autosave/locks.spec.ts",
+    "tests/lib/autosave/restore.flow.test.ts",
+    "tests/extensions/vscode/autosave-bridge.spec.ts"
+  ],
+  "maintenance": {
+    "refresh": "ロック戦略・イベント契約・リトライ間隔を変更したら autosave.lock* シナリオを全走し、Birdseye index を再生成する",
+    "tooling": [
+      "pnpm test --filter autotag:autosave",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "00006"
+}

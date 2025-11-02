@@ -1,0 +1,35 @@
+{
+  "id": "src/lib/locks/shared.ts",
+  "role": "domain",
+  "public_api": [
+    "ProjectLockError",
+    "projectLockEvents",
+    "PROJECT_LOCK_STATE_MACHINE",
+    "PROJECT_LOCK_TEST_CASES",
+    "buildLease",
+    "scheduleNextHeartbeat"
+  ],
+  "summary": "プロジェクトロックの型・イベント・エラーモデルを集約する共有レイヤー。Web Lock/フォールバック双方が参照するリース生成・readonly 判定・schema を司り、テレメトリと Guardrails の契約を固定する。",
+  "deps_out": [],
+  "deps_in": [
+    "src/lib/locks.ts",
+    "src/lib/locks/fallbackLock.ts",
+    "src/lib/locks/webLock.ts"
+  ],
+  "risks": [
+    "ProjectLockError やイベント型を変更すると AutoSave/Telemetry/Runbook の整合が崩れ Guardrails 違反となる"
+  ],
+  "tests": [
+    "tests/autosave/locks.spec.ts",
+    "tests/lib/autosave/restore.flow.test.ts",
+    "tests/lib/autosave/phase-guard.test.ts"
+  ],
+  "maintenance": {
+    "refresh": "型やイベント名を更新したら lock telemetry と phase-guard テストを再実行し、Birdseye を同期させる",
+    "tooling": [
+      "pnpm test --filter autotag:autosave",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "00006"
+}

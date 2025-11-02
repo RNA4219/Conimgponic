@@ -10,7 +10,7 @@
     "workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
-  "generated_at": "00004",
+  "generated_at": "00006",
   "id": "workflow-cookbook/scripts/analyze.py",
   "maintenance": {
     "refresh": "ログフォーマットや出力パスが変わったら reflection.yaml と併せて更新。",

@@ -544,9 +544,33 @@
     [
       "src/lib/merge/phasePlan.ts",
       "src/lib/merge.ts"
+    ],
+    [
+      "src/lib/autosave.ts",
+      "src/lib/locks.ts"
+    ],
+    [
+      "src/lib/locks.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/locks.ts",
+      "src/lib/locks/fallbackLock.ts"
+    ],
+    [
+      "src/lib/locks.ts",
+      "src/lib/locks/webLock.ts"
+    ],
+    [
+      "src/lib/locks/fallbackLock.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/locks/webLock.ts",
+      "src/lib/locks/shared.ts"
     ]
   ],
-  "generated_at": "00004",
+  "generated_at": "00006",
   "nodes": {
     "INSTALL.md": {
       "caps": "docs/birdseye/caps/INSTALL.md.json",
@@ -867,6 +891,26 @@
       "caps": "docs/birdseye/caps/src.lib.merge.phasePlan.ts.json",
       "mtime": "00004",
       "role": "application"
+    },
+    "src/lib/locks.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.ts.json",
+      "mtime": "00006",
+      "role": "application"
+    },
+    "src/lib/locks/shared.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.shared.ts.json",
+      "mtime": "00006",
+      "role": "domain"
+    },
+    "src/lib/locks/fallbackLock.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.fallbackLock.ts.json",
+      "mtime": "00006",
+      "role": "integration"
+    },
+    "src/lib/locks/webLock.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.webLock.ts.json",
+      "mtime": "00006",
+      "role": "integration"
     }
   }
 }
