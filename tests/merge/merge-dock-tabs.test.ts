@@ -712,10 +712,11 @@ test('merge-ui: stable precision diff tab renders but keeps guard when stats mis
 
     assert.match(html, /data-merge-diff-visible="true"/)
     assert.match(html, /data-merge-diff-enabled="false"/)
-    assert.match(html, /data-merge-diff-exposure="default"/)
-    assert.match(html, /data-merge-diff-initial-tab="diff"/)
-    assert.match(html, /data-component="diff-merge-view"/)
+    assert.match(html, /data-merge-diff-exposure="opt-in"/)
+    assert.match(html, /data-merge-diff-initial-tab="compiled"/)
+    assert.doesNotMatch(html, /data-component="diff-merge-view"/)
     assert.doesNotMatch(html, /data-testid="merge-dock-backup-cta"/)
+    assert.match(html, /Diff \(Beta\)/)
   } finally {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
