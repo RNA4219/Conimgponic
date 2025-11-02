@@ -565,6 +565,13 @@ const resolveCollectorAutoAppliedRate = (
   if (planRate !== null) {
     return planRate
   }
+  const guardMetrics = (plan?.guard as { metrics?: { autoAppliedRate?: unknown; merge_auto_success_rate?: unknown } } | null | undefined)?.metrics
+  const guardRate =
+    coerceAutoAppliedRate(guardMetrics?.autoAppliedRate) ??
+    coerceAutoAppliedRate(guardMetrics?.merge_auto_success_rate)
+  if (guardRate !== null) {
+    return guardRate
+  }
   const workspaceRate = readWorkspaceAutoAppliedRate(options?.workspace)
   if (workspaceRate !== null) {
     return workspaceRate

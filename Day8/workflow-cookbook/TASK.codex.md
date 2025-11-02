@@ -39,6 +39,7 @@ langs: [auto]   # auto | python | typescript | go | rust | etc.
 - Constraints:
   - 既存API破壊なし / 不要な依存追加なし
   - Lint/Type/Test はゼロエラー
+  - docs/IMPLEMENTATION-PLAN.md と docs/design/app-merge-dock-integration.md の要件を満たす
 - Acceptance Criteria:
   - {{検収条件1}}
   - {{検収条件2}}
