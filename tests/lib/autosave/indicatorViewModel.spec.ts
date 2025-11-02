@@ -158,4 +158,21 @@ describe('deriveAutoSaveIndicatorViewModel', () => {
 
     assert.equal(isViewModelEqual(baseViewModel, mutatedViewModel), false)
   })
+
+  test('ラベルが変化すれば新しいビューモデルとして扱う', () => {
+    const snapshot: AutoSaveStatusSnapshot = {
+      phase: 'idle',
+      retryCount: 0,
+      pendingBytes: 0,
+      lastSuccessAt: '2024-05-01T00:00:00Z'
+    }
+
+    const baseViewModel = deriveAutoSaveIndicatorViewModel({ snapshot })
+    const mutatedViewModel = {
+      ...baseViewModel,
+      label: '表示ラベルが変化した'
+    }
+
+    assert.equal(isViewModelEqual(baseViewModel, mutatedViewModel), false)
+  })
 })

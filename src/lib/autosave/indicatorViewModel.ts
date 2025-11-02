@@ -503,6 +503,7 @@ export function isViewModelEqual(a: AutoSaveIndicatorViewModel, b: AutoSaveIndic
   }
   return (
     a.statusLabel === b.statusLabel &&
+    // label は UI 上の表示テキストで差分検知が必要
     a.label === b.label &&
     a.description === b.description &&
     a.indicator === b.indicator &&
