@@ -11,6 +11,7 @@ import type { Storyboard } from './types'
 import { LeftRight } from './components/LeftRightPanes'
 import { StoryboardList } from './components/StoryboardList'
 import { MergeDock } from './components/MergeDock'
+import type { MergeDockPhaseStats } from './components/merge-dock/domain'
 import {
   DEFAULT_FLAG_SNAPSHOT,
   OLLAMA_BASE,
@@ -22,15 +23,11 @@ import {
   type ResolveOptions
 } from './config'
 import { saveJSON } from './lib/opfs'
+import { readWorkspaceSetting } from './lib/merge/threshold'
 import { TemplatesMenu } from './components/TemplatesMenu'
-import {
-  useAutoSaveAppEffects,
-  type AutoSaveActivationDecision
-} from './hooks/useAutoSaveIntegration'
+import { useAutoSaveAppEffects } from './hooks/useAutoSaveIntegration'
 import {
   handleToolbarSaveProject,
-  handleToolbarLoadProject,
-  handleToolbarPackageExport,
   createToolbarActions,
   createBrowserToolbarNotifiers,
   type ToolbarNotifiers
@@ -258,6 +255,43 @@ export interface MergeDockIntegrationSnapshot {
   readonly mergeThreshold: number | null
   readonly autoAppliedRate: number | null
   readonly workspace: ResolveOptions['workspace'] | null
+  readonly phaseStats: MergeDockPhaseStats | null
+}
+
+const MERGE_PHASE_REVIEW_KEY = 'merge.phaseStats.reviewBandCount'
+const MERGE_PHASE_CONFLICT_KEY = 'merge.phaseStats.conflictBandCount'
+
+const parsePhaseBandCount = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value))
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim())
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.trunc(parsed))
+    }
+  }
+  return null
+}
+
+const resolveWorkspacePhaseStats = (
+  workspace: ResolveOptions['workspace'] | null | undefined,
+): MergeDockPhaseStats | null => {
+  if (!workspace) {
+    return null
+  }
+
+  const review = parsePhaseBandCount(readWorkspaceSetting(workspace, MERGE_PHASE_REVIEW_KEY))
+  const conflict = parsePhaseBandCount(readWorkspaceSetting(workspace, MERGE_PHASE_CONFLICT_KEY))
+
+  if (review === null && conflict === null) {
+    return null
+  }
+
+  return {
+    reviewBandCount: review ?? 0,
+    conflictBandCount: conflict ?? 0,
+  }
 }
 
 const FLAG_REFRESH_EVENT = 'conimg:flags:refresh'
@@ -545,6 +579,7 @@ export function resolveMergeDockIntegration(
   const snapshot = plan?.snapshot ?? DEFAULT_FLAG_SNAPSHOT
   const threshold = plan?.snapshot.merge.threshold ?? snapshot.merge.threshold ?? null
   const flagSnapshot: Pick<FlagSnapshot, 'merge'> = { merge: snapshot.merge }
+  const workspace = options?.workspace ?? null
   return {
     flagSnapshot,
     mergeThreshold: threshold,
