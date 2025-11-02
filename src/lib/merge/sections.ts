@@ -1,4 +1,4 @@
-import type { MergeInput, MergePreference, MergeTokenizer, ResolvedMergeProfile } from '../merge.ts';
+import type { MergeInput, MergePreference, MergeTokenizer, ResolvedMergeProfile } from './types';
 
 export interface MergeSection {
   readonly id: string;

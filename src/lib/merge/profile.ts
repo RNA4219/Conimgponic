@@ -1,4 +1,4 @@
-import type { MergePrecision, MergeProfileOverrides } from '../merge.ts';
+import type { MergePrecision, MergeProfileOverrides } from './types';
 
 export type PrecisionThresholdClamp = { readonly min: number; readonly max?: number };
 

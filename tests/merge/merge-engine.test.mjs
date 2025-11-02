@@ -2,6 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { DEFAULT_MERGE_ENGINE, MergeError } from '../../src/lib/merge.ts'
+import {
+  attachAutoSaveLockEvents,
+  buildMergePlan,
+  createQueueMergeCommand,
+} from '../../src/lib/merge/index.ts'
+import { projectLockEvents } from '../../src/lib/locks.ts'
 
 test('MG-U-04: abort signal preempts merge execution and surfaces MergeError contract', async (t) => {
   const input = {
@@ -207,4 +213,91 @@ test('MG-U-05: rerun keeps resolved result stable', () => {
   } finally {
     process.env.MERGE_PRECISION = originalPrecision
   }
+})
+
+test('MG-U-06: split modules keep event, queue, and plan contracts', () => {
+  const createEventHub = (sink) => {
+    const listeners = new Set()
+    return {
+      publish(event) {
+        sink.push(event)
+        for (const listener of listeners) {
+          listener(event)
+        }
+      },
+      subscribe(listener) {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    }
+  }
+
+  const autosaveEvents = []
+  const detachAutoSave = attachAutoSaveLockEvents(createEventHub(autosaveEvents))
+
+  const lease = {
+    leaseId: 'lease-mg-u-06',
+    ownerId: 'owner-mg-u-06',
+    strategy: 'web-lock',
+    viaFallback: false,
+    resource: 'imgponic:project',
+    acquiredAt: 0,
+    expiresAt: 1,
+    ttlMillis: 1,
+    heartbeatIntervalMs: 1,
+    nextHeartbeatAt: 1,
+    renewAttempt: 0,
+  }
+
+  projectLockEvents.emit({ type: 'lock:acquired', lease })
+  projectLockEvents.emit({ type: 'lock:released', leaseId: lease.leaseId })
+  detachAutoSave?.()
+
+  const mergeEvents = []
+  const queue = []
+  const eventHub = createEventHub(mergeEvents)
+
+  const input = {
+    base: 'Alpha base section\n\nBeta base section',
+    ours: 'Alpha manual section\n\nBeta manual section',
+    theirs: 'Alpha ai section\n\nBeta ai section',
+    sceneId: 'scene-mg-u-06',
+  }
+
+  const scoringSequence = [
+    { jaccard: 0.99, cosine: 0.99, blended: 0.99 },
+    { jaccard: 0.15, cosine: 0.15, blended: 0.15 },
+  ]
+  let scoringIndex = 0
+
+  const scoring = () => {
+    const current = scoringSequence[Math.min(scoringIndex, scoringSequence.length - 1)]
+    scoringIndex += 1
+    return current
+  }
+
+  const overrides = { precision: 'legacy', threshold: 0.8 }
+  const profile = DEFAULT_MERGE_ENGINE.resolveProfile(overrides)
+
+  const result = DEFAULT_MERGE_ENGINE.merge3(input, {
+    events: eventHub,
+    scoring: () => scoring(),
+    queueMergeCommand: (command) => queue.push(command),
+    profile: overrides,
+  })
+
+  assert.ok(result.plan)
+  assert.equal(queue.length, 1)
+
+  const expectedPlan = buildMergePlan(result.hunks, result.stats, profile, input.sceneId)
+  assert.equal(expectedPlan.kind, 'ok')
+  assert.deepEqual(result.plan, expectedPlan.plan)
+  assert.deepEqual(queue[0], createQueueMergeCommand(result.plan))
+
+  const eventTypes = mergeEvents.map((event) => event.type)
+  assert.ok(eventTypes.includes('merge:auto-applied'))
+  assert.ok(eventTypes.includes('merge:conflict-detected'))
+
+  const autosaveStages = autosaveEvents.map((event) => event.stage)
+  assert.deepEqual(autosaveStages, ['acquired', 'released'])
 })

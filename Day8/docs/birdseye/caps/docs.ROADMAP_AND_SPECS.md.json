@@ -35,7 +35,7 @@
     "workflow-cookbook/SAFETY.md",
     "workflow-cookbook/TASK.codex.md"
   ],
-  "generated_at": "00002",
+  "generated_at": "00003",
   "id": "docs/ROADMAP_AND_SPECS.md",
   "maintenance": {
     "refresh": "Guardrails 承認後にクロスリンクと Birdseye（ノード追加→Capsule更新→hot.json更新→generated_at揃え）を同時更新し、ガバナンス差分と整合させる。",
