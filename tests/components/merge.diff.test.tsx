@@ -910,6 +910,46 @@ test('mergeMarkdownStoryboard ignores multi-line HTML comments when importing ma
   assert.equal(imported.scenes[1]?.manual, 'Manual line 2 start\nManual line 2 end')
 })
 
+test('mergeMarkdownStoryboard preserves paragraph spacing when removing inline HTML comments', () => {
+  const { mergeMarkdownStoryboard } = mergeDockModule as typeof mergeDockModule & {
+    mergeMarkdownStoryboard?: (current: Storyboard, markdown: string, mode: 'manual' | 'ai') => Storyboard
+  }
+
+  assert.ok(
+    mergeMarkdownStoryboard,
+    'Day8/workflow-cookbook/GUARDRAILS.md の「実装時はテスト駆動開発を基本とし、テストを先に記述する。」と Day8/docs/day8/guides/07_contributing.md の「1タスク=1ブランチ=1PR」を根拠に、インラインコメント除去時の余分な改行を検出する RED テストを追加する',
+  )
+
+  const base: Storyboard = {
+    id: 'sb-1',
+    title: 'Test',
+    scenes: [
+      { id: 'cut-1', manual: '', ai: '', status: 'idle', assets: [] },
+      { id: 'cut-2', manual: '', ai: '', status: 'idle', assets: [] },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  const markdown = [
+    '## Cut 1',
+    'Manual line 1 before comment',
+    'Manual line 1 body <!-- inline comment that should be stripped -->',
+    'Manual line 1 after comment',
+    '',
+    '## Cut 2',
+    'Manual line 2',
+  ].join('\n')
+
+  const imported = mergeMarkdownStoryboard!(base, markdown, 'manual')
+
+  assert.equal(
+    imported.scenes[0]?.manual,
+    'Manual line 1 before comment\nManual line 1 body\nManual line 1 after comment',
+  )
+  assert.equal(imported.scenes[1]?.manual, 'Manual line 2')
+})
+
 test('stable precision preserves manual preference once diff guard lifts but allows override', () => {
   const guardedPlan = resolveMergeDockPhasePlan({
     precision: 'stable',
