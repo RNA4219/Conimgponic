@@ -30,6 +30,8 @@ import {
   publishMergeResult,
   publishSnapshotResult,
   resetWorkspaceIdCacheForTests,
+  createTelemetryId,
+  normalizeSnapshot,
   type Day8Collector,
   type Day8CollectorErrorEvent,
   type Day8CollectorFlagResolutionEvent,
@@ -106,6 +108,32 @@ const STATUS_AUTOSAVE_PAYLOAD_REQUIRED_FIELDS = [
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+describe('telemetry normalizers', () => {
+  test('createTelemetryId generates RFC4122 UUIDs', () => {
+    const candidate = createTelemetryId()
+    assertOk(UUID_REGEX.test(candidate), 'createTelemetryId must produce UUID strings')
+  })
+
+  test('normalizeSnapshot clamps counters and fills timestamps', () => {
+    const normalized = normalizeSnapshot(
+      {
+        bytes: Number.NaN,
+        retained_bytes: -10,
+        generation: 3.8,
+        last_success_at: '  '
+      },
+      '2024-01-02T03:04:05.678Z'
+    )
+
+    deepStrictEqual(normalized, {
+      bytes: 0,
+      retained_bytes: 0,
+      generation: 3,
+      last_success_at: '2024-01-02T03:04:05.678Z'
+    })
+  })
+})
 
 const findConditional = (predicate: (entry: TelemetrySchemaConditional) => boolean) => {
   const entry = telemetrySchema.allOf.find(predicate)
