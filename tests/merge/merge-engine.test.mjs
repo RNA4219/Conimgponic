@@ -9,7 +9,61 @@ import {
 } from '../../src/lib/merge/index.ts'
 import { projectLockEvents } from '../../src/lib/locks.ts'
 
-test('MG-U-01: high similarity sections are auto-applied without conflicts', () => {
+test('MG-U-01: legacy precision auto merges text input without sections', () => {
+  const input = {
+    base: 'Legacy base introduction.\n\nLegacy base conclusion.',
+    ours: 'Legacy manual introduction update.\n\nLegacy manual conclusion matches AI.',
+    theirs: 'Legacy manual introduction update.\n\nLegacy manual conclusion matches AI.',
+    sceneId: 'scene-mg-u-01-legacy',
+  }
+
+  const telemetry = []
+  const published = []
+  const queued = []
+  const events = {
+    publish: (event) => {
+      published.push(event)
+    },
+    subscribe: () => () => undefined,
+  }
+
+  const result = DEFAULT_MERGE_ENGINE.merge3(input, {
+    profile: { precision: 'legacy' },
+    telemetry: (event) => telemetry.push(event),
+    events,
+    queueMergeCommand: (command) => {
+      queued.push(command)
+    },
+  })
+
+  assert.ok(result.stats.autoDecisions > 0)
+  assert.equal(result.stats.conflictDecisions, 0)
+  assert.ok(result.stats.averageSimilarity >= 0 && result.stats.averageSimilarity <= 1)
+
+  const expectedMergedText = 'Legacy manual introduction update.\n\nLegacy manual conclusion matches AI.'
+  assert.equal(result.mergedText, expectedMergedText)
+
+  const hunkDecisionEvents = telemetry.filter((event) => event.type === 'merge:hunk-decision')
+  assert.ok(hunkDecisionEvents.length > 0)
+  assert.ok(hunkDecisionEvents.every((event) => event.hunk.decision === 'auto'))
+
+  const eventTypes = published.map((event) => event.type)
+  assert.ok(eventTypes.length > 0)
+  assert.ok(eventTypes.every((type) => type === 'merge:auto-applied'))
+
+  assert.equal(queued.length, 1)
+  const [queuedCommand] = queued
+  assert.equal(queuedCommand.type, 'merge:enqueue')
+  assert.equal(queuedCommand.precision, 'legacy')
+  assert.equal(queuedCommand.sceneId, input.sceneId)
+  assert.ok(queuedCommand.hunks.every((hunk) => hunk.queueAction === 'apply'))
+  assert.deepEqual(
+    queuedCommand.hunks.map((hunk) => hunk.id),
+    result.hunks.map((hunk) => hunk.id),
+  )
+})
+
+test('MG-U-02: high similarity sections are auto-applied without conflicts', () => {
   const input = {
     base: 'Alpha base paragraph.\n\nBeta base paragraph with tiny tweak.',
     ours: 'Alpha refined paragraph.\n\nBeta base paragraph with tiny tweak.',
