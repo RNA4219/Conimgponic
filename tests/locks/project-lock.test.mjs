@@ -11,6 +11,7 @@ execSync(`tsc --module es2020 --target es2020 --moduleResolution node --rootDir 
 const { readFile, writeFile } = await import('node:fs/promises')
 const locksPath = join(outDir, 'lib/locks.js')
 await writeFile(locksPath, (await readFile(locksPath, 'utf8')).replace('./opfs', './opfs.js'))
+await writeFile(join(outDir, 'lib/package.json'), JSON.stringify({ type: 'module' }))
 const loadLocks = async () => import(pathToFileURL(locksPath).href)
 const createOpfs = () => {
   const files = new Map()
