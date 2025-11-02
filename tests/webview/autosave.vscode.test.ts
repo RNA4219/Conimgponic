@@ -23,7 +23,11 @@ import {
   type AutoSaveHostBridgeOptions,
   statusPhaseForState
 } from '../../src/platform/vscode/autosave'
-import type { Day8CollectorSnapshotResultEvent } from '../../src/telemetry/day8Collector'
+import type {
+  Day8Collector,
+  Day8CollectorEvent,
+  Day8CollectorSnapshotResultEvent
+} from '../../src/telemetry/day8Collector'
 import type { Storyboard } from '../../src/types'
 
 const createDefaultFlags = () =>
@@ -3081,6 +3085,111 @@ describe('createVscodeAutoSaveBridge', () => {
       'reportDirty の autosave.status telemetry は flush_latency_ms=0 を送信する'
     )
   })
+
+  it(
+    'RED ケース: clock skew 時に flush latency と lag_seconds を下限 0 に丸める',
+    async () => {
+      const telemetry: AutoSaveTelemetryEvent[] = []
+      const collectorEvents: Day8CollectorSnapshotResultEvent[] = []
+      const scope = globalThis as { Day8Collector?: Day8Collector }
+      const previousCollector = scope.Day8Collector
+      scope.Day8Collector = {
+        publish: (event: Day8CollectorEvent) => {
+          if (event.event === 'snapshot.result') {
+            collectorEvents.push(event as Day8CollectorSnapshotResultEvent)
+          }
+        }
+      }
+
+      try {
+        const nowSequence = [
+          new Date('2024-01-01T00:00:00.000Z'),
+          new Date('2024-01-01T00:00:01.000Z'),
+          new Date('2024-01-01T00:00:02.000Z'),
+          new Date('2024-01-01T00:00:05.000Z'),
+          new Date('2024-01-01T00:00:06.000Z'),
+          new Date('2024-01-01T00:00:10.000Z'),
+          new Date('2024-01-01T00:00:03.000Z')
+        ]
+        const nextNow = (): Date => {
+          const value = nowSequence.shift()
+          assert.ok(value, 'now sequence should not be exhausted')
+          return value
+        }
+        const atomicResults: AutoSaveAtomicWriteResult[] = [
+          {
+            ok: true,
+            bytes: 128,
+            generation: 1,
+            lastSuccessAt: '2024-01-01T00:00:05.000Z',
+            lockStrategy: 'web-lock'
+          },
+          {
+            ok: true,
+            bytes: 256,
+            generation: 2,
+            lastSuccessAt: '2024-01-01T00:00:03.000Z',
+            lockStrategy: 'web-lock'
+          }
+        ]
+        const bridge = createVscodeAutoSaveBridge({
+          policy: AUTOSAVE_POLICY,
+          initialGuard: guardEnabled,
+          flags: createDefaultFlags(),
+          now: nextNow,
+          sendMessage: () => {
+            /* noop */
+          },
+          atomicWrite: async () => {
+            const result = atomicResults.shift()
+            assert.ok(result, 'atomicWrite sequence should not be exhausted')
+            return result
+          },
+          telemetry: (event) => telemetry.push(event)
+        })
+
+        bridge.reportDirty(128, guardEnabled)
+        await bridge.handleSnapshotRequest(
+          createRequest('req-initial-skew', 'corr-initial-skew', guardEnabled, 128, 1)
+        )
+
+        bridge.reportDirty(256, guardEnabled)
+        await bridge.handleSnapshotRequest(
+          createRequest('req-skew', 'corr-skew', guardEnabled, 256, 2)
+        )
+
+        const savedEvent = telemetry.find(
+          (event) =>
+            event.name === 'autosave.status' &&
+            event.properties?.state === 'saved' &&
+            event.properties?.correlationId === 'corr-skew'
+        )
+        assert.ok(savedEvent, 'clock skew saved telemetry が必要')
+        assert.equal(savedEvent.properties?.latency_ms, 0)
+        assert.deepEqual(savedEvent.properties?.performance, { flush_latency_ms: 0 })
+
+        assert.ok(collectorEvents.length >= 2, 'collector snapshot.result イベントが必要')
+        const skewSnapshot = collectorEvents.at(-1)
+        assert.ok(skewSnapshot, 'clock skew snapshot.result collector event が必要')
+        assert.equal(
+          skewSnapshot.payload.snapshot.last_success_at,
+          '2024-01-01T00:00:03.000Z',
+          'clock skew snapshot.result は second success の last_success_at を保持する'
+        )
+        assert.equal(
+          'lag_seconds' in skewSnapshot.payload.detail,
+          false,
+          'lag_seconds は clock skew 時に Collector payload へ含めない'
+        )
+      } finally {
+        if (previousCollector) {
+          scope.Day8Collector = previousCollector
+        } else {
+          delete scope.Day8Collector
+        }
+      }
+    }
+  )
 
   it('guard disable short circuit と非 retryable 降格で status.envelope.phase を A-1 に揃える', async () => {
     const disabledMessages: AutoSaveBridgeMessage[] = []
