@@ -1093,6 +1093,81 @@ scenario(
 )
 
 scenario(
+  'LOCK-WITH-04: withProjectLock stops renewals after release when executor fails',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+
+    const captured: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      switch (event.type) {
+        case 'lock:renew-scheduled':
+        case 'lock:renewed':
+        case 'lock:release-requested':
+        case 'lock:released':
+          captured.push(event)
+          break
+        default:
+          break
+      }
+    })
+    t.after(unsubscribe)
+
+    const waitForEvent = <T extends ProjectLockEvent['type']>(type: T) =>
+      new Promise<Extract<ProjectLockEvent, { type: T }>>((resolve) => {
+        const release = projectLockEvents.subscribe((event) => {
+          if (event.type === type) {
+            release()
+            resolve(event as Extract<ProjectLockEvent, { type: T }>)
+          }
+        })
+      })
+
+    let interval = 0
+    const failure = new Error('executor failure')
+
+    const rejection = await assert.rejects(async () => {
+      await projectLockApi.withProjectLock(async (lease) => {
+        interval = lease.ttlMillis - 5_000
+        assert.ok(interval > 0, 'renew interval must remain positive')
+        const renewed = waitForEvent('lock:renewed')
+        t.mock.timers.tick(interval)
+        await Promise.resolve()
+        await renewed
+        throw failure
+      }, { preferredStrategy: 'file-lock' })
+    })
+    assert.strictEqual(rejection, failure, 'withProjectLock must propagate executor failure')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const releaseIndex = captured.findIndex((event) => event.type === 'lock:release-requested')
+    const releasedIndex = captured.findIndex((event) => event.type === 'lock:released')
+    assert.ok(releaseIndex >= 0, 'release must be requested when executor fails')
+    assert.ok(releasedIndex > releaseIndex, 'release completion must follow release request')
+
+    assert.equal(
+      captured.slice(releasedIndex + 1).length,
+      0,
+      'no renewal activity must remain after release completion'
+    )
+
+    const beforeTickCount = captured.length
+    t.mock.timers.tick(interval)
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(
+      captured.length,
+      beforeTickCount,
+      'renewal timers must be cleared after release when executor fails'
+    )
+  }
+)
+
+scenario(
   'AS-LK-16: withProjectLock retains lease when releaseOnError=false',
   {
     navigator: { locks: undefined }
