@@ -278,9 +278,9 @@ export interface PluginEventPayload {
   readonly next_backoff_ms?: number;
 }
 
-export interface PluginCompletedPayload extends PluginEventPayload {
+export type PluginCompletedPayload = Omit<PluginEventPayload, 'result'> & {
   readonly result: 'success';
-}
+};
 
 export interface PluginFailedPayload extends PluginEventPayload {
   readonly result: 'failure';

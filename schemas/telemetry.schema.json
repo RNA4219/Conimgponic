@@ -584,9 +584,14 @@
       "then": {
         "properties": {
           "payload": {
-            "properties": {
-              "result": { "type": "string", "const": "success" }
-            }
+            "allOf": [
+              {
+                "properties": {
+                  "result": { "type": "string", "const": "success" }
+                },
+                "required": ["result"]
+              }
+            ]
           }
         }
       }
