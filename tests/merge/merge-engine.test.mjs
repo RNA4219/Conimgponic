@@ -1,13 +1,49 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DEFAULT_MERGE_ENGINE, MergeError } from '../../src/lib/merge.ts'
+const { DEFAULT_MERGE_ENGINE, MergeError } = await import('../../src/lib/merge.ts')
 import {
   attachAutoSaveLockEvents,
   buildMergePlan,
   createQueueMergeCommand,
 } from '../../src/lib/merge/index.ts'
 import { projectLockEvents } from '../../src/lib/locks.ts'
+
+test('MG-U-01: high similarity sections are auto-applied without conflicts', () => {
+  const input = {
+    base: 'Alpha base paragraph.\n\nBeta base paragraph with tiny tweak.',
+    ours: 'Alpha refined paragraph.\n\nBeta base paragraph with tiny tweak.',
+    theirs: 'Alpha refined paragraph.\n\nBeta base paragraph with tiny tweak.',
+    sceneId: 'scene-mg-u-01',
+  }
+
+  const telemetry = []
+  const published = []
+  const events = {
+    publish: (event) => {
+      published.push(event)
+    },
+    subscribe: () => () => undefined,
+  }
+
+  const result = DEFAULT_MERGE_ENGINE.merge3(input, {
+    profile: { precision: 'legacy' },
+    telemetry: (event) => telemetry.push(event),
+    events,
+  })
+
+  assert.ok(result.stats.autoDecisions > 0)
+  assert.equal(result.stats.conflictDecisions, 0)
+  assert.ok(result.stats.averageSimilarity >= 0 && result.stats.averageSimilarity <= 1)
+  assert.ok(result.trace.summary.autoAdoptionRate > 0.95)
+
+  const expectedMergedText = 'Alpha refined paragraph.\n\nBeta base paragraph with tiny tweak.'
+  assert.equal(result.mergedText, expectedMergedText)
+
+  const eventTypes = published.map((event) => event.type)
+  assert.ok(eventTypes.length > 0)
+  assert.ok(eventTypes.every((type) => type === 'merge:auto-applied'))
+})
 
 test('MG-U-04: abort signal preempts merge execution and surfaces MergeError contract', async (t) => {
   const input = {
