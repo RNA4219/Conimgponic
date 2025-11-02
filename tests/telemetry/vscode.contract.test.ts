@@ -2759,6 +2759,12 @@ test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクス�
     )
     deepStrictEqual(pluginsPayloadSchema.type, 'object')
     deepStrictEqual(pluginsPayloadSchema.additionalProperties, false)
+    const pluginsResultSchema = resolveSchemaRef(pluginsPayloadSchema.properties.result)
+    assertOk(
+      pluginsResultSchema,
+      'plugins.failed payload schema must constrain result field'
+    )
+    deepStrictEqual(pluginsResultSchema, { type: 'string', const: 'failure' })
     const pluginsBackoffSchema = pluginsPayloadSchema.properties.next_backoff_ms
     assertOk(
       pluginsBackoffSchema,
