@@ -751,6 +751,7 @@ export default function App({ resolveOptions }: AppProps = {}){
             flags={mergeDockFlags}
             mergeThreshold={mergeDockIntegration.mergeThreshold}
             autoAppliedRate={mergeDockIntegration.autoAppliedRate}
+            phaseStats={mergeDockIntegration.phaseStats}
             workspace={mergeDockIntegration.workspace}
           />
         </div>
