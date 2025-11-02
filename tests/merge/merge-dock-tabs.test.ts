@@ -18,7 +18,11 @@ import type { FlagSnapshot } from '../../src/config/flags.ts'
 import { mergeCSV, mergeJSONL } from '../../src/lib/importers.ts'
 import { useSB } from '../../src/store.ts'
 import type { AutoSaveInitResult, AutoSaveRunnerEvent } from '../../src/lib/autosave.ts'
-import { installMergeDockAutoSaveBridge } from '../../src/App.tsx'
+import {
+  installMergeDockAutoSaveBridge,
+  resolveMergeDockIntegration,
+} from '../../src/App.tsx'
+import { resolveAutoSaveBootstrapPlan } from '../../src/config/index.ts'
 import { attachMergeDockAutoSaveBridge } from '../../src/lib/merge/mergeDockAutoSaveBridge.ts'
 
 type MergePrecision = Parameters<typeof planMergeDockTabs>[0]
@@ -132,6 +136,128 @@ test('merge: stable precision demotes diff initial tab when auto applied rate is
 
   assert.equal(plan.tabs.initialTab, 'compiled')
   assert.equal(plan.diff.initialTab, 'compiled')
+})
+
+test('merge: stable precision demotes diff exposure when integration auto applied rate is below target', async (t) => {
+  const originalWindow = (globalThis as { window?: unknown }).window
+  const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage
+
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(String(key), String(value))
+    },
+  }
+  const mockWindow = { localStorage: storage } as typeof window
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+
+  try {
+    const workspace = {
+      get(key: string): unknown {
+        if (key === 'conimg.merge.threshold' || key === 'merge.threshold') {
+          return 0.88
+        }
+        if (
+          key === 'merge.autoAppliedRate' ||
+          key === 'conimg.merge.autoAppliedRate' ||
+          key === 'metrics.merge.autoAppliedRate' ||
+          key === 'metrics.merge_auto_success_rate'
+        ) {
+          return 0.74
+        }
+        return undefined
+      },
+    }
+
+    const scenarios: readonly [
+      name: string,
+      options: Parameters<typeof resolveAutoSaveBootstrapPlan>[0],
+      prepare: (storage: Storage) => void,
+      expectRate: number | null,
+    ][] = [
+      [
+        'collector storage',
+        { env: { VITE_MERGE_PRECISION: 'stable' } },
+        (nextStorage) => {
+          store.clear()
+          nextStorage.setItem('workflow-cookbook:collector:merge_auto_success_rate', '0.74')
+        },
+        0.74,
+      ],
+      [
+        'workspace metrics',
+        { env: { VITE_MERGE_PRECISION: 'stable' }, workspace },
+        () => {
+          store.clear()
+        },
+        0.74,
+      ],
+    ]
+
+    for (const [name, options, prepare, expectRate] of scenarios) {
+      await t.test(name, () => {
+        prepare(storage)
+        const plan = resolveAutoSaveBootstrapPlan(options)
+        const integration = resolveMergeDockIntegration(plan, options)
+
+        const html = renderToStaticMarkup(
+          React.createElement(MergeDock, {
+            flags: integration.flagSnapshot,
+            mergeThreshold: integration.mergeThreshold,
+            autoAppliedRate: integration.autoAppliedRate,
+            workspace: integration.workspace,
+            phaseStats: { reviewBandCount: 1, conflictBandCount: 0 },
+          }),
+        )
+
+        if (expectRate !== null) {
+          assert.equal(integration.autoAppliedRate, expectRate)
+        }
+        assert.match(html, /data-merge-diff-exposure="opt-in"/)
+        assert.match(html, /data-merge-diff-enabled="false"/)
+      })
+    }
+  } finally {
+    if (originalWindow === undefined) {
+      Reflect.deleteProperty(globalThis, 'window')
+    } else {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
+    if (originalLocalStorage === undefined) {
+      Reflect.deleteProperty(globalThis, 'localStorage')
+    } else {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: originalLocalStorage,
+      })
+    }
+  }
 })
 
 test('merge-ui: diff exposure plan', async (t) => {

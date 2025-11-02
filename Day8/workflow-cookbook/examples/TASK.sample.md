@@ -39,6 +39,7 @@ SLO レポート生成ワークフローの自動化手順を整備する。
 - Constraints:
   - 既存API破壊なし / 不要な依存追加なし
   - Lint/Type/Test はゼロエラー
+  - docs/IMPLEMENTATION-PLAN.md と docs/design/app-merge-dock-integration.md の要件を満たす
 - Acceptance Criteria:
   - 週次レポート作成ジョブが CI で成功する。
   - 生成物にサービス別の SLO/エラー率が記載される。
