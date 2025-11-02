@@ -278,6 +278,10 @@ export interface PluginEventPayload {
   readonly next_backoff_ms?: number;
 }
 
+export interface PluginCompletedPayload extends PluginEventPayload {
+  readonly result: 'success';
+}
+
 export interface PluginFailedPayload extends PluginEventPayload {
   readonly result: 'failure';
   readonly sandboxViolation: true;
@@ -353,7 +357,7 @@ export interface TelemetryPayloads {
   readonly 'merge.trace': MergeTracePayload;
   readonly 'export.result': ExportResultPayload;
   readonly 'plugins.invoked': PluginEventPayload;
-  readonly 'plugins.completed': PluginEventPayload;
+  readonly 'plugins.completed': PluginCompletedPayload;
   readonly 'plugins.failed': PluginFailedPayload;
   readonly error: TelemetryErrorPayload;
 }
