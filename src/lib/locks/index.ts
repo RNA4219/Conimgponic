@@ -1,4 +1,4 @@
-import { loadJSON, saveJSON } from './opfs';
+import { loadJSON, saveJSON } from '../opfs.js';
 import {
   FALLBACK_LOCK_PATH,
   FALLBACK_LOCK_TTL_MS,
@@ -16,7 +16,7 @@ import {
   projectLockEvents,
   reasonFromOperation,
   scheduleNextHeartbeat,
-} from './locks/shared.js';
+} from './shared.js';
 import type {
   AcquireContext,
   AcquireProjectLock,
@@ -29,16 +29,16 @@ import type {
   RenewProjectLock,
   WithProjectLock,
   WithProjectLockOptions,
-} from './locks/shared.js';
+} from './shared.js';
 import {
   acquireViaFallback,
   readFallbackLeaseSnapshot,
   releaseFallbackLease,
   type FallbackRecord,
-} from './locks/fallbackLock.js';
-import { acquireViaWebLock, clearWebLockHandle, getWebLockHandle } from './locks/webLock.js';
+} from './fallbackLock.js';
+import { acquireViaWebLock, clearWebLockHandle, getWebLockHandle } from './webLock.js';
 
-export { projectLockEvents } from './locks/shared.js';
+export { projectLockEvents } from './shared.js';
 export type {
   AcquireProjectLockOptions,
   AcquireProjectLock,
@@ -61,7 +61,7 @@ export type {
   RenewProjectLockOptions,
   WithProjectLock,
   WithProjectLockOptions,
-} from './locks/shared.js';
+} from './shared.js';
 export {
   WEB_LOCK_KEY,
   WEB_LOCK_TTL_MS,
@@ -73,7 +73,7 @@ export {
   FALLBACK_LOCK_LEASE_SCHEMA,
   PROJECT_LOCK_TEST_CASES,
   ProjectLockError,
-} from './locks/shared.js';
+} from './shared.js';
 
 const defaultBackoff: BackoffPolicy = { initialDelayMs: 500, factor: 2, maxAttempts: MAX_LOCK_RETRIES };
 const releaseBackoff: BackoffPolicy = { initialDelayMs: 500, factor: 2, maxAttempts: MAX_LOCK_RETRIES };
