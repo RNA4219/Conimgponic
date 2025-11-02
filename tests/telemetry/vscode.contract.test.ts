@@ -2765,6 +2765,16 @@ test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクス�
       'plugins.failed payload schema must constrain result field'
     )
     deepStrictEqual(pluginsResultSchema, { type: 'string', const: 'failure' })
+    const collectMetricsSource = readFileSync(
+      new URL('../../scripts/monitor/collect-metrics.ts', import.meta.url),
+      'utf-8'
+    )
+    assertOk(
+      /export interface PluginFailedPayload[\s\S]*readonly result: 'failure';/.test(
+        collectMetricsSource
+      ),
+      'PluginFailedPayload must restrict result to failure in contract source',
+    )
     const pluginsBackoffSchema = pluginsPayloadSchema.properties.next_backoff_ms
     assertOk(
       pluginsBackoffSchema,
