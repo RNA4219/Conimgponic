@@ -45,6 +45,84 @@ test('MG-U-01: high similarity sections are auto-applied without conflicts', () 
   assert.ok(eventTypes.every((type) => type === 'merge:auto-applied'))
 })
 
+test('MG-U-03: stable precision honors overridden threshold and queue contracts', () => {
+  const input = {
+    base: 'Alpha base section.\n\nBeta base section.\n\nGamma base section.',
+    ours: 'Alpha manual section.\n\nBeta manual section.\n\nGamma manual section.',
+    theirs: 'Alpha ai section.\n\nBeta ai section.\n\nGamma ai section.',
+    sections: ['intro', 'middle', 'outro'],
+    sceneId: 'scene-mg-u-03',
+  }
+
+  const scoringSequence = [
+    { jaccard: 0.94, cosine: 0.92, blended: 0.93 },
+    { jaccard: 0.9, cosine: 0.88, blended: 0.88 },
+    { jaccard: 0.88, cosine: 0.87, blended: 0.875 },
+  ]
+  let scoringIndex = 0
+  const scoring = () => {
+    const metrics = scoringSequence[Math.min(scoringIndex, scoringSequence.length - 1)]
+    scoringIndex += 1
+    return metrics
+  }
+
+  const queued = []
+  const events = []
+  const telemetry = []
+  const eventHub = {
+    publish: (event) => {
+      events.push(event)
+    },
+    subscribe: () => () => undefined,
+  }
+
+  const result = DEFAULT_MERGE_ENGINE.merge3(input, {
+    profile: { precision: 'stable', threshold: 0.88 },
+    scoring,
+    queueMergeCommand: (command) => queued.push(command),
+    events: eventHub,
+    telemetry: (event) => telemetry.push(event),
+  })
+
+  const expectedAverage = scoringSequence.reduce((sum, metrics) => sum + metrics.blended, 0) / scoringSequence.length
+  assert.equal(result.stats.autoDecisions, 1)
+  assert.equal(result.stats.conflictDecisions, 2)
+  assert.ok(Math.abs(result.stats.averageSimilarity - expectedAverage) < 1e-12)
+
+  assert.equal(result.trace.summary.threshold, 0.88)
+  assert.ok(result.plan)
+  assert.equal(result.plan?.precision, 'stable')
+  assert.equal(result.plan?.stats.averageSimilarity, result.stats.averageSimilarity)
+
+  assert.equal(queued.length, 1)
+  assert.ok(result.plan)
+  assert.deepEqual(queued[0], {
+    type: 'merge:enqueue',
+    sceneId: input.sceneId,
+    precision: 'stable',
+    hunks: result.plan?.hunks,
+  })
+
+  const queueStage = result.trace.entries.find((entry) => entry.stage === 'queue')
+  assert.ok(queueStage)
+  assert.equal(queueStage.metadata?.precision, 'stable')
+
+  const eventTypes = events.map((event) => event.type)
+  assert.deepEqual(eventTypes, ['merge:auto-applied', 'merge:conflict-detected', 'merge:conflict-detected'])
+
+  const recommendedCommands = result.plan?.entries.map((entry) => entry.recommendedCommand)
+  assert.deepEqual(recommendedCommands, [
+    'queue:request-review',
+    'queue:request-review',
+    'queue:request-review',
+  ])
+  assert.equal(result.plan?.hunks[0]?.queueAction, 'hold')
+
+  const telemetryTypes = telemetry.map((event) => event.type)
+  assert.equal(telemetryTypes.at(0), 'merge:start')
+  assert.equal(telemetryTypes.at(-1), 'merge:finish')
+})
+
 test('MG-U-04: abort signal preempts merge execution and surfaces MergeError contract', async (t) => {
   const input = {
     base: 'Base content',
