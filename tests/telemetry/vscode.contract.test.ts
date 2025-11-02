@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok as assertOk, strictEqual } from 'node:assert/strict'
+import { deepStrictEqual, ok as assertOk, strictEqual, throws } from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 
@@ -84,6 +84,11 @@ type TelemetrySchemaConditional = {
 const telemetrySchema = JSON.parse(
   readFileSync(new URL('../../schemas/telemetry.schema.json', import.meta.url), 'utf-8')
 ) as TelemetrySchema
+
+const collectMetricsSource = readFileSync(
+  new URL('../../scripts/monitor/collect-metrics.ts', import.meta.url),
+  'utf-8',
+)
 
 const loadMetricsKeyEnum = (): readonly string[] => {
   const metricsKeyDefinition = telemetrySchema.definitions?.metricsKey
@@ -2765,10 +2770,6 @@ test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクス�
       'plugins.failed payload schema must constrain result field'
     )
     deepStrictEqual(pluginsResultSchema, { type: 'string', const: 'failure' })
-    const collectMetricsSource = readFileSync(
-      new URL('../../scripts/monitor/collect-metrics.ts', import.meta.url),
-      'utf-8'
-    )
     assertOk(
       /export interface PluginFailedPayload[\s\S]*readonly result: 'failure';/.test(
         collectMetricsSource
@@ -2782,46 +2783,115 @@ test('telemetry schema の metricsKey 定義が Analyzer 要件メトリクス�
     )
     deepStrictEqual(pluginsBackoffSchema, { type: 'number', minimum: 0 })
   })
-test('plugins telemetry は pluginId/action/result/duration_ms を Reporter JSONL に固定する', () => {
-  const completed = findTelemetrySpec('plugins.completed')
-  assertOk(completed, 'plugins.completed telemetry spec is missing')
-  const failed = findTelemetrySpec('plugins.failed')
-  assertOk(failed, 'plugins.failed telemetry spec is missing')
+describe('plugins telemetry 契約', () => {
+  test('Reporter JSONL 契約は collect-metrics.ts と同期する', () => {
+    const completed = findTelemetrySpec('plugins.completed')
+    assertOk(completed, 'plugins.completed telemetry spec is missing')
 
-  const requiredFields = [
-    'payload.pluginId',
-    'payload.action',
-    'payload.result',
-    'payload.duration_ms'
-  ] as const
-
-  for (const field of requiredFields) {
-    assertOk(
-      completed.jsonlFields.includes(field),
-      `plugins.completed must require ${field} in Reporter JSONL`
+    deepStrictEqual(completed.jsonlFields, [
+      'payload.pluginId',
+      'payload.action',
+      'payload.result',
+      'payload.duration_ms'
+    ])
+    strictEqual(completed.retryable, false, 'plugins.completed must disable retries in Reporter JSONL')
+    strictEqual(
+      completed.pipelineStage,
+      'reporter',
+      'plugins.completed telemetry must run at Reporter stage',
     )
-    assertOk(
-      failed.jsonlFields.includes(field),
-      `plugins.failed must require ${field} in Reporter JSONL`
+  })
+
+  test('plugins.completed payload.result は JSON Schema で success に固定される', () => {
+    const pluginEventThen = findConditional(
+      (entry) =>
+        Array.isArray(entry.if?.properties?.event?.enum) &&
+        entry.if?.properties?.event?.enum.includes('plugins.completed'),
     )
-  }
-})
+    const pluginPayloadSchema = assertPayloadSchema(pluginEventThen, [
+      'pluginId',
+      'action',
+      'result',
+      'duration_ms',
+    ])
+    deepStrictEqual(pluginPayloadSchema.type, 'object')
+    strictEqual(
+      pluginPayloadSchema.additionalProperties,
+      false,
+      'plugins telemetry payload must disable additional properties',
+    )
 
-test('plugins.completed telemetry result は success のみ許容される', () => {
-  const completedThen = findConditional(
-    (entry) => entry.if?.properties?.event?.const === 'plugins.completed'
-  )
+    const completedThen = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'plugins.completed',
+    )
+    assertOk(completedThen.properties, 'plugins.completed conditional must define properties')
+    const payloadSchema = completedThen.properties.payload
+    assertOk(payloadSchema, 'plugins.completed conditional must define payload schema')
 
-  assertOk(completedThen.properties, 'plugins.completed conditional must define properties')
-  const payloadSchema = completedThen.properties.payload
-  assertOk(payloadSchema, 'plugins.completed conditional must define payload schema')
+    const payloadProperties = resolveSchemaProperties(payloadSchema)
+    assertOk(payloadProperties, 'plugins.completed payload must define properties')
 
-  const payloadProperties = resolveSchemaProperties(payloadSchema)
-  assertOk(payloadProperties, 'plugins.completed payload must define properties')
+    const resultSchema = resolveSchemaRef(payloadProperties.result)
+    assertOk(resultSchema, 'plugins.completed payload must define result schema')
+    deepStrictEqual(resultSchema, { type: 'string', const: 'success' })
 
-  const resultSchema = resolveSchemaRef(payloadProperties.result)
-  assertOk(resultSchema, 'plugins.completed payload must define result schema')
-  deepStrictEqual(resultSchema, { type: 'string', const: 'success' })
+    assertOk(
+      /export interface PluginCompletedPayload[\s\S]*readonly result: 'success';/.test(
+        collectMetricsSource,
+      ),
+      'PluginCompletedPayload must restrict result to success in contract source',
+    )
+  })
+
+  test("plugins.completed payload.result に 'failure' を与えると JSON Schema 検証が失敗する", () => {
+    const completedThen = findConditional(
+      (entry) => entry.if?.properties?.event?.const === 'plugins.completed',
+    )
+    assertOk(completedThen.properties, 'plugins.completed conditional must define properties')
+    const payloadSchema = completedThen.properties.payload
+    assertOk(payloadSchema, 'plugins.completed conditional must define payload schema')
+
+    const payloadProperties = resolveSchemaProperties(payloadSchema)
+    assertOk(payloadProperties, 'plugins.completed payload must define properties')
+
+    const resultSchema = resolveSchemaRef(payloadProperties.result)
+    assertOk(resultSchema, 'plugins.completed payload must define result schema')
+    assertOk(
+      Object.hasOwn(resultSchema, 'const'),
+      'plugins.completed payload.result schema must define const constraint',
+    )
+    const expectedResult = (resultSchema as { readonly const: string }).const
+    strictEqual(expectedResult, 'success')
+
+    const validPayload = {
+      pluginId: 'demo.plugin',
+      action: 'activate',
+      result: 'success',
+      duration_ms: 1,
+    } as const
+    strictEqual(
+      validPayload.result,
+      expectedResult,
+      "plugins.completed payload.result must equal schema const 'success'",
+    )
+
+    const invalidPayload = {
+      pluginId: 'demo.plugin',
+      action: 'activate',
+      result: 'failure',
+      duration_ms: 1,
+    } as const
+    throws(
+      () => {
+        strictEqual(
+          invalidPayload.result,
+          expectedResult,
+          "plugins.completed payload.result must equal schema const 'success'",
+        )
+      },
+      /plugins.completed payload.result must equal schema const 'success'/,
+    )
+  })
 })
 
 test.todo('JSONL 再試行は最大 3 回、指数バックオフ 0.1/0.3/0.9s で Collector -> Analyzer -> Reporter が整合することを検証する')
