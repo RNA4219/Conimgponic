@@ -7,11 +7,14 @@ import {
   FEATURE_FLAG_DEFINITIONS,
   FlagResolutionError,
   FlagSnapshot,
-  FlagSource,
+  STABLE_THRESHOLD_DEFAULT,
   type WorkspaceConfiguration,
   coerceMergeThresholdValue,
   resolveFlags
 } from '../../src/config/flags'
+import type { FlagSource } from '../../src/config/flags/schema'
+import { resolveFlags as resolveFlagsFromModule } from '../../src/config/flags/resolve'
+import { workspaceKeyCandidates as workspaceKeyCandidatesFromSources } from '../../src/config/flags/sources'
 
 type WorkspaceRecord = Record<string, unknown>
 
@@ -258,5 +261,49 @@ test('threshold resolves to default when env/workspace/storage provide invalid n
   assert.deepEqual(
     thresholdErrors.map((error) => error.source).sort(),
     ['env', 'localStorage', 'workspace']
+  )
+})
+
+test('resolve module export matches index export and preserves source priority', () => {
+  const env = {
+    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'false',
+    [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'stable'
+  }
+  const workspace = createWorkspace({
+    'autosave.enabled': '1',
+    'merge.threshold': 0.87
+  })
+  const storage = createStorage({
+    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: 'true',
+    [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'beta'
+  })
+
+  const options = {
+    env,
+    workspace,
+    storage,
+    clock: () => new Date('2024-06-01T09:08:07.654Z')
+  }
+
+  const moduleSnapshot = resolveFlagsFromModule(options)
+  const indexSnapshot = resolveFlags(options)
+
+  assert.deepEqual(moduleSnapshot, indexSnapshot)
+  assert.equal(moduleSnapshot.merge.precision, 'stable')
+  assert.equal(moduleSnapshot.merge.threshold, STABLE_THRESHOLD_DEFAULT)
+  assert.equal(moduleSnapshot.merge.source, 'env')
+  assert.equal(moduleSnapshot.autosave.enabled, false)
+  assert.equal(moduleSnapshot.autosave.source, 'env')
+  assert.equal(moduleSnapshot.updatedAt, '2024-06-01T09:08:07.654Z')
+})
+
+test('workspaceKeyCandidates from sources returns canonical lookup order', () => {
+  assert.deepEqual(workspaceKeyCandidatesFromSources('merge.threshold'), [
+    'merge.threshold',
+    'conimg.merge.threshold'
+  ])
+  assert.deepEqual(
+    workspaceKeyCandidatesFromSources('conimg.autosave.enabled'),
+    ['conimg.autosave.enabled', 'autosave.enabled']
   )
 })
