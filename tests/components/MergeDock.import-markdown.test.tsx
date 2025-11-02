@@ -53,3 +53,38 @@ test('MergeDock mergeMarkdownStoryboard updates scenes when markdown starts with
   assert.equal(imported.scenes[0]?.ai, 'original ai 1')
   assert.equal(imported.scenes[1]?.ai, 'original ai 2')
 })
+
+test('MergeDock mergeMarkdownStoryboard strips inline multi-line HTML comments without leaking fragments', () => {
+  assert.ok(
+    mergeMarkdownStoryboard,
+    'Day8/workflow-cookbook/GUARDRAILS.md「実装時はテスト駆動開発を基本とし、テストを先に記述する。」と Day8/docs/day8/guides/07_contributing.md「1タスク=1ブランチ=1PR」を引用し、Markdown コメント除去の RED ケースを先に定義する',
+  )
+
+  const base: Storyboard = {
+    id: 'sb-merge-inline-comment',
+    title: 'Storyboard',
+    scenes: [
+      { id: 'cut-1', manual: '', ai: '', status: 'idle', assets: [] },
+      { id: 'cut-2', manual: '', ai: '', status: 'idle', assets: [] },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  const markdown = [
+    '## Cut 1',
+    'Manual before <!-- comment line 1',
+    'comment line 2 --> manual after',
+    '',
+    '## Cut 2',
+    'Manual line 2',
+  ].join('\r\n')
+
+  const imported = mergeMarkdownStoryboard!(base, markdown, 'manual')
+
+  const manual = imported.scenes[0]?.manual ?? ''
+  assert.ok(!manual.includes('comment line 1'))
+  assert.ok(!manual.includes('comment line 2'))
+  assert.equal(imported.scenes[0]?.manual, 'Manual before manual after')
+  assert.equal(imported.scenes[1]?.manual, 'Manual line 2')
+})
