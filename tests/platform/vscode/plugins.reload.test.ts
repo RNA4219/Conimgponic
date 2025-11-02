@@ -5,6 +5,12 @@ import assert from 'node:assert/strict';
 import {
   maybeCreatePluginBridge,
   PluginReloadErrorCode,
+  createStageFailureLog,
+  diffPluginDependencies,
+  formatPluginDependencyDiff,
+  normalizePluginDependencies,
+  pluginDependencyDiffHasChanges,
+  validatePluginManifest,
   type PluginBridge,
   type PluginBridgeBackingState,
   type PluginBridgeLogMessage,
@@ -134,3 +140,71 @@ for (const { description, manifest, message, detailField, detailIssue, notifyUse
     assert.equal(failedLog?.detail?.reason, message);
   });
 }
+
+test('validatePluginManifest exposes structured manifest validation errors', () => {
+  const manifest: PluginManifest = {
+    id: 'sample.plugin',
+    version: '1.0',
+    engines: { vscode: '1.35.0' },
+    'conimg-api': '1',
+  } as PluginManifest;
+
+  const error = validatePluginManifest(manifest);
+
+  assert.ok(error);
+  assert.equal(error?.code, PluginReloadErrorCode.ManifestInvalid);
+  assert.equal(error?.stage, 'manifest-validation');
+  assert.equal(error?.detail?.field, 'version');
+  assert.equal(error?.detail?.issue, 'invalid-semver');
+});
+
+test('diffPluginDependencies reports granular dependency changes', () => {
+  const manifestDeps = normalizePluginDependencies({
+    npm: { chalk: '^5.0.0', lodash: '^4.0.0' },
+    workspace: ['./a', './shared'],
+  });
+  const snapshot = {
+    npm: { chalk: '^4.0.0', leftpad: '^1.0.0' },
+    workspace: ['./shared', './legacy'],
+  };
+
+  const diff = diffPluginDependencies(manifestDeps, snapshot);
+
+  assert.deepEqual(diff.npm.added, ['lodash']);
+  assert.deepEqual(diff.npm.changed, ['chalk']);
+  assert.deepEqual(diff.npm.removed, ['leftpad']);
+  assert.deepEqual(diff.workspace.added, ['./a']);
+  assert.deepEqual(diff.workspace.removed, ['./legacy']);
+  assert.ok(pluginDependencyDiffHasChanges(diff));
+  assert.deepEqual(formatPluginDependencyDiff(diff), [
+    'npm:+lodash',
+    'npm:-leftpad',
+    'npm:~chalk',
+    'workspace:+./a',
+    'workspace:-./legacy',
+  ]);
+});
+
+test('createStageFailureLog preserves stage failure detail for notifications', () => {
+  const diff = {
+    npm: { added: ['lodash'], removed: [], changed: [] },
+    workspace: { added: [], removed: [] },
+  } as ReturnType<typeof diffPluginDependencies>;
+  const error = {
+    stage: 'dependency-cache' as const,
+    code: PluginReloadErrorCode.DependencyMismatch,
+    message: 'Dependency mismatch detected: npm:+lodash',
+    retryable: true,
+    notifyUser: false,
+    detail: { diff },
+  };
+
+  const log = createStageFailureLog('sample.plugin', error.stage, error);
+
+  assert.equal(log.kind, 'log');
+  assert.equal(log.level, 'warn');
+  assert.equal(log.stage, 'dependency-cache');
+  assert.equal(log.detail?.reason, error.message);
+  assert.equal(log.detail?.code, error.code);
+  assert.deepEqual(log.detail?.diff, diff);
+});
