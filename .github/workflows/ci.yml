@@ -36,13 +36,14 @@ jobs:
       - name: Install Syft
         run: |
           set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b "$HOME/.local/bin" v1.16.0
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          SYFT_DLX_PREFIX="pnpm dlx --package=@anchore/syft@1.16.0 syft"
+          SYFT_VERSION_CHECK="pnpm dlx --package=@anchore/syft@1.16.0 --version"
+          echo "::debug::${SYFT_VERSION_CHECK}"
+          $SYFT_DLX_PREFIX --version
       - name: Verify Syft installation
         run: |
           set -euo pipefail
-          syft version
+          pnpm dlx --package=@anchore/syft@1.16.0 syft version
       - name: Generate SBOM
         id: generate_sbom
         continue-on-error: true
@@ -52,7 +53,10 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          syft packages . -o spdx-json=sbom.json |& tee sbom.log
+          SYFT_DLX_PREFIX="pnpm dlx --package=@anchore/syft@1.16.0 syft"
+          SYFT_PACKAGES_COMMAND="pnpm dlx --package=@anchore/syft@1.16.0 packages . -o spdx-json=sbom.json"
+          echo "::debug::${SYFT_PACKAGES_COMMAND}"
+          $SYFT_DLX_PREFIX packages . -o spdx-json=sbom.json |& tee sbom.log
           status=$?
           set -e
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
@@ -129,31 +133,10 @@ jobs:
       - name: Install osv-scanner
         run: |
           set -euo pipefail
-          OSV_SCANNER_VERSION="1.7.3"
-          BIN_DIR="$HOME/.local/bin"
-          mkdir -p "$BIN_DIR"
-
-          case "$(uname -m)" in
-            x86_64|amd64)
-              OSV_ARCH="amd64"
-              ;;
-            aarch64|arm64)
-              OSV_ARCH="arm64"
-              ;;
-            *)
-              echo "Unsupported arch: $(uname -m)" >&2
-              exit 1
-              ;;
-          esac
-
-          curl -sSfL -o "$BIN_DIR/osv-scanner" \
-            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_${OSV_SCANNER_VERSION}_linux_${OSV_ARCH}"
-          chmod +x "$BIN_DIR/osv-scanner"
-          echo "$BIN_DIR" >> "$GITHUB_PATH"
-          osv-scanner --version
+          pnpm add --global @google/osv-scanner@1.7.3
 
       - name: Run osv-scanner
-        run: osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
+        run: pnpm exec --global osv-scanner --lockfile=pnpm-lock.yaml --format json --output osv-report.json
 
       - name: Upload audit report
         if: always()
