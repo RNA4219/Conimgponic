@@ -1,5 +1,6 @@
 import type {
   AutoSaveBridgeBootstrapMessage,
+  AutoSaveBridgeReadyMessage,
   AutoSaveEnvelopePhase,
   AutoSavePhaseGuardSnapshot,
   AutoSavePolicy,
@@ -41,6 +42,23 @@ export const createBootstrapMessage = (
     guard,
     flags
   }
+});
+
+export const createBridgeReadyMessage = (
+  reqId: string,
+  correlationId: string,
+  ts: string,
+  accepted: boolean,
+  reason?: string
+): AutoSaveBridgeReadyMessage => ({
+  type: 'bridge.ready',
+  apiVersion: API_VERSION,
+  phase: PHASE_BOOTSTRAP,
+  bridgePhase: 'ready',
+  reqId,
+  correlationId,
+  ts,
+  payload: reason ? { accepted, reason } : { accepted }
 });
 
 export const createStatusMessage = (
