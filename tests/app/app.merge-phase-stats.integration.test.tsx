@@ -4,6 +4,7 @@ import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import App from '../../src/App'
 import { MergeDock } from '../../src/components/MergeDock'
 import { resolveMergeDockIntegration } from '../../src/App'
 import { resolveAutoSaveBootstrapPlan, type ResolveOptions } from '../../src/config'
@@ -128,6 +129,78 @@ test('resolveMergeDockIntegration propagates workspace phase stats to MergeDock 
       Object.defineProperty(globalThis, 'window', {
         configurable: true,
         value: originalWindow,
+      })
+    }
+    if (originalLocalStorage === undefined) {
+      Reflect.deleteProperty(globalThis, 'localStorage')
+    } else {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: originalLocalStorage,
+      })
+    }
+  }
+})
+
+test('App propagates workspace phase stats to MergeDock diff guard', () => {
+  const originalWindow = (globalThis as { window?: unknown }).window
+  const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage
+  const originalSelf = (globalThis as { self?: unknown }).self
+
+  const storage = new MemoryStorage()
+  const mockWindow = {
+    localStorage: storage,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+    navigator: { userAgent: 'node.js' },
+    location: { reload: () => {} },
+    __mergeDockAutoSaveSnapshot: { lastSuccessAt: '2024-05-01T00:00:00.000Z' },
+  } as typeof window & {
+    addEventListener: () => void
+    removeEventListener: () => void
+    dispatchEvent: () => boolean
+    location: { reload: () => void }
+  }
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+  Object.defineProperty(globalThis, 'self', {
+    configurable: true,
+    value: mockWindow,
+  })
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+
+  try {
+    const workspace = createWorkspace('beta', { review: 1, conflict: 1 })
+    const html = renderToStaticMarkup(
+      React.createElement(App, {
+        resolveOptions: { workspace },
+      }),
+    )
+
+    assert.match(html, /data-merge-diff-visible="true"/)
+    assert.match(html, /data-merge-diff-enabled="true"/)
+  } finally {
+    if (originalWindow === undefined) {
+      Reflect.deleteProperty(globalThis, 'window')
+    } else {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
+    if (originalSelf === undefined) {
+      Reflect.deleteProperty(globalThis, 'self')
+    } else {
+      Object.defineProperty(globalThis, 'self', {
+        configurable: true,
+        value: originalSelf,
       })
     }
     if (originalLocalStorage === undefined) {
