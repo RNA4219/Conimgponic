@@ -45,6 +45,87 @@ test('MG-U-01: high similarity sections are auto-applied without conflicts', () 
   assert.ok(eventTypes.every((type) => type === 'merge:auto-applied'))
 })
 
+test('MG-U-02: beta profile manual resolution preserves writeback text', () => {
+  const sceneId = 'scene-mg-u-02'
+  const sectionId = 'section-mg-u-02'
+  const input = {
+    base: 'Alpha base storyline',
+    ours: 'Alpha manual divergence',
+    theirs: 'Alpha ai divergence',
+    sections: [sectionId],
+    sceneId,
+  }
+
+  const telemetry = []
+  const published = []
+  const queued = []
+
+  const scoringSequence = [
+    { jaccard: 0.74, cosine: 0.74, blended: 0.74 },
+  ]
+  const scoring = () => {
+    const next = scoringSequence.shift()
+    return next ?? { jaccard: 0.74, cosine: 0.74, blended: 0.74 }
+  }
+
+  const result = DEFAULT_MERGE_ENGINE.merge3(input, {
+    profile: { precision: 'beta' },
+    scoring,
+    telemetry: (event) => telemetry.push(event),
+    events: {
+      publish: (event) => {
+        published.push(event)
+      },
+      subscribe: () => () => undefined,
+    },
+    queueMergeCommand: (command) => {
+      queued.push(command)
+    },
+  })
+
+  assert.equal(result.hunks.length, 1)
+  const conflictHunk = result.hunks[0]
+  assert.equal(conflictHunk?.decision, 'conflict')
+
+  const conflictTelemetry = telemetry.filter((event) => event.type === 'merge:hunk-decision')
+  assert.equal(conflictTelemetry.length, 1)
+  assert.equal(conflictTelemetry[0]?.hunk?.decision, 'conflict')
+
+  assert.equal(published.length, 1)
+  assert.equal(published[0]?.type, 'merge:conflict-detected')
+  assert.equal(published[0]?.retryable, true)
+
+  assert.equal(queued.length, 1)
+  const profile = DEFAULT_MERGE_ENGINE.resolveProfile({ precision: 'beta' })
+  const expectedPlan = buildMergePlan(result.hunks, result.stats, profile, sceneId)
+  assert.equal(expectedPlan.kind, 'ok')
+  assert.deepEqual(result.plan, expectedPlan.plan)
+  assert.deepEqual(queued[0], createQueueMergeCommand(expectedPlan.plan))
+
+  const writeBackText = 'Alpha manual resolution ready for auto apply'
+  const sectionDescriptors = [
+    { id: sectionId, label: sectionId, range: [0, writeBackText.length], preferred: 'manual' },
+  ]
+
+  const resolved = DEFAULT_MERGE_ENGINE.merge3(
+    {
+      ...input,
+      ours: writeBackText,
+      sectionDescriptors,
+    },
+    {
+      profile: { precision: 'beta' },
+      scoring: () => ({ jaccard: 0.9, cosine: 0.9, blended: 0.9 }),
+    },
+  )
+
+  assert.equal(resolved.hunks.length, 1)
+  const resolvedHunk = resolved.hunks[0]
+  assert.equal(resolvedHunk?.decision, 'auto')
+  assert.equal(resolvedHunk?.manual, writeBackText)
+  assert.equal(resolved.mergedText, writeBackText)
+})
+
 test('MG-U-04: abort signal preempts merge execution and surfaces MergeError contract', async (t) => {
   const input = {
     base: 'Base content',
