@@ -269,16 +269,22 @@ export interface ExportResultPayload {
   readonly next_backoff_ms?: number | null;
 }
 
-export interface PluginEventPayload {
+export type PluginResult = 'success' | 'failure';
+
+export interface PluginEventPayloadBase<Result extends PluginResult> {
   readonly pluginId: string;
   readonly action: string;
-  readonly result: 'success' | 'failure';
+  readonly result: Result;
   readonly duration_ms: number;
   readonly sandboxViolation?: boolean;
   readonly next_backoff_ms?: number;
 }
 
-export interface PluginFailedPayload extends PluginEventPayload {
+export type PluginEventPayload = PluginEventPayloadBase<PluginResult>;
+
+export type PluginCompletedPayload = PluginEventPayloadBase<'success'>;
+
+export interface PluginFailedPayload extends PluginEventPayloadBase<'failure'> {
   readonly sandboxViolation: true;
   readonly next_backoff_ms: number;
 }
@@ -352,7 +358,7 @@ export interface TelemetryPayloads {
   readonly 'merge.trace': MergeTracePayload;
   readonly 'export.result': ExportResultPayload;
   readonly 'plugins.invoked': PluginEventPayload;
-  readonly 'plugins.completed': PluginEventPayload;
+  readonly 'plugins.completed': PluginCompletedPayload;
   readonly 'plugins.failed': PluginFailedPayload;
   readonly error: TelemetryErrorPayload;
 }

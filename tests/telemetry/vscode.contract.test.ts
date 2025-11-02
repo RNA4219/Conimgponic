@@ -2791,4 +2791,22 @@ test('plugins telemetry は pluginId/action/result/duration_ms を Reporter JSON
   }
 })
 
+test('plugins.completed payload は result=success のみ許可する', () => {
+  const completedThen = findConditional(
+    (entry) => entry.if?.properties?.event?.const === 'plugins.completed'
+  )
+
+  const payloadSchema = assertPayloadSchema(completedThen, [
+    'pluginId',
+    'action',
+    'result',
+    'duration_ms'
+  ])
+
+  assertOk(payloadSchema.properties, 'plugins.completed payload schema must define properties')
+  const resultSchema = resolveSchemaRef(payloadSchema.properties.result)
+  assertOk(resultSchema, 'plugins.completed payload schema must define result property')
+  deepStrictEqual(resultSchema, { type: 'string', const: 'success' })
+})
+
 test.todo('JSONL 再試行は最大 3 回、指数バックオフ 0.1/0.3/0.9s で Collector -> Analyzer -> Reporter が整合することを検証する')

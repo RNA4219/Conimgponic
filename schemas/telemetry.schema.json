@@ -547,7 +547,6 @@
         "properties": {
           "event": { "enum": [
             "plugins.invoked",
-            "plugins.completed",
             "plugins.failed"
           ] }
         }
@@ -561,6 +560,35 @@
               "pluginId": { "type": "string", "minLength": 1 },
               "action": { "type": "string", "minLength": 1 },
               "result": { "type": "string", "enum": ["success", "failure"] },
+              "duration_ms": { "type": "number", "minimum": 0 },
+              "sandboxViolation": { "type": "boolean", "const": true },
+              "next_backoff_ms": { "type": "number", "minimum": 0 }
+            },
+            "required": [
+              "pluginId",
+              "action",
+              "result",
+              "duration_ms"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": { "const": "plugins.completed" }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "pluginId": { "type": "string", "minLength": 1 },
+              "action": { "type": "string", "minLength": 1 },
+              "result": { "type": "string", "const": "success" },
               "duration_ms": { "type": "number", "minimum": 0 },
               "sandboxViolation": { "type": "boolean", "const": true },
               "next_backoff_ms": { "type": "number", "minimum": 0 }
