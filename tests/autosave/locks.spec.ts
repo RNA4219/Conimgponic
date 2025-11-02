@@ -903,6 +903,84 @@ scenario(
 )
 
 scenario(
+  'LOCK-WITH-03: withProjectLock schedules renewals using default and custom intervals',
+  {
+    navigator: { locks: undefined }
+  },
+  async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+
+    type ScheduledEvent = {
+      readonly leaseId: string
+      readonly nextHeartbeatInMs: number
+      readonly renewAttempt: number
+    }
+
+    const scheduled: ScheduledEvent[] = []
+
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      if (event.type === 'lock:renew-scheduled') {
+        scheduled.push({
+          leaseId: event.lease.leaseId,
+          nextHeartbeatInMs: event.nextHeartbeatInMs,
+          renewAttempt: event.lease.renewAttempt,
+        })
+      }
+    })
+    t.after(unsubscribe)
+
+    const waitForRenewedAttempt = (
+      leaseId: string,
+      attempt: number
+    ): Promise<Extract<ProjectLockEvent, { type: 'lock:renewed' }>> =>
+      new Promise((resolve) => {
+        const release = projectLockEvents.subscribe((event) => {
+          if (event.type === 'lock:renewed' && event.lease.leaseId === leaseId && event.lease.renewAttempt === attempt) {
+            release()
+            resolve(event)
+          }
+        })
+      })
+
+    const assertScheduledInterval = (label: string, leaseId: string, expected: number) => {
+      const relevant = scheduled.filter((event) => event.leaseId === leaseId)
+      assert.ok(relevant.length > 0, `${label}: lock must emit lock:renew-scheduled events`)
+      const latest = relevant.at(-1)!
+      assert.equal(latest.nextHeartbeatInMs, expected, `${label}: interval must match expected value`)
+    }
+
+    await projectLockApi.withProjectLock(async (lease) => {
+      const expected = lease.ttlMillis - 5_000
+      assertScheduledInterval('default interval', lease.leaseId, expected)
+
+      const renewal = waitForRenewedAttempt(lease.leaseId, 1)
+      t.mock.timers.tick(expected)
+      await Promise.resolve()
+      await renewal
+    }, { preferredStrategy: 'file-lock' })
+
+    const baseTime = Date.now()
+    const customInterval = 2_000
+
+    await projectLockApi.withProjectLock(async (lease) => {
+      assertScheduledInterval('custom interval', lease.leaseId, customInterval)
+
+      const renewal = waitForRenewedAttempt(lease.leaseId, 1)
+      t.mock.timers.tick(customInterval)
+      await Promise.resolve()
+      const event = await renewal
+
+      assert.equal(event.lease.renewAttempt, 1, 'custom interval must trigger the first renew attempt')
+      assert.equal(
+        Date.now() - baseTime,
+        customInterval,
+        'custom interval must control the renewal cadence'
+      )
+    }, { preferredStrategy: 'file-lock', renewIntervalMs: customInterval })
+  }
+)
+
+scenario(
   'LOCK-WITH-04: withProjectLock renews lease and auto releases on completion and failure',
   {
     navigator: { locks: undefined }
