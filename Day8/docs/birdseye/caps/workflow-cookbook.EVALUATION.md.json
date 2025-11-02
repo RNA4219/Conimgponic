@@ -20,7 +20,7 @@
   "deps_out": [
     "workflow-cookbook/CHECKLISTS.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00002",
   "id": "workflow-cookbook/EVALUATION.md",
   "maintenance": {
     "refresh": "受け入れ基準やPriority Score運用を更新したら CHECKLISTS/RUNBOOK と governance/policy.yaml の関連節、Birdseye index/caps/hot を同一コミットで再生成。",

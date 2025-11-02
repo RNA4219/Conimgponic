@@ -10,7 +10,7 @@
     "docs/day8/spec/02_spec.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00002",
   "id": "docs/addenda/E_Evaluator_Details.md",
   "maintenance": {
     "refresh": "BERTScore/ROUGE/ルール判定の閾値やルールセットを更新したら Appendix E・06_quality.md・Birdseye index/hot/caps の generated_at を同期。",

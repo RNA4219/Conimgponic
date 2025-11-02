@@ -24,7 +24,7 @@
     "docs/day8/spec/01_requirements.md",
     "docs/safety.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00002",
   "id": "docs/README.md",
   "maintenance": {
     "refresh": "索引を更新したら Birdseye カプセルの deps_out を併せて更新する。",

@@ -5,7 +5,7 @@
   "deps_out": [
     "docs/FORK_NOTES.md"
   ],
-  "generated_at": "00001",
+  "generated_at": "00002",
   "id": "docs/UPSTREAM_WEEKLY_LOG.md",
   "maintenance": {
     "refresh": "週次レビュー後に最新週の行を追記し、未完了の追加アクションが残っていないか確認する。",

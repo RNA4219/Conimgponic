@@ -11,7 +11,7 @@
     "docs/README.md"
   ],
   "deps_out": [],
-  "generated_at": "00001",
+  "generated_at": "00002",
   "id": "docs/addenda/K_Accessibility_UX.md",
   "maintenance": {
     "refresh": "CLI/レポート/ドキュメントのアクセシビリティ要件を更新したら Appendix K → 06_quality.md → I_Test_Cases.md → Birdseye の順で差分を反映する。",
