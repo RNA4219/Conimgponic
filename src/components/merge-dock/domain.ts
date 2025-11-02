@@ -50,15 +50,48 @@ export const startMergeDockAutoSaveHeartbeat = (
 }
 
 const CRLF_PATTERN = /\r\n/g
-const COMMENT_BLOCK_WITH_BOUNDARIES_PATTERN = /\n?<!--[\s\S]*?-->\n?/g
+const COMMENT_BLOCK_WITH_BOUNDARIES_PATTERN = /(?:^|\n)[ \t]*<!--[\s\S]*?-->[ \t]*(?:\n|$)/g
+const COMMENT_BLOCK_PATTERN = /<!--[\s\S]*?-->/g
+const TRAILING_SPACES_BEFORE_NEWLINE_PATTERN = /[ \t]+\n/g
 const EXCESS_NEWLINES_PATTERN = /\n{3,}/g
 
-const sanitizeMarkdownImportBlock = (block: string): string =>
-  block
+const removeInlineHtmlComments = (block: string): string => {
+  let result = ''
+  let cursor = 0
+  for (const match of block.matchAll(COMMENT_BLOCK_PATTERN)) {
+    const start = match.index ?? 0
+    if (start < cursor) {
+      continue
+    }
+    const beforeSegment = block.slice(cursor, start)
+    const trimmedBefore = beforeSegment.replace(/[ \t]+$/, '')
+    result += trimmedBefore
+    const previousChar = trimmedBefore.slice(-1)
+    cursor = start + match[0].length
+    while (cursor < block.length && (block[cursor] === ' ' || block[cursor] === '\t')) {
+      cursor += 1
+    }
+    const nextChar = block[cursor]
+    const hasWordBefore = previousChar !== '' && previousChar !== '\n' && /\S/.test(previousChar)
+    const hasWordAfter = nextChar !== undefined && nextChar !== '\n' && /\S/.test(nextChar)
+    if (hasWordBefore && hasWordAfter) {
+      result += ' '
+    }
+  }
+  result += block.slice(cursor)
+  return result
+}
+
+const sanitizeMarkdownImportBlock = (block: string): string => {
+  const normalized = block
     .replace(CRLF_PATTERN, '\n')
     .replace(COMMENT_BLOCK_WITH_BOUNDARIES_PATTERN, '\n')
+  const withoutInlineComments = removeInlineHtmlComments(normalized)
+  return withoutInlineComments
+    .replace(TRAILING_SPACES_BEFORE_NEWLINE_PATTERN, '\n')
     .replace(EXCESS_NEWLINES_PATTERN, '\n\n')
     .trim()
+}
 
 export function mergeMarkdownStoryboard(
   current: Storyboard,
