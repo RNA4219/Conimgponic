@@ -488,15 +488,21 @@ export const withProjectLock: WithProjectLock = async (executor, options = {}) =
     return (await finalize(outcome)) as Awaited<typeof outcome>;
   } catch (error) {
     let failure: unknown = error;
+    let readonlyEmitted = false;
     if (error instanceof ProjectLockError) {
       if (error.retryable || !hasErrorEventBeenEmitted(error)) emitError(error);
-      if (!error.retryable)
+      if (!error.retryable) {
         emitReadonly(reasonFromOperation(error.operation), error, options.onReadonly);
+        readonlyEmitted = true;
+      }
     }
 
-    if (failure instanceof ProjectLockError) {
-      emitError(failure);
-      if (!failure.retryable)
+    if (
+      failure instanceof ProjectLockError &&
+      (!(error instanceof ProjectLockError) || failure !== error)
+    ) {
+      if (failure.retryable || !hasErrorEventBeenEmitted(failure)) emitError(failure);
+      if (!failure.retryable && !readonlyEmitted)
         emitReadonly(reasonFromOperation(failure.operation), failure, options.onReadonly);
     }
 
