@@ -9,6 +9,54 @@ import {
 } from '../../src/lib/merge/index.ts'
 import { projectLockEvents } from '../../src/lib/locks.ts'
 
+const createScoringQueue = (sequence) => {
+  const queue = sequence.map((metrics) => ({ ...metrics }))
+  return () => {
+    const next = queue.shift()
+    const source = next ?? sequence[sequence.length - 1] ?? {
+      jaccard: 0.95,
+      cosine: 0.95,
+      blended: 0.95,
+    }
+    return { ...source }
+  }
+}
+
+test('MG-U-03: stable threshold override recomputes stats', () => {
+  const scoring = createScoringQueue([
+    { jaccard: 0.94, cosine: 0.92, blended: 0.93 },
+    { jaccard: 0.8, cosine: 0.78, blended: 0.79 },
+  ])
+
+  const telemetry = []
+  const input = {
+    base: 'Alpha base section\n\nBeta base section',
+    ours: 'Alpha manual section\n\nBeta manual section',
+    theirs: 'Alpha ai section\n\nBeta ai section',
+    sceneId: 'scene-mg-u-03',
+  }
+
+  const result = DEFAULT_MERGE_ENGINE.merge3(input, {
+    profile: { precision: 'stable', threshold: 0.88 },
+    scoring,
+    telemetry: (event) => telemetry.push(event),
+  })
+
+  assert.equal(result.stats.autoDecisions, 1)
+  assert.equal(result.stats.conflictDecisions, 1)
+
+  const finishEvent = telemetry.find((event) => event.type === 'merge:finish')
+  assert.ok(finishEvent)
+  assert.equal(finishEvent.stats.autoDecisions, 1)
+  assert.equal(finishEvent.stats.conflictDecisions, 1)
+
+  assert.equal(result.trace.summary.threshold, 0.88)
+  const autoRate = result.trace.summary.autoAdoptionRate
+  const expectedRate = result.hunks.length === 0 ? 1 : result.stats.autoDecisions / result.hunks.length
+  assert.equal(autoRate, expectedRate)
+  assert.equal(result.plan?.precision, 'stable')
+})
+
 test('MG-U-04: abort signal preempts merge execution and surfaces MergeError contract', async (t) => {
   const input = {
     base: 'Base content',
@@ -107,14 +155,6 @@ test('MG-U-05: rerun keeps resolved result stable', () => {
       }
     }
 
-    const createScoringQueue = (values) => {
-      const queue = values.map((score) => ({ ...score }))
-      return () => {
-        const next = queue.shift()
-        return next ?? values[values.length - 1] ?? { jaccard: 0.95, cosine: 0.95, blended: 0.95 }
-      }
-    }
-
     const normalizePlan = (plan) => {
       if (!plan) return plan
       return {
@@ -167,16 +207,14 @@ test('MG-U-05: rerun keeps resolved result stable', () => {
 
     const resolvedOurs = conflictResult.mergedText.replace(conflictHunk.merged, conflictHunk.manual)
     const resolvedInput = { base: baseText, ours: resolvedOurs, theirs: theirsText, sceneId }
-    const resolvedScoreSequence = [
-      { jaccard: 0.98, cosine: 0.98, blended: 0.98 },
-      { jaccard: 0.95, cosine: 0.95, blended: 0.95 },
-    ]
-
     const runResolvedMerge = (eventSink, telemetrySink) =>
       DEFAULT_MERGE_ENGINE.merge3(resolvedInput, {
         events: createEventHub(eventSink),
         telemetry: (event) => telemetrySink.push(event),
-        scoring: createScoringQueue(resolvedScoreSequence),
+        scoring: createScoringQueue([
+          { jaccard: 0.98, cosine: 0.98, blended: 0.98 },
+          { jaccard: 0.95, cosine: 0.95, blended: 0.95 },
+        ]),
       })
 
     const resolvedEventsFirst = []
@@ -264,24 +302,15 @@ test('MG-U-06: split modules keep event, queue, and plan contracts', () => {
     sceneId: 'scene-mg-u-06',
   }
 
-  const scoringSequence = [
-    { jaccard: 0.99, cosine: 0.99, blended: 0.99 },
-    { jaccard: 0.15, cosine: 0.15, blended: 0.15 },
-  ]
-  let scoringIndex = 0
-
-  const scoring = () => {
-    const current = scoringSequence[Math.min(scoringIndex, scoringSequence.length - 1)]
-    scoringIndex += 1
-    return current
-  }
-
   const overrides = { precision: 'legacy', threshold: 0.8 }
   const profile = DEFAULT_MERGE_ENGINE.resolveProfile(overrides)
 
   const result = DEFAULT_MERGE_ENGINE.merge3(input, {
     events: eventHub,
-    scoring: () => scoring(),
+    scoring: createScoringQueue([
+      { jaccard: 0.99, cosine: 0.99, blended: 0.99 },
+      { jaccard: 0.15, cosine: 0.15, blended: 0.15 },
+    ]),
     queueMergeCommand: (command) => queue.push(command),
     profile: overrides,
   })
