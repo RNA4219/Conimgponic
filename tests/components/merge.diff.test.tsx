@@ -15,9 +15,14 @@ if (typeof globalThis.releaseMonitor === 'undefined') {
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { createStore } from 'zustand/vanilla'
 
 import type { Storyboard } from '../../src/types'
+
+import type { MergeHunk, QueueMergeCommand } from '../../src/components/diffMergeTypes.js'
+import { useSB } from '../../src/store'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
 const mergeDockModule = await import('../../src/components/MergeDock')
@@ -664,6 +669,129 @@ test('stable precision diff guard unlock restores diff as active tab in store', 
 
   assert.equal(nextTab, 'diff')
   assert.equal(viewStore.getState().activeTab, 'diff')
+})
+
+test('stable diff guard exposes diff merge hunks and queue command once enabled', async () => {
+  const { MergeDock } = mergeDockModule as typeof mergeDockModule
+  const hookGlobal = globalThis as typeof globalThis & {
+    __diffMergeViewOnPropsReady?: (payload: {
+      readonly hunks: readonly MergeHunk[]
+      readonly queueMergeCommand: QueueMergeCommand
+    }) => void
+  }
+  const originalHook = hookGlobal.__diffMergeViewOnPropsReady
+  const originalWindow = (globalThis as { window?: typeof window }).window
+  const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(String(key), String(value))
+    },
+  }
+  const flushLog: string[] = []
+  const mockWindow = {
+    localStorage: storage,
+    __mergeDockAutoSaveSnapshot: { lastSuccessAt: '2024-05-01T00:00:00.000Z' },
+    __mergeDockFlushNow: () => {
+      flushLog.push('flush')
+    },
+  } as typeof window & {
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+    __mergeDockFlushNow?: () => void
+  }
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: mockWindow })
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage })
+
+  const originalStoryboard = useSB.getState().sb
+  const storyboard: Storyboard = {
+    id: 'sb-diff-guard-enabled',
+    title: 'Storyboard',
+    scenes: [
+      {
+        id: 'cut-1',
+        manual: 'Manual draft line',
+        ai: 'AI alternative line',
+        status: 'idle',
+        assets: [],
+        lock: null,
+      },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  try {
+    useSB.setState({ sb: storyboard })
+    assert.equal(useSB.getState().sb.scenes.length, 1)
+    const snapshot = Reflect.get(globalThis, '__conimgponic_sb_snapshot__') as Storyboard | undefined
+    assert.equal(snapshot?.scenes.length ?? 0, 1)
+    let capturedHunks: readonly MergeHunk[] | undefined
+    let capturedQueue: QueueMergeCommand | undefined
+    hookGlobal.__diffMergeViewOnPropsReady = (payload) => {
+      capturedHunks = payload.hunks
+      capturedQueue = payload.queueMergeCommand
+    }
+
+    const stableFlags: Pick<FlagSnapshot, 'merge'> = {
+      merge: { value: 'stable', source: 'workspace', errors: [], precision: 'stable', threshold: Number.NaN },
+    }
+
+    renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags: stableFlags,
+        phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+      }),
+    )
+
+    assert.ok(capturedHunks)
+    assert.deepEqual(
+      capturedHunks?.map((hunk) => hunk.id),
+      ['cut-1'],
+    )
+
+    const queue = capturedQueue
+    assert.ok(queue)
+    const result = await queue({
+      type: 'queue-merge',
+      precision: 'stable',
+      origin: 'operation-pane.queue',
+      hunkIds: ['cut-1'],
+      telemetryContext: {
+        collectorSurface: 'diff-merge.operation-pane',
+        analyzerSurface: 'diff-merge.queue',
+        lastTab: 'diff',
+      },
+      metadata: { autoSaveRequested: true },
+    })
+
+    assert.equal(result.status, 'success')
+    assert.deepEqual(result.hunkIds, ['cut-1'])
+    assert.equal(flushLog.length, 1)
+  } finally {
+    useSB.setState({ sb: originalStoryboard })
+    hookGlobal.__diffMergeViewOnPropsReady = originalHook
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
+    if (originalLocalStorage !== undefined) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: originalLocalStorage })
+    } else {
+      Reflect.deleteProperty(globalThis, 'localStorage')
+    }
+  }
 })
 
 test('resolveActiveTabTransition falls back to plan initial tab when diff disables', () => {
