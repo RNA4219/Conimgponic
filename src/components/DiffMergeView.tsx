@@ -198,6 +198,15 @@ const DiffMergeViewContent: React.FC<DiffMergeViewContentProps> = ({
 }) => {
   const plan = useMemo(() => planDiffMergeView(precision), [precision])
   const storage = (globalThis as { localStorage?: DiffMergeTabStorage }).localStorage
+  if (isDevelopmentEnvironment()) {
+    const hook = (globalThis as {
+      __diffMergeViewOnPropsReady?: (payload: {
+        readonly hunks: readonly MergeHunk[]
+        readonly queueMergeCommand: QueueMergeCommand
+      }) => void
+    }).__diffMergeViewOnPropsReady
+    hook?.({ hunks, queueMergeCommand })
+  }
   const storedTabManager = useMemo(
     () => createDiffMergeStoredTabManager({ plan, precision, storage }),
     [plan, precision, storage],

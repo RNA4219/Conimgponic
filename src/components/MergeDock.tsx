@@ -18,8 +18,6 @@ import { useMergeThreshold } from '../lib/merge/threshold'
 import {
   computeStoryboardWarnings,
   diffBackupPolicy,
-  diffMergeNoopCommand,
-  emptyDiffHunks,
   mergeMarkdownStoryboard,
   readAutoSaveState,
   resolveMergeDockPhasePlan,
@@ -61,6 +59,7 @@ export {
 } from './merge-dock/domain'
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
+import { isDiffMergeDevelopmentEnvironment } from './diffMergeTypes.js'
 import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
 
 
@@ -78,6 +77,78 @@ export const resolveMergeDockImportKind = (fileName: string): MergeDockImportKin
     return 'markdown'
   }
   return null
+}
+
+
+const tokenizeForSimilarity = (text: string): readonly string[] =>
+  text
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+
+const computeHunkSimilarity = (manual: string, ai: string): number => {
+  const left = tokenizeForSimilarity(manual)
+  const right = tokenizeForSimilarity(ai)
+  if (left.length === 0 && right.length === 0) {
+    return 1
+  }
+  if (left.length === 0 || right.length === 0) {
+    return 0
+  }
+  const leftSet = new Set(left)
+  const rightSet = new Set(right)
+  let intersection = 0
+  leftSet.forEach((token) => {
+    if (rightSet.has(token)) {
+      intersection += 1
+    }
+  })
+  const union = new Set([...leftSet, ...rightSet]).size
+  return union === 0 ? 0 : intersection / union
+}
+
+const resolveStoryboardForDiff = (storyboard: Storyboard): Storyboard => {
+  if (storyboard.scenes.length > 0) {
+    return storyboard
+  }
+  const snapshot = Reflect.get(globalThis, '__conimgponic_sb_snapshot__') as Storyboard | undefined
+  if (snapshot?.scenes?.length) {
+    return snapshot
+  }
+  return storyboard
+}
+
+const buildDiffMergeHunks = (storyboard: Storyboard): readonly MergeHunk[] => {
+  const source = resolveStoryboardForDiff(storyboard)
+  return source.scenes.map((scene, index) => {
+    const manual = scene.manual ?? ''
+    const ai = scene.ai ?? ''
+    const locked = scene.lock === 'manual' || scene.lock === 'ai'
+    const prefer: MergeHunk['prefer'] = scene.lock === 'manual' ? 'manual' : scene.lock === 'ai' ? 'ai' : 'none'
+    const trimmedManual = manual.trim()
+    const trimmedAi = ai.trim()
+    const similarity = computeHunkSimilarity(trimmedManual, trimmedAi)
+    const decision: MergeHunk['decision'] = !locked && trimmedManual === trimmedAi ? 'auto' : 'conflict'
+    const merged =
+      decision === 'auto'
+        ? prefer === 'ai'
+          ? ai
+          : manual
+        : manual || ai
+    const section = scene.shot ?? scene.slate ?? `Cut ${index + 1}`
+    return {
+      id: scene.id,
+      section,
+      decision,
+      similarity,
+      locked,
+      merged,
+      manual,
+      ai,
+      base: manual,
+      prefer,
+    }
+  })
 }
 
 
@@ -291,6 +362,62 @@ export function MergeDock({
   }, [sb, preference])
   const compiledDisplay = compiledOverride ?? compiled
 
+  const diffHunks: readonly MergeHunk[] = phasePlan.diff.enabled ? buildDiffMergeHunks(sb) : []
+
+  const diffQueueMergeCommand = useCallback<QueueMergeCommand>(
+    async (payload) => {
+      const uniqueIds = Array.from(new Set(payload.hunkIds))
+      if (!phasePlan.diff.enabled) {
+        return {
+          status: 'error',
+          hunkIds: uniqueIds,
+          telemetry: {
+            collectorSurface: payload.telemetryContext.collectorSurface,
+            analyzerSurface: payload.telemetryContext.analyzerSurface,
+            retryable: true,
+          },
+        }
+      }
+      if (uniqueIds.length === 0) {
+        return {
+          status: 'success',
+          hunkIds: [],
+          telemetry: {
+            collectorSurface: payload.telemetryContext.collectorSurface,
+            analyzerSurface: payload.telemetryContext.analyzerSurface,
+            retryable: false,
+          },
+        }
+      }
+      if (payload.metadata.autoSaveRequested && typeof autoSave.flushNow === 'function') {
+        try {
+          await Promise.resolve(autoSave.flushNow())
+        } catch (error) {
+          console.warn('MergeDock: AutoSave flush failed after queueMergeCommand', error)
+          return {
+            status: 'error',
+            hunkIds: uniqueIds,
+            telemetry: {
+              collectorSurface: payload.telemetryContext.collectorSurface,
+              analyzerSurface: payload.telemetryContext.analyzerSurface,
+              retryable: true,
+            },
+          }
+        }
+      }
+      return {
+        status: 'success',
+        hunkIds: uniqueIds,
+        telemetry: {
+          collectorSurface: payload.telemetryContext.collectorSurface,
+          analyzerSurface: payload.telemetryContext.analyzerSurface,
+          retryable: false,
+        },
+      }
+    },
+    [autoSave.flushNow, phasePlan.diff.enabled],
+  )
+
   const diffInteractionEnabled = shouldEnableDiffInteraction({
     diffPlan,
     guard: phasePlan.guard,
@@ -398,8 +525,8 @@ export function MergeDock({
           {diffInteractionEnabled ? (
             <DiffMergeView
               precision={precision}
-              hunks={emptyDiffHunks}
-              queueMergeCommand={diffMergeNoopCommand}
+              hunks={diffHunks}
+              queueMergeCommand={diffQueueMergeCommand}
               autoApplied={phasePlan.autoApplied}
               disabled={!phasePlan.diff.enabled}
             />
