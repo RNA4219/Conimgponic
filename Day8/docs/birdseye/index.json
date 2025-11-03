@@ -526,6 +526,14 @@
       "src/lib/autosave.ts"
     ],
     [
+      "src/lib/autosave.ts",
+      "src/lib/autosave/telemetryBridge.ts"
+    ],
+    [
+      "tests/lib/autosave/telemetryBridge.test.ts",
+      "src/lib/autosave/telemetryBridge.ts"
+    ],
+    [
       "src/lib/merge/mergeDockAutoSaveBridge.ts",
       "src/lib/autosave.ts"
     ],
@@ -900,6 +908,11 @@
       "caps": "docs/birdseye/caps/src.lib.autosave.ts.json",
       "mtime": "00004",
       "role": "application"
+    },
+    "src/lib/autosave/telemetryBridge.ts": {
+      "caps": "docs/birdseye/caps/src.lib.autosave.telemetryBridge.ts.json",
+      "mtime": "00006",
+      "role": "library"
     },
     "src/platform/vscode/autosave.ts": {
       "caps": "docs/birdseye/caps/src.platform.vscode.autosave.ts.json",
