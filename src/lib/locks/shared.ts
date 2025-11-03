@@ -79,6 +79,12 @@ export interface AcquireProjectLockOptions {
 
 export interface RenewProjectLockOptions {
   readonly signal?: AbortSignal;
+  /**
+   * renew 処理が非リトライエラーで readonly に移行する際の通知先。
+   *
+   * acquire/release と同様に、ProjectLockError をアプリ層へ伝播する。
+   */
+  readonly onReadonly?: (error: ProjectLockError) => void;
 }
 
 export interface ReleaseProjectLockOptions {

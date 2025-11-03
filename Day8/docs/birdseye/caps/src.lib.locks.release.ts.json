@@ -1,0 +1,35 @@
+{
+  "id": "src/lib/locks/release.ts",
+  "role": "integration",
+  "public_api": [
+    "releaseProjectLock",
+    "safeRelease"
+  ],
+  "summary": "ロック解放と再試行キャッシュを担うモジュール。Web Lock ハンドルとフォールバックファイルの解放処理を共通化し、readonly 降格の抑制や backoff 計算を集中管理する。",
+  "deps_out": [
+    "src/lib/locks/shared.ts",
+    "src/lib/locks/fallbackLock.ts",
+    "src/lib/locks/webLock.ts"
+  ],
+  "deps_in": [
+    "src/lib/locks/index.ts"
+  ],
+  "risks": [
+    "releaseFailures マップをクリアし忘れると恒久的に retryable=false が残り readonly 固定となる",
+    "safeRelease で ProjectLockError を握り潰すと releaseOnError フローが状態を失う"
+  ],
+  "tests": [
+    "tests/lib/locks/release.test.ts",
+    "tests/lib/locks/with.test.ts",
+    "tests/autosave/locks.spec.ts"
+  ],
+  "maintenance": {
+    "refresh": "再試行ポリシーや release エラー処理を変更したら tests/lib/locks/release.test.ts と with.test.ts を更新し、Birdseye index を再生成する",
+    "tooling": [
+      "pnpm test -- tests/lib/locks/release.test.ts",
+      "pnpm test -- tests/lib/locks/with.test.ts",
+      "pnpm test --filter autotag:autosave"
+    ]
+  },
+  "generated_at": "00007"
+}

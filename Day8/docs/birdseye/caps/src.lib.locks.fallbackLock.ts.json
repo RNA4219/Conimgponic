@@ -12,7 +12,10 @@
     "src/lib/locks/shared.ts"
   ],
   "deps_in": [
-    "src/lib/locks.ts"
+    "src/lib/locks.ts",
+    "src/lib/locks/index.ts",
+    "src/lib/locks/acquire.ts",
+    "src/lib/locks/release.ts"
   ],
   "risks": [
     "OPFS 書き込み/削除失敗を握り潰すと stale lock が残り再取得不能になる",
@@ -30,5 +33,5 @@
       "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
     ]
   },
-  "generated_at": "00006"
+  "generated_at": "00007"
 }
