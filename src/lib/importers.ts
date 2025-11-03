@@ -77,6 +77,7 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
   const head = lines[0].split(',').map(s=> s.trim().replace(/(^"|"$)/g,''))
   const idIdx = head.indexOf('id')
   const textIdx = head.indexOf('text')
+  const hasTextColumn = textIdx >= 0
   const seedIdx = head.indexOf('seed')
   const toneIdx = head.indexOf('tone')
   const slateIdx = head.indexOf('slate')
@@ -86,7 +87,9 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
   for (let i=1;i<lines.length;i++){
     const cols = parseCSVLine(lines[i])
     const id = cols[idIdx]?.replace(/(?:^"|"$)/g, '')
-    const text = cols[textIdx]?.replace(/(?:^"|"$)/g, '').replace(/\\n/g, '\n') || ''
+    const text = hasTextColumn
+      ? cols[textIdx]?.replace(/(?:^"|"$)/g, '').replace(/\\n/g, '\n') ?? ''
+      : undefined
     const seed = seedIdx >= 0 ? normalizeNumber(cols[seedIdx]) : undefined
     const tone = cols[toneIdx]?.replace(/(?:^"|"$)/g, '') || undefined
     const slate = slateIdx >= 0 ? (cols[slateIdx]?.replace(/(?:^"|"$)/g, '') || undefined) : undefined
@@ -106,13 +109,15 @@ export function mergeCSV(sb: Storyboard, csv: string, mode: ImportMode = 'manual
         manual: sc.manual,
         ai: sc.ai
       }
-      patch[mode] = text
+      if (text !== undefined) {
+        patch[mode] = text
+      }
       next.scenes[j] = { ...sc, ...patch }
     }else{
       const scene: Scene = {
         id,
-        manual: mode === 'manual' ? text : '',
-        ai: mode === 'ai' ? text : '',
+        manual: mode === 'manual' && text !== undefined ? text : '',
+        ai: mode === 'ai' && text !== undefined ? text : '',
         status: 'idle',
         tone,
         assets: [],
