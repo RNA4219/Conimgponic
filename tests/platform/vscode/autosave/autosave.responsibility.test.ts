@@ -22,6 +22,11 @@ import {
   nextReqId
 } from '../../../../src/platform/vscode/autosave/state.js';
 import { createVscodeAutoSaveBridge } from '../../../../src/platform/vscode/autosave.js';
+import {
+  deriveAutoSavePhaseGuard,
+  resolveWorkspaceFlags
+} from '../../../../src/platform/vscode/flags/index.js';
+import { resolveFlags } from '../../../../src/config/index.js';
 
 class TestDomException extends Error {
   override name = 'NotAllowedError';
@@ -168,6 +173,68 @@ test('publishCollectorSnapshotResult forwards normalized payload', () => {
     (calls[0] as { overrides: { ts: string } }).overrides.ts,
     timestamp
   );
+});
+
+test('resolveWorkspaceFlags aligns with resolveFlags and bootstrap propagates guard', () => {
+  const workspace = {
+    get: (key: string) => {
+      switch (key) {
+        case 'autosave.enabled':
+          return 'true';
+        case 'plugins.enable':
+          return 'false';
+        case 'merge.precision':
+          return 'stable';
+        default:
+          return undefined;
+      }
+    }
+  };
+  const clock = () => new Date('2024-01-05T00:00:00.000Z');
+  const helperSnapshot = resolveWorkspaceFlags({ workspace, clock });
+  const directSnapshot = resolveFlags({ workspace, clock });
+
+  assert.deepEqual(helperSnapshot, directSnapshot);
+
+  const helperGuard = deriveAutoSavePhaseGuard(helperSnapshot);
+  assert.deepEqual(helperGuard, {
+    featureFlag: {
+      value: directSnapshot.autosave.enabled,
+      source: directSnapshot.autosave.source
+    },
+    optionsDisabled: !directSnapshot.autosave.enabled
+  });
+
+  const sent: unknown[] = [];
+  const bridge = createVscodeAutoSaveBridge({
+    policy: {
+      debounceMs: 100,
+      idleMs: 100,
+      maxGenerations: 2,
+      maxBytes: 100,
+      disabled: false
+    },
+    workspace,
+    now: clock,
+    sendMessage: (message) => {
+      sent.push(message);
+    },
+    atomicWrite: async () => {
+      throw new Error('bootstrap should not flush');
+    }
+  });
+
+  assert.equal(sent.length, 2);
+  const bootstrap = sent[0] as {
+    type: string;
+    payload: { guard: unknown; flags: unknown };
+  };
+  assert.equal(bootstrap?.type, 'bridge.bootstrap');
+  assert.deepEqual(bootstrap.payload.flags, helperSnapshot);
+  assert.deepEqual(bootstrap.payload.guard, helperGuard);
+
+  const state = bridge.inspectState();
+  assert.deepEqual(state.guard, helperGuard);
 });
 
 test('publishCollectorSnapshotResult flags localStorage guard as QA phase', () => {

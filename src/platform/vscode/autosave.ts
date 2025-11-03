@@ -7,8 +7,8 @@ import type {
   AutoSaveStatusState,
   AutoSavePolicy
 } from '../../lib/autosave'
-import { resolveFlags } from '../../config/index.js'
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
+import { deriveAutoSavePhaseGuard, resolveWorkspaceFlags } from './flags/index.js'
 import {
   createDisabledError,
   normalizeAtomicWriteError
@@ -77,7 +77,7 @@ export { statusPhaseForState } from './autosave/state.js'
  */
 export interface AutoSaveHostBridgeOptions {
   readonly policy: AutoSavePolicy
-  readonly initialGuard: AutoSavePhaseGuardSnapshot
+  readonly initialGuard?: AutoSavePhaseGuardSnapshot
   readonly flags?: FlagSnapshot
   readonly workspace?: WorkspaceConfiguration | null
   readonly now: () => Date
@@ -129,11 +129,11 @@ const publishGuardBlockedCollectorEvent = (
 }
 
 export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): AutoSaveHostBridge => {
-  const state: InternalState = createInitialState(options.initialGuard)
-
+  const workspace = options.workspace ?? null
   const bootstrapFlags =
-    options.flags ??
-    resolveFlags({ workspace: options.workspace ?? null, clock: options.now })
+    options.flags ?? resolveWorkspaceFlags({ workspace, clock: options.now })
+  const initialGuard = options.initialGuard ?? deriveAutoSavePhaseGuard(bootstrapFlags)
+  const state: InternalState = createInitialState(initialGuard)
   const bootstrapReqId = nextReqId(state)
   const bootstrapCorrelationId = nextCorrelationId(state)
   const bootstrapTs = toIsoTimestamp(options.now)
@@ -143,7 +143,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       bootstrapCorrelationId,
       bootstrapTs,
       options.policy,
-      options.initialGuard,
+      initialGuard,
       bootstrapFlags
     )
   )
