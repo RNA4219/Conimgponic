@@ -23,11 +23,12 @@ type UploadArtifactConfig = {
 };
 type UploadStep = StepConfig & { uses: string; with: UploadArtifactConfig };
 type RunStep = StepConfig & { name: string; run: string };
-const expectedSyftPackageSpecifier = '@anchore/syft@1.16.0';
-const expectedSyftDlxPrefix = `pnpm dlx --package=${expectedSyftPackageSpecifier}`;
+const expectedSyftVersion = '1.16.0';
+const expectedSyftArchive = `syft_${expectedSyftVersion}_linux_amd64.tar.gz`;
+const expectedSyftDownload = `https://github.com/anchore/syft/releases/download/v${expectedSyftVersion}/${expectedSyftArchive}`;
 
 describe('ci workflow sbom job', () => {
-  test('installs syft via pnpm dlx exactly once', async () => {
+  test('installs syft via pinned GitHub release exactly once', async () => {
     const workflow = await loadWorkflow();
     const sbomSteps = expectJobSteps(workflow.jobs?.sbom, 'sbom job must exist');
 
@@ -45,12 +46,39 @@ describe('ci workflow sbom job', () => {
 
     const installScript = installSteps[0].run;
     assert(
-      installScript.includes(`${expectedSyftDlxPrefix} --version`),
-      'Install Syft step must execute pnpm dlx for @anchore/syft with a pinned version',
+      installScript.includes(`SYFT_VERSION='${expectedSyftVersion}'`) ||
+        installScript.includes(`SYFT_VERSION="${expectedSyftVersion}"`) ||
+        installScript.includes(`SYFT_VERSION=${expectedSyftVersion}`),
+      'Install Syft step must pin syft version via SYFT_VERSION variable',
     );
     assert(
-      !installScript.includes('curl '),
-      'Install Syft step must not rely on curl-based installers',
+      installScript.includes(expectedSyftArchive) ||
+        installScript.includes('syft_${SYFT_VERSION}_linux_amd64.tar.gz'),
+      'Install Syft step must reference expected syft archive name',
+    );
+    assert(
+      installScript.includes(expectedSyftDownload) ||
+        installScript.includes('https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${SYFT_ARCHIVE}') ||
+        installScript.includes('https://github.com/anchore/syft/releases/download/v"${SYFT_VERSION}"/"${SYFT_ARCHIVE}"'),
+      'Install Syft step must download syft from the expected GitHub release URL',
+    );
+    assert(
+      installScript.includes('curl -sSfL'),
+      'Install Syft step must download syft via curl with strict failure flags',
+    );
+    assert(
+      installScript.includes('tar -xzf') && installScript.includes('install -m 0755'),
+      'Install Syft step must extract archive and install syft binary with executable permissions',
+    );
+    assert(
+      installScript.includes('echo "$HOME/.local/bin" >> "$GITHUB_PATH"') ||
+        installScript.includes('echo "$SYFT_INSTALL_DIR" >> "$GITHUB_PATH"'),
+      'Install Syft step must add the install directory to GITHUB_PATH',
+    );
+    assert(
+      installScript.includes('$SYFT_BIN --version') ||
+        installScript.includes('"$SYFT_BIN" --version'),
+      'Install Syft step must verify installed syft binary version',
     );
   });
 
@@ -147,8 +175,8 @@ describe('ci workflow sbom job', () => {
 
     const runScript = generateStep.run;
     assert.ok(
-      runScript.includes(`${expectedSyftDlxPrefix} packages `),
-      'Generate SBOM step must invoke syft CLI via pnpm dlx with a pinned version',
+      runScript.includes('syft packages . -o spdx-json=sbom.json'),
+      'Generate SBOM step must invoke locally installed syft CLI with pinned arguments',
     );
     assert.ok(
       runScript.includes('status=$?'),

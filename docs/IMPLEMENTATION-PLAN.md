@@ -70,6 +70,7 @@ sequenceDiagram
 3. **MergeDock 適用**: `merge.precision` を `FlagSnapshot.merge.precision` へ差し替え、`precision` フラグで Diff Merge タブの露出を制御する（Phase-b0）。後方互換のため `legacyStorageKeys` を監視し、削除タイミングをテレメトリで検証する。
 4. **Collector 連携**: `FlagValidationError` と `FlagSnapshot.source` をテレメトリに送出し、Day8/Collector の JSONL に `flag_resolution` イベントを追加する。`docs/AUTOSAVE-DESIGN-IMPL.md` の保存ポリシーと整合すること。
 5. **段階的差分**: Phase-a1 で AutoSave ランナーへ `FlagSnapshot` を渡し、Phase-b0 でレガシー参照を除去する。各段階は小粒な PR とし、既存読者が差分で追えるよう `FLAG_MIGRATION_PLAN` の exit criteria をレビュー checklist に転記する。
+6. **Plugin Bridge 配布とロールバック**: Phase-a1 で QA/拡張開発者へ `plugins.enable` を配布する際は `flags:set plugins.enable true` → `flags:push --env qa` → Collector の `flag_resolution` が `status='success'` で安定することを確認する。`retryable=false` な `plugins.enable` エラーが 3 回以上連続した場合は即時に `flags:rollback --phase phase-a0` を実行し、`conimg.plugins.enable` のワークスペース値とローカルストレージ (`plugins.enable`) をクリアする。
 
 #### 0.2.2 Phase ガード優先度と解除時の挙動整理
 

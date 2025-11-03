@@ -144,7 +144,7 @@ test('workspace configuration resolves plugin enable flag before storage and def
   assert.equal(fromDefaults.plugins.source, 'default')
 })
 
-test('resolveFlags falls back to default autosave and merge threshold when all sources unset', () => {
+test('resolveFlags falls back to default autosave, plugin bridge, and merge threshold when all sources unset', () => {
   const snapshot = resolveFlags({
     env: {},
     workspace: null,
@@ -154,12 +154,14 @@ test('resolveFlags falls back to default autosave and merge threshold when all s
 
   assert.equal(snapshot.autosave.enabled, false)
   assert.equal(snapshot.autosave.source, 'default')
+  assert.equal(snapshot.plugins.enabled, false)
+  assert.equal(snapshot.plugins.source, 'default')
   assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
   assert.equal(snapshot.merge.source, 'default')
   assert.equal(snapshot.updatedAt, '2025-01-08T00:00:00.000Z')
 })
 
-test('collector fallback applies default autosave and merge threshold when no inputs', () => {
+test('collector fallback applies default autosave, plugin bridge, and merge threshold when no inputs', () => {
   const resolution = resolveFlags(
     { storage: null },
     { withErrors: true }
@@ -168,6 +170,8 @@ test('collector fallback applies default autosave and merge threshold when no in
   assert.equal(DEFAULT_FLAGS.autosave.enabled, false)
   assert.equal(resolution.snapshot.autosave.enabled, false)
   assert.equal(resolution.snapshot.autosave.source, 'default')
+  assert.equal(resolution.snapshot.plugins.enabled, false)
+  assert.equal(resolution.snapshot.plugins.source, 'default')
   assert.equal(resolution.snapshot.merge.precision, DEFAULT_FLAGS.merge.precision)
   assert.equal(resolution.snapshot.merge.source, 'default')
   assert.equal(DEFAULT_FLAGS.merge.profile.threshold, 0.75)

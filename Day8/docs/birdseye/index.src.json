@@ -1,0 +1,120 @@
+{
+  "kind": "src",
+  "generated_at": "00006",
+  "nodes": {
+    "src/lib/autosave.ts": {
+      "caps": "docs/birdseye/caps/src.lib.autosave.ts.json",
+      "mtime": "00004",
+      "role": "application"
+    },
+    "src/platform/vscode/autosave.ts": {
+      "caps": "docs/birdseye/caps/src.platform.vscode.autosave.ts.json",
+      "mtime": "00004",
+      "role": "integration"
+    },
+    "src/lib/merge.ts": {
+      "caps": "docs/birdseye/caps/src.lib.merge.ts.json",
+      "mtime": "00004",
+      "role": "application"
+    },
+    "src/lib/merge/mergeDockAutoSaveBridge.ts": {
+      "caps": "docs/birdseye/caps/src.lib.merge.mergeDockAutoSaveBridge.ts.json",
+      "mtime": "00004",
+      "role": "integration"
+    },
+    "src/components/MergeDock.tsx": {
+      "caps": "docs/birdseye/caps/src.components.MergeDock.tsx.json",
+      "mtime": "00004",
+      "role": "ui"
+    },
+    "src/components/merge-dock/domain.ts": {
+      "caps": "docs/birdseye/caps/src.components.merge-dock.domain.ts.json",
+      "mtime": "00004",
+      "role": "domain"
+    },
+    "src/components/merge-dock/io.ts": {
+      "caps": "docs/birdseye/caps/src.components.merge-dock.io.ts.json",
+      "mtime": "00004",
+      "role": "integration"
+    },
+    "src/lib/merge/phasePlan.ts": {
+      "caps": "docs/birdseye/caps/src.lib.merge.phasePlan.ts.json",
+      "mtime": "00004",
+      "role": "application"
+    },
+    "src/lib/locks.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.ts.json",
+      "mtime": "00006",
+      "role": "application"
+    },
+    "src/lib/locks/shared.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.shared.ts.json",
+      "mtime": "00006",
+      "role": "domain"
+    },
+    "src/lib/locks/fallbackLock.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.fallbackLock.ts.json",
+      "mtime": "00006",
+      "role": "integration"
+    },
+    "src/lib/locks/webLock.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.webLock.ts.json",
+      "mtime": "00006",
+      "role": "integration"
+    }
+  },
+  "edges": [
+    [
+      "src/platform/vscode/autosave.ts",
+      "src/lib/autosave.ts"
+    ],
+    [
+      "src/lib/merge/mergeDockAutoSaveBridge.ts",
+      "src/lib/autosave.ts"
+    ],
+    [
+      "src/components/MergeDock.tsx",
+      "src/components/merge-dock/domain.ts"
+    ],
+    [
+      "src/components/MergeDock.tsx",
+      "src/components/merge-dock/io.ts"
+    ],
+    [
+      "src/components/MergeDock.tsx",
+      "src/lib/merge/phasePlan.ts"
+    ],
+    [
+      "src/lib/merge/phasePlan.ts",
+      "src/lib/merge.ts"
+    ],
+    [
+      "src/lib/autosave.ts",
+      "src/lib/locks.ts"
+    ],
+    [
+      "src/lib/locks.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/locks.ts",
+      "src/lib/locks/fallbackLock.ts"
+    ],
+    [
+      "src/lib/locks.ts",
+      "src/lib/locks/webLock.ts"
+    ],
+    [
+      "src/lib/locks/fallbackLock.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/locks/webLock.ts",
+      "src/lib/locks/shared.ts"
+    ]
+  ],
+  "summary": {
+    "node_count": 12,
+    "edge_count": 12
+  }
+}
