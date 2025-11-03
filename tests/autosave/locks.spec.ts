@@ -20,6 +20,7 @@ import {
   type ProjectLockLease,
   type LockAcquisitionStrategy
 } from '../../src/lib/locks'
+import * as webLockModule from '../../src/lib/locks/webLock.js'
 import { AUTOSAVE_RETRY_POLICY } from '../../src/lib/autosave'
 import {
   ENABLED_GUARD,
@@ -3507,6 +3508,90 @@ scenario(
     assert.equal(readonlyEvents.length, 1, 'existing release error must emit one lock:readonly-entered event')
     assert.equal(readonlyEvents[0]?.reason, 'release-failed')
     assert.equal(readonlyEvents[0]?.lastError.code, 'release-failed')
+  }
+)
+
+scenario(
+  'AS-LK-09m: getReleaseError throwing existing release error triggers immediate readonly downgrade',
+  async (t) => {
+    const uuids = ['lease-release-inspect-error', 'owner-release-inspect-error']
+    t.mock.method(crypto, 'randomUUID', () => {
+      const value = uuids.shift()
+      if (!value) throw new Error('uuid exhausted')
+      return value
+    })
+
+    const events: ProjectLockEvent[] = []
+    const unsubscribe = projectLockEvents.subscribe((event) => {
+      events.push(event)
+    })
+    t.after(unsubscribe)
+
+    const lease = await projectLockApi.acquire({ preferredStrategy: 'web-lock', retry: false })
+
+    const releaseError = new ProjectLockError('release-failed', 'Existing release error surfaced', {
+      retryable: true,
+      operation: 'release',
+    })
+
+    const releaseMock = t.mock.fn(async () => {
+      throw new Error('release must not be invoked when getReleaseError throws')
+    })
+
+    const handle = webLockModule.getWebLockHandle(lease.leaseId)
+    if (!handle) {
+      assert.fail('Web Lock handle missing for acquired lease')
+    }
+    const mutableHandle = handle as unknown as {
+      release: () => Promise<void>
+      getReleaseError: () => ProjectLockError | undefined
+    }
+    mutableHandle.release = releaseMock
+    mutableHandle.getReleaseError = () => {
+      throw releaseError
+    }
+
+    const readonlyCalls: ProjectLockError[] = []
+    await assert.rejects(
+      projectLockApi.release(lease, {
+        onReadonly(error) {
+          readonlyCalls.push(error)
+        },
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ProjectLockError)
+        assert.equal(error, releaseError)
+        return true
+      }
+    )
+
+    assert.equal(
+      releaseMock.mock.calls.length,
+      0,
+      'release must not be invoked when getReleaseError throws an existing error'
+    )
+
+    assert.equal(
+      readonlyCalls.length,
+      1,
+      'onReadonly must fire once when getReleaseError throws an existing release error'
+    )
+    assert.equal(readonlyCalls[0], releaseError)
+
+    const errorEvents = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }> => event.type === 'lock:error'
+    )
+    assert.equal(errorEvents.length, 1, 'existing release error must emit one lock:error event when inspection fails')
+    assert.equal(errorEvents[0]?.operation, 'release')
+    assert.equal(errorEvents[0]?.error, releaseError)
+
+    const readonlyEvents = events.filter(
+      (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }>
+        => event.type === 'lock:readonly-entered'
+    )
+    assert.equal(readonlyEvents.length, 1, 'existing release error must emit one lock:readonly-entered event when inspection fails')
+    assert.equal(readonlyEvents[0]?.reason, 'release-failed')
+    assert.equal(readonlyEvents[0]?.lastError, releaseError)
   }
 )
 
