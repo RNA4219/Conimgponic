@@ -116,7 +116,7 @@ export function mergeMarkdownStoryboard(
   markdown: string,
   mode: ImportMode,
 ): Storyboard {
-  const blocks = markdown.split(/(?:^|\r?\n)##\s*Cut\s+\d+/).slice(1)
+  const blocks = markdown.split(/(?:^|\r?\n)[ \t]*##\s*Cut\s+\d+/).slice(1)
   const scenes = current.scenes.map((scene, index) => {
     const block = blocks[index]
     if (block == null) {
