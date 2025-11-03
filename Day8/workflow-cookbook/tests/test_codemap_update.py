@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
-from typing import Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 import pytest
 
@@ -124,6 +124,7 @@ def _prepare_birdseye(
     for cap_id, payload in caps_payloads.items():
         cap_path = caps_dir / f"{cap_id}.json"
         cap_paths[cap_id] = cap_path
+        cap_path.parent.mkdir(parents=True, exist_ok=True)
         _write_json(cap_path, payload)
     hot_path = root / "hot.json"
     defaults_lookup = {entry["id"]: entry for entry in _HOT_NODES_FIXTURE}
@@ -169,6 +170,136 @@ def _prepare_birdseye(
         },
     )
     return root, index_path, hot_path, cap_paths
+
+
+def _shard_birdseye_index(root: Path, classify: Callable[[str], str]) -> dict[str, Path]:
+    index_path = root / "index.json"
+    index_data = json.loads(index_path.read_text(encoding="utf-8"))
+    raw_nodes = index_data.get("nodes", {})
+    nodes = {
+        node_id: payload
+        for node_id, payload in raw_nodes.items()
+        if isinstance(node_id, str) and isinstance(payload, dict)
+    }
+    edges: list[list[str]] = []
+    for raw_edge in index_data.get("edges", []):
+        if not isinstance(raw_edge, list) or len(raw_edge) != 2:
+            continue
+        source, destination = raw_edge
+        if isinstance(source, str) and isinstance(destination, str):
+            edges.append([source, destination])
+    groups: dict[str, dict[str, object]] = {}
+
+    def _ensure_group(shard_id: str) -> dict[str, object]:
+        group = groups.get(shard_id)
+        if group is None:
+            group = {"nodes": {}, "edges": []}
+            groups[shard_id] = group
+        return group
+
+    for node_id, payload in nodes.items():
+        shard_id = classify(node_id)
+        group = _ensure_group(shard_id)
+        group_nodes = group.setdefault("nodes", {})
+        assert isinstance(group_nodes, dict)
+        group_nodes[node_id] = payload
+    for source, destination in edges:
+        shard_id = classify(source if source in nodes else destination)
+        group = _ensure_group(shard_id)
+        group_edges = group.setdefault("edges", [])
+        assert isinstance(group_edges, list)
+        group_edges.append([source, destination])
+
+    shards_meta: list[dict[str, object]] = []
+    shard_paths: dict[str, Path] = {}
+    for shard_id in sorted(groups):
+        group = groups[shard_id]
+        group_nodes = group.get("nodes", {})
+        group_edges = group.get("edges", [])
+        assert isinstance(group_nodes, dict)
+        assert isinstance(group_edges, list)
+        shard_path = root / f"index.{shard_id}.json"
+        shard_document = {
+            "kind": shard_id,
+            "generated_at": index_data.get("generated_at", "00000"),
+            "nodes": group_nodes,
+            "edges": group_edges,
+            "summary": {
+                "node_count": len(group_nodes),
+                "edge_count": len(group_edges),
+            },
+        }
+        shard_path.write_text(
+            json.dumps(shard_document, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        shards_meta.append(
+            {
+                "id": shard_id,
+                "path": shard_path.name,
+                "node_count": len(group_nodes),
+                "edge_count": len(group_edges),
+            }
+        )
+        shard_paths[shard_id] = shard_path
+
+    aggregated_index = {
+        "generated_at": index_data.get("generated_at", "00000"),
+        "summary": {
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+        },
+        "shards": shards_meta,
+    }
+    index_path.write_text(
+        json.dumps(aggregated_index, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return shard_paths
+
+
+def test_run_update_updates_sharded_index(tmp_path: Path) -> None:
+    caps_payloads = {
+        "docs/README.md": _caps_payload("docs/README.md"),
+        "src/main.ts": _caps_payload("src/main.ts"),
+        "misc.md": _caps_payload("misc.md"),
+    }
+    root, index_path, _, _ = _prepare_birdseye(
+        tmp_path,
+        edges=(("docs/README.md", "src/main.ts"), ("src/main.ts", "misc.md")),
+        caps_payloads=caps_payloads,
+        hot_entries=None,
+    )
+
+    def _classify(node_id: str) -> str:
+        if node_id.startswith("docs/"):
+            return "docs"
+        if node_id.startswith("src/"):
+            return "src"
+        return "misc"
+
+    shard_paths = _shard_birdseye_index(root, _classify)
+
+    report = update.run_update(
+        update.UpdateOptions(targets=(index_path,), emit="index", dry_run=False)
+    )
+
+    aggregator = json.loads(index_path.read_text(encoding="utf-8"))
+    assert aggregator["generated_at"] == report.generated_at
+    assert sorted(entry["id"] for entry in aggregator["shards"]) == sorted(shard_paths)
+
+    planned = {candidate.as_posix() for candidate in report.planned_writes}
+    performed = {candidate.as_posix() for candidate in report.performed_writes}
+    expected = {index_path.as_posix(), *(path.as_posix() for path in shard_paths.values())}
+    assert expected <= planned
+    assert expected <= performed
+
+    for entry in aggregator["shards"]:
+        shard_path = root / entry["path"]
+        shard_doc = json.loads(shard_path.read_text(encoding="utf-8"))
+        assert shard_doc["generated_at"] == report.generated_at
+        for payload in shard_doc["nodes"].values():
+            assert payload["mtime"] == report.generated_at
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
