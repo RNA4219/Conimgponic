@@ -105,7 +105,7 @@ flowchart TD
 ### キャッシュとライフサイクル
 
 - フラグロードは `src/config/flags.ts` の `resolveFlags()` で一度だけ実行し、アプリ初期化時に `App.tsx` から呼び出す。結果はイミュータブルスナップショットとして React コンテキスト経由で配下へ配布する。
-- `localStorage` のホットリロードは Phase B まで延期し、当面はタブ再読み込みでのみ値を反映する（パフォーマンス ±5% 以内を保証）。
+- `localStorage` のホットリロードは Phase B まで延期し、当面はタブ再読み込みでのみ値を反映する（パフォーマンス ±5% 以内を保証）。Phase A では `App.tsx` の `storage`/`visibilitychange` リスナーが無効化されているため、更新を即時反映させたい場合は `notifyFlagSnapshotRefresh()` を明示的に呼び出す。Phase B ロールアウト時は `VITE_FLAG_SNAPSHOT_LIVE_REFRESH_PHASE=phase-b0`（または `phase-b1`）を設定し、自動ホットリロードを順次解放する。
 - CLI/JSON 出力向けには同一ロジックを `resolveFlags({ storage: null })` で再利用し、`localStorage` レイヤーをスキップして `env → default` 順に評価する。
 
 ### VSCode 設定マッピングと Phase ガード

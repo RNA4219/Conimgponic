@@ -58,6 +58,12 @@ class MemoryStorage implements Storage {
   }
 }
 
+const createStorageEvent = (key: string | null): StorageEvent => {
+  const event = new Event('storage') as StorageEvent
+  Object.defineProperty(event, 'key', { value: key, configurable: true })
+  return event
+}
+
 test('App re-evaluates MergeDock integration when flags change live', () => {
   const scope = globalThis as MutableGlobal
   const originalWindow = scope.window
@@ -65,6 +71,7 @@ test('App re-evaluates MergeDock integration when flags change live', () => {
   const originalLocalStorage = scope.localStorage
 
   const events = new EventTarget()
+  const documentEvents = new EventTarget()
   const storage = new MemoryStorage()
 
   const windowMock = {
@@ -75,8 +82,9 @@ test('App re-evaluates MergeDock integration when flags change live', () => {
   } as unknown as Window
 
   const documentMock = {
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener: documentEvents.addEventListener.bind(documentEvents),
+    removeEventListener: documentEvents.removeEventListener.bind(documentEvents),
+    dispatchEvent: documentEvents.dispatchEvent.bind(documentEvents),
     visibilityState: 'visible'
   } as unknown as Document
 
@@ -104,16 +112,92 @@ test('App re-evaluates MergeDock integration when flags change live', () => {
     })
 
     storage.setItem('autosave.enabled', 'true')
+    windowMock.dispatchEvent(createStorageEvent('autosave.enabled'))
+    documentMock.dispatchEvent(new Event('visibilitychange'))
+    assert.equal(snapshots.length, 1)
+
     notifyFlagSnapshotRefresh()
     assert.equal(snapshots.at(-1)?.plan.snapshot.autosave.enabled, true)
     assert.equal(snapshots.length, 2)
 
     storage.setItem('merge.precision', 'beta')
+    windowMock.dispatchEvent(createStorageEvent('merge.precision'))
+    documentMock.dispatchEvent(new Event('visibilitychange'))
+    assert.equal(snapshots.length, 2)
+
     notifyFlagSnapshotRefresh()
     assert.equal(
       snapshots.at(-1)?.merge.flagSnapshot.merge.precision,
       'beta'
     )
+    assert.equal(snapshots.length, 3)
+
+    unsubscribe()
+    subscription.dispose()
+  } finally {
+    if (originalWindow === undefined) {
+      Reflect.deleteProperty(scope, 'window')
+    } else {
+      scope.window = originalWindow
+    }
+
+    if (originalDocument === undefined) {
+      Reflect.deleteProperty(scope, 'document')
+    } else {
+      scope.document = originalDocument
+    }
+
+    if (originalLocalStorage === undefined) {
+      Reflect.deleteProperty(scope, 'localStorage')
+    } else {
+      scope.localStorage = originalLocalStorage
+    }
+  }
+})
+
+test('Flag snapshot live refresh guard enables storage and visibility handlers on Phase B', () => {
+  const scope = globalThis as MutableGlobal
+  const originalWindow = scope.window
+  const originalDocument = scope.document
+  const originalLocalStorage = scope.localStorage
+
+  const events = new EventTarget()
+  const documentEvents = new EventTarget()
+  const storage = new MemoryStorage()
+
+  const windowMock = {
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    dispatchEvent: events.dispatchEvent.bind(events),
+    localStorage: storage
+  } as unknown as Window
+
+  const documentMock = {
+    addEventListener: documentEvents.addEventListener.bind(documentEvents),
+    removeEventListener: documentEvents.removeEventListener.bind(documentEvents),
+    dispatchEvent: documentEvents.dispatchEvent.bind(documentEvents),
+    visibilityState: 'visible'
+  } as unknown as Document
+
+  scope.window = windowMock
+  scope.document = documentMock
+  scope.localStorage = storage
+
+  try {
+    const subscription = createFlagSnapshotSubscription(null, {
+      liveRefreshPhase: 'phase-b0'
+    })
+    const snapshots: FlagSnapshot[] = [subscription.read()]
+    const unsubscribe = subscription.subscribe((snapshot) => {
+      snapshots.push(snapshot)
+    })
+
+    storage.setItem('autosave.enabled', 'true')
+    windowMock.dispatchEvent(createStorageEvent('autosave.enabled'))
+    assert.equal(snapshots.length, 2)
+
+    storage.setItem('merge.precision', 'beta')
+    documentMock.dispatchEvent(new Event('visibilitychange'))
     assert.equal(snapshots.length, 3)
 
     unsubscribe()
