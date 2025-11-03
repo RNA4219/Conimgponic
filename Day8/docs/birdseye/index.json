@@ -50,12 +50,11 @@
     ],
     [
       "docs/README.md",
-      "docs/addenda/M_Versioning_Release.md",
-      "docs/FORK_NOTES.md"
+      "docs/addenda/M_Versioning_Release.md"
     ],
     [
       "docs/README.md",
-      "docs/addenda/M_Versioning_Release.md"
+      "docs/FORK_NOTES.md"
     ],
     [
       "docs/README.md",
@@ -612,6 +611,11 @@
       "mtime": "00004",
       "role": "checklist"
     },
+    "docs/birdseye/index.json": {
+      "caps": "docs/birdseye/caps/docs.birdseye.index.json.json",
+      "mtime": "00006",
+      "role": "visualization"
+    },
     "docs/FORK_NOTES.md": {
       "caps": "docs/birdseye/caps/docs.FORK_NOTES.md.json",
       "mtime": "00004",
@@ -621,6 +625,16 @@
       "caps": "docs/birdseye/caps/docs.addenda.A_Glossary.md.json",
       "mtime": "00004",
       "role": "glossary"
+    },
+    "docs/addenda/D_Trim_Design.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.D_Trim_Design.md.json",
+      "mtime": "00004",
+      "role": "observability"
+    },
+    "docs/addenda/E_Evaluator_Details.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.E_Evaluator_Details.md.json",
+      "mtime": "00004",
+      "role": "quality"
     },
     "docs/addenda/F_Provider_Matrix.md": {
       "caps": "docs/birdseye/caps/docs.addenda.F_Provider_Matrix.md.json",
@@ -651,6 +665,11 @@
       "caps": "docs/birdseye/caps/docs.addenda.M_Versioning_Release.md.json",
       "mtime": "00004",
       "role": "release"
+    },
+    "docs/addenda/M1_Metrics_Healthz_ADR.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.M1_Metrics_Healthz_ADR.md.json",
+      "mtime": "00004",
+      "role": "adr"
     },
     "docs/day8/README.md": {
       "caps": "docs/birdseye/caps/docs.day8.README.md.json",
