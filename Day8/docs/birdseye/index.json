@@ -989,5 +989,34 @@
       "mtime": "00007",
       "role": "integration"
     }
+  },
+  "summary": {
+    "generated_at": "00007",
+    "domains": {
+      "docs": {
+        "nodes": 33,
+        "edges": 55
+      },
+      "src": {
+        "nodes": 17,
+        "edges": 23
+      }
+    }
+  },
+  "shards": [
+    {
+      "id": "docs",
+      "path": "index.docs.json",
+      "generated_at": "00007",
+      "nodes": 33,
+      "edges": 55
+    },
+    {
+      "id": "src",
+      "path": "index.src.json",
+      "generated_at": "00007",
+      "nodes": 17,
+      "edges": 23
+    }
   ]
 }
