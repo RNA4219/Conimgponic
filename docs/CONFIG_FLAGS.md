@@ -69,6 +69,7 @@
 - [ ] 配布前に `pnpm run flags:status` でローカル値と既定値の差分を確認する。
 - [ ] Canary 実施中は `reports/canary/` の JSONL を Analyzer に渡し、SLO が満たされていることを QA が確認済みである。
 - [ ] ロールバック時は `pnpm run flags:rollback --phase <prev>` を利用し、対象チームへ Slack テンプレート `templates/alerts/rollback.md` を送付する。
+- [x] `Collector` テレメトリ統合チェックリストの進捗を [docs/IMPLEMENTATION-PLAN.md §5](./IMPLEMENTATION-PLAN.md#5-%E5%9B%9E%E5%B8%B0%E8%A9%A6%E9%A8%93%E8%A8%88%E7%94%BBtdd-%E3%83%81%E3%82%A7%E3%83%83%E3%82%AF%E3%83%AA%E3%82%B9%E3%83%88) に 2024-05-06 時点の完了履歴としてリンクした。
 ## フラグ解決順序と入力ソース
 
 ### 優先順位
