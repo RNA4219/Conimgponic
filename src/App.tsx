@@ -22,10 +22,12 @@ import {
   type FlagSnapshot,
   type ResolveOptions
 } from './config'
+import type { FlagRolloutPhase } from './config/flags'
 import { saveJSON } from './lib/opfs'
 import { readWorkspaceSetting } from './lib/merge/threshold'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { useAutoSaveAppEffects } from './hooks/useAutoSaveIntegration'
+import { readImportMetaEnv } from './lib/autosave/guard'
 import {
   handleToolbarSaveProject,
   createToolbarActions,
@@ -305,6 +307,65 @@ const FLAG_STORAGE_KEYS = new Set([
 
 type FlagSnapshotListener = (snapshot: FlagSnapshot) => void
 
+export interface FlagSnapshotSubscriptionConfig {
+  readonly liveRefreshPhase?: FlagRolloutPhase | null
+  readonly enableLiveRefresh?: boolean
+}
+
+type FlagLiveRefreshScope = typeof globalThis & {
+  __FLAG_SNAPSHOT_LIVE_REFRESH_PHASE__?: unknown
+  process?: { env?: Record<string, unknown> }
+}
+
+const LIVE_REFRESH_ENABLED_PHASES: ReadonlySet<FlagRolloutPhase> = new Set([
+  'phase-b0',
+  'phase-b1'
+])
+
+const parseLiveRefreshPhase = (
+  value: unknown
+): FlagRolloutPhase | null => {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const normalized = value.trim().toLowerCase()
+  switch (normalized) {
+    case 'phase-b0':
+    case 'phase-b1':
+      return normalized
+    default:
+      return null
+  }
+}
+
+const readLiveRefreshPhaseFromEnvironment = (): FlagRolloutPhase | null => {
+  const scope = globalThis as FlagLiveRefreshScope
+  const importMetaEnv = readImportMetaEnv()
+  const candidates: readonly unknown[] = [
+    scope.__FLAG_SNAPSHOT_LIVE_REFRESH_PHASE__,
+    importMetaEnv?.VITE_FLAG_SNAPSHOT_LIVE_REFRESH_PHASE,
+    scope.process?.env?.VITE_FLAG_SNAPSHOT_LIVE_REFRESH_PHASE
+  ]
+  for (const candidate of candidates) {
+    const phase = parseLiveRefreshPhase(candidate)
+    if (phase) {
+      return phase
+    }
+  }
+  return null
+}
+
+const shouldEnableLiveRefresh = (
+  config: FlagSnapshotSubscriptionConfig | null | undefined
+): boolean => {
+  if (typeof config?.enableLiveRefresh === 'boolean') {
+    return config.enableLiveRefresh
+  }
+  const phase =
+    config?.liveRefreshPhase ?? readLiveRefreshPhaseFromEnvironment()
+  return phase !== null && LIVE_REFRESH_ENABLED_PHASES.has(phase)
+}
+
 export interface FlagSnapshotSubscription {
   readonly read: () => FlagSnapshot
   readonly subscribe: (listener: FlagSnapshotListener) => () => void
@@ -313,7 +374,8 @@ export interface FlagSnapshotSubscription {
 }
 
 export function createFlagSnapshotSubscription(
-  options?: ResolveOptions | null
+  options?: ResolveOptions | null,
+  config?: FlagSnapshotSubscriptionConfig | null
 ): FlagSnapshotSubscription {
   const listeners = new Set<FlagSnapshotListener>()
   let disposed = false
@@ -354,12 +416,16 @@ export function createFlagSnapshotSubscription(
     }
   }
 
+  const liveRefreshEnabled = shouldEnableLiveRefresh(config)
+
   if (typeof window !== 'undefined') {
-    window.addEventListener('storage', handleStorage)
+    if (liveRefreshEnabled) {
+      window.addEventListener('storage', handleStorage)
+    }
     window.addEventListener(FLAG_REFRESH_EVENT, handleRefreshEvent)
   }
 
-  if (typeof document !== 'undefined') {
+  if (liveRefreshEnabled && typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', handleVisibilityChange)
   }
 
@@ -379,10 +445,12 @@ export function createFlagSnapshotSubscription(
     disposed = true
     listeners.clear()
     if (typeof window !== 'undefined') {
-      window.removeEventListener('storage', handleStorage)
+      if (liveRefreshEnabled) {
+        window.removeEventListener('storage', handleStorage)
+      }
       window.removeEventListener(FLAG_REFRESH_EVENT, handleRefreshEvent)
     }
-    if (typeof document !== 'undefined') {
+    if (liveRefreshEnabled && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }
