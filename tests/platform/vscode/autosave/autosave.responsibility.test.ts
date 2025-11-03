@@ -22,6 +22,7 @@ import {
   nextReqId
 } from '../../../../src/platform/vscode/autosave/state.js';
 import { createVscodeAutoSaveBridge } from '../../../../src/platform/vscode/autosave.js';
+import type { Day8CollectorFlagResolutionEvent } from '../../../../src/telemetry/day8Collector.js';
 
 class TestDomException extends Error {
   override name = 'NotAllowedError';
@@ -201,6 +202,59 @@ test('publishCollectorSnapshotResult flags localStorage guard as QA phase', () =
 
   assert.equal(calls.length, 1);
   assert.equal((calls[0] as { phase: string }).phase, 'A-1');
+});
+
+test('createVscodeAutoSaveBridge publishes flag resolution telemetry on bootstrap fallback', () => {
+  const scope = globalThis as {
+    Day8Collector?: { publish: (event: Day8CollectorFlagResolutionEvent) => void }
+  };
+  const previous = scope.Day8Collector;
+  const published: Day8CollectorFlagResolutionEvent[] = [];
+  scope.Day8Collector = {
+    publish: (event) => {
+      published.push(event);
+    }
+  };
+
+  try {
+    const now = new Date('2024-01-01T00:00:00.000Z');
+    createVscodeAutoSaveBridge({
+      initialGuard: {
+        featureFlag: { value: false, source: 'env' },
+        optionsDisabled: false
+      },
+      policy: {
+        debounceMs: 100,
+        idleMs: 100,
+        maxGenerations: 1,
+        maxBytes: 1024,
+        disabled: false
+      },
+      flags: undefined,
+      workspace: null,
+      now: () => now,
+      sendMessage: () => {
+        // noop
+      },
+      atomicWrite: async () => ({
+        ok: true,
+        bytes: 0,
+        retainedBytes: 0,
+        generation: 0,
+        lockStrategy: 'web-lock'
+      })
+    });
+
+    assert.ok(
+      published.some((event) => event.event === 'flag_resolution'),
+      'expected Day8Collector flag_resolution event'
+    );
+  } finally {
+    scope.Day8Collector = previous;
+    if (!previous) {
+      delete scope.Day8Collector;
+    }
+  }
 });
 
 test('encodeGuardTelemetry marks localStorage guard as QA phase', () => {
