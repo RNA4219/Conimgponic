@@ -67,10 +67,10 @@ sequenceDiagram
 #### 0.2.3 `src/config/index.ts` 統合ポイントと段階的導入
 1. **エクスポート整備**: `src/config/index.ts` が `resolveFlags`・`FlagSnapshot` などを透過公開している現状を維持しつつ、Phase-a0 では既存呼び出しファイルへ新関数を案内する。
 2. **App.tsx 適用**: AutoSave 初期化前に `resolveFlags()` を呼び出し、`autosave.enabled` を `FlagSnapshot.autosave.enabled` から参照する。従来の `localStorage` 直読はフェールセーフとして残す（`FLAG_MIGRATION_PLAN.phase-a0`）。【F:src/config/index.ts†L1-L23】
-3. **Live Refresh ガード**: `createFlagSnapshotSubscription()` は Phase A では `storage`/`visibilitychange` リスナーを登録せず、`notifyFlagSnapshotRefresh()` の手動通知のみ許可する。Phase B へ移行する際は `VITE_FLAG_SNAPSHOT_LIVE_REFRESH_PHASE=phase-b0`（または `phase-b1`）を設定し、リスナーを有効化した上でテレメトリ負荷が ±5% 内に収まることを確認する。【F:src/App.tsx†L315-L399】
-4. **MergeDock 適用**: `merge.precision` を `FlagSnapshot.merge.precision` へ差し替え、`precision` フラグで Diff Merge タブの露出を制御する（Phase-b0）。後方互換のため `legacyStorageKeys` を監視し、削除タイミングをテレメトリで検証する。
-5. **Collector 連携**: `FlagValidationError` と `FlagSnapshot.source` をテレメトリに送出し、Day8/Collector の JSONL に `flag_resolution` イベントを追加する。`docs/AUTOSAVE-DESIGN-IMPL.md` の保存ポリシーと整合すること。
-6. **段階的差分**: Phase-a1 で AutoSave ランナーへ `FlagSnapshot` を渡し、Phase-b0 でレガシー参照を除去する。各段階は小粒な PR とし、既存読者が差分で追えるよう `FLAG_MIGRATION_PLAN` の exit criteria をレビュー checklist に転記する。
+3. **MergeDock 適用**: `merge.precision` を `FlagSnapshot.merge.precision` へ差し替え、`precision` フラグで Diff Merge タブの露出を制御する（Phase-b0）。後方互換のため `legacyStorageKeys` を監視し、削除タイミングをテレメトリで検証する。
+4. **Collector 連携**: `FlagValidationError` と `FlagSnapshot.source` をテレメトリに送出し、Day8/Collector の JSONL に `flag_resolution` イベントを追加する。`docs/AUTOSAVE-DESIGN-IMPL.md` の保存ポリシーと整合すること。
+5. **段階的差分**: Phase-a1 で AutoSave ランナーへ `FlagSnapshot` を渡し、Phase-b0 でレガシー参照を除去する。各段階は小粒な PR とし、既存読者が差分で追えるよう `FLAG_MIGRATION_PLAN` の exit criteria をレビュー checklist に転記する。
+6. **Plugin Bridge 配布とロールバック**: Phase-a1 で QA/拡張開発者へ `plugins.enable` を配布する際は `flags:set plugins.enable true` → `flags:push --env qa` → Collector の `flag_resolution` が `status='success'` で安定することを確認する。`retryable=false` な `plugins.enable` エラーが 3 回以上連続した場合は即時に `flags:rollback --phase phase-a0` を実行し、`conimg.plugins.enable` のワークスペース値とローカルストレージ (`plugins.enable`) をクリアする。
 
 #### 0.2.2 Phase ガード優先度と解除時の挙動整理
 

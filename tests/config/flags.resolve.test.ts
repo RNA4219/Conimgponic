@@ -45,17 +45,20 @@ function createStorage(values: Record<string, string | undefined>): StorageStub 
   }
 }
 
-test('env overrides workspace and localStorage for autosave and merge precision', () => {
+test('env overrides workspace and localStorage for autosave, plugin bridge, and merge precision', () => {
   const env = {
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'true',
+    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].envKey]: 'true',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'STABLE'
   }
   const workspace = createWorkspace({
     'autosave.enabled': false,
+    'plugins.enable': '0',
     'merge.threshold': 0.75
   })
   const storage = createStorage({
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: '0',
+    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].storageKey]: '1',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'legacy'
   })
 
@@ -63,6 +66,8 @@ test('env overrides workspace and localStorage for autosave and merge precision'
 
   assert.equal(snapshot.autosave.enabled, true)
   assert.equal(snapshot.autosave.source, 'env')
+  assert.equal(snapshot.plugins.enabled, true)
+  assert.equal(snapshot.plugins.source, 'env')
   assert.equal(snapshot.merge.precision, 'stable')
   assert.equal(snapshot.merge.source, 'env')
   assert.equal(snapshot.updatedAt, '2024-05-01T01:02:03.456Z')
@@ -71,6 +76,7 @@ test('env overrides workspace and localStorage for autosave and merge precision'
 test('workspace settings provide values when env is absent', () => {
   const workspace = createWorkspace({
     'autosave.enabled': '1',
+    'plugins.enable': '1',
     'merge.threshold': 0.83
   })
 
@@ -78,6 +84,8 @@ test('workspace settings provide values when env is absent', () => {
 
   assert.equal(snapshot.autosave.enabled, true)
   assert.equal(snapshot.autosave.source, 'workspace')
+  assert.equal(snapshot.plugins.enabled, true)
+  assert.equal(snapshot.plugins.source, 'workspace')
   assert.equal(snapshot.merge.precision, 'stable')
   assert.equal(snapshot.merge.source, 'workspace')
   assert.equal(snapshot.updatedAt, '2024-02-03T04:05:06.789Z')
@@ -88,6 +96,8 @@ test('workspace getter handles conimg-prefixed keys for autosave and merge flags
     get(key: string) {
       switch (key) {
         case 'conimg.autosave.enabled':
+          return 'true'
+        case 'conimg.plugins.enable':
           return 'true'
         case 'conimg.merge.threshold':
           return 0.84
@@ -101,6 +111,8 @@ test('workspace getter handles conimg-prefixed keys for autosave and merge flags
 
   assert.equal(snapshot.autosave.enabled, true)
   assert.equal(snapshot.autosave.source, 'workspace')
+  assert.equal(snapshot.plugins.enabled, true)
+  assert.equal(snapshot.plugins.source, 'workspace')
   assert.equal(snapshot.merge.precision, 'stable')
   assert.equal(snapshot.merge.source, 'workspace')
   assert.equal(snapshot.merge.threshold, 0.84)
@@ -111,10 +123,14 @@ test('workspace getter that requires conimg prefix is supported', () => {
     get(key: string) {
       if (!key.startsWith('conimg.')) {
         assert.notEqual(key, 'autosave.enabled', 'autosave.enabled must be resolved via conimg prefix')
+        assert.notEqual(key, 'plugins.enable', 'plugins.enable must be resolved via conimg prefix')
         assert.notEqual(key, 'merge.threshold', 'merge.threshold must be resolved via conimg prefix')
         return undefined
       }
       if (key === 'conimg.autosave.enabled') {
+        return 'true'
+      }
+      if (key === 'conimg.plugins.enable') {
         return 'true'
       }
       if (key === 'conimg.merge.threshold') {
@@ -128,6 +144,8 @@ test('workspace getter that requires conimg prefix is supported', () => {
 
   assert.equal(snapshot.autosave.enabled, true)
   assert.equal(snapshot.autosave.source, 'workspace')
+  assert.equal(snapshot.plugins.enabled, true)
+  assert.equal(snapshot.plugins.source, 'workspace')
   assert.equal(snapshot.merge.precision, 'stable')
   assert.equal(snapshot.merge.source, 'workspace')
   assert.equal(snapshot.merge.threshold, 0.86)
@@ -135,14 +153,17 @@ test('workspace getter that requires conimg prefix is supported', () => {
 
 test('localStorage is used when env and workspace are invalid', () => {
   const env = {
-    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'INVALID'
+    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'INVALID',
+    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].envKey]: 'MAYBE'
   }
   const workspace = createWorkspace({
     'autosave.enabled': null,
+    'plugins.enable': '???',
     'merge.threshold': 'NaN'
   })
   const storage = createStorage({
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: 'true',
+    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].storageKey]: 'true',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'beta'
   })
 
@@ -150,6 +171,8 @@ test('localStorage is used when env and workspace are invalid', () => {
 
   assert.equal(snapshot.autosave.enabled, true)
   assert.equal(snapshot.autosave.source, 'localStorage')
+  assert.equal(snapshot.plugins.enabled, true)
+  assert.equal(snapshot.plugins.source, 'localStorage')
   assert.equal(snapshot.merge.precision, 'beta')
   assert.equal(snapshot.merge.source, 'localStorage')
 })
@@ -163,6 +186,8 @@ test('defaults are used when no sources apply', () => {
 
   assert.equal(snapshot.autosave.enabled, false)
   assert.equal(snapshot.autosave.source, 'default')
+  assert.equal(snapshot.plugins.enabled, false)
+  assert.equal(snapshot.plugins.source, 'default')
   assert.equal(snapshot.merge.source, 'default')
   assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
   assert.ok(Number.isFinite(Date.parse(snapshot.updatedAt)))
@@ -192,14 +217,17 @@ test('source typing includes workspace', () => {
 test('invalid values aggregate errors and fall back to defaults', () => {
   const env = {
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'MAYBE',
+    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].envKey]: 'INVALID',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'invalid'
   }
   const workspace = createWorkspace({
     'autosave.enabled': 'not-boolean',
+    'plugins.enable': 'not-boolean',
     'merge.threshold': 1.5
   })
   const storage = createStorage({
     [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: 'truthy?',
+    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].storageKey]: 'yes',
     [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'gamma'
   })
 
@@ -214,7 +242,7 @@ test('invalid values aggregate errors and fall back to defaults', () => {
     DEFAULT_FLAGS.merge.profile.threshold
   )
 
-  assert.equal(result.errors.length, 9)
+  assert.equal(result.errors.length, 12)
   const sources = result.errors.reduce<Record<FlagSource, number>>(
     (acc, error) => {
       acc[error.source] = (acc[error.source] ?? 0) + 1
@@ -223,9 +251,9 @@ test('invalid values aggregate errors and fall back to defaults', () => {
     { env: 0, workspace: 0, localStorage: 0, default: 0 }
   )
   assert.deepEqual(sources, {
-    env: 3,
-    workspace: 3,
-    localStorage: 3,
+    env: 4,
+    workspace: 4,
+    localStorage: 4,
     default: 0
   })
 
