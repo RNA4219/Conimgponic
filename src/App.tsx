@@ -253,7 +253,7 @@ export function resolveAutoSaveBootstrapPlanForApp(
 }
 
 export interface MergeDockIntegrationSnapshot {
-  readonly flagSnapshot: Pick<FlagSnapshot, 'merge'>
+  readonly flagSnapshot: Pick<FlagSnapshot, 'merge' | 'autosave'>
   readonly mergeThreshold: number | null
   readonly autoAppliedRate: number | null
   readonly workspace: ResolveOptions['workspace'] | null
@@ -653,7 +653,10 @@ export function resolveMergeDockIntegration(
 ): MergeDockIntegrationSnapshot {
   const snapshot = plan?.snapshot ?? DEFAULT_FLAG_SNAPSHOT
   const threshold = plan?.snapshot.merge.threshold ?? snapshot.merge.threshold ?? null
-  const flagSnapshot: Pick<FlagSnapshot, 'merge'> = { merge: snapshot.merge }
+  const flagSnapshot: Pick<FlagSnapshot, 'merge' | 'autosave'> = {
+    merge: snapshot.merge,
+    autosave: snapshot.autosave
+  }
   const workspace = options?.workspace ?? null
   const phaseStats = resolveWorkspacePhaseStats(workspace)
   return {
@@ -760,6 +763,7 @@ export default function App({ resolveOptions }: AppProps = {}){
     return resolveMergeDockIntegration(mergeAlignedPlan, resolvedOptions)
   }, [autoSavePlan, flagSnapshot.merge, resolvedOptions])
   const mergeDockFlags = mergeDockIntegration.flagSnapshot
+  const mergeDockAutoSaveEnabled = mergeDockFlags.autosave.enabled
   return (
     <div className="app">
       <div className="toolbar">
@@ -828,6 +832,7 @@ export default function App({ resolveOptions }: AppProps = {}){
             autoAppliedRate={mergeDockIntegration.autoAppliedRate}
             phaseStats={mergeDockIntegration.phaseStats}
             workspace={mergeDockIntegration.workspace}
+            autoSaveEnabled={mergeDockAutoSaveEnabled}
           />
         </div>
       ) : null}
