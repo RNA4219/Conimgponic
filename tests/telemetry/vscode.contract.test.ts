@@ -6,7 +6,8 @@ import {
   COLLECT_METRICS_CONTRACT,
   FLAG_RESOLUTION_SOURCE_VARIANTS,
   MERGE_PRECISION_VARIANTS,
-  TELEMETRY_ENVELOPE_METADATA_FIELDS
+  TELEMETRY_ENVELOPE_METADATA_FIELDS,
+  type FlagResolutionErrorPayload,
 } from '../../scripts/monitor/collect-metrics.js'
 import {
   compareNormalizedOutputs,
@@ -86,6 +87,18 @@ type TelemetrySchemaConditional = {
 const telemetrySchema = JSON.parse(
   readFileSync(new URL('../../schemas/telemetry.schema.json', import.meta.url), 'utf-8')
 ) as TelemetrySchema
+
+type Assert<T extends true> = T
+type IsExact<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)
+    ? (<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2)
+      ? true
+      : false
+    : false
+
+type _assertFlagResolutionErrorCode = Assert<
+  IsExact<FlagResolutionErrorPayload['code'], 'invalid-boolean' | 'invalid-precision'>
+>
 
 const collectMetricsSource = readFileSync(
   new URL('../../scripts/monitor/collect-metrics.ts', import.meta.url),
