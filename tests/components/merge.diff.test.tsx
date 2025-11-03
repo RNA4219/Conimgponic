@@ -362,6 +362,19 @@ test('stable precision without phase stats keeps diff tab visible but disabled',
   assert.equal(plan.diff.initialTab, 'diff')
 })
 
+test('stable precision hides diff tab when autosave is disabled', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.86,
+    autoSaveEnabled: false,
+  })
+
+  assert.equal(plan.diff.visible, false)
+  assert.equal(plan.diff.enabled, false)
+  assert.equal(plan.diff.exposure, 'hidden')
+  assert.equal(plan.tabs.tabs.some((entry) => entry.id === 'diff'), false)
+})
+
 test('stable precision keeps diff opt-in until auto apply meets target', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'stable',

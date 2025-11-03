@@ -36,6 +36,7 @@ export interface MergeDockPhaseInput {
   readonly lastTab?: MergeDockTabId
   readonly autoAppliedRate?: number | null
   readonly phaseStats?: MergeDockPhaseStats | null
+  readonly autoSaveEnabled?: boolean
 }
 
 export interface MergeThresholdPlan {
@@ -204,6 +205,7 @@ export const resolveMergeDockPhasePlan = ({
   lastTab,
   autoAppliedRate,
   phaseStats,
+  autoSaveEnabled = true,
 }: MergeDockPhaseInput): MergeDockPhasePlan => {
   const rule = THRESHOLD_RULES[precision]
   const thresholdPlan = resolveMergeThresholdPlan(precision, threshold)
@@ -222,7 +224,7 @@ export const resolveMergeDockPhasePlan = ({
           : hasReviewSignals || hasConflictSignals
         : false
   const diffConfigured = !!baseTabPlan.diff && precision !== 'legacy'
-  const shouldHideDiff = !diffConfigured
+  const shouldHideDiff = !diffConfigured || !autoSaveEnabled
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
   const shouldDemoteDiff = diffConfigured && meetsTarget === false
