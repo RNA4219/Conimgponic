@@ -31,3 +31,35 @@ test('mergeCSV.quote-trimming: 二重引用符を除去し制御文字を展開�
   assert.strictEqual(scene?.take, 7)
   assert.strictEqual(scene?.ai, '')
 })
+
+// Guardrails: 「実装時はテスト駆動開発を基本とし、テストを先に記述する。」
+// (Day8/workflow-cookbook/GUARDRAILS.md)
+// Contributing: 「1タスク=1ブランチ=1PR（±300行/≤3ファイルを目安）」
+// (Day8/docs/day8/guides/07_contributing.md)
+test('mergeCSV.quote-trimming: text列が無い場合は既存manualテキストを保持する', () => {
+  const before: Storyboard = {
+    id: 'sb-text-preserve',
+    title: 'text-preserve',
+    scenes: [
+      {
+        id: 'scene-existing',
+        manual: '既存の本文(manual)',
+        ai: '既存の本文(ai)',
+        status: 'idle',
+        assets: [],
+      },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  const csv = ['id,tone', 'scene-existing,"New tone"'].join('\n')
+
+  const merged = mergeCSV(before, csv, 'manual')
+  const scene = merged.scenes.find((s) => s.id === 'scene-existing')
+
+  assert.ok(scene, 'scene-existing should remain present')
+  assert.strictEqual(scene?.manual, '既存の本文(manual)')
+  assert.strictEqual(scene?.ai, '既存の本文(ai)')
+  assert.strictEqual(scene?.tone, 'New tone')
+})
