@@ -10,6 +10,9 @@
     "maxGenerations": 20,
     "maxBytes": 52428800
   },
+  "plugins": {
+    "enable": false
+  },
   "merge": {
     "precision": "legacy",
     "profile": {
