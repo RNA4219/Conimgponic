@@ -1,5 +1,11 @@
 # AutoSave/精緻マージ ロールアウト SLO チェックリスト
 
+## 2024-03-27 進捗ログ
+- ✅ Implementation Plan 0.2.3-1/2: `resolveAutoSaveBootstrapPlan` が `resolveFlags()`・`resolveAutoSavePolicy()` 経由で `FlagSnapshot` と固定ポリシーを解決し、App ブートストラップでガード判定に使用できる状態。テレメトリは `collectFlagResolutionPayloads` → `publishFlagResolution` 経路で Day8 Collector へ送出済み。
+- ✅ Implementation Plan 0.2.3-4 / docs/AUTOSAVE-DESIGN-IMPL: フェーズ A ポリシー（デバウンス500ms/アイドル2s/履歴20世代・50MB）と `FlagValidationError` のソース付与がテレメトリに反映され、VS Code ブリッジ経由でも同一スナップショットを共有可能。
+- ⏳ Implementation Plan 0.2.3-5: Phase-b0 でのレガシー localStorage 参照削除は未着手。`createFlagSnapshotSubscription` のフェールセーフを段階的に縮退させるタスクを作成し、Collector 側の `flag_resolution` 安定化を確認後に実施する。
+  - 次アクション: Flag refresh 通知の重複送信計測と `FLAG_MIGRATION_PLAN` exit criteria のレビュー記録を追加。`reports/today.md` に計測結果を追記するタスクを発行。
+
 ## Canary 前提条件
 - [ ] `pnpm run flags:status` で Canary 対象が `autosave.enabled=true`、`merge.precision=beta` になっている。
 - [ ] `telemetry/autosave/*.jsonl` が Collector に 15 分間隔で到達し、欠損がない（`logs/rollout/collector/canary/` を確認）。
@@ -32,3 +38,9 @@
 - [ ] `resolveFlags()` 再実行時に `autosave.enabled=false` または `merge.precision=legacy` へ戻っている。
 - [ ] Incident 後のポストモーテムが `reports/postmortem/<incident>.md` へ作成された。
 - [ ] `reports/task-seed-rollout-monitoring.md` をもとにフォローアップタスクが作成された。
+
+## 関係者共有テンプレート
+- **PR コメント:**
+  > resolveAutoSaveBootstrapPlan / telemetry integration のフェーズ A 要件が完了しました。App ブートストラップと VS Code ブリッジの両方で FlagSnapshot 経由のガード判定に移行済みです。Phase-b0 でのローカルストレージ縮退のみ残タスクとして追跡します。
+- **Slack (#autosave-canary):**
+  > [更新] FlagSnapshot ベースの AutoSave ブートストラップと flag_resolution テレメトリが collector 反映まで完了。Phase-b0 のローカルストレージ撤去タスクを別途起票予定です。Collector 監視に追加の異常があれば共有ください。
