@@ -55,6 +55,19 @@ test('MergeDock mergeMarkdownStoryboard updates scenes when markdown starts with
   assert.equal(imported.scenes[1]?.ai, 'original ai 2')
 })
 
+// RED: スペース付き見出しをセパレーターとして扱う
+test('MergeDock mergeMarkdownStoryboard handles headings prefixed with spaces as separators', () => {
+  assert.ok(
+    mergeMarkdownStoryboard,
+    'Day8/workflow-cookbook/GUARDRAILS.md「実装時はテスト駆動開発を基本とし、テストを先に記述する。」と Day8/docs/day8/guides/07_contributing.md「1タスク=1ブランチ=1PR（±300行/≤3ファイルを目安）」を引用し、スペース付き見出しの RED ケースを追加する',
+  )
+
+  const base: Storyboard = {
+    id: 'sb-merge-leading-space',
+  }
+})
+
+// RED: インデント付き見出しの切り出しをテスト
 test('MergeDock mergeMarkdownStoryboard imports scenes even when cut headings are indented', () => {
   assert.ok(
     mergeMarkdownStoryboard,
@@ -63,6 +76,9 @@ test('MergeDock mergeMarkdownStoryboard imports scenes even when cut headings ar
 
   const base: Storyboard = {
     id: 'sb-merge-leading-space-heading',
+  }
+})
+
     title: 'Storyboard',
     scenes: [
       { id: 'cut-1', manual: 'original manual 1', ai: 'original ai 1', status: 'idle', assets: [] },
