@@ -2678,6 +2678,113 @@ test('AS-LK-09d: releaseProjectLock failure invokes onReadonly once', async (t) 
   assert.equal(errorEvent.error.code, 'release-failed')
 })
 
+test('AS-LK-09l: fatal release failure emits error and readonly once', async (t) => {
+  const events: ProjectLockEvent[] = []
+  const unsubscribe = projectLockEvents.subscribe((event) => {
+    events.push(event)
+  })
+  t.after(unsubscribe)
+
+  const fatalError = new ProjectLockError('release-failed', 'Fatal release failure', {
+    retryable: false,
+    operation: 'release',
+  })
+
+  const releaseMock = t.mock.fn(async () => {
+    throw fatalError
+  })
+
+  const request = t.mock.fn((...args: unknown[]) => {
+    assert.ok(args.length === 2 || args.length === 3, 'navigator.locks.request must receive key and handler')
+    const [key, optionsOrCallback, callback] = args as [
+      string,
+      { mode: 'exclusive'; signal?: AbortSignal } | ((lock: LockHandleLike & { released: Promise<void> }) => Promise<unknown>),
+      ((lock: LockHandleLike & { released: Promise<void> }) => Promise<unknown>) | undefined
+    ]
+    const handler = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+    const options = typeof optionsOrCallback === 'function' ? undefined : optionsOrCallback
+    assert.equal(key, WEB_LOCK_KEY)
+    assert.equal(typeof handler, 'function', 'navigator.locks.request must receive a callback handler')
+    if (options) {
+      assert.equal(options.mode, 'exclusive')
+    }
+    const handle: LockHandleLike & { released: Promise<void> } = {
+      release: releaseMock,
+      released: Promise.resolve(),
+    }
+    return Promise.resolve(handler!(handle))
+  })
+
+  const originalNavigator = (globalThis as typeof globalThis & { navigator?: unknown }).navigator
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { locks: { request } },
+    configurable: true,
+  })
+  t.after(() => {
+    if (originalNavigator === undefined) {
+      delete (globalThis as { navigator?: unknown }).navigator
+    } else {
+      Object.defineProperty(globalThis, 'navigator', { value: originalNavigator, configurable: true })
+    }
+  })
+
+  const uuids = ['lease-release-fatal', 'owner-release-fatal']
+  t.mock.method(crypto, 'randomUUID', () => {
+    const value = uuids.shift()
+    if (!value) throw new Error('uuid exhausted')
+    return value
+  })
+
+  const readonlyCalls: ProjectLockError[] = []
+  const lease = await acquireProjectLock({ preferredStrategy: 'web-lock', retry: false })
+
+  await assert.rejects(
+    async () => releaseProjectLock(lease, { onReadonly: (error) => readonlyCalls.push(error) }),
+    (error: unknown) => {
+      assert.strictEqual(error, fatalError)
+      return true
+    }
+  )
+
+  assert.deepEqual(readonlyCalls, [fatalError], 'onReadonly must fire exactly once for fatal release failure')
+  assert.equal(releaseMock.mock.calls.length, 1, 'release must be invoked exactly once for fatal release failure')
+
+  const releaseRequestedIndex = events.findIndex(
+    (event): event is Extract<ProjectLockEvent, { type: 'lock:release-requested' }>
+      => event.type === 'lock:release-requested' && event.lease.leaseId === lease.leaseId
+  )
+  assert.notEqual(releaseRequestedIndex, -1, 'lock:release-requested must emit before fatal release failure')
+
+  const errorEvents = events.filter(
+    (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }> =>
+      event.type === 'lock:error' && event.error === fatalError
+  )
+  assert.equal(errorEvents.length, 1, 'lock:error must emit exactly once for fatal release failure')
+  assert.equal(errorEvents[0]?.operation, 'release')
+  assert.equal(errorEvents[0]?.retryable, false)
+
+  const readonlyEvents = events.filter(
+    (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }> =>
+      event.type === 'lock:readonly-entered' && event.lastError === fatalError
+  )
+  assert.equal(readonlyEvents.length, 1, 'lock:readonly-entered must emit exactly once for fatal release failure')
+  assert.equal(readonlyEvents[0]?.reason, 'release-failed')
+
+  const errorIndex = events.findIndex(
+    (event): event is Extract<ProjectLockEvent, { type: 'lock:error' }> =>
+      event.type === 'lock:error' && event.error === fatalError
+  )
+  assert.notEqual(errorIndex, -1, 'lock:error event missing for fatal release failure')
+  assert.ok(errorIndex > releaseRequestedIndex, 'lock:error must follow lock:release-requested for fatal release failure')
+
+  const readonlyIndex = events.findIndex(
+    (event): event is Extract<ProjectLockEvent, { type: 'lock:readonly-entered' }> =>
+      event.type === 'lock:readonly-entered' && event.lastError === fatalError
+  )
+  assert.notEqual(readonlyIndex, -1, 'lock:readonly-entered event missing for fatal release failure')
+  assert.ok(readonlyIndex > errorIndex, 'lock:readonly-entered must follow lock:error for fatal release failure')
+})
+
 scenario(
   'AS-LK-09e: fallback release failure invokes onReadonly once and caches error',
   { navigator: { locks: undefined } },

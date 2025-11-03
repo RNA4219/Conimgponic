@@ -350,27 +350,16 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     return rememberReleaseFailure(lease.leaseId, error, attempts, readonlyNotified, nextDelay);
   };
 
-  const handleFailure = (error: ProjectLockError): never => {
-    const state = processFailure(error);
-    emitError(state.lastError);
-    if (!state.readonlyNotified && !shouldDeferReadonlyForRelease(state.lastError, state.attempts)) {
-      state.readonlyNotified = true;
-      releaseFailures.set(lease.leaseId, state);
-      emitReadonly('release-failed', state.lastError, options.onReadonly);
-    }
-    throw state.lastError;
-  };
-
   if (currentState?.nextDelayMs) {
     await awaitReleaseDelay(currentState.nextDelayMs, options.signal);
   }
 
   if (existingReleaseError && !currentState) {
-    const state = processFailure(existingReleaseError);
+    let state = processFailure(existingReleaseError);
     emitError(state.lastError);
     if (!state.readonlyNotified) {
+      state = rememberReleaseFailure(lease.leaseId, state.lastError, state.attempts, true, state.nextDelayMs);
       emitReadonly('release-failed', state.lastError, options.onReadonly);
-      rememberReleaseFailure(lease.leaseId, state.lastError, state.attempts, true, state.nextDelayMs);
     }
     throw state.lastError;
   }
@@ -393,7 +382,13 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
       error instanceof ProjectLockError
         ? error
         : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
-    handleFailure(projectError);
+    let state = processFailure(projectError);
+    emitError(state.lastError);
+    if (!state.readonlyNotified && !shouldDeferReadonlyForRelease(state.lastError, state.attempts)) {
+      state = rememberReleaseFailure(lease.leaseId, state.lastError, state.attempts, true, state.nextDelayMs);
+      emitReadonly('release-failed', state.lastError, options.onReadonly);
+    }
+    throw state.lastError;
   }
 };
 
