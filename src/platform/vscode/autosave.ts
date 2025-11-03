@@ -10,6 +10,11 @@ import type {
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
 import { deriveAutoSavePhaseGuard, resolveWorkspaceFlags } from './flags/index.js'
 import {
+  resolveAutoSaveBootstrapPlan,
+  type FlagSnapshot,
+  type WorkspaceConfiguration
+} from '../../config/index.js'
+import {
   createDisabledError,
   normalizeAtomicWriteError
 } from './autosave/error.js'
@@ -134,6 +139,20 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
     options.flags ?? resolveWorkspaceFlags({ workspace, clock: options.now })
   const initialGuard = options.initialGuard ?? deriveAutoSavePhaseGuard(bootstrapFlags)
   const state: InternalState = createInitialState(initialGuard)
+  let bootstrapGuard = options.initialGuard
+  let bootstrapFlags: FlagSnapshot
+
+  if (options.flags) {
+    bootstrapFlags = options.flags
+  } else {
+    const plan = resolveAutoSaveBootstrapPlan(
+      { workspace: options.workspace ?? null, clock: options.now },
+      { optionsDisabled: options.initialGuard.optionsDisabled }
+    )
+    bootstrapFlags = plan.snapshot
+  }
+
+  const state: InternalState = createInitialState(bootstrapGuard)
   const bootstrapReqId = nextReqId(state)
   const bootstrapCorrelationId = nextCorrelationId(state)
   const bootstrapTs = toIsoTimestamp(options.now)
@@ -144,6 +163,7 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       bootstrapTs,
       options.policy,
       initialGuard,
+      bootstrapGuard,
       bootstrapFlags
     )
   )

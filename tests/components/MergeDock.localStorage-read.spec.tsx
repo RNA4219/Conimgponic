@@ -53,7 +53,9 @@ test('MergeDock.localStorage-read falls back to defaults when storage.getItem th
 
     let html: string | undefined
     assert.doesNotThrow(() => {
-      html = renderToStaticMarkup(<MergeDock flags={flags} workspace={null} />)
+      html = renderToStaticMarkup(
+        <MergeDock flags={flags} workspace={null} autoSaveEnabled={true} />,
+      )
     })
     assert(html)
     assert.match(html!, /class="tab active"[^>]*>Diff/)

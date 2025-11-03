@@ -160,10 +160,10 @@ export type FlagResolutionErrorPhase =
   | 'phase-b1';
 
 export interface FlagResolutionErrorPayload {
-  readonly code: string;
+  readonly code: 'invalid-boolean' | 'invalid-precision';
   readonly message: string;
   readonly flag: string;
-  readonly retryable: boolean;
+  readonly retryable: false;
   readonly source: FlagResolutionSource;
   readonly phase: FlagResolutionErrorPhase;
   readonly raw: string;

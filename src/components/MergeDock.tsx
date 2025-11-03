@@ -110,6 +110,7 @@ interface MergeDockProps {
   readonly autoAppliedRate?: number | null
   readonly phaseStats?: MergeDockPhaseStats | null
   readonly workspace?: WorkspaceConfiguration | null
+  readonly autoSaveEnabled: boolean
 }
 
 export function MergeDock({
@@ -118,6 +119,7 @@ export function MergeDock({
   autoAppliedRate = null,
   phaseStats = null,
   workspace = null,
+  autoSaveEnabled,
 }: MergeDockProps){
   const sb = useSB((state) => state.sb)
   const storage = typeof window !== 'undefined' ? window.localStorage : undefined
@@ -167,6 +169,7 @@ export function MergeDock({
         lastTab,
         autoAppliedRate,
         phaseStats,
+        autoSaveEnabled,
       }),
     [
       precision,
@@ -175,6 +178,7 @@ export function MergeDock({
       autoAppliedRate,
       phaseStats?.reviewBandCount ?? null,
       phaseStats?.conflictBandCount ?? null,
+      autoSaveEnabled,
     ],
   )
   const plan = phasePlan.tabs
