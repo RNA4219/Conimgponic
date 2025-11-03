@@ -55,6 +55,39 @@ test('MergeDock mergeMarkdownStoryboard updates scenes when markdown starts with
   assert.equal(imported.scenes[1]?.ai, 'original ai 2')
 })
 
+test('MergeDock mergeMarkdownStoryboard handles headings prefixed with spaces as separators', () => {
+  assert.ok(
+    mergeMarkdownStoryboard,
+    'Day8/workflow-cookbook/GUARDRAILS.md「実装時はテスト駆動開発を基本とし、テストを先に記述する。」と Day8/docs/day8/guides/07_contributing.md「1タスク=1ブランチ=1PR（±300行/≤3ファイルを目安）」を引用し、スペース付き見出しの RED ケースを追加する',
+  )
+
+  const base: Storyboard = {
+    id: 'sb-merge-leading-space',
+    title: 'Storyboard',
+    scenes: [
+      { id: 'cut-1', manual: 'original manual 1', ai: 'original ai 1', status: 'idle', assets: [] },
+      { id: 'cut-2', manual: 'original manual 2', ai: 'original ai 2', status: 'idle', assets: [] },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  const markdown = [
+    '  ## Cut 1',
+    'Manual line 1',
+    '',
+    '\t## Cut 2',
+    'Manual line 2',
+  ].join('\n')
+
+  const imported = mergeMarkdownStoryboard!(base, markdown, 'manual')
+
+  assert.equal(imported.scenes[0]?.manual, 'Manual line 1')
+  assert.equal(imported.scenes[1]?.manual, 'Manual line 2')
+  assert.equal(imported.scenes[0]?.ai, 'original ai 1')
+  assert.equal(imported.scenes[1]?.ai, 'original ai 2')
+})
+
 test('MergeDock resolveMergeDockImportKind accepts uppercase storyboard import extensions', () => {
   assert.ok(
     resolveMergeDockImportKind,
