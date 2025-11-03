@@ -1,0 +1,146 @@
+{
+  "kind": "docs-day8",
+  "generated_at": "00006",
+  "nodes": {
+    "docs/day8/README.md": {
+      "caps": "docs/birdseye/caps/docs.day8.README.md.json",
+      "mtime": "00004",
+      "role": "overview"
+    },
+    "docs/day8/quality/06_quality.md": {
+      "caps": "docs/birdseye/caps/docs.day8.quality.06_quality.md.json",
+      "mtime": "00004",
+      "role": "quality"
+    },
+    "docs/day8/spec/02_spec.md": {
+      "caps": "docs/birdseye/caps/docs.day8.spec.02_spec.md.json",
+      "mtime": "00004",
+      "role": "spec"
+    },
+    "docs/day8/design/03_architecture.md": {
+      "caps": "docs/birdseye/caps/docs.day8.design.03_architecture.md.json",
+      "mtime": "00004",
+      "role": "architecture"
+    },
+    "docs/day8/ops/04_ops.md": {
+      "caps": "docs/birdseye/caps/docs.day8.ops.04_ops.md.json",
+      "mtime": "00004",
+      "role": "operations"
+    },
+    "docs/day8/spec/01_requirements.md": {
+      "caps": "docs/birdseye/caps/docs.day8.spec.01_requirements.md.json",
+      "mtime": "00004",
+      "role": "requirements"
+    }
+  },
+  "edges": [
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/C_Persona_Schema.md"
+    ],
+    [
+      "docs/day8/ops/04_ops.md",
+      "docs/addenda/H_Deploy_Guide.md"
+    ],
+    [
+      "docs/day8/ops/04_ops.md",
+      "docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "docs/day8/ops/04_ops.md",
+      "docs/adr/0002-jsonl-event-contract.md"
+    ],
+    [
+      "docs/day8/ops/04_ops.md",
+      "docs/adr/0003-propose-only-governance.md"
+    ],
+    [
+      "docs/day8/design/03_architecture.md",
+      "docs/Architecture_ASCII.md"
+    ],
+    [
+      "docs/day8/design/03_architecture.md",
+      "docs/addenda/B_UI_Mock.md"
+    ],
+    [
+      "docs/day8/design/03_architecture.md",
+      "docs/adr/0001-collector-analyzer-reporter-pipeline.md"
+    ],
+    [
+      "docs/day8/design/03_architecture.md",
+      "docs/adr/0002-jsonl-event-contract.md"
+    ],
+    [
+      "docs/day8/design/03_architecture.md",
+      "docs/adr/0003-propose-only-governance.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/F_Provider_Matrix.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/D_Trim_Design.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/E_Evaluator_Details.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/M1_Metrics_Healthz_ADR.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/H_Deploy_Guide.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/J_Runbook.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/I_Test_Cases.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/addenda/M_Versioning_Release.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "docs/day8/ops/04_ops.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "workflow-cookbook/EVALUATION.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "workflow-cookbook/CHECKLISTS.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "workflow-cookbook/RUNBOOK.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "workflow-cookbook/SAFETY.md"
+    ],
+    [
+      "docs/day8/spec/02_spec.md",
+      "workflow-cookbook/SECURITY.md"
+    ],
+    [
+      "docs/day8/quality/06_quality.md",
+      "docs/addenda/I_Test_Cases.md"
+    ]
+  ],
+  "summary": {
+    "node_count": 6,
+    "edge_count": 26
+  }
+}

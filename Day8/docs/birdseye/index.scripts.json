@@ -1,0 +1,16 @@
+{
+  "kind": "scripts",
+  "generated_at": "00006",
+  "nodes": {
+    "scripts/": {
+      "caps": "docs/birdseye/caps/scripts.DIR.json",
+      "mtime": "00004",
+      "role": "automation"
+    }
+  },
+  "edges": [],
+  "summary": {
+    "node_count": 1,
+    "edge_count": 0
+  }
+}

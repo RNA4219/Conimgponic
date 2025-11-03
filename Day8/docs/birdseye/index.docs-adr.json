@@ -1,0 +1,36 @@
+{
+  "kind": "docs-adr",
+  "generated_at": "00006",
+  "nodes": {
+    "docs/adr/README.md": {
+      "caps": "docs/birdseye/caps/docs.adr.README.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    },
+    "docs/adr/0000-template.md": {
+      "caps": "docs/birdseye/caps/docs.adr.0000-template.md.json",
+      "mtime": "00004",
+      "role": "adr-template"
+    },
+    "docs/adr/0001-collector-analyzer-reporter-pipeline.md": {
+      "caps": "docs/birdseye/caps/docs.adr.0001-collector-analyzer-reporter-pipeline.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    },
+    "docs/adr/0002-jsonl-event-contract.md": {
+      "caps": "docs/birdseye/caps/docs.adr.0002-jsonl-event-contract.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    },
+    "docs/adr/0003-propose-only-governance.md": {
+      "caps": "docs/birdseye/caps/docs.adr.0003-propose-only-governance.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    }
+  },
+  "edges": [],
+  "summary": {
+    "node_count": 5,
+    "edge_count": 0
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "kind": "root",
+  "generated_at": "00006",
+  "nodes": {
+    "INSTALL.md": {
+      "caps": "docs/birdseye/caps/INSTALL.md.json",
+      "mtime": "00004",
+      "role": "setup"
+    },
+    "README.md": {
+      "caps": "docs/birdseye/caps/README.md.json",
+      "mtime": "00004",
+      "role": "overview"
+    }
+  },
+  "edges": [
+    [
+      "README.md",
+      "INSTALL.md"
+    ],
+    [
+      "README.md",
+      "docs/README.md"
+    ],
+    [
+      "README.md",
+      "docs/ROADMAP_AND_SPECS.md"
+    ],
+    [
+      "README.md",
+      "scripts/"
+    ],
+    [
+      "README.md",
+      "tools/"
+    ],
+    [
+      "README.md",
+      "workflow-cookbook/GUARDRAILS.md"
+    ],
+    [
+      "README.md",
+      "workflow-cookbook/HUB.codex.md"
+    ],
+    [
+      "README.md",
+      "workflow-cookbook/docs/birdseye/index.json"
+    ]
+  ],
+  "summary": {
+    "node_count": 2,
+    "edge_count": 8
+  }
+}

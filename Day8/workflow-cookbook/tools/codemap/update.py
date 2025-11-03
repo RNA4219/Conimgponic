@@ -159,6 +159,106 @@ def _finalise(paths: set[Path]) -> tuple[Path, ...]:
     return tuple(sorted(paths, key=lambda candidate: candidate.as_posix()))
 
 
+@dataclass
+class _IndexShard:
+    identifier: str
+    path: Path
+    data: dict[str, Any]
+    original: str
+    metadata: dict[str, Any]
+
+    def nodes(self) -> dict[str, Any]:
+        nodes = self.data.get("nodes")
+        if not isinstance(nodes, dict):
+            nodes = {}
+            self.data["nodes"] = nodes
+        return nodes
+
+    def edges(self) -> list[list[str]]:
+        edges = self.data.get("edges")
+        if not isinstance(edges, list):
+            edges = []
+            self.data["edges"] = edges
+        return edges
+
+
+@dataclass
+class _IndexBundle:
+    index_path: Path
+    index_data: dict[str, Any]
+    index_original: str
+    shards: dict[str, _IndexShard]
+    nodes: dict[str, dict[str, Any]]
+    node_membership: dict[str, _IndexShard | None]
+    edges: list[list[str]]
+
+
+def _load_index_bundle(index_path: Path) -> _IndexBundle:
+    index_data_raw, index_original = _load_json(index_path)
+    index_data = index_data_raw if isinstance(index_data_raw, dict) else {}
+    shards: dict[str, _IndexShard] = {}
+    nodes: dict[str, dict[str, Any]] = {}
+    node_membership: dict[str, _IndexShard | None] = {}
+    edge_set: set[tuple[str, str]] = set()
+
+    def _register_node(node_id: str, payload: Any, shard: _IndexShard | None) -> None:
+        if not isinstance(payload, dict):
+            return
+        nodes[node_id] = payload
+        node_membership[node_id] = shard
+
+    raw_nodes = index_data.get("nodes")
+    if isinstance(raw_nodes, dict):
+        for node_id, payload in raw_nodes.items():
+            if isinstance(node_id, str):
+                _register_node(node_id, payload, None)
+
+    raw_edges = index_data.get("edges")
+    if isinstance(raw_edges, Sequence):
+        for raw_edge in raw_edges:
+            if not isinstance(raw_edge, Sequence) or len(raw_edge) != 2:
+                continue
+            source, destination = raw_edge
+            if isinstance(source, str) and isinstance(destination, str):
+                edge_set.add((source, destination))
+
+    raw_shards = index_data.get("shards")
+    if isinstance(raw_shards, Sequence):
+        for entry in raw_shards:
+            if not isinstance(entry, dict):
+                continue
+            shard_path_value = entry.get("path")
+            if not isinstance(shard_path_value, str):
+                continue
+            shard_path = index_path.parent / shard_path_value
+            shard_data_raw, shard_original = _load_json(shard_path)
+            shard_data = shard_data_raw if isinstance(shard_data_raw, dict) else {}
+            identifier = entry.get("id") if isinstance(entry.get("id"), str) else shard_path.stem
+            shard = _IndexShard(identifier=identifier, path=shard_path, data=shard_data, original=shard_original, metadata=entry)
+            shards[identifier] = shard
+            for node_id, payload in shard.nodes().items():
+                if isinstance(node_id, str):
+                    _register_node(node_id, payload, shard)
+            for raw_edge in shard.edges():
+                if not isinstance(raw_edge, Sequence) or len(raw_edge) != 2:
+                    continue
+                source, destination = raw_edge
+                if isinstance(source, str) and isinstance(destination, str):
+                    edge_set.add((source, destination))
+
+    edges = [list(edge) for edge in sorted(edge_set)]
+
+    return _IndexBundle(
+        index_path=index_path,
+        index_data=index_data,
+        index_original=index_original,
+        shards=shards,
+        nodes=nodes,
+        node_membership=node_membership,
+        edges=edges,
+    )
+
+
 def run_update(options: UpdateOptions) -> UpdateReport:
     emit_index = options.emit in {"index", "index+caps"}
     emit_caps = options.emit in {"caps", "index+caps"}
@@ -180,14 +280,13 @@ def run_update(options: UpdateOptions) -> UpdateReport:
         if emit_caps and not caps_dir.is_dir():
             raise FileNotFoundError(caps_dir)
 
-        index_data, index_original = _load_json(index_path)
-        raw_nodes = index_data.get("nodes", {})
-        if not isinstance(raw_nodes, dict):
-            raw_nodes = {}
+        bundle = _load_index_bundle(index_path)
+        index_data = bundle.index_data
+        raw_nodes = bundle.nodes
         graph_out: dict[str, list[str]] = {node: [] for node in raw_nodes}
         graph_in: dict[str, list[str]] = {node: [] for node in raw_nodes}
-        for raw_edge in index_data.get("edges", []):
-            if not isinstance(raw_edge, Sequence) or len(raw_edge) != 2:
+        for raw_edge in bundle.edges:
+            if len(raw_edge) != 2:
                 continue
             source, destination = raw_edge
             if not isinstance(source, str) or not isinstance(destination, str):
@@ -268,7 +367,7 @@ def run_update(options: UpdateOptions) -> UpdateReport:
                 cap_data = caps_state[cap_id][1]
                 serial_base = max(serial_base, _parse_serial_token(cap_data.get("generated_at")))
 
-        index_nodes_to_update: list[tuple[str, dict[str, Any]]] = []
+        index_nodes_to_update: list[tuple[str, dict[str, Any], _IndexShard | None]] = []
         if emit_index:
             node_ids: Iterable[str]
             if nodes_to_refresh:
@@ -284,24 +383,42 @@ def run_update(options: UpdateOptions) -> UpdateReport:
                 if not isinstance(node_payload, dict):
                     continue
                 serial_base = max(serial_base, _parse_serial_token(node_payload.get("mtime")))
-                index_nodes_to_update.append((node_id, node_payload))
+                index_nodes_to_update.append((node_id, node_payload, bundle.node_membership.get(node_id)))
 
         serial_token = _format_serial_token(serial_base + 1)
 
         if emit_index:
             if index_data.get("generated_at") != serial_token:
                 index_data["generated_at"] = serial_token
-            for _, node_payload in index_nodes_to_update:
+            for _, node_payload, shard in index_nodes_to_update:
                 if node_payload.get("mtime") != serial_token:
                     node_payload["mtime"] = serial_token
+            if "summary" in index_data and isinstance(index_data["summary"], dict):
+                summary = index_data["summary"]
+                if summary.get("generated_at") != serial_token:
+                    summary["generated_at"] = serial_token
+            for shard in bundle.shards.values():
+                if shard.data.get("generated_at") != serial_token:
+                    shard.data["generated_at"] = serial_token
+                if shard.metadata.get("generated_at") != serial_token:
+                    shard.metadata["generated_at"] = serial_token
             _maybe_write(
                 index_path,
                 index_data,
-                index_original,
+                bundle.index_original,
                 planned=planned,
                 performed=performed,
                 dry_run=options.dry_run,
             )
+            for shard in bundle.shards.values():
+                _maybe_write(
+                    shard.path,
+                    shard.data,
+                    shard.original,
+                    planned=planned,
+                    performed=performed,
+                    dry_run=options.dry_run,
+                )
 
             if hot_payload is not None:
                 hot_data, hot_original = hot_payload

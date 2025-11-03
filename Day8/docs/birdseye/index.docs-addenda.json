@@ -1,0 +1,103 @@
+{
+  "kind": "docs-addenda",
+  "generated_at": "00006",
+  "nodes": {
+    "docs/addenda/A_Glossary.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.A_Glossary.md.json",
+      "mtime": "00004",
+      "role": "glossary"
+    },
+    "docs/addenda/F_Provider_Matrix.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.F_Provider_Matrix.md.json",
+      "mtime": "00004",
+      "role": "provider"
+    },
+    "docs/addenda/H_Deploy_Guide.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.H_Deploy_Guide.md.json",
+      "mtime": "00004",
+      "role": "guide"
+    },
+    "docs/addenda/L_Config_Reference.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.L_Config_Reference.md.json",
+      "mtime": "00004",
+      "role": "configuration"
+    },
+    "docs/addenda/M_Versioning_Release.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.M_Versioning_Release.md.json",
+      "mtime": "00004",
+      "role": "release"
+    },
+    "docs/addenda/C_Persona_Schema.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.C_Persona_Schema.md.json",
+      "mtime": "00004",
+      "role": "persona"
+    },
+    "docs/addenda/I_Test_Cases.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.I_Test_Cases.md.json",
+      "mtime": "00004",
+      "role": "quality"
+    },
+    "docs/addenda/J_Runbook.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.J_Runbook.md.json",
+      "mtime": "00004",
+      "role": "operations"
+    },
+    "docs/addenda/G_Security_Privacy.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.G_Security_Privacy.md.json",
+      "mtime": "00004",
+      "role": "security"
+    },
+    "docs/addenda/K_Accessibility_UX.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.K_Accessibility_UX.md.json",
+      "mtime": "00004",
+      "role": "ux"
+    },
+    "docs/addenda/B_UI_Mock.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.B_UI_Mock.md.json",
+      "mtime": "00004",
+      "role": "design"
+    }
+  },
+  "edges": [
+    [
+      "docs/addenda/C_Persona_Schema.md",
+      "docs/day8/quality/06_quality.md"
+    ],
+    [
+      "docs/addenda/C_Persona_Schema.md",
+      "docs/day8/spec/02_spec.md"
+    ],
+    [
+      "docs/addenda/D_Trim_Design.md",
+      "workflow-cookbook/scripts/analyze.py"
+    ],
+    [
+      "docs/addenda/D_Trim_Design.md",
+      "docs/addenda/F_Provider_Matrix.md"
+    ],
+    [
+      "docs/addenda/D_Trim_Design.md",
+      "docs/addenda/G_Security_Privacy.md"
+    ],
+    [
+      "docs/addenda/D_Trim_Design.md",
+      "docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "docs/addenda/D_Trim_Design.md",
+      "docs/day8/quality/06_quality.md"
+    ],
+    [
+      "docs/addenda/H_Deploy_Guide.md",
+      "docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "docs/addenda/M_Versioning_Release.md",
+      "workflow-cookbook/CHECKLISTS.md"
+    ]
+  ],
+  "summary": {
+    "node_count": 11,
+    "edge_count": 9
+  }
+}

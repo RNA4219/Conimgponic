@@ -340,7 +340,6 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
   }
 
   const handle = lease.strategy === 'web-lock' ? getWebLockHandle(lease.leaseId) : undefined;
-  const existingReleaseError = handle?.getReleaseError();
   const currentState = getReleaseFailure(lease.leaseId);
 
   const processFailure = (error: ProjectLockError): ReleaseFailureState => {

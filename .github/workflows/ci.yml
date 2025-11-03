@@ -36,14 +36,21 @@ jobs:
       - name: Install Syft
         run: |
           set -euo pipefail
-          SYFT_DLX_PREFIX="pnpm dlx --package=@anchore/syft@1.16.0 syft"
-          SYFT_VERSION_CHECK="pnpm dlx --package=@anchore/syft@1.16.0 --version"
-          echo "::debug::${SYFT_VERSION_CHECK}"
-          $SYFT_DLX_PREFIX --version
+          SYFT_VERSION='1.16.0'
+          SYFT_ARCHIVE="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          SYFT_DOWNLOAD="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${SYFT_ARCHIVE}"
+          SYFT_INSTALL_DIR="$HOME/.local/bin"
+          SYFT_BIN="$SYFT_INSTALL_DIR/syft"
+          mkdir -p "$SYFT_INSTALL_DIR"
+          curl -sSfL "$SYFT_DOWNLOAD" -o "$SYFT_ARCHIVE"
+          tar -xzf "$SYFT_ARCHIVE" syft
+          install -m 0755 syft "$SYFT_BIN"
+          echo "$SYFT_INSTALL_DIR" >> "$GITHUB_PATH"
+          "$SYFT_BIN" --version
       - name: Verify Syft installation
         run: |
           set -euo pipefail
-          pnpm dlx --package=@anchore/syft@1.16.0 syft version
+          syft version
       - name: Generate SBOM
         id: generate_sbom
         continue-on-error: true
@@ -53,10 +60,9 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          SYFT_DLX_PREFIX="pnpm dlx --package=@anchore/syft@1.16.0 syft"
-          SYFT_PACKAGES_COMMAND="pnpm dlx --package=@anchore/syft@1.16.0 packages . -o spdx-json=sbom.json"
+          SYFT_PACKAGES_COMMAND='syft packages . -o spdx-json=sbom.json'
           echo "::debug::${SYFT_PACKAGES_COMMAND}"
-          $SYFT_DLX_PREFIX packages . -o spdx-json=sbom.json |& tee sbom.log
+          syft packages . -o spdx-json=sbom.json |& tee sbom.log
           status=$?
           set -e
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
