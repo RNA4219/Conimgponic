@@ -9,6 +9,7 @@ import {
   TELEMETRY_ENVELOPE_METADATA_FIELDS,
   type FlagResolutionErrorPayload,
 } from '../../scripts/monitor/collect-metrics.js'
+import type { FlagResolutionErrorPayload } from '../../scripts/monitor/collect-metrics.js'
 import {
   compareNormalizedOutputs,
   createTelemetryEvent
@@ -126,6 +127,17 @@ const STATUS_AUTOSAVE_PAYLOAD_REQUIRED_FIELDS = [
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+type ExpectTrue<T extends true> = T
+
+type IsEqual<Left, Right> = (<T>() => T extends Left ? 1 : 2) extends <T>() =>
+  T extends Right ? 1 : 2
+  ? true
+  : false
+
+type _FlagResolutionErrorRetryableIsFalseLiteral = ExpectTrue<
+  IsEqual<FlagResolutionErrorPayload['retryable'], false>
+>
 
 describe('telemetry normalizers', () => {
   test('createTelemetryId generates RFC4122 UUIDs', () => {
