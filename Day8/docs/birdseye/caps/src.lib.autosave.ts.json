@@ -8,7 +8,9 @@
     "AUTOSAVE_RETRY_POLICY"
   ],
   "summary": "OPFS ベースの AutoSave 実行環境。ポリシー解決・Phase Guard 制御・履歴ローテーション・ロック管理を統合し、flushNow/queue 操作と telemetry 発火を責務とする。",
-  "deps_out": [],
+  "deps_out": [
+    "src/lib/autosave/telemetryBridge.ts"
+  ],
   "deps_in": [
     "src/lib/merge/mergeDockAutoSaveBridge.ts",
     "src/platform/vscode/autosave.ts"
@@ -18,6 +20,7 @@
   ],
   "tests": [
     "tests/lib/autosave/init.test.ts",
+    "tests/lib/autosave/telemetryBridge.test.ts",
     "tests/lib/autosave/scheduler.test.ts",
     "tests/webview/autosave.bridge.test.ts",
     "tests/platform/vscode/autosave.host.status.test.ts"

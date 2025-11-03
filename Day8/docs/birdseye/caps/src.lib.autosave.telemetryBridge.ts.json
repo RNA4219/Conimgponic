@@ -1,0 +1,35 @@
+{
+  "id": "src/lib/autosave/telemetryBridge.ts",
+  "role": "library",
+  "public_api": [
+    "publishGuardCollectorEvent",
+    "publishScheduleRequestedCollectorEvent",
+    "publishWriteCompletedCollectorEvent",
+    "resolveBuildSha",
+    "AUTOSAVE_SCHEDULE_REQUESTED_EVENT"
+  ],
+  "summary": "AutoSave ランナーと Day8Collector/VSC ブリッジ間のテレメトリ契約を集約し、Collector へのイベント整形と Bridge メッセージ型を一箇所に定義する。",
+  "deps_out": [
+    "src/lib/autosave/collector-phase.ts",
+    "src/lib/autosave/guard.ts",
+    "src/lib/autosave/policy.ts"
+  ],
+  "deps_in": [
+    "src/lib/autosave.ts",
+    "tests/lib/autosave/telemetryBridge.test.ts"
+  ],
+  "risks": [
+    "Collector 解決が失敗するとスケジュール/書込イベントが欠落し、監視が無音になる"
+  ],
+  "tests": [
+    "tests/lib/autosave/telemetryBridge.test.ts"
+  ],
+  "maintenance": {
+    "refresh": "Collector/Bridge 契約を更新したら autosave テレメトリテストを走らせ Birdseye index を再生成する",
+    "tooling": [
+      "pnpm test --filter autosave",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "00006"
+}
