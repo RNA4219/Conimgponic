@@ -349,46 +349,18 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
     return rememberReleaseFailure(lease.leaseId, error, attempts, readonlyNotified, nextDelay);
   };
 
-  const finalizeExistingFailure = (error: ProjectLockError): never => {
-    const attempts = (currentState?.attempts ?? 0) + 1;
-    const alreadyReadonly = currentState?.readonlyNotified ?? false;
-    const nextDelay = attempts < releaseBackoff.maxAttempts ? computeReleaseDelay(attempts + 1) : 0;
-    emitError(error);
-    rememberReleaseFailure(lease.leaseId, error, attempts, true, nextDelay);
-    if (!alreadyReadonly) {
-      emitReadonly('release-failed', error, options.onReadonly);
-    }
-    throw error;
-  };
-
-  let existingReleaseError: ProjectLockError | undefined;
-  try {
-    existingReleaseError = handle?.getReleaseError();
-  } catch (error) {
-    const projectError =
-      error instanceof ProjectLockError
-        ? error
-        : makeError('release-failed', 'Failed to inspect Web Lock release error', 'release', true, error);
-    return finalizeExistingFailure(projectError);
-  }
-
-  const handleFailure = (error: ProjectLockError): never => {
-    const state = processFailure(error);
-    emitError(state.lastError);
-    if (!state.readonlyNotified && !shouldDeferReadonlyForRelease(state.lastError, state.attempts)) {
-      state.readonlyNotified = true;
-      releaseFailures.set(lease.leaseId, state);
-      emitReadonly('release-failed', state.lastError, options.onReadonly);
-    }
-    throw state.lastError;
-  };
-
   if (currentState?.nextDelayMs) {
     await awaitReleaseDelay(currentState.nextDelayMs, options.signal);
   }
 
   if (existingReleaseError && !currentState) {
-    return finalizeExistingFailure(existingReleaseError);
+    let state = processFailure(existingReleaseError);
+    emitError(state.lastError);
+    if (!state.readonlyNotified) {
+      state = rememberReleaseFailure(lease.leaseId, state.lastError, state.attempts, true, state.nextDelayMs);
+      emitReadonly('release-failed', state.lastError, options.onReadonly);
+    }
+    throw state.lastError;
   }
 
   projectLockEvents.emit({ type: 'lock:release-requested', lease });
@@ -409,7 +381,13 @@ export const releaseProjectLock: ReleaseProjectLock = async (lease, options = {}
       error instanceof ProjectLockError
         ? error
         : makeError('release-failed', 'Failed to release project lock', 'release', true, error);
-    handleFailure(projectError);
+    let state = processFailure(projectError);
+    emitError(state.lastError);
+    if (!state.readonlyNotified && !shouldDeferReadonlyForRelease(state.lastError, state.attempts)) {
+      state = rememberReleaseFailure(lease.leaseId, state.lastError, state.attempts, true, state.nextDelayMs);
+      emitReadonly('release-failed', state.lastError, options.onReadonly);
+    }
+    throw state.lastError;
   }
 };
 
