@@ -1,0 +1,32 @@
+{
+  "id": "src/lib/locks/renew.ts",
+  "role": "integration",
+  "public_api": [
+    "renewProjectLock"
+  ],
+  "summary": "取得済みリースの heartbeat 更新とフォールバックファイルの書き戻しを担う。遅延検出や retryable 判定をイベントで通知し、OPFS レコードと in-memory lease を同期させる。",
+  "deps_out": [
+    "src/lib/locks/shared.ts",
+    "src/lib/locks/fallbackLock.ts",
+    "src/lib/opfs.ts"
+  ],
+  "deps_in": [
+    "src/lib/locks/index.ts"
+  ],
+  "risks": [
+    "fallback record の leaseId チェックを緩めると他クライアントのロックを上書きする",
+    "heartbeatInterval の再計算を誤ると lock:renew-scheduled がズレ、AutoSave が readonly へ降格する"
+  ],
+  "tests": [
+    "tests/lib/locks/renew.test.ts",
+    "tests/autosave/locks.spec.ts"
+  ],
+  "maintenance": {
+    "refresh": "TTL や heartbeat の算出式を変更したら tests/lib/locks/renew.test.ts と autosave.lock* シナリオを実行し、Birdseye を更新する",
+    "tooling": [
+      "pnpm test -- tests/lib/locks/renew.test.ts",
+      "pnpm test --filter autotag:autosave"
+    ]
+  },
+  "generated_at": "00007"
+}

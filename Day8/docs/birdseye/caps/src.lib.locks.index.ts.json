@@ -1,0 +1,45 @@
+{
+  "id": "src/lib/locks/index.ts",
+  "role": "application",
+  "public_api": [
+    "acquireProjectLock",
+    "renewProjectLock",
+    "releaseProjectLock",
+    "withProjectLock",
+    "projectLockApi",
+    "projectLockEvents"
+  ],
+  "summary": "Web Lock とフォールバック戦略を責務単位へ分割したプロジェクトロック中核。acquire/renew/release の実装を専用モジュールへ委譲し、withProjectLock が再利用する安全な release ガードを提供する。",
+  "deps_out": [
+    "src/lib/locks/acquire.ts",
+    "src/lib/locks/renew.ts",
+    "src/lib/locks/release.ts",
+    "src/lib/locks/shared.ts"
+  ],
+  "deps_in": [
+    "src/lib/locks.ts",
+    "src/lib/autosave.ts"
+  ],
+  "risks": [
+    "戦略ごとのモジュールを更新するとき index.ts の再エクスポートを忘れると AutoSave が古いロジックを参照し続ける",
+    "safeRelease のリトライ状態が共有されない場合、releaseProjectLock の backoff が破綻して stale lock が残る"
+  ],
+  "tests": [
+    "tests/lib/locks/acquire.test.ts",
+    "tests/lib/locks/renew.test.ts",
+    "tests/lib/locks/release.test.ts",
+    "tests/lib/locks/with.test.ts",
+    "tests/autosave/locks.spec.ts",
+    "tests/lib/autosave/restore.flow.test.ts",
+    "tests/extensions/vscode/autosave-bridge.spec.ts"
+  ],
+  "maintenance": {
+    "refresh": "戦略分割を変更したら各 RED テスト (tests/lib/locks/*.test.ts) を先に更新し、autosave.lock* シナリオと合わせて Birdseye index を再生成する",
+    "tooling": [
+      "pnpm test -- tests/lib/locks",
+      "pnpm test --filter autotag:autosave",
+      "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "generated_at": "00007"
+}

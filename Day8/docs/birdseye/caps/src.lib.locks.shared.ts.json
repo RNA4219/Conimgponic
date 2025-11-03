@@ -13,6 +13,10 @@
   "deps_out": [],
   "deps_in": [
     "src/lib/locks.ts",
+    "src/lib/locks/index.ts",
+    "src/lib/locks/acquire.ts",
+    "src/lib/locks/renew.ts",
+    "src/lib/locks/release.ts",
     "src/lib/locks/fallbackLock.ts",
     "src/lib/locks/webLock.ts"
   ],
@@ -31,5 +35,5 @@
       "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
     ]
   },
-  "generated_at": "00006"
+  "generated_at": "00007"
 }

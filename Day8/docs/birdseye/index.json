@@ -551,14 +551,58 @@
     ],
     [
       "src/lib/locks.ts",
+      "src/lib/locks/index.ts"
+    ],
+    [
+      "src/lib/locks/index.ts",
+      "src/lib/locks/acquire.ts"
+    ],
+    [
+      "src/lib/locks/index.ts",
+      "src/lib/locks/renew.ts"
+    ],
+    [
+      "src/lib/locks/index.ts",
+      "src/lib/locks/release.ts"
+    ],
+    [
+      "src/lib/locks/index.ts",
       "src/lib/locks/shared.ts"
     ],
     [
-      "src/lib/locks.ts",
+      "src/lib/locks/acquire.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/locks/acquire.ts",
       "src/lib/locks/fallbackLock.ts"
     ],
     [
-      "src/lib/locks.ts",
+      "src/lib/locks/acquire.ts",
+      "src/lib/locks/webLock.ts"
+    ],
+    [
+      "src/lib/locks/renew.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/locks/renew.ts",
+      "src/lib/locks/fallbackLock.ts"
+    ],
+    [
+      "src/lib/locks/renew.ts",
+      "src/lib/opfs.ts"
+    ],
+    [
+      "src/lib/locks/release.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/locks/release.ts",
+      "src/lib/locks/fallbackLock.ts"
+    ],
+    [
+      "src/lib/locks/release.ts",
       "src/lib/locks/webLock.ts"
     ],
     [
@@ -570,7 +614,7 @@
       "src/lib/locks/shared.ts"
     ]
   ],
-  "generated_at": "00006",
+  "generated_at": "00007",
   "nodes": {
     "INSTALL.md": {
       "caps": "docs/birdseye/caps/INSTALL.md.json",
@@ -894,22 +938,42 @@
     },
     "src/lib/locks.ts": {
       "caps": "docs/birdseye/caps/src.lib.locks.ts.json",
-      "mtime": "00006",
+      "mtime": "00007",
       "role": "application"
+    },
+    "src/lib/locks/index.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.index.ts.json",
+      "mtime": "00007",
+      "role": "application"
+    },
+    "src/lib/locks/acquire.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.acquire.ts.json",
+      "mtime": "00007",
+      "role": "integration"
+    },
+    "src/lib/locks/renew.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.renew.ts.json",
+      "mtime": "00007",
+      "role": "integration"
+    },
+    "src/lib/locks/release.ts": {
+      "caps": "docs/birdseye/caps/src.lib.locks.release.ts.json",
+      "mtime": "00007",
+      "role": "integration"
     },
     "src/lib/locks/shared.ts": {
       "caps": "docs/birdseye/caps/src.lib.locks.shared.ts.json",
-      "mtime": "00006",
+      "mtime": "00007",
       "role": "domain"
     },
     "src/lib/locks/fallbackLock.ts": {
       "caps": "docs/birdseye/caps/src.lib.locks.fallbackLock.ts.json",
-      "mtime": "00006",
+      "mtime": "00007",
       "role": "integration"
     },
     "src/lib/locks/webLock.ts": {
       "caps": "docs/birdseye/caps/src.lib.locks.webLock.ts.json",
-      "mtime": "00006",
+      "mtime": "00007",
       "role": "integration"
     }
   }

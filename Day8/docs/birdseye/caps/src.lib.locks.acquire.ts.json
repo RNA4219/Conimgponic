@@ -1,0 +1,32 @@
+{
+  "id": "src/lib/locks/acquire.ts",
+  "role": "integration",
+  "public_api": [
+    "acquireProjectLock"
+  ],
+  "summary": "Web Lock とフォールバックの取得ループを担当するモジュール。バックオフ制御と retryable 判定を集約し、fallback-conflict の警告や readonly 降格をイベント経由で通知する。",
+  "deps_out": [
+    "src/lib/locks/shared.ts",
+    "src/lib/locks/fallbackLock.ts",
+    "src/lib/locks/webLock.ts"
+  ],
+  "deps_in": [
+    "src/lib/locks/index.ts"
+  ],
+  "risks": [
+    "web-lock-unsupported 時に allowWeb を落とし忘れると無限リトライで UI が固まる",
+    "fallback-conflict 時の lease 再構築を誤ると telemetry が他クライアントのロックを上書きする"
+  ],
+  "tests": [
+    "tests/lib/locks/acquire.test.ts",
+    "tests/autosave/locks.spec.ts"
+  ],
+  "maintenance": {
+    "refresh": "Backoff ポリシーやイベント設計を変更したら tests/lib/locks/acquire.test.ts と autosave.lock* シナリオを先に更新し、Birdseye index を再生成する",
+    "tooling": [
+      "pnpm test -- tests/lib/locks/acquire.test.ts",
+      "pnpm test --filter autotag:autosave"
+    ]
+  },
+  "generated_at": "00007"
+}

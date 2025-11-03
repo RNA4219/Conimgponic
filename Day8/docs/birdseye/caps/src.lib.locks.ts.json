@@ -9,11 +9,9 @@
     "projectLockApi",
     "projectLockEvents"
   ],
-  "summary": "Web Locks とフォールバックファイルを束ねるプロジェクトロック API。取得/更新/解放のリトライ制御と lock:* イベント発火を統合し、AutoSave へ一貫したロック状態と readonly 降格シグナルを提供する。",
+  "summary": "Project Lock API の公開入口。互換シグネチャを維持しつつ src/lib/locks/index.ts の責務分割へリダイレクトし、既存利用箇所を変更せずに新しい acquire/renew/release 実装へ誘導する。",
   "deps_out": [
-    "src/lib/locks/shared.ts",
-    "src/lib/locks/fallbackLock.ts",
-    "src/lib/locks/webLock.ts"
+    "src/lib/locks/index.ts"
   ],
   "deps_in": [
     "src/lib/autosave.ts"
@@ -34,5 +32,5 @@
       "python Day8/workflow-cookbook/tools/codemap/update.py --targets Day8/docs/birdseye/index.json --emit index+caps"
     ]
   },
-  "generated_at": "00006"
+  "generated_at": "00007"
 }
