@@ -50,12 +50,11 @@
     ],
     [
       "docs/README.md",
-      "docs/addenda/M_Versioning_Release.md",
-      "docs/FORK_NOTES.md"
+      "docs/addenda/M_Versioning_Release.md"
     ],
     [
       "docs/README.md",
-      "docs/addenda/M_Versioning_Release.md"
+      "docs/FORK_NOTES.md"
     ],
     [
       "docs/README.md",
@@ -530,10 +529,6 @@
       "src/lib/autosave/telemetryBridge.ts"
     ],
     [
-      "tests/lib/autosave/telemetryBridge.test.ts",
-      "src/lib/autosave/telemetryBridge.ts"
-    ],
-    [
       "src/lib/merge/mergeDockAutoSaveBridge.ts",
       "src/lib/autosave.ts"
     ],
@@ -598,10 +593,6 @@
       "src/lib/locks/fallbackLock.ts"
     ],
     [
-      "src/lib/locks/renew.ts",
-      "src/lib/opfs.ts"
-    ],
-    [
       "src/lib/locks/release.ts",
       "src/lib/locks/shared.ts"
     ],
@@ -639,6 +630,11 @@
       "mtime": "00004",
       "role": "guide"
     },
+    "docs/birdseye/index.json": {
+      "caps": "docs/birdseye/caps/docs.birdseye.index.json.json",
+      "mtime": "00007",
+      "role": "visualization"
+    },
     "docs/README.md": {
       "caps": "docs/birdseye/caps/docs.README.md.json",
       "mtime": "00004",
@@ -674,6 +670,16 @@
       "mtime": "00004",
       "role": "glossary"
     },
+    "docs/addenda/D_Trim_Design.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.D_Trim_Design.md.json",
+      "mtime": "00006",
+      "role": "observability"
+    },
+    "docs/addenda/E_Evaluator_Details.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.E_Evaluator_Details.md.json",
+      "mtime": "00006",
+      "role": "quality"
+    },
     "docs/addenda/F_Provider_Matrix.md": {
       "caps": "docs/birdseye/caps/docs.addenda.F_Provider_Matrix.md.json",
       "mtime": "00004",
@@ -703,6 +709,11 @@
       "caps": "docs/birdseye/caps/docs.addenda.M_Versioning_Release.md.json",
       "mtime": "00004",
       "role": "release"
+    },
+    "docs/addenda/M1_Metrics_Healthz_ADR.md": {
+      "caps": "docs/birdseye/caps/docs.addenda.M1_Metrics_Healthz_ADR.md.json",
+      "mtime": "00006",
+      "role": "adr"
     },
     "docs/day8/README.md": {
       "caps": "docs/birdseye/caps/docs.day8.README.md.json",
@@ -989,5 +1000,5 @@
       "mtime": "00007",
       "role": "integration"
     }
-  ]
+  }
 }
