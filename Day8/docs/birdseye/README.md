@@ -33,6 +33,7 @@ Day8 の Birdseye は、リポジトリ内の主要ドキュメントとガー�
 5. **generated_at 揃え** — `index.json` と `hot.json` の `generated_at` を同じ連番へ更新し、再生成の履歴を同期します。
    - 旧形式（ISO8601 タイムスタンプ）が残っていても、再生成時に `00001` からの連番へ自動で置き換わります。
 6. **ツール実行** — 自動再生成が必要な場合は `python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json,workflow-cookbook/docs/birdseye/index.json --emit index+caps` を使用し、必要に応じて `--dry-run` で差分確認後に適用します。`--targets` はカンマ区切りで複数指定でき、空要素は無視されます。`--emit` は `index` / `caps` / `index+caps` のいずれかを選択でき、インデックスを書き換えた場合は同じ階層の `hot.json` の `generated_at` も自動で同期されます。
+   - `index.json` は `index.*.json` に分割して保守します。各 shard は 400 行以内を維持し、変更後は `python Day8/workflow-cookbook/tools/codemap/merge_index.py --index docs/birdseye/index.json --write` で集約ファイルの `generated_at` を揃えてください。
 
 ## Guardrails 連携
 - `workflow-cookbook/GUARDRAILS.md` の Birdseye セクションで定義された「インデックス → Capsule → ホットリスト → generated_at 同期」の順序を Day8 でも必須ルールとします。
