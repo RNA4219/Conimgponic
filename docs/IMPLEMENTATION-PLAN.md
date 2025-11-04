@@ -87,6 +87,8 @@ sequenceDiagram
 Phase ガードの解除と UI・ロック制御の変化は下表で管理する。
 Phase ガード（`autosave.enabled=false` + `AutoSaveOptions.disabled=true`）を順次解除する際は、段階ごとに UI とロック制御の既定値が変化する。切替点を明示し、ロールバック条件と一致させる。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L66】【F:docs/AUTOSAVE-INDICATOR-UI.md†L122-L176】
 
+Phase B-1 では `autosave.enabled=true` を満たしていない限り `merge.precision='stable'` の Diff タブ露出を抑止し、Phase ガード表のロールアウト条件を維持するテスト（`tests/components/merge.diff.test.tsx`）を追加済み。
+
 | 移行フェーズ | フラグ既定値 (`autosave.enabled`) | UI 表示の変化 | ロック/保存ポリシーの変化 | ロールバック条件 |
 | --- | --- | --- | --- | --- |
 | Phase A (初期) | `false` | Indicator 非表示。`snapshot().phase='disabled'` を固定 | 保存ジョブ・ロック取得とも停止 | フラグ反転後も `snapshot().phase` が `disabled` のまま 3 回継続 |
