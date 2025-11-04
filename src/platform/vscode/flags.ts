@@ -1,6 +1,6 @@
 import type { AutoSavePhaseGuardSnapshot } from '../../lib/autosave.js';
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js';
-import { resolveFlags } from '../../config/index.js';
+import { resolveAutoSaveBootstrapPlan } from '../../config/index.js';
 
 export interface ResolveWorkspaceFlagsOptions {
   readonly workspace: WorkspaceConfiguration | null;
@@ -12,11 +12,20 @@ export interface AutoSaveBootstrapPayload {
   readonly flags: FlagSnapshot;
 }
 
-export const resolveWorkspaceFlags = ({
+export const resolveWorkspaceBootstrapPayload = ({
   workspace,
   clock
-}: ResolveWorkspaceFlagsOptions): FlagSnapshot =>
-  resolveFlags({ workspace, clock });
+}: ResolveWorkspaceFlagsOptions): AutoSaveBootstrapPayload => {
+  const plan = resolveAutoSaveBootstrapPlan({ workspace, clock });
+  return {
+    guard: plan.guard,
+    flags: plan.snapshot
+  };
+};
+
+export const resolveWorkspaceFlags = (
+  options: ResolveWorkspaceFlagsOptions
+): FlagSnapshot => resolveWorkspaceBootstrapPayload(options).flags;
 
 export const deriveAutoSavePhaseGuard = (
   snapshot: FlagSnapshot

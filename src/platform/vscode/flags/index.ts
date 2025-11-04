@@ -5,5 +5,6 @@ export type {
 export {
   createAutoSaveBootstrapPayload,
   deriveAutoSavePhaseGuard,
+  resolveWorkspaceBootstrapPayload,
   resolveWorkspaceFlags
 } from '../flags.js';

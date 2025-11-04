@@ -10,8 +10,7 @@ import type {
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
 import {
   createAutoSaveBootstrapPayload,
-  deriveAutoSavePhaseGuard,
-  resolveWorkspaceFlags
+  resolveWorkspaceBootstrapPayload
 } from './flags.js'
 import {
   createDisabledError,
@@ -136,12 +135,12 @@ export const createVscodeAutoSaveBridge = (
   options: AutoSaveHostBridgeOptions
 ): AutoSaveHostBridge => {
   const workspace = options.workspace ?? null
-  const bootstrapSnapshot =
-    options.flags ?? resolveWorkspaceFlags({ workspace, clock: options.now })
-  const derivedGuard = deriveAutoSavePhaseGuard(bootstrapSnapshot)
-  const bootstrapGuard = options.initialGuard ?? derivedGuard
+  const resolvedPayload = options.flags
+    ? createAutoSaveBootstrapPayload(options.flags)
+    : resolveWorkspaceBootstrapPayload({ workspace, clock: options.now })
+  const bootstrapGuard = options.initialGuard ?? resolvedPayload.guard
   const bootstrapPayload = createAutoSaveBootstrapPayload(
-    bootstrapSnapshot,
+    resolvedPayload.flags,
     bootstrapGuard
   )
   const state: InternalState = createInitialState(bootstrapGuard)
