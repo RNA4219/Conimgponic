@@ -22,12 +22,13 @@ import {
   nextReqId
 } from '../../../../src/platform/vscode/autosave/state.js';
 import { createVscodeAutoSaveBridge } from '../../../../src/platform/vscode/autosave.js';
-import {
-  deriveAutoSavePhaseGuard,
-  resolveWorkspaceFlags
-} from '../../../../src/platform/vscode/flags/index.js';
+import * as flagsModule from '../../../../src/platform/vscode/flags.js';
 import { resolveFlags } from '../../../../src/config/index.js';
 import type { Day8CollectorFlagResolutionEvent } from '../../../../src/telemetry/day8Collector.js';
+import type { FlagSnapshot } from '../../../../src/config/index.js';
+import type { AutoSavePhaseGuardSnapshot } from '../../../../src/lib/autosave.js';
+
+const { deriveAutoSavePhaseGuard, resolveWorkspaceFlags } = flagsModule;
 
 class TestDomException extends Error {
   override name = 'NotAllowedError';
@@ -175,6 +176,90 @@ test('publishCollectorSnapshotResult forwards normalized payload', () => {
     timestamp
   );
 });
+
+test(
+  'createVscodeAutoSaveBridge bootstraps guard derived from workspace snapshot',
+  (t) => {
+    const workspace = {
+      get: (key: string) => (key === 'autosave.enabled' ? 'true' : undefined)
+    };
+    const snapshot: FlagSnapshot = {
+      autosave: {
+        value: true,
+        source: 'workspace',
+        errors: [],
+        enabled: true
+      },
+      plugins: {
+        value: false,
+        source: 'default',
+        errors: [],
+        enabled: false
+      },
+      merge: {
+        value: 'stable',
+        source: 'default',
+        errors: [],
+        precision: 'stable',
+        threshold: 0.82
+      },
+      updatedAt: '2024-01-05T00:00:00.000Z'
+    };
+    const guard: AutoSavePhaseGuardSnapshot = {
+      featureFlag: { value: true, source: 'workspace' },
+      optionsDisabled: false
+    };
+    const payload = { guard, flags: snapshot } as const;
+    const resolveMock = t.mock.method(flagsModule, 'resolveWorkspaceFlags', () => snapshot);
+    const deriveMock = t.mock.method(flagsModule, 'deriveAutoSavePhaseGuard', () => guard);
+    const payloadMock = t.mock.method(
+      flagsModule,
+      'createAutoSaveBootstrapPayload',
+      () => payload
+    );
+    const sent: unknown[] = [];
+
+    try {
+      const bridge = createVscodeAutoSaveBridge({
+        policy: {
+          debounceMs: 100,
+          idleMs: 100,
+          maxGenerations: 2,
+          maxBytes: 100,
+          disabled: false
+        },
+        workspace,
+        now: () => new Date('2024-01-05T00:00:00.000Z'),
+        sendMessage: (message) => {
+          sent.push(message);
+        },
+        atomicWrite: async () => {
+          throw new Error('bootstrap should not flush');
+        }
+      });
+
+      assert.equal(resolveMock.mock.callCount(), 1);
+      const resolveArgs = resolveMock.mock.calls[0]?.arguments[0] as
+        | { readonly workspace: unknown }
+        | undefined;
+      assert.equal(resolveArgs?.workspace, workspace);
+      assert.equal(deriveMock.mock.callCount(), 1);
+      assert.strictEqual(deriveMock.mock.calls[0]?.arguments[0], snapshot);
+      assert.equal(payloadMock.mock.callCount(), 1);
+      assert.strictEqual(payloadMock.mock.calls[0]?.arguments[0], snapshot);
+      assert.strictEqual(payloadMock.mock.calls[0]?.arguments[1], guard);
+
+      const bootstrap = sent[0] as {
+        readonly payload: { guard: AutoSavePhaseGuardSnapshot; flags: FlagSnapshot };
+      };
+      assert.strictEqual(bootstrap.payload.guard, guard);
+      assert.strictEqual(bootstrap.payload.flags, snapshot);
+      assert.deepEqual(bridge.inspectState().guard, guard);
+    } finally {
+      t.mock.restoreAll();
+    }
+  }
+);
 
 test('resolveWorkspaceFlags aligns with resolveFlags and bootstrap propagates guard', () => {
   const workspace = {

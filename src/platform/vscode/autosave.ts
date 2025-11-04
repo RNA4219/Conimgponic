@@ -8,12 +8,11 @@ import type {
   AutoSavePolicy
 } from '../../lib/autosave'
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
-import { deriveAutoSavePhaseGuard, resolveWorkspaceFlags } from './flags/index.js'
 import {
-  resolveAutoSaveBootstrapPlan,
-  type FlagSnapshot,
-  type WorkspaceConfiguration
-} from '../../config/index.js'
+  createAutoSaveBootstrapPayload,
+  deriveAutoSavePhaseGuard,
+  resolveWorkspaceFlags
+} from './flags.js'
 import {
   createDisabledError,
   normalizeAtomicWriteError
@@ -133,25 +132,18 @@ const publishGuardBlockedCollectorEvent = (
   publishGuardCollectorEvent(guard, resolveGuardBlockedReason(guard))
 }
 
-export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): AutoSaveHostBridge => {
+export const createVscodeAutoSaveBridge = (
+  options: AutoSaveHostBridgeOptions
+): AutoSaveHostBridge => {
   const workspace = options.workspace ?? null
-  const bootstrapFlags =
+  const bootstrapSnapshot =
     options.flags ?? resolveWorkspaceFlags({ workspace, clock: options.now })
-  const initialGuard = options.initialGuard ?? deriveAutoSavePhaseGuard(bootstrapFlags)
-  const state: InternalState = createInitialState(initialGuard)
-  let bootstrapGuard = options.initialGuard
-  let bootstrapFlags: FlagSnapshot
-
-  if (options.flags) {
-    bootstrapFlags = options.flags
-  } else {
-    const plan = resolveAutoSaveBootstrapPlan(
-      { workspace: options.workspace ?? null, clock: options.now },
-      { optionsDisabled: options.initialGuard.optionsDisabled }
-    )
-    bootstrapFlags = plan.snapshot
-  }
-
+  const derivedGuard = deriveAutoSavePhaseGuard(bootstrapSnapshot)
+  const bootstrapGuard = options.initialGuard ?? derivedGuard
+  const bootstrapPayload = createAutoSaveBootstrapPayload(
+    bootstrapSnapshot,
+    bootstrapGuard
+  )
   const state: InternalState = createInitialState(bootstrapGuard)
   const bootstrapReqId = nextReqId(state)
   const bootstrapCorrelationId = nextCorrelationId(state)
@@ -162,9 +154,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       bootstrapCorrelationId,
       bootstrapTs,
       options.policy,
-      initialGuard,
-      bootstrapGuard,
-      bootstrapFlags
+      bootstrapPayload.guard,
+      bootstrapPayload.flags
     )
   )
 
