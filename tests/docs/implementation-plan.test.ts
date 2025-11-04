@@ -3,9 +3,10 @@ import { strict as assert } from 'node:assert'
 import test from 'node:test'
 
 const IMPLEMENTATION_PLAN_PATH = new URL('../../docs/IMPLEMENTATION-PLAN.md', import.meta.url)
+const CONFIG_FLAGS_PATH = new URL('../../docs/CONFIG_FLAGS.md', import.meta.url)
 
 const CHECKLIST_PATTERN =
-  /- \[x\] `Collector` へのテレメトリ送信がフラグ ON\/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 \((?<date>\d{4}-\d{2}-\d{2}), \[検証ログ: tests\/telemetry\/vscode\.contract\.test\.ts\]\(\.\.\/tests\/telemetry\/vscode\.contract\.test\.ts\)\)/
+  /- \[x\] \(Issue #1\) `Collector` へのテレメトリ送信がフラグ ON\/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 \((?<date>\d{4}-\d{2}-\d{2}), \[検証ログ: tests\/telemetry\/vscode\.contract\.test\.ts\]\(\.\.\/tests\/telemetry\/vscode\.contract\.test\.ts\)\)/
 
 const AUTOSAVE_PATTERN =
   /- \[x\] AutoSave ランナー \(`src\/lib\/autosave\.ts` \/ `src\/platform\/vscode\/autosave\.ts`\) の Collector テレメトリ統合を完了した。 \((?<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z) (?<result>成功|失敗|再検証中), \[検証ログ: tests\/platform\/vscode\/autosave\.collector-export\.test\.ts\]\(\.\.\/tests\/platform\/vscode\/autosave\.collector-export\.test\.ts\)\)/
@@ -60,4 +61,29 @@ test('AutoSave テレメトリ統合の進捗が記録されている', () => {
       `${label} の完了日時は ISO8601 互換の UTC 形式にしてください`
     )
   }
+})
+
+test('CONFIG_FLAGS へ Issue #1 の Collector 連携履歴を記録している', () => {
+  const content = readFileSync(CONFIG_FLAGS_PATH, 'utf-8')
+
+  assert.ok(
+    content.includes('- 2024-06-19: Issue #1 Collector 連携手順を Phase ガード運用フローと再同期し、'),
+    'CONFIG_FLAGS.md に Issue #1 Collector 連携手順の更新日と要約を追加してください'
+  )
+  assert.ok(
+    content.includes(
+      '[検証ログ: tests/telemetry/vscode.contract.test.ts](../tests/telemetry/vscode.contract.test.ts)'
+    ),
+    'CONFIG_FLAGS.md に Collector コントラクトの検証ログをリンクしてください'
+  )
+  assert.ok(
+    content.includes(
+      '[検証ログ: tests/platform/vscode/autosave.collector-export.test.ts](../tests/platform/vscode/autosave.collector-export.test.ts)'
+    ),
+    'CONFIG_FLAGS.md に AutoSave ブリッジの検証ログをリンクしてください'
+  )
+  assert.ok(
+    content.includes('`docs/IMPLEMENTATION-PLAN.md` のチェックリストと同日付で整合させた。'),
+    'CONFIG_FLAGS.md で IMPLEMENTATION-PLAN.md のチェックリストと同日付で整合したことを明記してください'
+  )
 })
