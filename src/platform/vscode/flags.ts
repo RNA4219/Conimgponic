@@ -19,13 +19,14 @@ export const resolveWorkspaceFlags = ({
   resolveFlags({ workspace, clock });
 
 export const deriveAutoSavePhaseGuard = (
-  snapshot: FlagSnapshot
+  snapshot: FlagSnapshot,
+  optionsDisabled = false
 ): AutoSavePhaseGuardSnapshot => ({
   featureFlag: {
     value: snapshot.autosave.enabled,
     source: snapshot.autosave.source
   },
-  optionsDisabled: !snapshot.autosave.enabled
+  optionsDisabled
 });
 
 export const createAutoSaveBootstrapPayload = (
