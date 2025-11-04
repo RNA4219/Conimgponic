@@ -672,6 +672,42 @@ test('stable precision diff guard unlock restores diff as active tab in store', 
 })
 
 test('stable diff guard exposes diff merge hunks and queue command once enabled', async () => {
+  const harness = await renderStableDiffMergeDock()
+  try {
+    assert.deepEqual(
+      harness.hunks.map((hunk) => hunk.id),
+      ['cut-1'],
+    )
+
+    const result = await harness.queue({
+      type: 'queue-merge',
+      precision: 'stable',
+      origin: 'operation-pane.queue',
+      hunkIds: ['cut-1'],
+      telemetryContext: {
+        collectorSurface: 'diff-merge.operation-pane',
+        analyzerSurface: 'diff-merge.queue',
+        lastTab: 'diff',
+      },
+      metadata: { autoSaveRequested: true },
+    })
+
+    assert.equal(result.status, 'success')
+    assert.deepEqual(result.hunkIds, ['cut-1'])
+    assert.equal(harness.flushLog.length, 1)
+  } finally {
+    harness.cleanup()
+  }
+})
+
+const renderStableDiffMergeDock = async (): Promise<{
+  readonly markup: string
+  readonly hunks: readonly MergeHunk[]
+  readonly queue: QueueMergeCommand
+  readonly flushLog: readonly string[]
+  readonly collectorLog: readonly Record<string, unknown>[]
+  readonly cleanup: () => void
+}> => {
   const { MergeDock } = mergeDockModule as typeof mergeDockModule
   const hookGlobal = globalThis as typeof globalThis & {
     __diffMergeViewOnPropsReady?: (payload: {
@@ -704,15 +740,22 @@ test('stable diff guard exposes diff merge hunks and queue command once enabled'
     },
   }
   const flushLog: string[] = []
+  const collectorLog: Record<string, unknown>[] = []
   const mockWindow = {
     localStorage: storage,
     __mergeDockAutoSaveSnapshot: { lastSuccessAt: '2024-05-01T00:00:00.000Z' },
     __mergeDockFlushNow: () => {
       flushLog.push('flush')
     },
+    Day8Collector: {
+      publish(event: Record<string, unknown>) {
+        collectorLog.push(event)
+      },
+    },
   } as typeof window & {
     __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
     __mergeDockFlushNow?: () => void
+    Day8Collector?: { publish(event: Record<string, unknown>): void }
   }
   Object.defineProperty(globalThis, 'window', { configurable: true, value: mockWindow })
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage })
@@ -735,38 +778,72 @@ test('stable diff guard exposes diff merge hunks and queue command once enabled'
     version: 1,
   }
 
+  useSB.setState({ sb: storyboard })
+  const snapshot = Reflect.get(globalThis, '__conimgponic_sb_snapshot__') as Storyboard | undefined
+  assert.equal(snapshot?.scenes.length ?? 0, 1)
+  let capturedHunks: readonly MergeHunk[] | undefined
+  let capturedQueue: QueueMergeCommand | undefined
+  hookGlobal.__diffMergeViewOnPropsReady = (payload) => {
+    capturedHunks = payload.hunks
+    capturedQueue = payload.queueMergeCommand
+  }
+
+  const stableFlags: Pick<FlagSnapshot, 'merge'> = {
+    merge: { value: 'stable', source: 'workspace', errors: [], precision: 'stable', threshold: Number.NaN },
+  }
+
+  const markup = renderToStaticMarkup(
+    React.createElement(MergeDock, {
+      flags: stableFlags,
+      phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+    }),
+  )
+
+  if (!capturedQueue || !capturedHunks) {
+    throw new Error('DiffMergeView did not provide hunks or queue command')
+  }
+
+  const cleanup = () => {
+    useSB.setState({ sb: originalStoryboard })
+    hookGlobal.__diffMergeViewOnPropsReady = originalHook
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
+    if (originalLocalStorage !== undefined) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: originalLocalStorage })
+    } else {
+      Reflect.deleteProperty(globalThis, 'localStorage')
+    }
+  }
+
+  return {
+    markup,
+    hunks: capturedHunks,
+    queue: capturedQueue,
+    flushLog,
+    collectorLog,
+    cleanup,
+  }
+}
+
+test('stable diff queue command publishes events and telemetry when guard unlocked', async () => {
+  const harness = await renderStableDiffMergeDock()
+  const queueEvents = Reflect.get(harness.queue, '__diffMergeEvents__') as
+    | {
+        readonly subscribe: (listener: (event: Record<string, unknown>) => void) => () => void
+      }
+    | undefined
+
+  assert.ok(queueEvents, 'DiffMergeView queue command must expose telemetry events hub')
+  assert.match(harness.markup, /data-merge-diff-visible="true"/)
+  assert.match(harness.markup, /data-merge-diff-enabled="true"/)
+  assert.match(harness.markup, /data-merge-diff-exposure="default"/)
+
+  const events: Record<string, unknown>[] = []
+  const unsubscribe = queueEvents!.subscribe((event) => {
+    events.push(event)
+  })
+
   try {
-    useSB.setState({ sb: storyboard })
-    assert.equal(useSB.getState().sb.scenes.length, 1)
-    const snapshot = Reflect.get(globalThis, '__conimgponic_sb_snapshot__') as Storyboard | undefined
-    assert.equal(snapshot?.scenes.length ?? 0, 1)
-    let capturedHunks: readonly MergeHunk[] | undefined
-    let capturedQueue: QueueMergeCommand | undefined
-    hookGlobal.__diffMergeViewOnPropsReady = (payload) => {
-      capturedHunks = payload.hunks
-      capturedQueue = payload.queueMergeCommand
-    }
-
-    const stableFlags: Pick<FlagSnapshot, 'merge'> = {
-      merge: { value: 'stable', source: 'workspace', errors: [], precision: 'stable', threshold: Number.NaN },
-    }
-
-    renderToStaticMarkup(
-      React.createElement(MergeDock, {
-        flags: stableFlags,
-        phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
-      }),
-    )
-
-    assert.ok(capturedHunks)
-    assert.deepEqual(
-      capturedHunks?.map((hunk) => hunk.id),
-      ['cut-1'],
-    )
-
-    const queue = capturedQueue
-    assert.ok(queue)
-    const result = await queue({
+    const result = await harness.queue({
       type: 'queue-merge',
       precision: 'stable',
       origin: 'operation-pane.queue',
@@ -780,17 +857,39 @@ test('stable diff guard exposes diff merge hunks and queue command once enabled'
     })
 
     assert.equal(result.status, 'success')
-    assert.deepEqual(result.hunkIds, ['cut-1'])
-    assert.equal(flushLog.length, 1)
-  } finally {
-    useSB.setState({ sb: originalStoryboard })
-    hookGlobal.__diffMergeViewOnPropsReady = originalHook
-    Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
-    if (originalLocalStorage !== undefined) {
-      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: originalLocalStorage })
-    } else {
-      Reflect.deleteProperty(globalThis, 'localStorage')
+    assert.equal(events.length, 2)
+    const started = events[0] as {
+      readonly type: string
+      readonly hunkIds?: readonly string[]
+      readonly hunks?: readonly MergeHunk[]
+      readonly autoSaveRequested?: boolean
     }
+    assert.equal(started.type, 'queue:started')
+    assert.deepEqual(started.hunkIds, ['cut-1'])
+    assert.equal(started.autoSaveRequested, true)
+    assert.deepEqual(started.hunks?.map((hunk) => hunk.id), ['cut-1'])
+
+    const finished = events[1] as {
+      readonly type: string
+      readonly hunkIds?: readonly string[]
+      readonly hunks?: readonly MergeHunk[]
+      readonly retryable?: boolean
+      readonly status?: string
+    }
+    assert.equal(finished.type, 'queue:finished')
+    assert.equal(finished.status, 'success')
+    assert.deepEqual(finished.hunkIds, ['cut-1'])
+    assert.equal(finished.retryable, false)
+    assert.deepEqual(finished.hunks?.map((hunk) => hunk.id), ['cut-1'])
+
+    assert.equal(harness.flushLog.length, 1)
+    assert.deepEqual(
+      harness.collectorLog.map((entry) => entry.event),
+      ['queue:start', 'queue:finish'],
+    )
+  } finally {
+    unsubscribe()
+    harness.cleanup()
   }
 })
 
