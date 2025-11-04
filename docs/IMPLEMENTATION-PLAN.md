@@ -101,9 +101,9 @@ Phase B-1 では `autosave.enabled=true` を満たしていない限り `merge.p
 - [ ] ReadOnly 降格発生率を `reports/today.md` で観測し、上限を超えた場合にロールバック手順を準備したか
 - [ ] `ui.autosaveIndicator.*` テレメトリの送信量を Collector SLO（±5%）内に収めるようレート制御を設定したか
 - [ ] `Day8/docs/day8/design/03_architecture.md` の責務境界（Collector/Analyzer/Reporter）と矛盾する副作用を追加していないか
-- [x] AutoSave ランナー (`src/lib/autosave.ts` / `src/platform/vscode/autosave.ts`) の Collector テレメトリ統合を完了した。 (2024-06-04T07:40Z 成功, [検証ログ: tests/platform/vscode/autosave.collector-export.test.ts](../tests/platform/vscode/autosave.collector-export.test.ts))
-  - src/lib/autosave.ts: 2024-06-04T07:32Z 成功, [検証ログ: tests/lib/autosave.telemetryBridge.test.ts](../tests/lib/autosave.telemetryBridge.test.ts)
-  - src/platform/vscode/autosave.ts: 2024-06-04T07:40Z 成功, [検証ログ: tests/platform/vscode/autosave.collector-export.test.ts](../tests/platform/vscode/autosave.collector-export.test.ts)
+- [x] AutoSave ランナー (`src/lib/autosave.ts` / `src/platform/vscode/autosave.ts`) の Collector テレメトリ統合を完了した。 (2024-06-19T09:18Z 成功, [検証ログ: tests/platform/vscode/autosave.collector-export.test.ts](../tests/platform/vscode/autosave.collector-export.test.ts))
+  - src/lib/autosave.ts: 2024-06-19T09:10Z 成功, [検証ログ: tests/lib/autosave.telemetryBridge.test.ts](../tests/lib/autosave.telemetryBridge.test.ts)
+  - src/platform/vscode/autosave.ts: 2024-06-19T09:18Z 成功, [検証ログ: tests/platform/vscode/autosave.collector-export.test.ts](../tests/platform/vscode/autosave.collector-export.test.ts)
 
 ### 0.3 MergeDock / DiffMergeView タブ棚卸し
 | コンポーネント | 露出タブ / ペイン | 補足 | 出典 |
@@ -614,7 +614,7 @@ pnpm run flags:reset
 - [ ] フラグ OFF (`merge.precision=legacy`) で MergeDock のタブ構造（Compiled/Shot/Assets/Import/Golden）が不変。
 - [ ] フラグ ON (`merge.precision=beta|stable`) で Diff Merge タブが追加され、手動/AI 優先セレクタとの後方互換テストを通過。
 - [ ] CLI/JSON エクスポート（`downloadText`, `buildPackage`）がフラグ状態にかかわらずバイナリ互換であることをスナップショットテストで検証。
-- [x] `Collector` へのテレメトリ送信がフラグ ON/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 (2024-05-06, [検証ログ: tests/telemetry/vscode.contract.test.ts](../tests/telemetry/vscode.contract.test.ts))
+- [x] (Issue #1) `Collector` へのテレメトリ送信がフラグ ON/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 (2024-06-19, [検証ログ: tests/telemetry/vscode.contract.test.ts](../tests/telemetry/vscode.contract.test.ts))
 
 > 詳細な観点とモック定義: [tests/autosave/TEST_PLAN.md](../tests/autosave/TEST_PLAN.md) ／ [tests/merge/TEST_PLAN.md](../tests/merge/TEST_PLAN.md) ／ [tests/cli/TEST_PLAN.md](../tests/cli/TEST_PLAN.md)
 
