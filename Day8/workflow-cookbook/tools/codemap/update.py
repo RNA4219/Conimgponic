@@ -367,7 +367,6 @@ def run_update(options: UpdateOptions) -> UpdateReport:
                 cap_data = caps_state[cap_id][1]
                 serial_base = max(serial_base, _parse_serial_token(cap_data.get("generated_at")))
 
-        index_nodes_to_update: list[tuple[str, dict[str, Any], _IndexShard | None]] = []
         if emit_index:
             node_ids: Iterable[str]
             if nodes_to_refresh:
@@ -382,17 +381,12 @@ def run_update(options: UpdateOptions) -> UpdateReport:
                 node_payload = raw_nodes.get(node_id)
                 if not isinstance(node_payload, dict):
                     continue
-                serial_base = max(serial_base, _parse_serial_token(node_payload.get("mtime")))
-                index_nodes_to_update.append((node_id, node_payload, bundle.node_membership.get(node_id)))
 
         serial_token = _format_serial_token(serial_base + 1)
 
         if emit_index:
             if index_data.get("generated_at") != serial_token:
                 index_data["generated_at"] = serial_token
-            for _, node_payload, shard in index_nodes_to_update:
-                if node_payload.get("mtime") != serial_token:
-                    node_payload["mtime"] = serial_token
             if "summary" in index_data and isinstance(index_data["summary"], dict):
                 summary = index_data["summary"]
                 if summary.get("generated_at") != serial_token:
