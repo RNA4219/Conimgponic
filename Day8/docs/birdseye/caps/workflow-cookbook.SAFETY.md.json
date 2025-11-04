@@ -13,20 +13,20 @@
     "out::workflow-cookbook/CHANGELOG.md"
   ],
   "deps_in": [
-    "docs/ROADMAP_AND_SPECS.md",
-    "docs/day8/spec/02_spec.md",
-    "docs/safety.md",
-    "workflow-cookbook/GUARDRAILS.md",
-    "workflow-cookbook/SECURITY.md"
+    "Day8/docs/ROADMAP_AND_SPECS.md",
+    "Day8/docs/day8/spec/02_spec.md",
+    "Day8/docs/safety.md",
+    "Day8/workflow-cookbook/GUARDRAILS.md",
+    "Day8/workflow-cookbook/SECURITY.md"
   ],
   "deps_out": [
-    "workflow-cookbook/BLUEPRINT.md",
-    "workflow-cookbook/CHECKLISTS.md",
-    "workflow-cookbook/EVALUATION.md",
-    "workflow-cookbook/RUNBOOK.md"
+    "Day8/workflow-cookbook/BLUEPRINT.md",
+    "Day8/workflow-cookbook/CHECKLISTS.md",
+    "Day8/workflow-cookbook/EVALUATION.md",
+    "Day8/workflow-cookbook/RUNBOOK.md"
   ],
   "generated_at": "00006",
-  "id": "workflow-cookbook/SAFETY.md",
+  "id": "Day8/workflow-cookbook/SAFETY.md",
   "maintenance": {
     "refresh": "月次レビューまたは安全例外/RCA 更新時に本文と Birdseye (index/hot/caps) を再生成し、generated_at を同期する。",
     "tooling": [

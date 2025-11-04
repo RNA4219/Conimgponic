@@ -10,11 +10,11 @@
     "out::docs/birdseye/hot.json"
   ],
   "deps_in": [
-    "docs/day8/spec/02_spec.md"
+    "Day8/docs/day8/spec/02_spec.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "docs/addenda/M1_Metrics_Healthz_ADR.md",
+  "id": "Day8/docs/addenda/M1_Metrics_Healthz_ADR.md",
   "maintenance": {
     "refresh": "Katamari 側 M1 ADR の更新や Day8 MetricsRegistry 実装が進んだ際に、本 addendum の計画・タイムラインを見直し、ops/roadmap/checklist 反映と同時に Birdseye を再同期する。",
     "tooling": [

@@ -2,8 +2,8 @@
   "kind": "tools",
   "generated_at": "00006",
   "nodes": {
-    "tools/": {
-      "caps": "docs/birdseye/caps/tools.DIR.json",
+    "Day8/tools/": {
+      "caps": "Day8/docs/birdseye/caps/tools.DIR.json",
       "mtime": "00004",
       "role": "automation"
     }

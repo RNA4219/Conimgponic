@@ -2,270 +2,270 @@
   "kind": "workflow-cookbook",
   "generated_at": "00006",
   "nodes": {
-    "workflow-cookbook/BLUEPRINT.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.BLUEPRINT.md.json",
+    "Day8/workflow-cookbook/BLUEPRINT.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.BLUEPRINT.md.json",
       "mtime": "00004",
       "role": "requirements"
     },
-    "workflow-cookbook/CHECKLISTS.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.CHECKLISTS.md.json",
+    "Day8/workflow-cookbook/CHECKLISTS.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.CHECKLISTS.md.json",
       "mtime": "00004",
       "role": "checklist"
     },
-    "workflow-cookbook/EVALUATION.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.EVALUATION.md.json",
+    "Day8/workflow-cookbook/EVALUATION.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.EVALUATION.md.json",
       "mtime": "00004",
       "role": "quality"
     },
-    "workflow-cookbook/GUARDRAILS.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.GUARDRAILS.md.json",
+    "Day8/workflow-cookbook/GUARDRAILS.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.GUARDRAILS.md.json",
       "mtime": "00004",
       "role": "guardrail"
     },
-    "workflow-cookbook/HUB.codex.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.HUB.codex.md.json",
+    "Day8/workflow-cookbook/HUB.codex.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.HUB.codex.md.json",
       "mtime": "00004",
       "role": "orchestration"
     },
-    "workflow-cookbook/RUNBOOK.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.RUNBOOK.md.json",
+    "Day8/workflow-cookbook/RUNBOOK.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.RUNBOOK.md.json",
       "mtime": "00004",
       "role": "operations"
     },
-    "workflow-cookbook/SAFETY.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.SAFETY.md.json",
+    "Day8/workflow-cookbook/SAFETY.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.SAFETY.md.json",
       "mtime": "00004",
       "role": "safety"
     },
-    "workflow-cookbook/SECURITY.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.SECURITY.md.json",
+    "Day8/workflow-cookbook/SECURITY.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.SECURITY.md.json",
       "mtime": "00004",
       "role": "guardrail"
     },
-    "workflow-cookbook/TASK.codex.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.TASK.codex.md.json",
+    "Day8/workflow-cookbook/TASK.codex.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.TASK.codex.md.json",
       "mtime": "00004",
       "role": "tasks"
     },
-    "workflow-cookbook/docs/IN-20250115-001.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.docs.IN-20250115-001.md.json",
+    "Day8/workflow-cookbook/docs/IN-20250115-001.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.docs.IN-20250115-001.md.json",
       "mtime": "00004",
       "role": "incident"
     },
-    "workflow-cookbook/docs/birdseye/index.json": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.docs.birdseye.index.json.json",
+    "Day8/workflow-cookbook/docs/birdseye/index.json": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.docs.birdseye.index.json.json",
       "mtime": "00004",
       "role": "visualization"
     },
-    "workflow-cookbook/logs/test.jsonl": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.logs.test.jsonl.json",
+    "Day8/workflow-cookbook/logs/test.jsonl": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.logs.test.jsonl.json",
       "mtime": "00004",
       "role": "log"
     },
-    "workflow-cookbook/reports/issue_suggestions.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.reports.issue_suggestions.md.json",
+    "Day8/workflow-cookbook/reports/issue_suggestions.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.reports.issue_suggestions.md.json",
       "mtime": "00004",
       "role": "report"
     },
-    "workflow-cookbook/reports/today.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.reports.today.md.json",
+    "Day8/workflow-cookbook/reports/today.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.reports.today.md.json",
       "mtime": "00004",
       "role": "report"
     },
-    "workflow-cookbook/scripts/": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.scripts.DIR.json",
+    "Day8/workflow-cookbook/scripts/": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.scripts.DIR.json",
       "mtime": "00004",
       "role": "automation"
     },
-    "workflow-cookbook/scripts/analyze.py": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.scripts.analyze.py.json",
+    "Day8/workflow-cookbook/scripts/analyze.py": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.scripts.analyze.py.json",
       "mtime": "00004",
       "role": "analytics"
     },
-    "workflow-cookbook/tools/": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.tools.DIR.json",
+    "Day8/workflow-cookbook/tools/": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.tools.DIR.json",
       "mtime": "00004",
       "role": "automation"
     },
-    "workflow-cookbook/tools/codemap/README.md": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.tools.codemap.README.md.json",
+    "Day8/workflow-cookbook/tools/codemap/README.md": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.tools.codemap.README.md.json",
       "mtime": "00004",
       "role": "guide"
     },
-    "workflow-cookbook/tools/codemap/update.py": {
-      "caps": "docs/birdseye/caps/workflow-cookbook.tools.codemap.update.py.json",
+    "Day8/workflow-cookbook/tools/codemap/update.py": {
+      "caps": "Day8/docs/birdseye/caps/workflow-cookbook.tools.codemap.update.py.json",
       "mtime": "00004",
       "role": "automation"
     }
   },
   "edges": [
     [
-      "workflow-cookbook/BLUEPRINT.md",
-      "workflow-cookbook/RUNBOOK.md"
+      "Day8/workflow-cookbook/BLUEPRINT.md",
+      "Day8/workflow-cookbook/RUNBOOK.md"
     ],
     [
-      "workflow-cookbook/CHECKLISTS.md",
-      "workflow-cookbook/TASK.codex.md"
+      "Day8/workflow-cookbook/CHECKLISTS.md",
+      "Day8/workflow-cookbook/TASK.codex.md"
     ],
     [
-      "workflow-cookbook/EVALUATION.md",
-      "workflow-cookbook/CHECKLISTS.md"
+      "Day8/workflow-cookbook/EVALUATION.md",
+      "Day8/workflow-cookbook/CHECKLISTS.md"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "workflow-cookbook/BLUEPRINT.md"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/workflow-cookbook/BLUEPRINT.md"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "workflow-cookbook/CHECKLISTS.md"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/workflow-cookbook/CHECKLISTS.md"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "workflow-cookbook/EVALUATION.md"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/workflow-cookbook/EVALUATION.md"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "workflow-cookbook/RUNBOOK.md"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/workflow-cookbook/RUNBOOK.md"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "workflow-cookbook/SAFETY.md"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/workflow-cookbook/SAFETY.md"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "workflow-cookbook/SECURITY.md"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/workflow-cookbook/SECURITY.md"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "workflow-cookbook/TASK.codex.md"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/workflow-cookbook/TASK.codex.md"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "workflow-cookbook/scripts/"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/workflow-cookbook/scripts/"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "workflow-cookbook/tools/"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/workflow-cookbook/tools/"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "docs/adr/0001-collector-analyzer-reporter-pipeline.md"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
     ],
     [
-      "workflow-cookbook/GUARDRAILS.md",
-      "docs/adr/0003-propose-only-governance.md"
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/docs/adr/0003-propose-only-governance.md"
     ],
     [
-      "workflow-cookbook/HUB.codex.md",
-      "workflow-cookbook/BLUEPRINT.md"
+      "Day8/workflow-cookbook/HUB.codex.md",
+      "Day8/workflow-cookbook/BLUEPRINT.md"
     ],
     [
-      "workflow-cookbook/HUB.codex.md",
-      "workflow-cookbook/CHECKLISTS.md"
+      "Day8/workflow-cookbook/HUB.codex.md",
+      "Day8/workflow-cookbook/CHECKLISTS.md"
     ],
     [
-      "workflow-cookbook/HUB.codex.md",
-      "workflow-cookbook/EVALUATION.md"
+      "Day8/workflow-cookbook/HUB.codex.md",
+      "Day8/workflow-cookbook/EVALUATION.md"
     ],
     [
-      "workflow-cookbook/HUB.codex.md",
-      "workflow-cookbook/GUARDRAILS.md"
+      "Day8/workflow-cookbook/HUB.codex.md",
+      "Day8/workflow-cookbook/GUARDRAILS.md"
     ],
     [
-      "workflow-cookbook/HUB.codex.md",
-      "workflow-cookbook/RUNBOOK.md"
+      "Day8/workflow-cookbook/HUB.codex.md",
+      "Day8/workflow-cookbook/RUNBOOK.md"
     ],
     [
-      "workflow-cookbook/HUB.codex.md",
-      "workflow-cookbook/TASK.codex.md"
+      "Day8/workflow-cookbook/HUB.codex.md",
+      "Day8/workflow-cookbook/TASK.codex.md"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "docs/birdseye/index.json"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/docs/birdseye/index.json"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/CHECKLISTS.md"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/CHECKLISTS.md"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/EVALUATION.md"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/EVALUATION.md"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/docs/IN-20250115-001.md"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/docs/IN-20250115-001.md"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/docs/birdseye/index.json"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/docs/birdseye/index.json"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/logs/test.jsonl"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/logs/test.jsonl"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/reports/issue_suggestions.md"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/reports/issue_suggestions.md"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/reports/today.md"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/reports/today.md"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/scripts/analyze.py"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/scripts/analyze.py"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/tools/codemap/README.md"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/tools/codemap/README.md"
     ],
     [
-      "workflow-cookbook/RUNBOOK.md",
-      "workflow-cookbook/tools/codemap/update.py"
+      "Day8/workflow-cookbook/RUNBOOK.md",
+      "Day8/workflow-cookbook/tools/codemap/update.py"
     ],
     [
-      "workflow-cookbook/SAFETY.md",
-      "workflow-cookbook/BLUEPRINT.md"
+      "Day8/workflow-cookbook/SAFETY.md",
+      "Day8/workflow-cookbook/BLUEPRINT.md"
     ],
     [
-      "workflow-cookbook/SAFETY.md",
-      "workflow-cookbook/CHECKLISTS.md"
+      "Day8/workflow-cookbook/SAFETY.md",
+      "Day8/workflow-cookbook/CHECKLISTS.md"
     ],
     [
-      "workflow-cookbook/SAFETY.md",
-      "workflow-cookbook/EVALUATION.md"
+      "Day8/workflow-cookbook/SAFETY.md",
+      "Day8/workflow-cookbook/EVALUATION.md"
     ],
     [
-      "workflow-cookbook/SAFETY.md",
-      "workflow-cookbook/RUNBOOK.md"
+      "Day8/workflow-cookbook/SAFETY.md",
+      "Day8/workflow-cookbook/RUNBOOK.md"
     ],
     [
-      "workflow-cookbook/SECURITY.md",
-      "workflow-cookbook/CHECKLISTS.md"
+      "Day8/workflow-cookbook/SECURITY.md",
+      "Day8/workflow-cookbook/CHECKLISTS.md"
     ],
     [
-      "workflow-cookbook/SECURITY.md",
-      "workflow-cookbook/EVALUATION.md"
+      "Day8/workflow-cookbook/SECURITY.md",
+      "Day8/workflow-cookbook/EVALUATION.md"
     ],
     [
-      "workflow-cookbook/SECURITY.md",
-      "workflow-cookbook/RUNBOOK.md"
+      "Day8/workflow-cookbook/SECURITY.md",
+      "Day8/workflow-cookbook/RUNBOOK.md"
     ],
     [
-      "workflow-cookbook/SECURITY.md",
-      "workflow-cookbook/SAFETY.md"
+      "Day8/workflow-cookbook/SECURITY.md",
+      "Day8/workflow-cookbook/SAFETY.md"
     ],
     [
-      "workflow-cookbook/SECURITY.md",
-      "workflow-cookbook/TASK.codex.md"
+      "Day8/workflow-cookbook/SECURITY.md",
+      "Day8/workflow-cookbook/TASK.codex.md"
     ],
     [
-      "workflow-cookbook/SECURITY.md",
-      "workflow-cookbook/scripts/"
+      "Day8/workflow-cookbook/SECURITY.md",
+      "Day8/workflow-cookbook/scripts/"
     ],
     [
-      "workflow-cookbook/SECURITY.md",
-      "workflow-cookbook/tools/"
+      "Day8/workflow-cookbook/SECURITY.md",
+      "Day8/workflow-cookbook/tools/"
     ]
   ],
   "summary": {
