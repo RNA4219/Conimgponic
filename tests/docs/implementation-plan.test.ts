@@ -8,7 +8,14 @@ const CHECKLIST_PATTERN =
   /- \[x\] `Collector` へのテレメトリ送信がフラグ ON\/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 \((?<date>\d{4}-\d{2}-\d{2}), \[検証ログ: tests\/telemetry\/vscode\.contract\.test\.ts\]\(\.\.\/tests\/telemetry\/vscode\.contract\.test\.ts\)\)/
 
 const AUTOSAVE_PATTERN =
-  /- \[x\] AutoSave ランナー \(`src\/lib\/autosave\.ts` \/ `src\/platform\/vscode\/autosave\.ts`\) の Collector テレメトリ統合を完了した。 \((?<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z) (?<result>成功|失敗|再検証中), \[検証ログ: tests\/platform\/vscode\/autosave\.telemetry\.test\.ts\]\(\.\.\/tests\/platform\/vscode\/autosave\.telemetry\.test\.ts\)\)/
+  /- \[x\] AutoSave ランナー \(`src\/lib\/autosave\.ts` \/ `src\/platform\/vscode\/autosave\.ts`\) の Collector テレメトリ統合を完了した。 \((?<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z) (?<result>成功|失敗|再検証中), \[検証ログ: tests\/platform\/vscode\/autosave\.collector-export\.test\.ts\]\(\.\.\/tests\/platform\/vscode\/autosave\.collector-export\.test\.ts\)\)/
+
+const AUTOSAVE_DETAIL_PATTERNS: Record<string, RegExp> = {
+  'src/lib/autosave.ts':
+    /-\s+src\/lib\/autosave\.ts:\s+(?<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z)\s+(?<result>成功|失敗|再検証中),\s+\[検証ログ: tests\/lib\/autosave\.telemetryBridge\.test\.ts\]\(\.\.\/tests\/lib\/autosave\.telemetryBridge\.test\.ts\)/,
+  'src/platform/vscode/autosave.ts':
+    /-\s+src\/platform\/vscode\/autosave\.ts:\s+(?<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z)\s+(?<result>成功|失敗|再検証中),\s+\[検証ログ: tests\/platform\/vscode\/autosave\.collector-export\.test\.ts\]\(\.\.\/tests\/platform\/vscode\/autosave\.collector-export\.test\.ts\)/
+}
 
 test('Collector テレメトリ統合の進捗が記録されている', () => {
   const content = readFileSync(IMPLEMENTATION_PLAN_PATH, 'utf-8')
@@ -35,4 +42,22 @@ test('AutoSave テレメトリ統合の進捗が記録されている', () => {
 
   const parsed = Number.isNaN(Date.parse(timestamp as string))
   assert.equal(parsed, false, '完了日時は ISO8601 互換の UTC 形式にしてください')
+
+  for (const [label, pattern] of Object.entries(AUTOSAVE_DETAIL_PATTERNS)) {
+    const detailMatch = pattern.exec(content)
+    assert.ok(detailMatch, `${label} の完了日時と確認結果を記録してください`)
+
+    const detailTimestamp = detailMatch!.groups?.timestamp
+    const detailResult = detailMatch!.groups?.result
+
+    assert.ok(detailTimestamp, `${label} の完了日時は YYYY-MM-DDThh:mmZ 形式で記録してください`)
+    assert.ok(detailResult, `${label} の確認結果（成功/失敗/再検証中）を記録してください`)
+
+    const detailParsed = Number.isNaN(Date.parse(detailTimestamp as string))
+    assert.equal(
+      detailParsed,
+      false,
+      `${label} の完了日時は ISO8601 互換の UTC 形式にしてください`
+    )
+  }
 })
