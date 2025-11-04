@@ -22,11 +22,8 @@ import {
   nextReqId
 } from '../../../../src/platform/vscode/autosave/state.js';
 import { createVscodeAutoSaveBridge } from '../../../../src/platform/vscode/autosave.js';
-import {
-  deriveAutoSavePhaseGuard,
-  resolveWorkspaceFlags
-} from '../../../../src/platform/vscode/flags/index.js';
-import { resolveFlags } from '../../../../src/config/index.js';
+import { deriveAutoSavePhaseGuard } from '../../../../src/platform/vscode/flags/index.js';
+import { resolveAutoSaveBootstrapPlan } from '../../../../src/config/index.js';
 import type { Day8CollectorFlagResolutionEvent } from '../../../../src/telemetry/day8Collector.js';
 
 class TestDomException extends Error {
@@ -176,7 +173,7 @@ test('publishCollectorSnapshotResult forwards normalized payload', () => {
   );
 });
 
-test('resolveWorkspaceFlags aligns with resolveFlags and bootstrap propagates guard', () => {
+test('createVscodeAutoSaveBridge bootstraps from plan snapshot and publishes flag resolution telemetry', () => {
   const workspace = {
     get: (key: string) => {
       switch (key) {
@@ -192,19 +189,19 @@ test('resolveWorkspaceFlags aligns with resolveFlags and bootstrap propagates gu
     }
   };
   const clock = () => new Date('2024-01-05T00:00:00.000Z');
-  const helperSnapshot = resolveWorkspaceFlags({ workspace, clock });
-  const directSnapshot = resolveFlags({ workspace, clock });
+  const plan = resolveAutoSaveBootstrapPlan({ workspace, clock });
+  const expectedGuard = deriveAutoSavePhaseGuard(plan.snapshot);
 
-  assert.deepEqual(helperSnapshot, directSnapshot);
-
-  const helperGuard = deriveAutoSavePhaseGuard(helperSnapshot);
-  assert.deepEqual(helperGuard, {
-    featureFlag: {
-      value: directSnapshot.autosave.enabled,
-      source: directSnapshot.autosave.source
-    },
-    optionsDisabled: !directSnapshot.autosave.enabled
-  });
+  const scope = globalThis as {
+    Day8Collector?: { publish: (event: Day8CollectorFlagResolutionEvent) => void };
+  };
+  const previous = scope.Day8Collector;
+  const published: Day8CollectorFlagResolutionEvent[] = [];
+  scope.Day8Collector = {
+    publish: (event) => {
+      published.push(event);
+    }
+  };
 
   const sent: unknown[] = [];
   const bridge = createVscodeAutoSaveBridge({
@@ -225,17 +222,29 @@ test('resolveWorkspaceFlags aligns with resolveFlags and bootstrap propagates gu
     }
   });
 
+  try {
+    assert.ok(
+      published.some((event) => event.event === 'flag_resolution'),
+      'expected Day8Collector flag_resolution event'
+    );
+  } finally {
+    scope.Day8Collector = previous;
+    if (!previous) {
+      delete scope.Day8Collector;
+    }
+  }
+
   assert.equal(sent.length, 2);
   const bootstrap = sent[0] as {
     type: string;
     payload: { guard: unknown; flags: unknown };
   };
   assert.equal(bootstrap?.type, 'bridge.bootstrap');
-  assert.deepEqual(bootstrap.payload.flags, helperSnapshot);
-  assert.deepEqual(bootstrap.payload.guard, helperGuard);
+  assert.deepEqual(bootstrap.payload.flags, plan.snapshot);
+  assert.deepEqual(bootstrap.payload.guard, expectedGuard);
 
   const state = bridge.inspectState();
-  assert.deepEqual(state.guard, helperGuard);
+  assert.deepEqual(state.guard, expectedGuard);
 });
 
 test('publishCollectorSnapshotResult flags localStorage guard as QA phase', () => {
