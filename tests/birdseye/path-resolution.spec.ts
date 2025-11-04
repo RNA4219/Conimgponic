@@ -2,7 +2,7 @@
 process.env.TS_NODE_COMPILER_OPTIONS ??= JSON.stringify({ moduleResolution: 'bundler' });
 
 import assert from 'node:assert/strict';
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -76,6 +76,41 @@ describe('birdseye path resolution', () => {
       for (const dependency of capsuleData.deps_out ?? []) {
         assert.ok(typeof dependency === 'string', `deps_out must contain strings in ${capsulePath}`);
         await assertPathExists(dependency, `deps_out ${dependency} in ${capsulePath}`);
+      }
+    }
+  });
+
+  test('index edges reference known nodes', async () => {
+    const consolidatedRaw = await readFile(resolve(BIRDSEYE_ROOT, 'index.json'), 'utf8');
+    const consolidatedData = JSON.parse(consolidatedRaw) as {
+      nodes?: Record<string, unknown> | undefined;
+    };
+
+    const consolidatedNodes = new Set(Object.keys(consolidatedData.nodes ?? {}));
+
+    const entries = await readdir(BIRDSEYE_ROOT);
+    for (const entry of entries) {
+      if (!entry.startsWith('index.') || !entry.endsWith('.json')) {
+        continue;
+      }
+
+      const shardPath = resolve(BIRDSEYE_ROOT, entry);
+      const raw = await readFile(shardPath, 'utf8');
+      const shardData = JSON.parse(raw) as {
+        nodes?: Record<string, unknown> | undefined;
+        edges?: Array<[string, string]> | undefined;
+      };
+
+      const shardNodes = new Set(Object.keys(shardData.nodes ?? {}));
+
+      for (const edge of shardData.edges ?? []) {
+        const [source, target] = edge;
+        const inShard = shardNodes.has(source) && shardNodes.has(target);
+        const inConsolidated = consolidatedNodes.has(source) && consolidatedNodes.has(target);
+        assert.ok(
+          inShard || inConsolidated,
+          `${entry}: edge ${source} -> ${target} must exist in shard or consolidated nodes`,
+        );
       }
     }
   });
