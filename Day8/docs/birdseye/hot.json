@@ -66,5 +66,5 @@
       "reason": "Birdseye index/caps/hot の欠損時に即参照し、Guardrails の最小読込手順をフォールバックで確保するための要点をまとめている。"
     }
   ],
-  "generated_at": "00006"
+  "generated_at": "00008"
 }

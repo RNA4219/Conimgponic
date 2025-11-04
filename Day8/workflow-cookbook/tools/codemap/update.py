@@ -319,7 +319,7 @@ def run_update(options: UpdateOptions) -> UpdateReport:
         serial_base = _parse_serial_token(index_data.get("generated_at"))
 
         hot_payload: tuple[dict[str, Any], str] | None = None
-        if emit_index and hot_path.exists():
+        if hot_path.exists():
             hot_data, hot_original = _load_json(hot_path)
             if isinstance(hot_data, dict):
                 serial_base = max(serial_base, _parse_serial_token(hot_data.get("generated_at")))
@@ -424,6 +424,27 @@ def run_update(options: UpdateOptions) -> UpdateReport:
                 hot_data, hot_original = hot_payload
                 if hot_data.get("generated_at") != serial_token:
                     hot_data["generated_at"] = serial_token
+                _maybe_write(
+                    hot_path,
+                    hot_data,
+                    hot_original,
+                    planned=planned,
+                    performed=performed,
+                    dry_run=options.dry_run,
+                )
+
+        elif hot_payload is not None:
+            hot_data, hot_original = hot_payload
+            target_serial: str | None
+            index_serial = index_data.get("generated_at")
+            if isinstance(index_serial, str) and index_serial:
+                target_serial = index_serial
+            else:
+                target_serial = _format_serial_token(
+                    _parse_serial_token(hot_data.get("generated_at"))
+                )
+            if hot_data.get("generated_at") != target_serial:
+                hot_data["generated_at"] = target_serial
                 _maybe_write(
                     hot_path,
                     hot_data,
