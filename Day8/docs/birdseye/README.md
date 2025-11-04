@@ -43,3 +43,5 @@ Day8 の Birdseye は、リポジトリ内の主要ドキュメントとガー�
 
 ## 検証ログ
 - `pnpm test -- tests/birdseye/path-resolution.spec.ts` を実行し、Birdseye の参照整合性を確認。
+- `python Day8/workflow-cookbook/tools/codemap/merge_index.py --index Day8/docs/birdseye/index.json` を実行し、shard 集約結果が想定どおりかを確認。
+- `pnpm test -- tests/birdseye/index-structure.spec.ts` を実行し、`edges` の 2 要素制約と shard/aggregate 一致を確認。
