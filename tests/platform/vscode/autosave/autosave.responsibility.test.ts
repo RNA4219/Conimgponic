@@ -25,7 +25,7 @@ import { createVscodeAutoSaveBridge } from '../../../../src/platform/vscode/auto
 import * as flagsModule from '../../../../src/platform/vscode/flags.js';
 import { resolveFlags } from '../../../../src/config/index.js';
 import type { Day8CollectorFlagResolutionEvent } from '../../../../src/telemetry/day8Collector.js';
-import type { FlagSnapshot } from '../../../../src/config/index.js';
+import type { FlagSnapshot, WorkspaceConfiguration } from '../../../../src/config/index.js';
 import type { AutoSavePhaseGuardSnapshot } from '../../../../src/lib/autosave.js';
 
 const { deriveAutoSavePhaseGuard, resolveWorkspaceFlags } = flagsModule;
@@ -401,6 +401,69 @@ test('createVscodeAutoSaveBridge publishes flag resolution telemetry on bootstra
       published.some((event) => event.event === 'flag_resolution'),
       'expected Day8Collector flag_resolution event'
     );
+  } finally {
+    scope.Day8Collector = previous;
+    if (!previous) {
+      delete scope.Day8Collector;
+    }
+  }
+});
+
+test('createVscodeAutoSaveBridge publishes a single flag resolution event when resolving workspace flags', () => {
+  const scope = globalThis as {
+    Day8Collector?: { publish: (event: Day8CollectorFlagResolutionEvent) => void };
+  };
+  const previous = scope.Day8Collector;
+  const published: Day8CollectorFlagResolutionEvent[] = [];
+  scope.Day8Collector = {
+    publish: (event) => {
+      published.push(event);
+    }
+  };
+
+  const workspace = {
+    get: (key: string) => {
+      switch (key) {
+        case 'autosave.enabled':
+          return 'true';
+        case 'merge.precision':
+          return 'stable';
+        case 'merge.precision.threshold':
+          return 0.9;
+        default:
+          return undefined;
+      }
+    }
+  } satisfies WorkspaceConfiguration;
+
+  try {
+    createVscodeAutoSaveBridge({
+      policy: {
+        debounceMs: 100,
+        idleMs: 100,
+        maxGenerations: 1,
+        maxBytes: 1024,
+        disabled: false
+      },
+      flags: undefined,
+      workspace,
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        // noop
+      },
+      atomicWrite: async () => ({
+        ok: true,
+        bytes: 0,
+        retainedBytes: 0,
+        generation: 0,
+        lockStrategy: 'web-lock'
+      })
+    });
+
+    const resolutionEvents = published.filter(
+      (event) => event.event === 'flag_resolution'
+    );
+    assert.equal(resolutionEvents.length, 1);
   } finally {
     scope.Day8Collector = previous;
     if (!previous) {
