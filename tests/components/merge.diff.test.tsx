@@ -198,6 +198,30 @@ test('beta precision without phase stats keeps diff tab visible but disabled', (
   assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
 })
 
+test('stable precision hides diff tab when autosave is disabled', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+    autoSaveEnabled: false,
+  })
+
+  assert.equal(plan.diff.visible, false)
+  assert.equal(plan.diff.enabled, false)
+  assert.ok(plan.tabs.tabs.every((entry) => entry.id !== 'diff'))
+})
+
+test('stable precision shows diff tab when autosave is enabled', () => {
+  const plan = resolveMergeDockPhasePlan({
+    precision: 'stable',
+    threshold: 0.82,
+    autoSaveEnabled: true,
+  })
+
+  assert.equal(plan.diff.visible, true)
+  assert.equal(plan.diff.enabled, false)
+  assert.ok(plan.tabs.tabs.some((entry) => entry.id === 'diff'))
+})
+
 test('beta precision keeps diff tab visible but disabled when review band is empty', () => {
   const plan = resolveMergeDockPhasePlan({
     precision: 'beta',
