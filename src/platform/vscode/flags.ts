@@ -28,13 +28,14 @@ export const resolveWorkspaceFlags = (
 ): FlagSnapshot => resolveWorkspaceBootstrapPayload(options).flags;
 
 export const deriveAutoSavePhaseGuard = (
-  snapshot: FlagSnapshot
+  snapshot: FlagSnapshot,
+  optionsDisabled = false
 ): AutoSavePhaseGuardSnapshot => ({
   featureFlag: {
     value: snapshot.autosave.enabled,
     source: snapshot.autosave.source
   },
-  optionsDisabled: !snapshot.autosave.enabled
+  optionsDisabled
 });
 
 export const createAutoSaveBootstrapPayload = (

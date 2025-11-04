@@ -23,7 +23,7 @@ import {
 } from '../../../../src/platform/vscode/autosave/state.js';
 import { createVscodeAutoSaveBridge } from '../../../../src/platform/vscode/autosave.js';
 import * as flagsModule from '../../../../src/platform/vscode/flags.js';
-import { resolveFlags } from '../../../../src/config/index.js';
+import { resolveAutoSaveBootstrapPlan, resolveFlags } from '../../../../src/config/index.js';
 import type { Day8CollectorFlagResolutionEvent } from '../../../../src/telemetry/day8Collector.js';
 import type { FlagSnapshot, WorkspaceConfiguration } from '../../../../src/config/index.js';
 import type { AutoSavePhaseGuardSnapshot } from '../../../../src/lib/autosave.js';
@@ -78,6 +78,13 @@ test('createBootstrapMessage preserves guard snapshot and flags', () => {
     source: 'env'
   });
   assert.deepEqual(message.payload.flags, { auto: { enabled: true } });
+});
+
+test('deriveAutoSavePhaseGuard aligns with resolveAutoSaveBootstrapPlan guard', () => {
+  const plan = resolveAutoSaveBootstrapPlan();
+  const guard = deriveAutoSavePhaseGuard(plan.snapshot);
+
+  assert.deepEqual(guard, plan.guard);
 });
 
 test('resolveSnapshotTelemetryPhase escalates local storage guard phase', () => {
@@ -288,7 +295,7 @@ test('resolveWorkspaceFlags aligns with resolveFlags and bootstrap propagates gu
       value: directSnapshot.autosave.enabled,
       source: directSnapshot.autosave.source
     },
-    optionsDisabled: !directSnapshot.autosave.enabled
+    optionsDisabled: false
   });
 
   const sent: unknown[] = [];
