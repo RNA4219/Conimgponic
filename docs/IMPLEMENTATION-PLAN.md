@@ -101,6 +101,7 @@ Phase B-1 では `autosave.enabled=true` を満たしていない限り `merge.p
 - [ ] ReadOnly 降格発生率を `reports/today.md` で観測し、上限を超えた場合にロールバック手順を準備したか
 - [ ] `ui.autosaveIndicator.*` テレメトリの送信量を Collector SLO（±5%）内に収めるようレート制御を設定したか
 - [ ] `Day8/docs/day8/design/03_architecture.md` の責務境界（Collector/Analyzer/Reporter）と矛盾する副作用を追加していないか
+- [x] AutoSave ランナー (`src/lib/autosave.ts` / `src/platform/vscode/autosave.ts`) の Collector テレメトリ統合を完了した。 (2024-05-30T10:45Z 成功, [検証ログ: tests/platform/vscode/autosave.telemetry.test.ts](../tests/platform/vscode/autosave.telemetry.test.ts))
 
 ### 0.3 MergeDock / DiffMergeView タブ棚卸し
 | コンポーネント | 露出タブ / ペイン | 補足 | 出典 |
