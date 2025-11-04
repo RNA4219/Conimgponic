@@ -463,6 +463,14 @@
     ],
     [
       "tests/lib/merge/mergeThreshold.spec.ts",
+      "src/lib/merge/threshold.ts"
+    ],
+    [
+      "tests/lib/merge/mergeThreshold.spec.ts",
+      "src/lib/merge/diffMergePlan.ts"
+    ],
+    [
+      "tests/lib/merge/mergeThreshold.spec.ts",
       "src/lib/merge/threshold.ts",
       "src/lib/merge/diffMergePlan.ts",
       "src/lib/merge.ts"
