@@ -763,7 +763,7 @@ export default function App({ resolveOptions }: AppProps = {}){
     return resolveMergeDockIntegration(mergeAlignedPlan, resolvedOptions)
   }, [autoSavePlan, flagSnapshot.merge, resolvedOptions])
   const mergeDockFlags = mergeDockIntegration.flagSnapshot
-  const mergeDockAutoSaveEnabled = mergeDockFlags.autosave.enabled
+  const mergeDockAutoSaveEnabled = mergeDockFlags.autosave.enabled === true
   return (
     <div className="app">
       <div className="toolbar">
