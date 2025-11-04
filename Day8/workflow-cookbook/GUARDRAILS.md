@@ -116,6 +116,7 @@ next_review_due: 2025-11-14
    }
   ```
   - `generated_at` はゼロ埋め 5 桁の連番（例: `00001`）。再生成のたびに +1 し、index / caps / hot を同じ番号で揃える。
+  - 1PR 原則：Birdseye の再生成を行ったら同じ PR で index / hot / 対象カプセルの `generated_at` を同期し、連番のズレを残さない。
 
 3. **Capsules（点読みパケット）**
 

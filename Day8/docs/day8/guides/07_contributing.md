@@ -2,6 +2,7 @@
 
 ## ブランチ/PR ルール
 - 1タスク=1ブランチ=1PR（±300行/≤3ファイルを目安）
+- Birdseye の `generated_at` 連番は PR ごとに 1 回だけ進め、index / hot / 関連カプセルを必ず同時更新する（1PR 原則）。
 - レビュー前・マージ前に rebase で追従
 - 公開 API/スキーマ変更は先行PR（契約合意）
 - `Day8/workflow-cookbook/GUARDRAILS.md` に従い、テストを先に書く TDD（RED→GREEN→リファクタ）の実行ログを PR の `Tests` セクションに明記する。
