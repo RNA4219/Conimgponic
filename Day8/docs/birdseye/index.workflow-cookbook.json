@@ -2,6 +2,21 @@
   "kind": "workflow-cookbook",
   "generated_at": "00006",
   "nodes": {
+    "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.adr.0001-collector-analyzer-reporter-pipeline.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    },
+    "Day8/docs/adr/0003-propose-only-governance.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.adr.0003-propose-only-governance.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    },
+    "Day8/docs/birdseye/index.json": {
+      "caps": "Day8/docs/birdseye/caps/docs.birdseye.index.json.json",
+      "mtime": "00007",
+      "role": "visualization"
+    },
     "Day8/workflow-cookbook/BLUEPRINT.md": {
       "caps": "Day8/docs/birdseye/caps/workflow-cookbook.BLUEPRINT.md.json",
       "mtime": "00004",

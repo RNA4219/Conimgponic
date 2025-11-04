@@ -34,6 +34,14 @@
     ],
     [
       "Day8/docs/README.md",
+      "Day8/docs/FORK_NOTES.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/Release_Checklist.md"
+    ],
+    [
+      "Day8/docs/README.md",
       "Day8/docs/TASKS.md"
     ],
     [
@@ -42,19 +50,7 @@
     ],
     [
       "Day8/docs/README.md",
-      "Day8/docs/day8/README.md"
-    ],
-    [
-      "Day8/docs/README.md",
-      "Day8/docs/Release_Checklist.md"
-    ],
-    [
-      "Day8/docs/README.md",
-      "Day8/docs/addenda/M_Versioning_Release.md"
-    ],
-    [
-      "Day8/docs/README.md",
-      "Day8/docs/FORK_NOTES.md"
+      "Day8/docs/addenda/B_UI_Mock.md"
     ],
     [
       "Day8/docs/README.md",
@@ -62,19 +58,11 @@
     ],
     [
       "Day8/docs/README.md",
+      "Day8/docs/addenda/D_Trim_Design.md"
+    ],
+    [
+      "Day8/docs/README.md",
       "Day8/docs/addenda/F_Provider_Matrix.md"
-    ],
-    [
-      "Day8/docs/README.md",
-      "Day8/docs/addenda/H_Deploy_Guide.md"
-    ],
-    [
-      "Day8/docs/README.md",
-      "Day8/docs/addenda/B_UI_Mock.md"
-    ],
-    [
-      "Day8/docs/README.md",
-      "Day8/docs/addenda/L_Config_Reference.md"
     ],
     [
       "Day8/docs/README.md",
@@ -82,7 +70,7 @@
     ],
     [
       "Day8/docs/README.md",
-      "Day8/docs/addenda/K_Accessibility_UX.md"
+      "Day8/docs/addenda/H_Deploy_Guide.md"
     ],
     [
       "Day8/docs/README.md",
@@ -90,11 +78,15 @@
     ],
     [
       "Day8/docs/README.md",
-      "Day8/docs/safety.md"
+      "Day8/docs/addenda/K_Accessibility_UX.md"
     ],
     [
       "Day8/docs/README.md",
-      "Day8/docs/adr/README.md"
+      "Day8/docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/M_Versioning_Release.md"
     ],
     [
       "Day8/docs/README.md",
@@ -109,8 +101,32 @@
       "Day8/docs/adr/0003-propose-only-governance.md"
     ],
     [
+      "Day8/docs/README.md",
+      "Day8/docs/adr/README.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/day8/README.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/day8/spec/01_requirements.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/safety.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/Architecture_ASCII.md"
+    ],
+    [
       "Day8/docs/ROADMAP_AND_SPECS.md",
       "Day8/docs/BIRDSEYE.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/Release_Checklist.md"
     ],
     [
       "Day8/docs/ROADMAP_AND_SPECS.md",
@@ -118,7 +134,27 @@
     ],
     [
       "Day8/docs/ROADMAP_AND_SPECS.md",
-      "Day8/docs/Architecture_ASCII.md"
+      "Day8/docs/addenda/G_Security_Privacy.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/adr/0002-jsonl-event-contract.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/adr/0003-propose-only-governance.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/adr/README.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/day8/spec/01_requirements.md"
     ],
     [
       "Day8/docs/ROADMAP_AND_SPECS.md",
@@ -134,22 +170,6 @@
     ],
     [
       "Day8/docs/ROADMAP_AND_SPECS.md",
-      "Day8/docs/adr/README.md"
-    ],
-    [
-      "Day8/docs/ROADMAP_AND_SPECS.md",
-      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
-    ],
-    [
-      "Day8/docs/ROADMAP_AND_SPECS.md",
-      "Day8/docs/adr/0002-jsonl-event-contract.md"
-    ],
-    [
-      "Day8/docs/ROADMAP_AND_SPECS.md",
-      "Day8/docs/adr/0003-propose-only-governance.md"
-    ],
-    [
-      "Day8/docs/ROADMAP_AND_SPECS.md",
       "Day8/workflow-cookbook/GUARDRAILS.md"
     ],
     [
@@ -162,19 +182,31 @@
     ],
     [
       "Day8/docs/ROADMAP_AND_SPECS.md",
-      "Day8/docs/addenda/G_Security_Privacy.md"
-    ],
-    [
-      "Day8/docs/ROADMAP_AND_SPECS.md",
-      "Day8/docs/Release_Checklist.md"
-    ],
-    [
-      "Day8/docs/ROADMAP_AND_SPECS.md",
       "Day8/workflow-cookbook/TASK.codex.md"
+    ],
+    [
+      "Day8/docs/Release_Checklist.md",
+      "Day8/docs/addenda/M_Versioning_Release.md"
+    ],
+    [
+      "Day8/docs/Release_Checklist.md",
+      "Day8/workflow-cookbook/CHECKLISTS.md"
     ],
     [
       "Day8/docs/TASKS.md",
       "Day8/docs/seeds/README.md"
+    ],
+    [
+      "Day8/docs/UPSTREAM.md",
+      "Day8/docs/FORK_NOTES.md"
+    ],
+    [
+      "Day8/docs/UPSTREAM.md",
+      "Day8/docs/UPSTREAM_WEEKLY_LOG.md"
+    ],
+    [
+      "Day8/docs/UPSTREAM_WEEKLY_LOG.md",
+      "Day8/docs/FORK_NOTES.md"
     ],
     [
       "Day8/docs/addenda/C_Persona_Schema.md",
@@ -185,8 +217,52 @@
       "Day8/docs/day8/spec/02_spec.md"
     ],
     [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/C_Persona_Schema.md"
+      "Day8/docs/addenda/D_Trim_Design.md",
+      "Day8/docs/addenda/F_Provider_Matrix.md"
+    ],
+    [
+      "Day8/docs/addenda/D_Trim_Design.md",
+      "Day8/docs/addenda/G_Security_Privacy.md"
+    ],
+    [
+      "Day8/docs/addenda/D_Trim_Design.md",
+      "Day8/docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "Day8/docs/addenda/D_Trim_Design.md",
+      "Day8/docs/day8/quality/06_quality.md"
+    ],
+    [
+      "Day8/docs/addenda/D_Trim_Design.md",
+      "Day8/workflow-cookbook/scripts/analyze.py"
+    ],
+    [
+      "Day8/docs/addenda/H_Deploy_Guide.md",
+      "Day8/docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "Day8/docs/addenda/M_Versioning_Release.md",
+      "Day8/workflow-cookbook/CHECKLISTS.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/Architecture_ASCII.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/addenda/B_UI_Mock.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/adr/0002-jsonl-event-contract.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/adr/0003-propose-only-governance.md"
     ],
     [
       "Day8/docs/day8/ops/04_ops.md",
@@ -205,16 +281,72 @@
       "Day8/docs/adr/0003-propose-only-governance.md"
     ],
     [
-      "Day8/docs/UPSTREAM.md",
-      "Day8/docs/UPSTREAM_WEEKLY_LOG.md"
+      "Day8/docs/day8/quality/06_quality.md",
+      "Day8/docs/addenda/I_Test_Cases.md"
     ],
     [
-      "Day8/docs/UPSTREAM.md",
-      "Day8/docs/FORK_NOTES.md"
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/C_Persona_Schema.md"
     ],
     [
-      "Day8/docs/UPSTREAM_WEEKLY_LOG.md",
-      "Day8/docs/FORK_NOTES.md"
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/D_Trim_Design.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/E_Evaluator_Details.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/F_Provider_Matrix.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/H_Deploy_Guide.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/I_Test_Cases.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/J_Runbook.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/M1_Metrics_Healthz_ADR.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/M_Versioning_Release.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/day8/ops/04_ops.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/workflow-cookbook/CHECKLISTS.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/workflow-cookbook/EVALUATION.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/workflow-cookbook/RUNBOOK.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/workflow-cookbook/SAFETY.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/workflow-cookbook/SECURITY.md"
     ],
     [
       "Day8/docs/safety.md",
@@ -231,6 +363,14 @@
     [
       "Day8/workflow-cookbook/EVALUATION.md",
       "Day8/workflow-cookbook/CHECKLISTS.md"
+    ],
+    [
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
+    ],
+    [
+      "Day8/workflow-cookbook/GUARDRAILS.md",
+      "Day8/docs/adr/0003-propose-only-governance.md"
     ],
     [
       "Day8/workflow-cookbook/GUARDRAILS.md",
@@ -267,14 +407,6 @@
     [
       "Day8/workflow-cookbook/GUARDRAILS.md",
       "Day8/workflow-cookbook/tools/"
-    ],
-    [
-      "Day8/workflow-cookbook/GUARDRAILS.md",
-      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
-    ],
-    [
-      "Day8/workflow-cookbook/GUARDRAILS.md",
-      "Day8/docs/adr/0003-propose-only-governance.md"
     ],
     [
       "Day8/workflow-cookbook/HUB.codex.md",
@@ -389,150 +521,6 @@
       "Day8/workflow-cookbook/tools/"
     ],
     [
-      "Day8/docs/day8/design/03_architecture.md",
-      "Day8/docs/Architecture_ASCII.md"
-    ],
-    [
-      "Day8/docs/day8/design/03_architecture.md",
-      "Day8/docs/addenda/B_UI_Mock.md"
-    ],
-    [
-      "Day8/docs/day8/design/03_architecture.md",
-      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
-    ],
-    [
-      "Day8/docs/day8/design/03_architecture.md",
-      "Day8/docs/adr/0002-jsonl-event-contract.md"
-    ],
-    [
-      "Day8/docs/day8/design/03_architecture.md",
-      "Day8/docs/adr/0003-propose-only-governance.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/F_Provider_Matrix.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/D_Trim_Design.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/E_Evaluator_Details.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/L_Config_Reference.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/M1_Metrics_Healthz_ADR.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/H_Deploy_Guide.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/J_Runbook.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/I_Test_Cases.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/addenda/M_Versioning_Release.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/docs/day8/ops/04_ops.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/workflow-cookbook/EVALUATION.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/workflow-cookbook/CHECKLISTS.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/workflow-cookbook/RUNBOOK.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/workflow-cookbook/SAFETY.md"
-    ],
-    [
-      "Day8/docs/day8/spec/02_spec.md",
-      "Day8/workflow-cookbook/SECURITY.md"
-    ],
-    [
-      "Day8/docs/README.md",
-      "Day8/docs/addenda/D_Trim_Design.md"
-    ],
-    [
-      "Day8/docs/addenda/D_Trim_Design.md",
-      "Day8/workflow-cookbook/scripts/analyze.py"
-    ],
-    [
-      "Day8/docs/addenda/D_Trim_Design.md",
-      "Day8/docs/addenda/F_Provider_Matrix.md"
-    ],
-    [
-      "Day8/docs/addenda/D_Trim_Design.md",
-      "Day8/docs/addenda/G_Security_Privacy.md"
-    ],
-    [
-      "Day8/docs/addenda/D_Trim_Design.md",
-      "Day8/docs/addenda/L_Config_Reference.md"
-    ],
-    [
-      "Day8/docs/addenda/D_Trim_Design.md",
-      "Day8/docs/day8/quality/06_quality.md"
-    ],
-    [
-      "Day8/docs/day8/quality/06_quality.md",
-      "Day8/docs/addenda/I_Test_Cases.md"
-    ],
-    [
-      "Day8/docs/addenda/H_Deploy_Guide.md",
-      "Day8/docs/addenda/L_Config_Reference.md"
-    ],
-    [
-      "Day8/docs/Release_Checklist.md",
-      "Day8/docs/addenda/M_Versioning_Release.md"
-    ],
-    [
-      "Day8/docs/Release_Checklist.md",
-      "Day8/workflow-cookbook/CHECKLISTS.md"
-    ],
-    [
-      "Day8/docs/addenda/M_Versioning_Release.md",
-      "Day8/workflow-cookbook/CHECKLISTS.md"
-    ],
-    [
-      "Day8/docs/README.md",
-      "Day8/docs/day8/spec/01_requirements.md"
-    ],
-    [
-      "Day8/docs/ROADMAP_AND_SPECS.md",
-      "Day8/docs/day8/spec/01_requirements.md"
-    ],
-    [
-      "src/platform/vscode/autosave.ts",
-      "src/lib/autosave.ts"
-    ],
-    [
-      "src/lib/autosave.ts",
-      "src/lib/autosave/telemetryBridge.ts"
-    ],
-    [
-      "src/lib/merge/mergeDockAutoSaveBridge.ts",
-      "src/lib/autosave.ts"
-    ],
-    [
       "src/components/MergeDock.tsx",
       "src/components/merge-dock/domain.ts"
     ],
@@ -545,8 +533,8 @@
       "src/lib/merge/phasePlan.ts"
     ],
     [
-      "src/lib/merge/phasePlan.ts",
-      "src/lib/merge.ts"
+      "src/lib/autosave.ts",
+      "src/lib/autosave/telemetryBridge.ts"
     ],
     [
       "src/lib/autosave.ts",
@@ -557,20 +545,8 @@
       "src/lib/locks/index.ts"
     ],
     [
-      "src/lib/locks/index.ts",
-      "src/lib/locks/acquire.ts"
-    ],
-    [
-      "src/lib/locks/index.ts",
-      "src/lib/locks/renew.ts"
-    ],
-    [
-      "src/lib/locks/index.ts",
-      "src/lib/locks/release.ts"
-    ],
-    [
-      "src/lib/locks/index.ts",
-      "src/lib/locks/shared.ts"
+      "src/lib/locks/acquire.ts",
+      "src/lib/locks/fallbackLock.ts"
     ],
     [
       "src/lib/locks/acquire.ts",
@@ -578,30 +554,6 @@
     ],
     [
       "src/lib/locks/acquire.ts",
-      "src/lib/locks/fallbackLock.ts"
-    ],
-    [
-      "src/lib/locks/acquire.ts",
-      "src/lib/locks/webLock.ts"
-    ],
-    [
-      "src/lib/locks/renew.ts",
-      "src/lib/locks/shared.ts"
-    ],
-    [
-      "src/lib/locks/renew.ts",
-      "src/lib/locks/fallbackLock.ts"
-    ],
-    [
-      "src/lib/locks/release.ts",
-      "src/lib/locks/shared.ts"
-    ],
-    [
-      "src/lib/locks/release.ts",
-      "src/lib/locks/fallbackLock.ts"
-    ],
-    [
-      "src/lib/locks/release.ts",
       "src/lib/locks/webLock.ts"
     ],
     [
@@ -609,11 +561,58 @@
       "src/lib/locks/shared.ts"
     ],
     [
+      "src/lib/locks/index.ts",
+      "src/lib/locks/acquire.ts"
+    ],
+    [
+      "src/lib/locks/index.ts",
+      "src/lib/locks/release.ts"
+    ],
+    [
+      "src/lib/locks/index.ts",
+      "src/lib/locks/renew.ts"
+    ],
+    [
+      "src/lib/locks/index.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/locks/release.ts",
+      "src/lib/locks/fallbackLock.ts"
+    ],
+    [
+      "src/lib/locks/release.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/locks/release.ts",
+      "src/lib/locks/webLock.ts"
+    ],
+    [
+      "src/lib/locks/renew.ts",
+      "src/lib/locks/fallbackLock.ts"
+    ],
+    [
+      "src/lib/locks/renew.ts",
+      "src/lib/locks/shared.ts"
+    ],
+    [
       "src/lib/locks/webLock.ts",
       "src/lib/locks/shared.ts"
+    ],
+    [
+      "src/lib/merge/mergeDockAutoSaveBridge.ts",
+      "src/lib/autosave.ts"
+    ],
+    [
+      "src/lib/merge/phasePlan.ts",
+      "src/lib/merge.ts"
+    ],
+    [
+      "src/platform/vscode/autosave.ts",
+      "src/lib/autosave.ts"
     ]
   ],
-  "generated_at": "00008",
   "nodes": {
     "Day8/INSTALL.md": {
       "caps": "Day8/docs/birdseye/caps/INSTALL.md.json",
@@ -1000,5 +999,6 @@
       "mtime": "00007",
       "role": "integration"
     }
-  }
+  },
+  "generated_at": "00008"
 }
