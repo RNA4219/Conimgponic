@@ -472,6 +472,9 @@ export function MergeDock({
         precision: payload.precision,
         origin: payload.origin,
         hunk_ids: knownIds,
+        phase_guard: phasePlan.phase,
+        diff_exposure: phasePlan.diff.exposure,
+        auto_save_requested: payload.metadata.autoSaveRequested,
       })
 
       if (knownIds.length === 0) {
@@ -492,6 +495,9 @@ export function MergeDock({
           hunk_ids: knownIds,
           status: 'success',
           retryable: false,
+          phase_guard: phasePlan.phase,
+          diff_exposure: phasePlan.diff.exposure,
+          auto_save_requested: payload.metadata.autoSaveRequested,
         })
         return {
           status: 'success',
@@ -514,15 +520,18 @@ export function MergeDock({
             hunks: knownHunks,
             retryable: true,
           })
-          mergeCollector?.publish?.({
-            feature: 'merge.diff',
-            event: 'queue:finish',
-            precision: payload.precision,
-            origin: payload.origin,
-            hunk_ids: knownIds,
-            status: 'error',
-            retryable: true,
-          })
+      mergeCollector?.publish?.({
+        feature: 'merge.diff',
+        event: 'queue:finish',
+        precision: payload.precision,
+        origin: payload.origin,
+        hunk_ids: knownIds,
+        status: 'error',
+        retryable: true,
+        phase_guard: phasePlan.phase,
+        diff_exposure: phasePlan.diff.exposure,
+        auto_save_requested: payload.metadata.autoSaveRequested,
+      })
           return {
             status: 'error',
             hunkIds: knownIds,
@@ -548,6 +557,9 @@ export function MergeDock({
         hunk_ids: knownIds,
         status: 'success',
         retryable: false,
+        phase_guard: phasePlan.phase,
+        diff_exposure: phasePlan.diff.exposure,
+        auto_save_requested: payload.metadata.autoSaveRequested,
       })
       return {
         status: 'success',
@@ -564,6 +576,8 @@ export function MergeDock({
     diffQueueEvents,
     mergeWindow,
     phasePlan.diff.enabled,
+    phasePlan.diff.exposure,
+    phasePlan.phase,
   ])
 
   const diffInteractionEnabled = shouldEnableDiffInteraction({
