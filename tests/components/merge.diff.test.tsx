@@ -49,6 +49,8 @@ const {
 } = mergePreferencesModule
 const { resolveMergeThresholdSnapshot } = mergeThresholdModule
 type MergeDockPhasePlan = ReturnType<typeof resolveMergeDockPhasePlan>
+type MergeDockPhaseStats = NonNullable<Parameters<typeof resolveMergeDockPhasePlan>[0]['phaseStats']>
+type MergeDockTabId = NonNullable<Parameters<typeof resolveMergeDockPhasePlan>[0]['lastTab']>
 
 test('MergeDock module re-exports domain helpers', () => {
   assert.equal(exportedFromMergeDock.planMergeDockTabs, planMergeDockTabs)
@@ -695,8 +697,54 @@ test('stable precision diff guard unlock restores diff as active tab in store', 
   assert.equal(viewStore.getState().activeTab, 'diff')
 })
 
+test('beta diff guard exposes diff merge hunks and queue command once enabled', async () => {
+  const harness = await renderDiffMergeDock({
+    precision: 'beta',
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+    autoAppliedRate: 0.82,
+    lastTab: 'diff',
+  })
+  try {
+    assert.deepEqual(
+      harness.hunks.map((hunk) => hunk.id),
+      ['cut-1'],
+    )
+
+    const result = await harness.queue({
+      type: 'queue-merge',
+      precision: 'beta',
+      origin: 'operation-pane.queue',
+      hunkIds: ['cut-1'],
+      telemetryContext: {
+        collectorSurface: 'diff-merge.operation-pane',
+        analyzerSurface: 'diff-merge.queue',
+        lastTab: 'review',
+      },
+      metadata: { autoSaveRequested: true },
+    })
+
+    assert.equal(result.status, 'success')
+    assert.deepEqual(result.hunkIds, ['cut-1'])
+    assert.equal(harness.flushLog.length, 1)
+    assert.deepEqual(
+      harness.collectorLog.map((entry) => entry.phase_guard),
+      ['phase-b', 'phase-b'],
+    )
+    assert.deepEqual(
+      harness.collectorLog.map((entry) => entry.diff_exposure),
+      ['opt-in', 'opt-in'],
+    )
+  } finally {
+    harness.cleanup()
+  }
+})
+
 test('stable diff guard exposes diff merge hunks and queue command once enabled', async () => {
-  const harness = await renderStableDiffMergeDock()
+  const harness = await renderDiffMergeDock({
+    precision: 'stable',
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+    lastTab: 'diff',
+  })
   try {
     assert.deepEqual(
       harness.hunks.map((hunk) => hunk.id),
@@ -724,7 +772,17 @@ test('stable diff guard exposes diff merge hunks and queue command once enabled'
   }
 })
 
-const renderStableDiffMergeDock = async (): Promise<{
+const renderDiffMergeDock = async ({
+  precision,
+  phaseStats = null,
+  autoAppliedRate,
+  lastTab,
+}: {
+  readonly precision: MergePrecision
+  readonly phaseStats?: MergeDockPhaseStats | null
+  readonly autoAppliedRate?: number
+  readonly lastTab?: MergeDockTabId
+}): Promise<{
   readonly markup: string
   readonly hunks: readonly MergeHunk[]
   readonly queue: QueueMergeCommand
@@ -743,6 +801,9 @@ const renderStableDiffMergeDock = async (): Promise<{
   const originalWindow = (globalThis as { window?: typeof window }).window
   const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage
   const store = new Map<string, string>()
+  if (lastTab) {
+    store.set('merge.lastTab', lastTab)
+  }
   const storage: Storage = {
     get length() {
       return store.size
@@ -813,13 +874,15 @@ const renderStableDiffMergeDock = async (): Promise<{
   }
 
   const stableFlags: Pick<FlagSnapshot, 'merge'> = {
-    merge: { value: 'stable', source: 'workspace', errors: [], precision: 'stable', threshold: Number.NaN },
+    merge: { value: precision, source: 'workspace', errors: [], precision, threshold: Number.NaN },
   }
 
   const markup = renderToStaticMarkup(
     React.createElement(MergeDock, {
       flags: stableFlags,
-      phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+      phaseStats,
+      autoAppliedRate,
+      autoSaveEnabled: true,
     }),
   )
 
@@ -849,7 +912,11 @@ const renderStableDiffMergeDock = async (): Promise<{
 }
 
 test('stable diff queue command publishes events and telemetry when guard unlocked', async () => {
-  const harness = await renderStableDiffMergeDock()
+  const harness = await renderDiffMergeDock({
+    precision: 'stable',
+    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+    autoAppliedRate: 0.92,
+  })
   const queueEvents = Reflect.get(harness.queue, '__diffMergeEvents__') as
     | {
         readonly subscribe: (listener: (event: Record<string, unknown>) => void) => () => void
@@ -910,6 +977,14 @@ test('stable diff queue command publishes events and telemetry when guard unlock
     assert.deepEqual(
       harness.collectorLog.map((entry) => entry.event),
       ['queue:start', 'queue:finish'],
+    )
+    assert.deepEqual(
+      harness.collectorLog.map((entry) => entry.phase_guard),
+      ['phase-b', 'phase-b'],
+    )
+    assert.deepEqual(
+      harness.collectorLog.map((entry) => entry.diff_exposure),
+      ['default', 'default'],
     )
   } finally {
     unsubscribe()

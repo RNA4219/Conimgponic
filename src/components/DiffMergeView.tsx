@@ -203,9 +203,16 @@ const DiffMergeViewContent: React.FC<DiffMergeViewContentProps> = ({
       __diffMergeViewOnPropsReady?: (payload: {
         readonly hunks: readonly MergeHunk[]
         readonly queueMergeCommand: QueueMergeCommand
+        readonly planPhase: DiffMergeViewPlan['phase']
+        readonly navigationBadge: DiffMergeViewPlan['navigationBadge'] | null
       }) => void
     }).__diffMergeViewOnPropsReady
-    hook?.({ hunks, queueMergeCommand })
+    hook?.({
+      hunks,
+      queueMergeCommand,
+      planPhase: plan.phase,
+      navigationBadge: plan.navigationBadge ?? null,
+    })
   }
   const storedTabManager = useMemo(
     () => createDiffMergeStoredTabManager({ plan, precision, storage }),
