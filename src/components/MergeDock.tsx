@@ -627,6 +627,7 @@ export function MergeDock({
   return (
     <div
       data-merge-phase={phasePlan.phase}
+      data-merge-autosave-enabled={autoSaveEnabled ? 'true' : 'false'}
       data-merge-diff-visible={diffPlan.visible ? 'true' : 'false'}
       data-merge-diff-enabled={diffPlan.enabled ? 'true' : 'false'}
       data-merge-diff-exposure={diffPlan.exposure}
@@ -658,7 +659,7 @@ export function MergeDock({
         </div>
       ) : null}
 
-      {activeTab === 'diff' && (
+      {diffPlan.visible && activeTab === 'diff' && (
         <div
           style={{ padding: 8, display: 'grid', gap: 8 }}
           data-merge-diff-visible={diffPlan.visible ? 'true' : 'false'}

@@ -224,7 +224,8 @@ export const resolveMergeDockPhasePlan = ({
           : hasReviewSignals || hasConflictSignals
         : false
   const diffConfigured = !!baseTabPlan.diff && precision !== 'legacy'
-  const requiresAutoSaveForStable = precision === 'stable' && !autoSaveEnabled
+  const isAutoSaveEnabled = autoSaveEnabled === true
+  const requiresAutoSaveForStable = precision === 'stable' && !isAutoSaveEnabled
   const shouldHideDiff = !diffConfigured || requiresAutoSaveForStable
   const normalizedRate = typeof autoAppliedRate === 'number' && Number.isFinite(autoAppliedRate) ? autoAppliedRate : null
   const meetsTarget = normalizedRate == null ? null : normalizedRate >= thresholdPlan.autoTarget
