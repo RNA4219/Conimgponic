@@ -39,3 +39,6 @@ Day8 の Birdseye は、リポジトリ内の主要ドキュメントとガー�
 - Guardrails を更新した PR では、`docs/ROADMAP_AND_SPECS.md` と本 README を同じコミットで整合させ、Birdseye の `nodes` / `caps` / `hot` が最新ガイドラインに従っていることを確認します。
 - Birdseye の自動再生成が行えない場合は、[docs/BIRDSEYE.md](../BIRDSEYE.md) の「Guardrails からの参照順」と「`edges` チェックポイント」を順に確認し、±1 hop 抽出と Capsule/Hot のフォールバック手順に従ってください。
 - Day8 の安全審査 (`docs/safety.md`) やロードマップ (`docs/ROADMAP_AND_SPECS.md`) に差分が生じた場合、必ず対応する Capsule とホットリストを同時更新し、Guardrails 側の監査記録と `generated_at` を同期してください。
+
+## 検証ログ
+- `pnpm test -- tests/birdseye/path-resolution.spec.ts` を実行し、Birdseye の参照整合性を確認。

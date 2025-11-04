@@ -2,49 +2,49 @@
   "kind": "root",
   "generated_at": "00006",
   "nodes": {
-    "INSTALL.md": {
-      "caps": "docs/birdseye/caps/INSTALL.md.json",
+    "Day8/INSTALL.md": {
+      "caps": "Day8/docs/birdseye/caps/INSTALL.md.json",
       "mtime": "00004",
       "role": "setup"
     },
-    "README.md": {
-      "caps": "docs/birdseye/caps/README.md.json",
+    "Day8/README.md": {
+      "caps": "Day8/docs/birdseye/caps/README.md.json",
       "mtime": "00004",
       "role": "overview"
     }
   },
   "edges": [
     [
-      "README.md",
-      "INSTALL.md"
+      "Day8/README.md",
+      "Day8/INSTALL.md"
     ],
     [
-      "README.md",
-      "docs/README.md"
+      "Day8/README.md",
+      "Day8/docs/README.md"
     ],
     [
-      "README.md",
-      "docs/ROADMAP_AND_SPECS.md"
+      "Day8/README.md",
+      "Day8/docs/ROADMAP_AND_SPECS.md"
     ],
     [
-      "README.md",
-      "scripts/"
+      "Day8/README.md",
+      "Day8/scripts/"
     ],
     [
-      "README.md",
-      "tools/"
+      "Day8/README.md",
+      "Day8/tools/"
     ],
     [
-      "README.md",
-      "workflow-cookbook/GUARDRAILS.md"
+      "Day8/README.md",
+      "Day8/workflow-cookbook/GUARDRAILS.md"
     ],
     [
-      "README.md",
-      "workflow-cookbook/HUB.codex.md"
+      "Day8/README.md",
+      "Day8/workflow-cookbook/HUB.codex.md"
     ],
     [
-      "README.md",
-      "workflow-cookbook/docs/birdseye/index.json"
+      "Day8/README.md",
+      "Day8/workflow-cookbook/docs/birdseye/index.json"
     ]
   ],
   "summary": {

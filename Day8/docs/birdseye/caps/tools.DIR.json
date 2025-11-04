@@ -1,10 +1,10 @@
 {
   "deps_in": [
-    "README.md"
+    "Day8/README.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "tools/",
+  "id": "Day8/tools/",
   "maintenance": {
     "refresh": "CI スクリプトを更新したら対応する Birdseye カプセルを再生成し、ガードレールとの整合を確認する。",
     "tooling": [

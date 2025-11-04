@@ -1,17 +1,17 @@
 {
   "deps_in": [
-    "docs/README.md",
-    "docs/day8/spec/02_spec.md"
+    "Day8/docs/README.md",
+    "Day8/docs/day8/spec/02_spec.md"
   ],
   "deps_out": [
-    "docs/addenda/F_Provider_Matrix.md",
-    "docs/addenda/G_Security_Privacy.md",
-    "docs/addenda/L_Config_Reference.md",
-    "docs/day8/quality/06_quality.md",
-    "workflow-cookbook/scripts/analyze.py"
+    "Day8/docs/addenda/F_Provider_Matrix.md",
+    "Day8/docs/addenda/G_Security_Privacy.md",
+    "Day8/docs/addenda/L_Config_Reference.md",
+    "Day8/docs/day8/quality/06_quality.md",
+    "Day8/workflow-cookbook/scripts/analyze.py"
   ],
   "generated_at": "00006",
-  "id": "docs/addenda/D_Trim_Design.md",
+  "id": "Day8/docs/addenda/D_Trim_Design.md",
   "maintenance": {
     "refresh": "圧縮戦略や保持率 SLO を更新したら Appendix D 本文と Birdseye の edges/caps を同一タイムスタンプで再生成する。",
     "tooling": [

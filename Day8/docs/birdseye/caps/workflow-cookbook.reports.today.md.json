@@ -6,11 +6,11 @@
     "out::workflow-cookbook/reports/issue_suggestions.md"
   ],
   "deps_in": [
-    "workflow-cookbook/RUNBOOK.md"
+    "Day8/workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "workflow-cookbook/reports/today.md",
+  "id": "Day8/workflow-cookbook/reports/today.md",
   "maintenance": {
     "refresh": "レポート項目が変わったら analyze.py と CHECKLISTS を更新。",
     "tooling": [

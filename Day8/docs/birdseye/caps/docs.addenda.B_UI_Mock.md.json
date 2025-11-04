@@ -1,11 +1,11 @@
 {
   "deps_in": [
-    "docs/README.md",
-    "docs/day8/design/03_architecture.md"
+    "Day8/docs/README.md",
+    "Day8/docs/day8/design/03_architecture.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "docs/addenda/B_UI_Mock.md",
+  "id": "Day8/docs/addenda/B_UI_Mock.md",
   "maintenance": {
     "refresh": "CLI やレポートのレイアウトを変更したら ASCII モックとリンク先を更新し、Birdseye summary/maintenance/generated_at を揃える。",
     "tooling": [
