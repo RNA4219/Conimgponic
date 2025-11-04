@@ -57,4 +57,23 @@ describe('birdseye index shards', () => {
       assert.ok(lineCount <= 400, `${shard} must not exceed 400 lines (actual: ${lineCount})`);
     }
   });
+
+  test('shard edges contain only string pairs', async () => {
+    const shardFiles = (await fs.readdir(BIRDSEYE_DIR)).filter((entry) => entry.startsWith('index.') && entry !== 'index.json');
+    assert.ok(shardFiles.length > 0, 'expected shard files to be present');
+    for (const shard of shardFiles) {
+      const content = await fs.readFile(join(BIRDSEYE_DIR, shard), 'utf8');
+      const data = JSON.parse(content) as { edges?: unknown };
+      assert.ok(Array.isArray(data.edges), `${shard} edges must be an array`);
+      const edges = data.edges as unknown[];
+      edges.forEach((edge, index) => {
+        assert.ok(Array.isArray(edge), `${shard} edges[${index}] must be an array`);
+        const tuple = edge as unknown[];
+        assert.strictEqual(tuple.length, 2, `${shard} edges[${index}] must contain exactly two entries`);
+        tuple.forEach((node, tupleIndex) => {
+          assert.strictEqual(typeof node, 'string', `${shard} edges[${index}][${tupleIndex}] must be a string`);
+        });
+      });
+    }
+  });
 });
