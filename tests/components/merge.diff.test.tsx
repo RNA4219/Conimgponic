@@ -724,7 +724,15 @@ test('stable diff guard exposes diff merge hunks and queue command once enabled'
   }
 })
 
-const renderStableDiffMergeDock = async (): Promise<{
+interface RenderStableMergeDockOptions {
+  readonly autoSaveEnabled?: boolean
+  readonly requireDiff?: boolean
+}
+
+const renderStableDiffMergeDock = async ({
+  autoSaveEnabled = true,
+  requireDiff = autoSaveEnabled,
+}: RenderStableMergeDockOptions = {}): Promise<{
   readonly markup: string
   readonly hunks: readonly MergeHunk[]
   readonly queue: QueueMergeCommand
@@ -820,10 +828,11 @@ const renderStableDiffMergeDock = async (): Promise<{
     React.createElement(MergeDock, {
       flags: stableFlags,
       phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+      autoSaveEnabled,
     }),
   )
 
-  if (!capturedQueue || !capturedHunks) {
+  if (requireDiff && (!capturedQueue || !capturedHunks)) {
     throw new Error('DiffMergeView did not provide hunks or queue command')
   }
 
@@ -840,8 +849,12 @@ const renderStableDiffMergeDock = async (): Promise<{
 
   return {
     markup,
-    hunks: capturedHunks,
-    queue: capturedQueue,
+    hunks: capturedHunks ?? [],
+    queue:
+      capturedQueue ??
+      (async () => {
+        throw new Error('Diff queue is unavailable when diff rendering is guarded')
+      }),
     flushLog,
     collectorLog,
     cleanup,
@@ -849,7 +862,7 @@ const renderStableDiffMergeDock = async (): Promise<{
 }
 
 test('stable diff queue command publishes events and telemetry when guard unlocked', async () => {
-  const harness = await renderStableDiffMergeDock()
+  const harness = await renderStableDiffMergeDock({ autoSaveEnabled: true })
   const queueEvents = Reflect.get(harness.queue, '__diffMergeEvents__') as
     | {
         readonly subscribe: (listener: (event: Record<string, unknown>) => void) => () => void
@@ -857,6 +870,7 @@ test('stable diff queue command publishes events and telemetry when guard unlock
     | undefined
 
   assert.ok(queueEvents, 'DiffMergeView queue command must expose telemetry events hub')
+  assert.match(harness.markup, /data-merge-autosave-enabled="true"/)
   assert.match(harness.markup, /data-merge-diff-visible="true"/)
   assert.match(harness.markup, /data-merge-diff-enabled="true"/)
   assert.match(harness.markup, /data-merge-diff-exposure="default"/)
@@ -913,6 +927,19 @@ test('stable diff queue command publishes events and telemetry when guard unlock
     )
   } finally {
     unsubscribe()
+    harness.cleanup()
+  }
+})
+
+test('stable diff tab remains hidden when autosave is disabled', async () => {
+  const harness = await renderStableDiffMergeDock({ autoSaveEnabled: false, requireDiff: false })
+
+  try {
+    assert.match(harness.markup, /data-merge-autosave-enabled="false"/)
+    assert.match(harness.markup, /data-merge-diff-visible="false"/)
+    assert.doesNotMatch(harness.markup, />Diff(?: \(Beta\))?<\/button>/)
+    assert.doesNotMatch(harness.markup, /data-component="diff-merge-view"/)
+  } finally {
     harness.cleanup()
   }
 })
