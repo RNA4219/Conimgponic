@@ -1,5 +1,5 @@
-import { resolveAutoSavePolicy } from '../lib/autosave.js'
-import type { AutoSavePhaseGuardSnapshot, AutoSavePolicy } from '../lib/autosave.js'
+import { resolveAutoSavePolicy, type AutoSavePolicy } from '../lib/autosave.js'
+import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
 
 import {
   publishFlagResolution,

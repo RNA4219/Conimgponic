@@ -1,11 +1,10 @@
-import { publishGuardCollectorEvent } from '../../lib/autosave'
+import { publishGuardCollectorEvent, type AutoSavePolicy } from '../../lib/autosave'
 import type {
   AutoSaveBridgeMessage,
   AutoSavePhaseGuardSnapshot,
   AutoSaveSnapshotRequestMessage,
   AutoSaveSnapshotResultPayload,
-  AutoSaveStatusState,
-  AutoSavePolicy
+  AutoSaveStatusState
 } from '../../lib/autosave'
 import {
   resolveAutoSaveBootstrapPlan,
