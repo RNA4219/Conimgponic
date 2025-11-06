@@ -34,6 +34,9 @@ import {
   type MergeDockWindow,
   type WorkspaceConfiguration,
 } from './merge-dock/domain'
+import { getDiffHunksFromEngine, type MergeHunk } from '../lib/merge'
+import { useSB } from '../store'
+import type { Storyboard } from '../types'
 import {
   createMergeDockViewStore,
   useMergeDockViewStore,
@@ -403,12 +406,14 @@ export function MergeDock({
             </button>
           ) : null}
           {diffInteractionEnabled ? (
-            <DiffMergeView
+            <DiffMergeViewWithRealHunks
               precision={precision}
-              hunks={emptyDiffHunks}
-              queueMergeCommand={diffMergeNoopCommand}
+              threshold={threshold}
+              phaseStats={phaseStats}
+              autoSaveEnabled={autoSaveEnabled}
               autoApplied={phasePlan.autoApplied}
               disabled={!phasePlan.diff.enabled}
+              queueMergeCommand={diffMergeNoopCommand}
             />
           ) : (
             <div
@@ -535,3 +540,60 @@ export function MergeDock({
     </div>
   )
 }
+
+interface DiffMergeViewWithRealHunksProps {
+  readonly precision: 'beta' | 'stable';
+  readonly threshold: number;
+  readonly phaseStats: MergeDockPhaseStats | null;
+  readonly autoSaveEnabled: boolean;
+  readonly autoApplied?: { readonly rate: number; readonly target: number; readonly meetsTarget: boolean | null };
+  readonly disabled?: boolean;
+  readonly queueMergeCommand: (command: any) => Promise<{ status: 'success' | 'partial' | 'error'; hunkIds: string[]; telemetry: any }>;
+}
+
+const DiffMergeViewWithRealHunks: React.FC<DiffMergeViewWithRealHunksProps> = ({
+  precision,
+  threshold,
+  phaseStats,
+  autoSaveEnabled,
+  autoApplied,
+  disabled = false,
+  queueMergeCommand,
+}) => {
+  const sb = useSB((state) => state.sb);
+  const [hunks, setHunks] = useState<readonly MergeHunk[]>([]);
+  
+  // Generate merge input from storyboard scenes
+  useEffect(() => {
+    if ((precision === 'beta' || precision === 'stable') && autoSaveEnabled) {
+      // Create a simple merge input from the storyboard
+      // In a real implementation, this would come from actual diff sources
+      const input = {
+        base: sb.scenes.map(s => s.manual || s.ai || '').join('\n\n'),
+        ours: sb.scenes.map(s => s.manual || '').join('\n\n'),
+        theirs: sb.scenes.map(s => s.ai || '').join('\n\n'),
+        sceneId: sb.id || 'default-storyboard'
+      };
+
+      // Get the hunks and stats from the merge engine
+      const result = getDiffHunksFromEngine(
+        { precision, threshold, phaseStats, autoSaveEnabled },
+        input
+      );
+      
+      setHunks(result.hunks);
+    } else {
+      setHunks([]);
+    }
+  }, [sb, precision, threshold, phaseStats, autoSaveEnabled]);
+
+  return (
+    <DiffMergeView
+      precision={precision}
+      hunks={hunks}
+      queueMergeCommand={queueMergeCommand}
+      autoApplied={autoApplied}
+      disabled={disabled}
+    />
+  );
+};
