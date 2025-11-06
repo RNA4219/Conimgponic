@@ -64,7 +64,12 @@ export {
 } from './merge-dock/domain'
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
-import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
+import type { 
+  MergeHunk, 
+  QueueMergeCommand,
+  DiffMergeQueueCommandPayload,
+  MergeDecisionEvent,
+} from './diffMergeTypes.js'
 
 
 export type MergeDockImportKind = 'jsonl' | 'csv' | 'markdown'
