@@ -199,6 +199,11 @@ sequenceDiagram
     AutoSave-->>Hub: lockGranted | lockPending
     alt lockGranted
         Hub->>Hub: execute merge3 / legacy pipeline
+        alt conflicts exist
+            Hub->>Hub: update status to 'conflict', set retryable=true
+        else no conflicts
+            Hub->>Hub: maintain 'success' status
+        end
         Hub-->>UI: commandResolved({ status, retryable })
     else lockPending
         UI->>UI: show "保存中…" banner, disable CTA
@@ -208,6 +213,12 @@ sequenceDiagram
     end
     UI->>AutoSave: flushNow() (success && precision in {beta,stable})
 ```
+
+#### Telemetry Verification Logs
+- **正常時**: `queueMergeCommand` が成功すると `status: 'success'` で完了し、`retryable: false` が設定される
+- **競合時**: マージ結果に競合が含まれる場合、`status: 'conflict'` が返され、`retryable: true` が設定される
+- **イベント同期**: `merge:conflict-detected` イベントが発生し、UIのハンクバッジとトーストで競合が示される
+- **コレクタ送信**: `status: 'conflict'` の場合、`feature: 'merge.diff'` および `event: 'queue:finish'` で `status: 'conflict'` と `retryable: true` が送信される
 
 | 手順 | 詳細 | precision 影響 | AutoSave 協調 | リスク緩和 |
 | --- | --- | --- | --- | --- |
