@@ -9,7 +9,6 @@ import {
   type ProjectLockApi,
   type ProjectLockLease,
   type WithProjectLock,
-  type WithProjectLockOptions,
 } from './shared.js';
 import { acquireProjectLock } from './acquire.js';
 import { renewProjectLock } from './renew.js';
@@ -180,7 +179,6 @@ export type {
   RenewProjectLock,
   RenewProjectLockOptions,
   WithProjectLock,
-  WithProjectLockOptions,
 } from './shared.js';
 export {
   WEB_LOCK_KEY,

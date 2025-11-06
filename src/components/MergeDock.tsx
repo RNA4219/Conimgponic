@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { FlagSnapshot } from '../config'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
@@ -26,8 +25,6 @@ import {
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
   startMergeDockAutoSaveHeartbeat,
-  type MergeDockAutoSaveHeartbeatOptions,
-  type MergeDockAutoSaveHeartbeatState,
   type MergeDockAutoSaveState,
   type MergeDockNotice,
   type MergeDockPhaseStats,

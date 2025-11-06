@@ -1,14 +1,10 @@
 import type { ImportMode } from '../../lib/importers'
 import type { Storyboard } from '../../types'
-import type { MergeDockTabId } from '../../lib/merge/phasePlan'
 
 import type { MergeHunk, QueueMergeCommand } from '../diffMergeTypes.js'
 
 import {
-  type MergeDockAutoSaveHeartbeatOptions,
-  type MergeDockAutoSaveHeartbeatState,
   type MergeDockAutoSaveState,
-  type MergeDockNotice,
   type MergeDockWindow,
 } from './model'
 
