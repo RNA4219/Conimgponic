@@ -830,13 +830,12 @@ export function MergeDock({
             <DiffMergeViewWithRealHunks
               precision={precision}
               hunks={emptyDiffHunks}
-              queueMergeCommand={createDiffQueueMergeCommand()}
+              queueMergeCommand={diffQueueMergeCommand}
               threshold={threshold}
               phaseStats={phaseStats}
               autoSaveEnabled={autoSaveEnabled}
               autoApplied={phasePlan.autoApplied}
               disabled={!phasePlan.diff.enabled}
-              queueMergeCommand={diffMergeNoopCommand}
             />
           ) : (
             <div

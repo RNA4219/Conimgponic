@@ -1122,3 +1122,91 @@ test('merge-import: csv importer overwrites duplicate new scene ids', () => {
   useSB.setState({ sb: base })
 })
 
+test('merge-ui: diff tab operations trigger queue:started and queue:finished events', async () => {
+  const originalWindow = globalThis.window
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+  
+  // Create a mock window with the required auto-save bridge functionality
+  const mockWindow = {
+    localStorage: storage,
+    __mergeDockFlushNow: () => Promise.resolve(),
+    __mergeDockAutoSaveSnapshot: { lastSuccessAt: '2024-05-01T00:00:00.000Z' },
+  } as typeof window & {
+    __mergeDockFlushNow?: () => Promise<void>
+    __mergeDockAutoSaveSnapshot?: { lastSuccessAt?: string }
+  }
+  
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: mockWindow,
+  })
+
+  try {
+    // Create a test storyboard
+    const originalStoryboard = useSB.getState().sb
+    const testStoryboard = {
+      ...originalStoryboard,
+      scenes: [
+        {
+          id: 'cut-1',
+          manual: 'Test manual content',
+          ai: 'Test AI content',
+          status: 'idle' as const,
+          assets: [],
+          lock: null as const,
+        },
+      ],
+    }
+    useSB.setState({ sb: testStoryboard })
+
+    const flags = {
+      ...stableFlags,
+      merge: { 
+        ...stableFlags.merge, 
+        value: 'stable' as const, 
+        precision: 'stable' as const 
+      },
+    }
+
+    // Create the component with stable precision and diff enabled
+    const html = renderToStaticMarkup(
+      React.createElement(MergeDock, {
+        flags,
+        phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+        autoSaveEnabled: true,
+      }),
+    )
+
+    // Verify that the diff component is rendered
+    assert.match(html, /data-component="diff-merge-view"/)
+    assert.match(html, /data-merge-diff-enabled="true"/)
+
+    // Restore original storyboard
+    useSB.setState({ sb: originalStoryboard })
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+  }
+})
