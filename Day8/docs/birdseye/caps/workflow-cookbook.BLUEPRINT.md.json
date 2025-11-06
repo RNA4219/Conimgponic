@@ -6,16 +6,16 @@
     "out::workflow-cookbook/RUNBOOK.md"
   ],
   "deps_in": [
-    "docs/ROADMAP_AND_SPECS.md",
-    "workflow-cookbook/GUARDRAILS.md",
-    "workflow-cookbook/HUB.codex.md",
-    "workflow-cookbook/SAFETY.md"
+    "Day8/docs/ROADMAP_AND_SPECS.md",
+    "Day8/workflow-cookbook/GUARDRAILS.md",
+    "Day8/workflow-cookbook/HUB.codex.md",
+    "Day8/workflow-cookbook/SAFETY.md"
   ],
   "deps_out": [
-    "workflow-cookbook/RUNBOOK.md"
+    "Day8/workflow-cookbook/RUNBOOK.md"
   ],
   "generated_at": "00006",
-  "id": "workflow-cookbook/BLUEPRINT.md",
+  "id": "Day8/workflow-cookbook/BLUEPRINT.md",
   "maintenance": {
     "refresh": "課題や制約が変わったら RUNBOOK/EVALUATION の該当節も同時更新。",
     "tooling": [

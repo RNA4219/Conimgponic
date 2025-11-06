@@ -33,9 +33,15 @@ Day8 の Birdseye は、リポジトリ内の主要ドキュメントとガー�
 5. **generated_at 揃え** — `index.json` と `hot.json` の `generated_at` を同じ連番へ更新し、再生成の履歴を同期します。
    - 旧形式（ISO8601 タイムスタンプ）が残っていても、再生成時に `00001` からの連番へ自動で置き換わります。
 6. **ツール実行** — 自動再生成が必要な場合は `python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json,workflow-cookbook/docs/birdseye/index.json --emit index+caps` を使用し、必要に応じて `--dry-run` で差分確認後に適用します。`--targets` はカンマ区切りで複数指定でき、空要素は無視されます。`--emit` は `index` / `caps` / `index+caps` のいずれかを選択でき、インデックスを書き換えた場合は同じ階層の `hot.json` の `generated_at` も自動で同期されます。
+   - `index.json` は `index.*.json` に分割して保守します。各 shard は 400 行以内を維持し、変更後は `python Day8/workflow-cookbook/tools/codemap/merge_index.py --index docs/birdseye/index.json --write` で集約ファイルの `generated_at` を揃えてください。
 
 ## Guardrails 連携
 - `workflow-cookbook/GUARDRAILS.md` の Birdseye セクションで定義された「インデックス → Capsule → ホットリスト → generated_at 同期」の順序を Day8 でも必須ルールとします。
 - Guardrails を更新した PR では、`docs/ROADMAP_AND_SPECS.md` と本 README を同じコミットで整合させ、Birdseye の `nodes` / `caps` / `hot` が最新ガイドラインに従っていることを確認します。
 - Birdseye の自動再生成が行えない場合は、[docs/BIRDSEYE.md](../BIRDSEYE.md) の「Guardrails からの参照順」と「`edges` チェックポイント」を順に確認し、±1 hop 抽出と Capsule/Hot のフォールバック手順に従ってください。
 - Day8 の安全審査 (`docs/safety.md`) やロードマップ (`docs/ROADMAP_AND_SPECS.md`) に差分が生じた場合、必ず対応する Capsule とホットリストを同時更新し、Guardrails 側の監査記録と `generated_at` を同期してください。
+
+## 検証ログ
+- `pnpm test -- tests/birdseye/path-resolution.spec.ts` を実行し、Birdseye の参照整合性を確認。
+- `python Day8/workflow-cookbook/tools/codemap/merge_index.py --index Day8/docs/birdseye/index.json` を実行し、shard 集約結果が想定どおりかを確認。
+- `pnpm test -- tests/birdseye/index-structure.spec.ts` を実行し、`edges` の 2 要素制約と shard/aggregate 一致を確認。

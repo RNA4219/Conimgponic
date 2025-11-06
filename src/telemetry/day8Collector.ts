@@ -1,4 +1,4 @@
-import type { AutoSavePhase, AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
+import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
 import type {
   FeatureFlagName,
   FlagRolloutPhase,
@@ -15,7 +15,6 @@ import {
   type TelemetryPayloads,
   type TelemetrySource,
   type RolloutPhase,
-  type SnapshotResultDetailBase,
   type SnapshotResultFailureDetail,
   type SnapshotResultPayload,
   type SnapshotResultSnapshot,

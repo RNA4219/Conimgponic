@@ -3,11 +3,11 @@
     "in::docs/ROADMAP_AND_SPECS.md"
   ],
   "deps_in": [
-    "docs/ROADMAP_AND_SPECS.md"
+    "Day8/docs/ROADMAP_AND_SPECS.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "docs/BIRDSEYE.md",
+  "id": "Day8/docs/BIRDSEYE.md",
   "maintenance": {
     "refresh": "Birdseye ノード追加時は index/caps/hot を同時更新し、フォールバック手順を最新化する。",
     "tooling": [

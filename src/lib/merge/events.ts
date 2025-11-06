@@ -1,4 +1,4 @@
-import type { MergeDecisionEvent, MergeEventHub } from './types';
+import type { MergeEventHub } from './types';
 
 import type { ProjectLockLease } from '../locks';
 import { projectLockEvents } from '../locks';

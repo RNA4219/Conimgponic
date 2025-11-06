@@ -25,6 +25,11 @@ describe('birdseye index schema', () => {
 
     assert.ok(Array.isArray(parsed.edges), 'edges must be an array');
 
+    assert.ok(
+      parsed.nodes !== null && typeof parsed.nodes === 'object' && !Array.isArray(parsed.nodes),
+      'nodes must be an object map',
+    );
+
     const nodeKeys = new Set(Object.keys(parsed.nodes));
 
     for (const edge of parsed.edges as Edge[]) {

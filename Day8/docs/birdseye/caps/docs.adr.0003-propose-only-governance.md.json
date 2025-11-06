@@ -1,14 +1,14 @@
 {
   "deps_in": [
-    "docs/README.md",
-    "docs/ROADMAP_AND_SPECS.md",
-    "docs/day8/design/03_architecture.md",
-    "docs/day8/ops/04_ops.md",
-    "workflow-cookbook/GUARDRAILS.md"
+    "Day8/docs/README.md",
+    "Day8/docs/ROADMAP_AND_SPECS.md",
+    "Day8/docs/day8/design/03_architecture.md",
+    "Day8/docs/day8/ops/04_ops.md",
+    "Day8/workflow-cookbook/GUARDRAILS.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "docs/adr/0003-propose-only-governance.md",
+  "id": "Day8/docs/adr/0003-propose-only-governance.md",
   "maintenance": {
     "refresh": "propose-only 制約に例外が出たら Release チェックリストと policy.yaml を同時に更新する。",
     "tooling": [

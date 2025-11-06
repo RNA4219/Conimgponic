@@ -1,10 +1,10 @@
 {
   "deps_in": [
-    "README.md"
+    "Day8/README.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "INSTALL.md",
+  "id": "Day8/INSTALL.md",
   "maintenance": {
     "refresh": "インストール手順を更新したら Birdseye の対象ノードを同じコミットで再収集する。",
     "tooling": [

@@ -6,13 +6,13 @@
     "out::docs/UPSTREAM_WEEKLY_LOG.md"
   ],
   "deps_in": [
-    "docs/README.md"
+    "Day8/docs/README.md"
   ],
   "deps_out": [
-    "docs/seeds/README.md"
+    "Day8/docs/seeds/README.md"
   ],
   "generated_at": "00006",
-  "id": "docs/TASKS.md",
+  "id": "Day8/docs/TASKS.md",
   "maintenance": {
     "refresh": "Katamari テンプレート（背景/手順/検証ログ/フォローアップ）の更新や Guardrails 差分を反映したら index/caps/hot を同じコミットで再生成する。",
     "tooling": [

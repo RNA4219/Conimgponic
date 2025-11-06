@@ -6,11 +6,11 @@
     "out::docs/ROADMAP_AND_SPECS.md"
   ],
   "deps_in": [
-    "workflow-cookbook/RUNBOOK.md"
+    "Day8/workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "workflow-cookbook/docs/IN-20250115-001.md",
+  "id": "Day8/workflow-cookbook/docs/IN-20250115-001.md",
   "maintenance": {
     "refresh": "新規インシデント追加時はRUNBOOK/チェックリストとリンク整合を確認。",
     "tooling": [
