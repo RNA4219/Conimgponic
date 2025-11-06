@@ -17,29 +17,29 @@
     "out::workflow-cookbook/CHECKLISTS.md"
   ],
   "deps_in": [
-    "docs/ROADMAP_AND_SPECS.md",
-    "docs/day8/spec/02_spec.md",
-    "workflow-cookbook/BLUEPRINT.md",
-    "workflow-cookbook/GUARDRAILS.md",
-    "workflow-cookbook/HUB.codex.md",
-    "workflow-cookbook/SAFETY.md",
-    "workflow-cookbook/SECURITY.md"
+    "Day8/docs/ROADMAP_AND_SPECS.md",
+    "Day8/docs/day8/spec/02_spec.md",
+    "Day8/workflow-cookbook/BLUEPRINT.md",
+    "Day8/workflow-cookbook/GUARDRAILS.md",
+    "Day8/workflow-cookbook/HUB.codex.md",
+    "Day8/workflow-cookbook/SAFETY.md",
+    "Day8/workflow-cookbook/SECURITY.md"
   ],
   "deps_out": [
-    "docs/birdseye/index.json",
-    "workflow-cookbook/CHECKLISTS.md",
-    "workflow-cookbook/EVALUATION.md",
-    "workflow-cookbook/docs/IN-20250115-001.md",
-    "workflow-cookbook/docs/birdseye/index.json",
-    "workflow-cookbook/logs/test.jsonl",
-    "workflow-cookbook/reports/issue_suggestions.md",
-    "workflow-cookbook/reports/today.md",
-    "workflow-cookbook/scripts/analyze.py",
-    "workflow-cookbook/tools/codemap/README.md",
-    "workflow-cookbook/tools/codemap/update.py"
+    "Day8/docs/birdseye/index.json",
+    "Day8/workflow-cookbook/CHECKLISTS.md",
+    "Day8/workflow-cookbook/EVALUATION.md",
+    "Day8/workflow-cookbook/docs/IN-20250115-001.md",
+    "Day8/workflow-cookbook/docs/birdseye/index.json",
+    "Day8/workflow-cookbook/logs/test.jsonl",
+    "Day8/workflow-cookbook/reports/issue_suggestions.md",
+    "Day8/workflow-cookbook/reports/today.md",
+    "Day8/workflow-cookbook/scripts/analyze.py",
+    "Day8/workflow-cookbook/tools/codemap/README.md",
+    "Day8/workflow-cookbook/tools/codemap/update.py"
   ],
   "generated_at": "00006",
-  "id": "workflow-cookbook/RUNBOOK.md",
+  "id": "Day8/workflow-cookbook/RUNBOOK.md",
   "maintenance": {
     "refresh": "Preparation/Execution/Verificationの各手順を更新した際は Birdseye index/caps と CHECKLISTS を同時更新。",
     "tooling": [

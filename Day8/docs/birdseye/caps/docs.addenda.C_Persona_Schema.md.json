@@ -7,15 +7,15 @@
     "out::docs/birdseye/index.json"
   ],
   "deps_in": [
-    "docs/README.md",
-    "docs/day8/spec/02_spec.md"
+    "Day8/docs/README.md",
+    "Day8/docs/day8/spec/02_spec.md"
   ],
   "deps_out": [
-    "docs/day8/quality/06_quality.md",
-    "docs/day8/spec/02_spec.md"
+    "Day8/docs/day8/quality/06_quality.md",
+    "Day8/docs/day8/spec/02_spec.md"
   ],
   "generated_at": "00006",
-  "id": "docs/addenda/C_Persona_Schema.md",
+  "id": "Day8/docs/addenda/C_Persona_Schema.md",
   "maintenance": {
     "refresh": "ロール構成や Task Seed テンプレートを更新した際は Appendix C と spec/quality の整合を確認し、index/caps の generated_at を同期。",
     "tooling": [

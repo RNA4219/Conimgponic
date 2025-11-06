@@ -1,31 +1,31 @@
 {
   "deps_in": [
-    "README.md"
+    "Day8/README.md"
   ],
   "deps_out": [
-    "docs/Release_Checklist.md",
-    "docs/TASKS.md",
-    "docs/UPSTREAM.md",
-    "docs/addenda/B_UI_Mock.md",
-    "docs/addenda/C_Persona_Schema.md",
-    "docs/addenda/D_Trim_Design.md",
-    "docs/addenda/F_Provider_Matrix.md",
-    "docs/addenda/G_Security_Privacy.md",
-    "docs/addenda/H_Deploy_Guide.md",
-    "docs/addenda/J_Runbook.md",
-    "docs/addenda/K_Accessibility_UX.md",
-    "docs/addenda/L_Config_Reference.md",
-    "docs/addenda/M_Versioning_Release.md",
-    "docs/adr/0001-collector-analyzer-reporter-pipeline.md",
-    "docs/adr/0002-jsonl-event-contract.md",
-    "docs/adr/0003-propose-only-governance.md",
-    "docs/adr/README.md",
-    "docs/day8/README.md",
-    "docs/day8/spec/01_requirements.md",
-    "docs/safety.md"
+    "Day8/docs/Release_Checklist.md",
+    "Day8/docs/TASKS.md",
+    "Day8/docs/UPSTREAM.md",
+    "Day8/docs/addenda/B_UI_Mock.md",
+    "Day8/docs/addenda/C_Persona_Schema.md",
+    "Day8/docs/addenda/D_Trim_Design.md",
+    "Day8/docs/addenda/F_Provider_Matrix.md",
+    "Day8/docs/addenda/G_Security_Privacy.md",
+    "Day8/docs/addenda/H_Deploy_Guide.md",
+    "Day8/docs/addenda/J_Runbook.md",
+    "Day8/docs/addenda/K_Accessibility_UX.md",
+    "Day8/docs/addenda/L_Config_Reference.md",
+    "Day8/docs/addenda/M_Versioning_Release.md",
+    "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md",
+    "Day8/docs/adr/0002-jsonl-event-contract.md",
+    "Day8/docs/adr/0003-propose-only-governance.md",
+    "Day8/docs/adr/README.md",
+    "Day8/docs/day8/README.md",
+    "Day8/docs/day8/spec/01_requirements.md",
+    "Day8/docs/safety.md"
   ],
   "generated_at": "00006",
-  "id": "docs/README.md",
+  "id": "Day8/docs/README.md",
   "maintenance": {
     "refresh": "索引を更新したら Birdseye カプセルの deps_out を併せて更新する。",
     "tooling": [

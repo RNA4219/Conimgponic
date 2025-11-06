@@ -1,0 +1,29 @@
+{
+  "deps_in": [
+    "Day8/workflow-cookbook/GUARDRAILS.md",
+    "Day8/docs/TASKS.md",
+    "Day8/docs/birdseye/README.md"
+  ],
+  "deps_out": [
+    "Day8/docs/seeds/README.md",
+    "Day8/docs/birdseye/index.json"
+  ],
+  "generated_at": "00009",
+  "id": "Day8/docs/day8/guides/07_contributing.md",
+  "maintenance": {
+    "refresh": "Guardrails や Task Seed / Birdseye の手順が更新されたら、本文と参照リンクを同期し `generated_at` を PR 単位で 1 だけ進める。Seed フォーマットが変わった場合は `docs/seeds/README.md` とあわせて更新する。",
+    "tooling": [
+      "python workflow-cookbook/tools/codemap/update.py --targets docs/birdseye/index.json --emit index+caps"
+    ]
+  },
+  "risks": [
+    "Guardrails の 400 行上限や TDD 先行ルールが古いままだとスコープ逸脱やテスト欠落を招く",
+    "Task Seed / Birdseye の同期手順が未更新だと `generated_at` ズレや Seed ハンドオフ漏れが発生する"
+  ],
+  "role": "guide",
+  "summary": "Guardrails の目的・スコープ上限・TDD 先行追加・1タスク=1PR 運用を明文化し、Task Seed 作成フローとフォローアップチェックリスト、および Birdseye の同期手順とフォールバック更新を統合した Day8 向け貢献ガイド。",
+  "tests": [
+    "pnpm lint --filter docs",
+    "pnpm test -- tests/birdseye/index-structure.spec.ts"
+  ]
+}

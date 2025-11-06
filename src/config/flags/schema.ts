@@ -8,6 +8,7 @@ export type FlagRolloutPhase =
   | 'phase-a2'
   | 'phase-b0'
   | 'phase-b1'
+  | 'phase-c0'
 
 export interface FlagValidationIssue {
   readonly code: 'invalid-boolean' | 'invalid-precision'

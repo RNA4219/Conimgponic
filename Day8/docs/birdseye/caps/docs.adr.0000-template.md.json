@@ -2,7 +2,7 @@
   "deps_in": [],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "docs/adr/0000-template.md",
+  "id": "Day8/docs/adr/0000-template.md",
   "maintenance": {
     "refresh": "テンプレートに変更が入ったら既存 ADR への適用方針を README に追記する。",
     "tooling": []

@@ -5,11 +5,11 @@
     "out::workflow-cookbook/reports/issue_suggestions.md"
   ],
   "deps_in": [
-    "workflow-cookbook/RUNBOOK.md"
+    "Day8/workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "workflow-cookbook/logs/test.jsonl",
+  "id": "Day8/workflow-cookbook/logs/test.jsonl",
   "maintenance": {
     "refresh": "CIのテストログ形式が変わったらサンプルレコードを更新。",
     "tooling": [
