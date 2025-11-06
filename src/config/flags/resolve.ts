@@ -306,5 +306,19 @@ export const FLAG_MIGRATION_PLAN: readonly FlagMigrationStep[] = [
       'Gate MergeDock Diff tab with merge.precision from FlagSnapshot and remove legacy keys',
     exitCriteria:
       'localStorage access is mediated by resolveFlags and legacy key reads drop to zero'
+  },
+  {
+    phase: 'phase-b1',
+    summary:
+      'Complete removal of localStorage direct access with full FlagSnapshot adoption',
+    exitCriteria:
+      'All localStorage reads migrated to resolveFlags with no fallback paths remaining'
+  },
+  {
+    phase: 'phase-c0',
+    summary:
+      'Enable advanced precision merge features based on flag configuration',
+    exitCriteria:
+      'Diff Merge View operates exclusively through feature flags with full precision support'
   }
 ]
