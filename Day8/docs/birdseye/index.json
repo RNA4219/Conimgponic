@@ -110,6 +110,10 @@
     ],
     [
       "Day8/docs/README.md",
+      "Day8/docs/day8/guides/07_contributing.md"
+    ],
+    [
+      "Day8/docs/README.md",
       "Day8/docs/day8/spec/01_requirements.md"
     ],
     [
@@ -155,6 +159,18 @@
     [
       "Day8/docs/ROADMAP_AND_SPECS.md",
       "Day8/docs/day8/spec/01_requirements.md"
+    ],
+    [
+      "Day8/docs/day8/guides/07_contributing.md",
+      "Day8/workflow-cookbook/GUARDRAILS.md"
+    ],
+    [
+      "Day8/docs/day8/guides/07_contributing.md",
+      "Day8/docs/seeds/README.md"
+    ],
+    [
+      "Day8/docs/day8/guides/07_contributing.md",
+      "Day8/docs/birdseye/index.json"
     ],
     [
       "Day8/docs/ROADMAP_AND_SPECS.md",
@@ -719,6 +735,11 @@
       "mtime": "00004",
       "role": "overview"
     },
+    "Day8/docs/day8/guides/07_contributing.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.day8.guides.07_contributing.md.json",
+      "mtime": "00009",
+      "role": "guide"
+    },
     "Day8/docs/safety.md": {
       "caps": "Day8/docs/birdseye/caps/docs.safety.md.json",
       "mtime": "00004",
@@ -1000,5 +1021,5 @@
       "role": "integration"
     }
   },
-  "generated_at": "00008"
+  "generated_at": "00009"
 }
