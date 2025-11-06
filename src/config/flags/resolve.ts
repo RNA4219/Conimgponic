@@ -47,6 +47,21 @@ export function coerceMergeThresholdValue(
         }
       }
     }
+    
+    // Check if the value is less than 0.75, which is the minimum threshold
+    if (rawValue < 0.75) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-precision',
+          flag: 'merge.precision',
+          raw: String(rawValue),
+          message: 'merge.precision threshold must be >= 0.75',
+          retryable: false
+        }
+      }
+    }
+    
     return { ok: true, value: rawValue }
   }
 
@@ -99,6 +114,20 @@ export function coerceMergeThresholdValue(
         flag: 'merge.precision',
         raw: normalized,
         message: 'merge.precision threshold must be within [0, 1]',
+        retryable: false
+      }
+    }
+  }
+
+  // Check if the numeric value is less than 0.75, which is the minimum threshold
+  if (numeric < 0.75) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-precision',
+        flag: 'merge.precision',
+        raw: normalized,
+        message: 'merge.precision threshold must be >= 0.75',
         retryable: false
       }
     }

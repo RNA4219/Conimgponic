@@ -121,7 +121,7 @@ flowchart TD
 | VSCode 設定キー | 解決対象 | 判定ロジック | Collector 送出 | 備考 |
 | --- | --- | --- | --- | --- |
 | `conimg.autosave.enabled` | `autosave.enabled` | boolean coercer (`true` / `false` / `1` / `0`) | `flag_resolution.source='workspace'`、`autosave.phase` を `disabled/idle` へ同期。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L61-L209】 | env が true の場合は Phase ガード解除済みとして扱い、設定が false でもフェールセーフは env 優先。 |
-| `conimg.merge.threshold` | `merge.precision` | `0.82` 以上→`stable`、`0.75` 以上→`beta`、その他→`legacy`。範囲外/NaN は `invalid-precision` として記録。 | `flag_resolution.precision` に加えて `threshold` を Collector へ添付し、Analyzer が Phase 遷移監視に利用。【F:Day8/docs/day8/design/03_architecture.md†L1-L39】 | VSCode 設定は Phase rollback 提案時に Slack テンプレ (`templates/alerts/rollback.md`) と同期する。 |
+| `conimg.merge.threshold` | `merge.precision` | `0.82` 以上→`stable`、`0.75` 以上→`beta`、その他→`legacy`。範囲外/NaN は `invalid-precision` として記録。**v1.2.0 以降**: 0.75 未満の数値は `invalid-precision` として記録し、`DEFAULT_FLAGS.merge.profile.threshold`（現在は 0.75）へフォールバック。 | `flag_resolution.precision` に加えて `threshold` を Collector へ添付し、Analyzer が Phase 遷移監視に利用。【F:Day8/docs/day8/design/03_architecture.md†L1-L39】 | VSCode 設定は Phase rollback 提案時に Slack テンプレ (`templates/alerts/rollback.md`) と同期する。 |
 
 ### Telemetry / Collector 連携設計
 
@@ -314,7 +314,7 @@ stateDiagram-v2
 ## 監視・ロールバック連携
 
 - Collector/Analyzer/Reporter の責務分離は `Day8/docs/day8/design/03_architecture.md` を踏襲し、AutoSave/精緻マージの段階導入監視は `reports/rollout-monitoring-design.md` に従う。
-- Telemetry JSONL は 15 分 ETL で集約し、Canary では `phase=canary`、GA では `phase=ga` を付与する。欠損バッチは `collector-missed-batch` として監査ログに残す。
+- Telemetry JSONL は 15 分 ETL で集約し、Canary では `phase=canary`、GA では `phase=ga` を付与する。欠損バッチは `collector-missed-batch` として監視ログに残す。
 - SLO/ロールバック指標
   - `autosave_write_success_rate`（Canary: ≥99.5%、GA: ≥99.3%）
   - `merge_precision_latency_p95`（Canary: ≤4500ms、GA: ≤5000ms）
@@ -327,3 +327,16 @@ stateDiagram-v2
 - **localStorage の旧直接参照**: resolveFlags() 導入後も UI は段階的移行中。既存直読が残るため、キー名/値型が変わると即時障害となる。→ 現状は不変とし、フェーズ完了まで維持。
 - **env 未設定時の既定値依存**: `.env` 漏れで AutoSave が無効化される可能性。→ `DEFAULT_FLAGS` と同値であることを release checklist に追加し、CI で `.env.sample` Diff を監視。
 - **validation エラーの見落とし**: storage の無効値が静かに既定値へ戻る。→ `FlagSnapshot.*.errors` をテレメトリに送出し、Analyzer 側で `invalid-*` を監視する。
+
+## 運用例・エラー処理更新（v1.2.0 追加）
+
+### 新しい検証ルール（v1.2.0以降）
+
+- **0.75 未満のマージ閾値**: `merge.precision` の数値閾値として `0.75` 未満（例: `0.5`, `0.74`, `0.0`）が指定された場合、`FlagValidationError(code='invalid-precision')` を記録し、`DEFAULT_FLAGS.merge.profile.threshold` (0.75) へフォールバックする。
+- **テレメトリへの影響**: この検証エラー発生時には `defaultUsed=true` がテレメトリに出力される（`flag_resolution` イベントの `detail.default_used` フィールド）。
+- **運用時の注意**: 閾値 `0.75` 未満は新仕様により明示的に拒否されるため、運用時には `0.75` 以上を指定する必要がある。
+
+### 以前の検証ルール
+
+- 既存の `[0, 1]` 範囲外の数値（例: `-0.1`, `1.5`）は従来通り `FlagValidationError` を記録し、既定値へフォールバック。
+- 不正な文字列（例: `"invalid"`, `"NaN"`）も従来通り `FlagValidationError` を記録し、既定値へフォールバック。
