@@ -302,7 +302,9 @@ const FLAG_STORAGE_KEYS = new Set([
   'autosave.enabled',
   'merge.precision',
   'flag:autoSave.enabled',
-  'flag:merge.precision'
+  'flag:merge.precision',
+  'plugins.enable',
+  'flag:plugins.enable'
 ])
 
 type FlagSnapshotListener = (snapshot: FlagSnapshot) => void
