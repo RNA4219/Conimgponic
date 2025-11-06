@@ -5,6 +5,9 @@
 - ✅ Implementation Plan 0.2.3-4 / docs/AUTOSAVE-DESIGN-IMPL: フェーズ A ポリシー（デバウンス500ms/アイドル2s/履歴20世代・50MB）と `FlagValidationError` のソース付与がテレメトリに反映され、VS Code ブリッジ経由でも同一スナップショットを共有可能。
 - ⏳ Implementation Plan 0.2.3-5: Phase-b0 でのレガシー localStorage 参照削除は未着手。`createFlagSnapshotSubscription` のフェールセーフを段階的に縮退させるタスクを作成し、Collector 側の `flag_resolution` 安定化を確認後に実施する。
   - 次アクション: Flag refresh 通知の重複送信計測と `FLAG_MIGRATION_PLAN` exit criteria のレビュー記録を追加。`reports/today.md` に計測結果を追記するタスクを発行。
+- ⏳ Implementation Plan 0.2.3-6: `plugins.enable` 配布は Phase-a1 ガード下でテレメトリ確認中。`collectFlagResolutionPayloads()` が `plugins.enable` を含む `flag_resolution` を送出しているが、QA への恒常配布は未実施。
+  - 現状: `resolvePluginBridgeBootstrapPlan()` のブートストラップで計測された `evaluationMs` を含むテレメトリが Day8 Collector で監査待ち。
+  - 次アクション: `flags:set plugins.enable true` → `flags:push --env qa` のドライランを完了し、`retryable=false` エラーが 3 回連続した場合に `flags:rollback --phase phase-a0` と VS Code ワークスペース／`localStorage.plugins.enable` をクリアするオペレーション手順を記録。
 
 ## Canary 前提条件
 - [ ] `pnpm run flags:status` で Canary 対象が `autosave.enabled=true`、`merge.precision=beta` になっている。

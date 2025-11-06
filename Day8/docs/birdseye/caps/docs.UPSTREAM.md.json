@@ -1,14 +1,14 @@
 {
   "deps_in": [
-    "docs/README.md",
-    "docs/ROADMAP_AND_SPECS.md"
+    "Day8/docs/README.md",
+    "Day8/docs/ROADMAP_AND_SPECS.md"
   ],
   "deps_out": [
-    "docs/FORK_NOTES.md",
-    "docs/UPSTREAM_WEEKLY_LOG.md"
+    "Day8/docs/FORK_NOTES.md",
+    "Day8/docs/UPSTREAM_WEEKLY_LOG.md"
   ],
   "generated_at": "00006",
-  "id": "docs/UPSTREAM.md",
+  "id": "Day8/docs/UPSTREAM.md",
   "maintenance": {
     "refresh": "subtree 取り込み後にチェックリストと週次ログの記述を必ず最新化する。",
     "tooling": [

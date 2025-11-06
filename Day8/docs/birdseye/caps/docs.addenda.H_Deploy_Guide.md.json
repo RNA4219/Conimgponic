@@ -7,15 +7,15 @@
     "out::workflow-cookbook/scripts/analyze.py"
   ],
   "deps_in": [
-    "docs/README.md",
-    "docs/day8/ops/04_ops.md",
-    "docs/day8/spec/02_spec.md"
+    "Day8/docs/README.md",
+    "Day8/docs/day8/ops/04_ops.md",
+    "Day8/docs/day8/spec/02_spec.md"
   ],
   "deps_out": [
-    "docs/addenda/L_Config_Reference.md"
+    "Day8/docs/addenda/L_Config_Reference.md"
   ],
   "generated_at": "00006",
-  "id": "docs/addenda/H_Deploy_Guide.md",
+  "id": "Day8/docs/addenda/H_Deploy_Guide.md",
   "maintenance": {
     "refresh": "デプロイフローや release.yml を更新したら ops/04_ops.md と合わせて本文・Birdseye（index→caps→generated_at）を更新する。",
     "tooling": [

@@ -57,19 +57,21 @@
 
 ## フェーズ別既定値とチーム配布
 
-| フェーズ | `autosave.enabled` | `merge.precision` | 配布対象 | 配布手順 |
-| --- | --- | --- | --- | --- |
-| A-0 | `false` | `legacy` | 全ユーザー | 既定値のまま (`pnpm run flags:reset`) |
-| A-1 | `true` | `legacy` | QA/開発 | `.env.qa` に `VITE_AUTOSAVE_ENABLED=true`、`pnpm run flags:push --env qa` |
-| A-2 | `true` | `legacy` | ベータ招待 | `flags:push --env beta` 実行後、QA レポートを共有 |
-| B-0 | `true` | `beta` | ベータ招待 | `flags:set merge.precision beta` → `flags:push --env beta` |
-| B-1 | `true` | `stable` | 全ユーザー | `flags:set merge.precision stable` → `flags:push --env prod` |
+| フェーズ | `autosave.enabled` | `merge.precision` | `plugins.enable` | 配布対象 | 配布手順 |
+| --- | --- | --- | --- | --- | --- |
+| A-0 | `false` | `legacy` | 既定: `false`<br/>配布: なし（Phase-a0 ガード）<br/>手順: -<br/>ロールバック: - | 全ユーザー | 既定値のまま (`pnpm run flags:reset`) |
+| A-1 | `true` | `legacy` | 既定: `false`<br/>配布: QA / 拡張開発者（Phase-a1）<br/>手順: `flags:set plugins.enable true` → `flags:push --env qa`<br/>ロールバック: `flags:rollback --phase phase-a0` 実行後に `conimg.plugins.enable` / `plugins.enable` をクリア | QA/開発 | `.env.qa` に `VITE_AUTOSAVE_ENABLED=true`、`pnpm run flags:push --env qa` |
+| A-2 | `true` | `legacy` | 既定: `false`<br/>配布: ベータ招待（Phase-a1 から継続観測）<br/>手順: Phase-a1 テレメトリが安定後に `flags:push --env beta`<br/>ロールバック: Phase-a0 へ即時差し戻し (`flags:rollback --phase phase-a0`) | ベータ招待 | `flags:push --env beta` 実行後、QA レポートを共有 |
+| B-0 | `true` | `beta` | 既定: `false`<br/>配布: ベータ招待（Plugin Bridge 継続監視）<br/>手順: Phase-a1 / a2 の `flag_resolution` 成果を監査し、必要なら `flags:set plugins.enable true --scope beta`<br/>ロールバック: Phase-a0 へ差し戻し、ローカルストレージとワークスペース値をクリア | ベータ招待 | `flags:set merge.precision beta` → `flags:push --env beta` |
+| B-1 | `true` | `stable` | 既定: `false`<br/>配布: 全ユーザー（Phase-b1 で GA 判定後）<br/>手順: `flags:set plugins.enable true --scope prod` → `flags:push --env prod`（AutoSave GA と同時実施）<br/>ロールバック: `flags:rollback --phase phase-a0` + VS Code ワークスペース値のリセット | 全ユーザー | `flags:set merge.precision stable` → `flags:push --env prod` |
 
 ### チェックリスト
 - [ ] 配布前に `pnpm run flags:status` でローカル値と既定値の差分を確認する。
 - [ ] Canary 実施中は `reports/canary/` の JSONL を Analyzer に渡し、SLO が満たされていることを QA が確認済みである。
 - [ ] ロールバック時は `pnpm run flags:rollback --phase <prev>` を利用し、対象チームへ Slack テンプレート `templates/alerts/rollback.md` を送付する。
-- [x] `Collector` テレメトリ統合チェックリストの進捗を [docs/IMPLEMENTATION-PLAN.md §5](./IMPLEMENTATION-PLAN.md#5-%E5%9B%9E%E5%B8%B0%E8%A9%A6%E9%A8%93%E8%A8%88%E7%94%BBtdd-%E3%83%81%E3%82%A7%E3%83%83%E3%82%AF%E3%83%AA%E3%82%B9%E3%83%88) に 2024-05-06 時点の完了履歴としてリンクした。
+- [x] (Issue #1) `Collector` テレメトリ統合チェックリストの進捗を [docs/IMPLEMENTATION-PLAN.md §5](./IMPLEMENTATION-PLAN.md#5-%E5%9B%9E%E5%B8%B0%E8%A9%A6%E9%A8%93%E8%A8%88%E7%94%BBtdd-%E3%83%81%E3%82%A7%E3%83%83%E3%82%AF%E3%83%AA%E3%82%B9%E3%83%88) に 2024-06-19 時点の完了履歴としてリンクした。
+
+Phase-a1 以降に `plugins.enable` を解放する際は、`src/config/index.ts` が提供する `collectFlagResolutionPayloads()` と `resolvePluginBridgeBootstrapPlan()` を通じて `flag_resolution` テレメトリへ `plugins.enable` / `autosave.enabled` の評価結果を同時送出し、Collector で Phase ガードの整合性を監査する。【F:src/config/index.ts†L164-L223】 AutoSave 側は [docs/AUTOSAVE-DESIGN-IMPL.md](./AUTOSAVE-DESIGN-IMPL.md) が定義する `AutoSaveOptions.disabled` と `autosave.enabled` の二重ガードを維持しており、Plugin Bridge も同じスナップショットを参照して Phase 差し戻し時のロールバック条件を共有する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L13-L56】
 ## フラグ解決順序と入力ソース
 
 ### 優先順位
@@ -124,6 +126,10 @@ flowchart TD
 1. `resolveFlags()` 実行ごとに `flag_resolution` イベントを Collector へ送出し、`{ phaseGuard, autosave: { enabled, source }, merge: { precision, source, threshold? }, updatedAt }` を JSONL append。Day8 Pipeline は Analyzer で Phase 逸脱を集計し、Reporter が `reports/today.md` へ反映する。【F:Day8/docs/day8/design/03_architecture.md†L1-L39】
 2. Phase A フェールセーフにより `source='default' | 'localStorage'` の場合は `autosave.phase='disabled'` を維持し、Collector では `guardFallback=true` を付与する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L85】
 3. VSCode 設定が env と競合した際は `conflict=true` を付与し、Reporter がロールバック推奨を生成する。追加メタデータは 2 フィールドであり、Collector の処理コストは ±5% 以内。
+
+#### 更新履歴
+
+- 2024-06-19: Issue #1 Collector 連携手順を Phase ガード運用フローと再同期し、`flag_resolution` が `autosave.phase` / `rollbackTo` を正しく更新することを再検証。 [検証ログ: tests/telemetry/vscode.contract.test.ts](../tests/telemetry/vscode.contract.test.ts) と [検証ログ: tests/platform/vscode/autosave.collector-export.test.ts](../tests/platform/vscode/autosave.collector-export.test.ts) を更新し、`docs/IMPLEMENTATION-PLAN.md` のチェックリストと同日付で整合させた。
 
 ## `src/config/flags.ts` 設計
 

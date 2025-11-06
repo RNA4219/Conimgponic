@@ -8,13 +8,13 @@
     "out::docs/birdseye/hot.json"
   ],
   "deps_in": [
-    "docs/README.md",
-    "docs/ROADMAP_AND_SPECS.md",
-    "docs/addenda/D_Trim_Design.md"
+    "Day8/docs/README.md",
+    "Day8/docs/ROADMAP_AND_SPECS.md",
+    "Day8/docs/addenda/D_Trim_Design.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "docs/addenda/G_Security_Privacy.md",
+  "id": "Day8/docs/addenda/G_Security_Privacy.md",
   "maintenance": {
     "refresh": "Secrets/ログ/通信/OAuth の運用ルールが変わったら Appendix G → 05_security.md → SAFETY の順で更新し、index/hot/caps の generated_at を同期。",
     "tooling": [

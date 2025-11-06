@@ -5,11 +5,11 @@
     "out::docs/TASKS.md"
   ],
   "deps_in": [
-    "workflow-cookbook/RUNBOOK.md"
+    "Day8/workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "workflow-cookbook/reports/issue_suggestions.md",
+  "id": "Day8/workflow-cookbook/reports/issue_suggestions.md",
   "maintenance": {
     "refresh": "提案フォーマットが変わったら HUB/TASK テンプレートと同期。",
     "tooling": [

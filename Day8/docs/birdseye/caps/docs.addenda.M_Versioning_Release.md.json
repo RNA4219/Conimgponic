@@ -1,14 +1,14 @@
 {
   "deps_in": [
-    "docs/README.md",
-    "docs/Release_Checklist.md",
-    "docs/day8/spec/02_spec.md"
+    "Day8/docs/README.md",
+    "Day8/docs/Release_Checklist.md",
+    "Day8/docs/day8/spec/02_spec.md"
   ],
   "deps_out": [
-    "workflow-cookbook/CHECKLISTS.md"
+    "Day8/workflow-cookbook/CHECKLISTS.md"
   ],
   "generated_at": "00006",
-  "id": "docs/addenda/M_Versioning_Release.md",
+  "id": "Day8/docs/addenda/M_Versioning_Release.md",
   "maintenance": {
     "refresh": "semver ラベルやタグ命名が変わった場合は Release Checklist と workflow-cookbook/CHECKLISTS.md を同じ PR で更新する。",
     "tooling": [

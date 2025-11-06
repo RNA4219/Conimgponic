@@ -1,14 +1,14 @@
 {
   "deps_in": [
-    "docs/README.md",
-    "docs/ROADMAP_AND_SPECS.md"
+    "Day8/docs/README.md",
+    "Day8/docs/ROADMAP_AND_SPECS.md"
   ],
   "deps_out": [
-    "docs/addenda/M_Versioning_Release.md",
-    "workflow-cookbook/CHECKLISTS.md"
+    "Day8/docs/addenda/M_Versioning_Release.md",
+    "Day8/workflow-cookbook/CHECKLISTS.md"
   ],
   "generated_at": "00006",
-  "id": "docs/Release_Checklist.md",
+  "id": "Day8/docs/Release_Checklist.md",
   "maintenance": {
     "refresh": "Release フローや Birdseye 更新順が変わったら docs/README.md・ROADMAP と合わせて更新し、codemap コマンドの出力を PR に添付する。",
     "tooling": [

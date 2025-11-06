@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { FlagSnapshot } from '../config'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
@@ -16,10 +15,17 @@ import {
 } from '../lib/merge/mergeDockPreference'
 import { useMergeThreshold } from '../lib/merge/threshold'
 import {
+  DEFAULT_MERGE_ENGINE,
+  attachAutoSaveLockEvents,
+  type MergeEventHub,
+  type MergeDecisionEvent,
+  type MergeQueueCommand as MergeEngineQueueCommand,
+  type MergeResult,
+} from '../lib/merge'
+import type { ProjectLockLease } from '../lib/locks'
+import {
   computeStoryboardWarnings,
   diffBackupPolicy,
-  diffMergeNoopCommand,
-  emptyDiffHunks,
   mergeMarkdownStoryboard,
   readAutoSaveState,
   resolveMergeDockPhasePlan,
@@ -34,6 +40,9 @@ import {
   type MergeDockWindow,
   type WorkspaceConfiguration,
 } from './merge-dock/domain'
+import { getDiffHunksFromEngine, type MergeHunk } from '../lib/merge'
+import { useSB } from '../store'
+import type { Storyboard } from '../types'
 import {
   createMergeDockViewStore,
   useMergeDockViewStore,
@@ -64,7 +73,182 @@ export {
 } from './merge-dock/domain'
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
-import type { MergeHunk, QueueMergeCommand } from './diffMergeTypes.js'
+import type { 
+  MergeHunk, 
+  QueueMergeCommand,
+  DiffMergeQueueCommandPayload,
+  MergeDecisionEvent
+} from './diffMergeTypes.js'
+
+import { DEFAULT_MERGE_ENGINE } from '../lib/merge'
+import { createEventHub } from '../platform/vscode/merge/bridge'
+import { attachAutoSaveLockEvents } from '../lib/merge/events'
+
+// Function to create a proper queueMergeCommand that integrates with merge engine and storyboard updates
+const createDiffQueueMergeCommand = (): QueueMergeCommand => {
+  return async (payload: DiffMergeQueueCommandPayload): Promise<MergeDecisionEvent> => {
+    // Create event hub and attach auto-save lock events
+    const { hub: eventHub, dispose } = createEventHub();
+    const detachAutoSaveEvents = attachAutoSaveLockEvents(eventHub);
+    
+    try {
+      // Get current storyboard
+      const currentSb = useSB.getState().sb;
+      
+      // Process the merge operations using the merge engine
+      // We'll need to map the hunk IDs in the payload to the actual storyboard content
+      const relevantScenes = currentSb.scenes.filter(scene => 
+        payload.hunkIds.includes(scene.id)
+      );
+      
+      if (relevantScenes.length === 0) {
+        // If no relevant scenes found, return a success response
+        const result: MergeDecisionEvent = {
+          status: 'success',
+          hunkIds: payload.hunkIds,
+          telemetry: {
+            collectorSurface: payload.telemetryContext.collectorSurface,
+            analyzerSurface: payload.telemetryContext.analyzerSurface,
+            retryable: false
+          }
+        };
+        
+        // Publish event to hub
+        eventHub.publish({
+          type: 'merge:auto-applied',
+          hunk: {
+            id: payload.hunkIds[0] || 'unknown',
+            section: null,
+            decision: 'auto',
+            similarity: 1.0,
+            locked: false,
+            merged: 'no relevant scenes',
+            manual: 'no relevant scenes',
+            ai: 'no relevant scenes',
+            base: 'no relevant scenes',
+            prefer: 'none',
+          },
+          sceneId: currentSb.id,
+          retryable: false,
+          trace: {
+            sceneId: currentSb.id,
+            entries: [],
+            decisions: [],
+            summary: { threshold: 0.8, autoAdoptionRate: 1 },
+          }
+        });
+        
+        return result;
+      }
+      
+      // Process each relevant scene with the merge engine
+      const results: { id: string; success: boolean; retryable: boolean; mergedContent?: string }[] = [];
+      
+      for (const scene of relevantScenes) {
+        try {
+          // Create merge input from the scene content
+          // In a real implementation, we would get the base, ours, and theirs content properly
+          // For now, we'll use the scene content as base and simulate changes
+          const mergeInput = {
+            base: scene.manual || '',
+            ours: scene.ai || '',
+            theirs: scene.manual || '',
+            sceneId: scene.id
+          };
+          
+          // Execute merge using the default merge engine
+          const mergeResult = DEFAULT_MERGE_ENGINE.merge3(mergeInput, {
+            events: eventHub,
+            profile: { precision: payload.precision },
+            queueMergeCommand: (command) => {
+              // In this context, we just execute the command to trigger any planning
+              console.log('Queue command executed:', command);
+            }
+          });
+          
+          // If merge is successful, update the scene in the storyboard
+          results.push({ 
+            id: scene.id, 
+            success: true, 
+            retryable: false, 
+            mergedContent: mergeResult.mergedText 
+          });
+        } catch (error) {
+          // If merge fails, mark as conflict with retryable flag
+          const isRetryable = error instanceof Error && 
+            (error.message.includes('retryable') || error.message.includes('Merge') || 
+             (error as any).retryable === true);
+             
+          results.push({ 
+            id: scene.id, 
+            success: false, 
+            retryable: isRetryable, 
+            mergedContent: undefined
+          });
+        }
+      }
+      
+      // Check if all operations were successful
+      const allSuccessful = results.every(r => r.success);
+      const hasRetryable = results.some(r => r.retryable);
+      
+      // Update storyboard if all operations were successful
+      if (allSuccessful) {
+        const updatedScenes = currentSb.scenes.map(scene => {
+          const result = results.find(r => r.id === scene.id && r.mergedContent);
+          if (result) {
+            // Update the scene with merged content - choosing appropriate field based on preference
+            return { 
+              ...scene, 
+              manual: result.mergedContent || scene.manual,
+              status: 'merged' // Update status to reflect merge completion
+            };
+          }
+          return scene;
+        });
+        
+        // Update the storyboard state
+        useSB.setState({
+          sb: { 
+            ...currentSb, 
+            scenes: updatedScenes,
+            version: currentSb.version + 1 // Increment version to trigger updates
+          }
+        });
+      }
+      
+      const result: MergeDecisionEvent = {
+        status: allSuccessful ? 'success' : 'conflict',
+        hunkIds: payload.hunkIds,
+        telemetry: {
+          collectorSurface: payload.telemetryContext.collectorSurface,
+          analyzerSurface: payload.telemetryContext.analyzerSurface,
+          retryable: hasRetryable
+        }
+      };
+      
+      // If autoSave is requested, trigger it after updating the storyboard
+      if (payload.metadata.autoSaveRequested && allSuccessful) {
+        const autoSave = globalThis as { __mergeDockFlushNow?: () => void };
+        if (typeof autoSave.__mergeDockFlushNow === 'function') {
+          autoSave.__mergeDockFlushNow();
+        }
+      }
+      
+      return result;
+    } finally {
+      detachAutoSaveEvents?.();
+      dispose();
+    }
+  };
+};
+import { isDiffMergeDevelopmentEnvironment } from './diffMergeTypes.js'
+import type {
+  DiffMergeQueueCommandPayload,
+  MergeHunk,
+  MergePrecision,
+  QueueMergeCommand,
+} from './diffMergeTypes.js'
 
 
 export type MergeDockImportKind = 'jsonl' | 'csv' | 'markdown'
@@ -81,6 +265,164 @@ export const resolveMergeDockImportKind = (fileName: string): MergeDockImportKin
     return 'markdown'
   }
   return null
+}
+
+
+const tokenizeForSimilarity = (text: string): readonly string[] =>
+  text
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+
+const computeHunkSimilarity = (manual: string, ai: string): number => {
+  const left = tokenizeForSimilarity(manual)
+  const right = tokenizeForSimilarity(ai)
+  if (left.length === 0 && right.length === 0) {
+    return 1
+  }
+  if (left.length === 0 || right.length === 0) {
+    return 0
+  }
+  const leftSet = new Set(left)
+  const rightSet = new Set(right)
+  let intersection = 0
+  leftSet.forEach((token) => {
+    if (rightSet.has(token)) {
+      intersection += 1
+    }
+  })
+  const union = new Set([...leftSet, ...rightSet]).size
+  return union === 0 ? 0 : intersection / union
+}
+
+const resolveStoryboardForDiff = (storyboard: Storyboard): Storyboard => {
+  if (storyboard.scenes.length > 0) {
+    return storyboard
+  }
+  const snapshot = Reflect.get(globalThis, '__conimgponic_sb_snapshot__') as Storyboard | undefined
+  if (snapshot?.scenes?.length) {
+    return snapshot
+  }
+  return storyboard
+}
+
+type DiffMergeQueueEvent =
+  | {
+      readonly type: 'queue:started'
+      readonly precision: MergePrecision
+      readonly origin: DiffMergeQueueCommandPayload['origin']
+      readonly hunkIds: readonly string[]
+      readonly hunks: readonly MergeHunk[]
+      readonly autoSaveRequested: boolean
+    }
+  | {
+      readonly type: 'queue:finished'
+      readonly precision: MergePrecision
+      readonly status: 'success' | 'error'
+      readonly origin: DiffMergeQueueCommandPayload['origin']
+      readonly hunkIds: readonly string[]
+      readonly hunks: readonly MergeHunk[]
+      readonly retryable: boolean
+    }
+
+interface DiffMergeQueueEvents {
+  readonly publish: (event: DiffMergeQueueEvent) => void
+  readonly subscribe: (listener: (event: DiffMergeQueueEvent) => void) => () => void
+}
+
+const DIFF_QUEUE_EVENTS_KEY = '__diffMergeEvents__'
+const MERGE_QUEUE_HUB_KEY = '__mergeQueueHub__'
+
+const createMergeEventHub = (): MergeEventHub => {
+  const listeners = new Set<(event: MergeDecisionEvent) => void>()
+  return {
+    publish(event) {
+      listeners.forEach((listener) => {
+        try {
+          listener(event)
+        } catch (error) {
+          console.error('MergeQueueHub listener failed', error)
+        }
+      })
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }
+}
+
+const createAutoSaveLease = (): ProjectLockLease => {
+  const now = Date.now()
+  return {
+    leaseId: `merge-${crypto.randomUUID()}`,
+    ownerId: 'merge-dock.diff',
+    strategy: 'web-lock',
+    viaFallback: false,
+    resource: 'imgponic:project',
+    acquiredAt: now,
+    expiresAt: now + 25_000,
+    ttlMillis: 25_000,
+    heartbeatIntervalMs: 10_000,
+    nextHeartbeatAt: now + 10_000,
+    renewAttempt: 0,
+  }
+}
+
+const createDiffMergeQueueEvents = (): DiffMergeQueueEvents => {
+  const listeners = new Set<(event: DiffMergeQueueEvent) => void>()
+  return {
+    publish(event) {
+      listeners.forEach((listener) => {
+        try {
+          listener(event)
+        } catch (error) {
+          console.error('DiffMergeQueueEvents listener failed', error)
+        }
+      })
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }
+}
+
+const buildDiffMergeHunks = (storyboard: Storyboard): readonly MergeHunk[] => {
+  const source = resolveStoryboardForDiff(storyboard)
+  return source.scenes.map((scene, index) => {
+    const manual = scene.manual ?? ''
+    const ai = scene.ai ?? ''
+    const locked = scene.lock === 'manual' || scene.lock === 'ai'
+    const prefer: MergeHunk['prefer'] = scene.lock === 'manual' ? 'manual' : scene.lock === 'ai' ? 'ai' : 'none'
+    const trimmedManual = manual.trim()
+    const trimmedAi = ai.trim()
+    const similarity = computeHunkSimilarity(trimmedManual, trimmedAi)
+    const decision: MergeHunk['decision'] = !locked && trimmedManual === trimmedAi ? 'auto' : 'conflict'
+    const merged =
+      decision === 'auto'
+        ? prefer === 'ai'
+          ? ai
+          : manual
+        : manual || ai
+    const section = scene.shot ?? scene.slate ?? `Cut ${index + 1}`
+    return {
+      id: scene.id,
+      section,
+      decision,
+      similarity,
+      locked,
+      merged,
+      manual,
+      ai,
+      base: manual,
+      prefer,
+    }
+  })
 }
 
 
@@ -298,6 +640,256 @@ export function MergeDock({
   }, [sb, preference])
   const compiledDisplay = compiledOverride ?? compiled
 
+  const diffHunks: readonly MergeHunk[] = phasePlan.diff.enabled ? buildDiffMergeHunks(sb) : []
+  const diffQueueEvents = useMemo(() => createDiffMergeQueueEvents(), [])
+  const diffHunkMap = useMemo(() => {
+    const map = new Map<string, MergeHunk>()
+    diffHunks.forEach((hunk) => {
+      map.set(hunk.id, hunk)
+    })
+    return map
+  }, [diffHunks])
+
+
+  const diffQueueMergeCommand = useMemo<QueueMergeCommand>(() => {
+    const mergeHub = createMergeEventHub()
+    const queuedCommands: MergeEngineQueueCommand[] = []
+    const queue: QueueMergeCommand = async (payload) => {
+      const uniqueIds = Array.from(new Set(payload.hunkIds))
+      const collectorSurface = payload.telemetryContext.collectorSurface
+      const analyzerSurface = payload.telemetryContext.analyzerSurface
+      const responseCollectorSurface = 'diff-merge.hunk-list' as const
+
+      if (!phasePlan.diff.enabled) {
+        const disabledHunks = uniqueIds
+          .map((id) => diffHunkMap.get(id))
+          .filter((hunk): hunk is MergeHunk => Boolean(hunk))
+        diffQueueEvents.publish({
+          type: 'queue:finished',
+          precision: payload.precision,
+          status: 'error',
+          origin: payload.origin,
+          hunkIds: uniqueIds,
+          hunks: disabledHunks,
+          retryable: true,
+        })
+        return {
+          status: 'error',
+          hunkIds: uniqueIds,
+          telemetry: { collectorSurface: responseCollectorSurface, analyzerSurface, retryable: true },
+        }
+      }
+
+      const knownEntries = uniqueIds
+        .map((id) => {
+          const hunk = diffHunkMap.get(id)
+          return hunk ? { id, hunk } : null
+        })
+        .filter((entry): entry is { id: string; hunk: MergeHunk } => entry !== null)
+
+      const knownIds = knownEntries.map((entry) => entry.id)
+      const knownHunks = knownEntries.map((entry) => entry.hunk)
+
+      diffQueueEvents.publish({
+        type: 'queue:started',
+        precision: payload.precision,
+        origin: payload.origin,
+        hunkIds: knownIds,
+        hunks: knownHunks,
+        autoSaveRequested: payload.metadata.autoSaveRequested,
+      })
+
+      const mergeCollector = (mergeWindow as
+        | { Day8Collector?: { publish?: (event: Record<string, unknown>) => void } }
+        | undefined
+      )?.Day8Collector
+      mergeCollector?.publish?.({
+        feature: 'merge.diff',
+        event: 'queue:start',
+        precision: payload.precision,
+        origin: payload.origin,
+        hunk_ids: knownIds,
+        phase_guard: phasePlan.phase,
+        diff_exposure: phasePlan.diff.exposure,
+        auto_save_requested: payload.metadata.autoSaveRequested,
+      })
+
+      if (knownIds.length === 0) {
+        diffQueueEvents.publish({
+          type: 'queue:finished',
+          precision: payload.precision,
+          status: 'success',
+          origin: payload.origin,
+          hunkIds: knownIds,
+          hunks: knownHunks,
+          retryable: false,
+        })
+        mergeCollector?.publish?.({
+          feature: 'merge.diff',
+          event: 'queue:finish',
+          precision: payload.precision,
+          origin: payload.origin,
+          hunk_ids: knownIds,
+          status: 'success',
+          retryable: false,
+          phase_guard: phasePlan.phase,
+          diff_exposure: phasePlan.diff.exposure,
+          auto_save_requested: payload.metadata.autoSaveRequested,
+        })
+        return {
+          status: 'success',
+          hunkIds: [],
+          telemetry: { collectorSurface: responseCollectorSurface, analyzerSurface, retryable: false },
+        }
+      }
+
+      queuedCommands.length = 0
+      const detachAutoSave = attachAutoSaveLockEvents(mergeHub)
+      const lease = createAutoSaveLease()
+      let released = false
+      const publishRelease = () => {
+        if (released) return
+        released = true
+        mergeHub.publish({ type: 'merge:autosave:lock', stage: 'released', lease })
+      }
+      mergeHub.publish({ type: 'merge:autosave:lock', stage: 'acquired', lease })
+
+      let responseStatus: 'success' | 'error' = 'success'
+      let retryable = false
+      let finishedHunks: readonly MergeHunk[] = []
+
+      try {
+        const mergeResults = knownEntries.map(({ id, hunk }) => {
+          const sceneEvents: MergeEventHub = {
+            publish(event) {
+              if (event.type === 'merge:auto-applied' || event.type === 'merge:conflict-detected') {
+                mergeHub.publish({ ...event, hunk: { ...event.hunk, id } })
+                return
+              }
+              mergeHub.publish(event)
+            },
+            subscribe(listener) {
+              return mergeHub.subscribe(listener)
+            },
+          }
+          const result = DEFAULT_MERGE_ENGINE.merge3(
+            { base: hunk.base, ours: hunk.manual, theirs: hunk.ai, sceneId: id },
+            {
+              profile: { precision: payload.precision, threshold: phasePlan.threshold.request },
+              events: sceneEvents,
+              queueMergeCommand: (command) => {
+                queuedCommands.push(command)
+              },
+            },
+          )
+          return { sceneId: id, original: hunk, result }
+        })
+        finishedHunks = mergeResults.flatMap((entry) =>
+          entry.result.hunks.map((hunk) => ({ ...hunk, id: entry.sceneId })),
+        )
+        const totalConflicts = mergeResults.reduce(
+          (count, entry) => count + entry.result.stats.conflictDecisions,
+          0,
+        )
+        retryable = totalConflicts > 0
+
+        if (mergeResults.some((entry) => entry.result.hunks.some((hunk) => hunk.decision === 'auto'))) {
+          useSB.setState((state) => {
+            let changed = false
+            const nextScenes = state.sb.scenes.map((scene) => {
+              const match = mergeResults.find((entry) => entry.sceneId === scene.id)
+              if (!match) {
+                return scene
+              }
+              const hasAutoDecision = match.result.hunks.some((hunk) => hunk.decision === 'auto')
+              if (!hasAutoDecision) {
+                return scene
+              }
+              const mergedText = match.result.mergedText
+              const manualChanged = mergedText !== scene.manual
+              const statusChanged = scene.status !== 'dirty'
+              if (!manualChanged && !statusChanged) {
+                return scene
+              }
+              changed = true
+              return {
+                ...scene,
+                ...(manualChanged ? { manual: mergedText } : {}),
+                ...(statusChanged ? { status: 'dirty' as const } : {}),
+              }
+            })
+            if (!changed) {
+              return state
+            }
+            return { sb: { ...state.sb, scenes: nextScenes } }
+          })
+        }
+      } catch (error) {
+        console.error('MergeDock: diff queue merge failed', error)
+        responseStatus = 'error'
+        retryable = true
+      } finally {
+        publishRelease()
+        detachAutoSave?.()
+      }
+
+      if (responseStatus !== 'error' && payload.metadata.autoSaveRequested && typeof autoSave.flushNow === 'function') {
+        try {
+          await Promise.resolve(autoSave.flushNow())
+        } catch (error) {
+          console.warn('MergeDock: AutoSave flush failed after merge queue', error)
+          responseStatus = 'error'
+          retryable = true
+        }
+      }
+
+      const finishedEventStatus = responseStatus === 'error' ? 'error' : 'success'
+
+      diffQueueEvents.publish({
+        type: 'queue:finished',
+        precision: payload.precision,
+        status: finishedEventStatus,
+        origin: payload.origin,
+        hunkIds: knownIds,
+        hunks: finishedHunks,
+        retryable,
+      })
+
+      mergeCollector?.publish?.({
+        feature: 'merge.diff',
+        event: 'queue:finish',
+        precision: payload.precision,
+        origin: payload.origin,
+        hunk_ids: knownIds,
+        status: responseStatus,
+        retryable,
+        phase_guard: phasePlan.phase,
+        diff_exposure: phasePlan.diff.exposure,
+        auto_save_requested: payload.metadata.autoSaveRequested,
+      })
+
+      return {
+        status: responseStatus,
+        hunkIds: knownIds,
+        telemetry: { collectorSurface: responseCollectorSurface, analyzerSurface, retryable },
+      }
+    }
+
+    Reflect.set(queue, DIFF_QUEUE_EVENTS_KEY, diffQueueEvents)
+    Reflect.set(queue, MERGE_QUEUE_HUB_KEY, mergeHub)
+    Reflect.set(queue, '__mergeQueuedCommands__', queuedCommands)
+    return queue
+  }, [
+    autoSave.flushNow,
+    diffHunkMap,
+    diffQueueEvents,
+    mergeWindow,
+    phasePlan.diff.enabled,
+    phasePlan.diff.exposure,
+    phasePlan.phase,
+    phasePlan.threshold.request,
+  ])
+
   const diffInteractionEnabled = shouldEnableDiffInteraction({
     diffPlan,
     guard: phasePlan.guard,
@@ -345,6 +937,7 @@ export function MergeDock({
   return (
     <div
       data-merge-phase={phasePlan.phase}
+      data-merge-autosave-enabled={autoSaveEnabled ? 'true' : 'false'}
       data-merge-diff-visible={diffPlan.visible ? 'true' : 'false'}
       data-merge-diff-enabled={diffPlan.enabled ? 'true' : 'false'}
       data-merge-diff-exposure={diffPlan.exposure}
@@ -376,7 +969,7 @@ export function MergeDock({
         </div>
       ) : null}
 
-      {activeTab === 'diff' && (
+      {diffPlan.visible && activeTab === 'diff' && (
         <div
           style={{ padding: 8, display: 'grid', gap: 8 }}
           data-merge-diff-visible={diffPlan.visible ? 'true' : 'false'}
@@ -403,12 +996,16 @@ export function MergeDock({
             </button>
           ) : null}
           {diffInteractionEnabled ? (
-            <DiffMergeView
+            <DiffMergeViewWithRealHunks
               precision={precision}
               hunks={emptyDiffHunks}
-              queueMergeCommand={diffMergeNoopCommand}
+              queueMergeCommand={createDiffQueueMergeCommand()}
+              threshold={threshold}
+              phaseStats={phaseStats}
+              autoSaveEnabled={autoSaveEnabled}
               autoApplied={phasePlan.autoApplied}
               disabled={!phasePlan.diff.enabled}
+              queueMergeCommand={diffMergeNoopCommand}
             />
           ) : (
             <div
@@ -535,3 +1132,60 @@ export function MergeDock({
     </div>
   )
 }
+
+interface DiffMergeViewWithRealHunksProps {
+  readonly precision: 'beta' | 'stable';
+  readonly threshold: number;
+  readonly phaseStats: MergeDockPhaseStats | null;
+  readonly autoSaveEnabled: boolean;
+  readonly autoApplied?: { readonly rate: number; readonly target: number; readonly meetsTarget: boolean | null };
+  readonly disabled?: boolean;
+  readonly queueMergeCommand: (command: any) => Promise<{ status: 'success' | 'partial' | 'error'; hunkIds: string[]; telemetry: any }>;
+}
+
+const DiffMergeViewWithRealHunks: React.FC<DiffMergeViewWithRealHunksProps> = ({
+  precision,
+  threshold,
+  phaseStats,
+  autoSaveEnabled,
+  autoApplied,
+  disabled = false,
+  queueMergeCommand,
+}) => {
+  const sb = useSB((state) => state.sb);
+  const [hunks, setHunks] = useState<readonly MergeHunk[]>([]);
+  
+  // Generate merge input from storyboard scenes
+  useEffect(() => {
+    if ((precision === 'beta' || precision === 'stable') && autoSaveEnabled) {
+      // Create a simple merge input from the storyboard
+      // In a real implementation, this would come from actual diff sources
+      const input = {
+        base: sb.scenes.map(s => s.manual || s.ai || '').join('\n\n'),
+        ours: sb.scenes.map(s => s.manual || '').join('\n\n'),
+        theirs: sb.scenes.map(s => s.ai || '').join('\n\n'),
+        sceneId: sb.id || 'default-storyboard'
+      };
+
+      // Get the hunks and stats from the merge engine
+      const result = getDiffHunksFromEngine(
+        { precision, threshold, phaseStats, autoSaveEnabled },
+        input
+      );
+      
+      setHunks(result.hunks);
+    } else {
+      setHunks([]);
+    }
+  }, [sb, precision, threshold, phaseStats, autoSaveEnabled]);
+
+  return (
+    <DiffMergeView
+      precision={precision}
+      hunks={hunks}
+      queueMergeCommand={queueMergeCommand}
+      autoApplied={autoApplied}
+      disabled={disabled}
+    />
+  );
+};

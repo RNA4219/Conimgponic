@@ -1,12 +1,12 @@
 {
   "deps_in": [
-    "docs/UPSTREAM.md"
+    "Day8/docs/UPSTREAM.md"
   ],
   "deps_out": [
-    "docs/FORK_NOTES.md"
+    "Day8/docs/FORK_NOTES.md"
   ],
   "generated_at": "00006",
-  "id": "docs/UPSTREAM_WEEKLY_LOG.md",
+  "id": "Day8/docs/UPSTREAM_WEEKLY_LOG.md",
   "maintenance": {
     "refresh": "週次レビュー後に最新週の行を追記し、未完了の追加アクションが残っていないか確認する。",
     "tooling": [
