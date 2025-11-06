@@ -5,7 +5,7 @@ import test from 'node:test'
 const IMPLEMENTATION_PLAN_PATH = new URL('../../docs/IMPLEMENTATION-PLAN.md', import.meta.url)
 
 const CHECKLIST_PATTERN =
-  /- \[x\] `Collector` へのテレメトリ送信がフラグ ON\/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 \((?<date>\d{4}-\d{2}-\d{2}), \[検証ログ: tests\/telemetry\/vscode\.contract\.test\.ts\]\(\.\.\/tests\/telemetry\/vscode\.contract\.test\.ts\)\)/
+  /- \[x\] `Collector` へのテレメトリ送信がフラグ ON\/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 \((?<date>\d{4}-\d{2}-\d{2}), \[検証ログ: tests\/platform\/vscode\/autosave\/autosave\.responsibility\.test\.ts\]\(\.\.\/tests\/platform\/vscode\/autosave\/autosave\.responsibility\.test\.ts\)\)/
 
 test('Collector テレメトリ統合の進捗が記録されている', () => {
   const content = readFileSync(IMPLEMENTATION_PLAN_PATH, 'utf-8')
