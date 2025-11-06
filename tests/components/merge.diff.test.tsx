@@ -29,6 +29,7 @@ const mergeDockModule = await import('../../src/components/MergeDock')
 const mergeDomainModule = await import('../../src/components/merge-dock/domain')
 const mergePreferencesModule = await import('../../src/lib/merge/preferences.ts')
 const mergeThresholdModule = await import('../../src/lib/merge/threshold.ts')
+const mergeIndexModule = await import('../../src/lib/merge/index.ts')
 const {
   resolveMergeDockPhasePlan,
   planMergeDockTabs,
@@ -772,26 +773,30 @@ test('stable diff guard exposes diff merge hunks and queue command once enabled'
   }
 })
 
-const renderDiffMergeDock = async ({
-  precision,
-  phaseStats = null,
-  autoAppliedRate,
-  lastTab,
-}: {
+interface RenderDiffMergeDockOptions {
   readonly precision: MergePrecision
   readonly phaseStats?: MergeDockPhaseStats | null
   readonly autoAppliedRate?: number
   readonly lastTab?: MergeDockTabId
-}): Promise<{
+  readonly autoSaveEnabled?: boolean
+  readonly requireDiff?: boolean
+}
+
 interface RenderStableMergeDockOptions {
   readonly autoSaveEnabled?: boolean
   readonly requireDiff?: boolean
 }
 
-const renderStableDiffMergeDock = async ({
+const DEFAULT_PHASE_STATS: MergeDockPhaseStats = { reviewBandCount: 2, conflictBandCount: 0 }
+
+const renderDiffMergeDock = async ({
+  precision,
+  phaseStats,
+  autoAppliedRate,
+  lastTab,
   autoSaveEnabled = true,
-  requireDiff = autoSaveEnabled,
-}: RenderStableMergeDockOptions = {}): Promise<{
+  requireDiff = precision !== 'legacy',
+}: RenderDiffMergeDockOptions): Promise<{
   readonly markup: string
   readonly hunks: readonly MergeHunk[]
   readonly queue: QueueMergeCommand
@@ -886,13 +891,12 @@ const renderStableDiffMergeDock = async ({
     merge: { value: precision, source: 'workspace', errors: [], precision, threshold: Number.NaN },
   }
 
+  const resolvedPhaseStats = phaseStats === undefined ? DEFAULT_PHASE_STATS : phaseStats
   const markup = renderToStaticMarkup(
     React.createElement(MergeDock, {
       flags: stableFlags,
-      phaseStats,
+      phaseStats: resolvedPhaseStats === null ? null : resolvedPhaseStats,
       autoAppliedRate,
-      autoSaveEnabled: true,
-      phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
       autoSaveEnabled,
     }),
   )
@@ -926,12 +930,127 @@ const renderStableDiffMergeDock = async ({
   }
 }
 
-test('stable diff queue command publishes events and telemetry when guard unlocked', async () => {
-  const harness = await renderDiffMergeDock({
+const renderStableDiffMergeDock = async ({
+  autoSaveEnabled = true,
+  requireDiff = autoSaveEnabled,
+}: RenderStableMergeDockOptions = {}) =>
+  renderDiffMergeDock({
     precision: 'stable',
-    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
-    autoAppliedRate: 0.92,
+    phaseStats: DEFAULT_PHASE_STATS,
+    autoAppliedRate: autoSaveEnabled ? 0.92 : undefined,
+    autoSaveEnabled,
+    requireDiff,
   })
+
+test('diff merge hydrates merge3 hunks across autosave and precision matrix', async () => {
+  const { DEFAULT_MERGE_ENGINE } = mergeIndexModule as typeof mergeIndexModule
+  const combinations = [
+    { precision: 'legacy', autoSaveEnabled: false, expectMerge: false },
+    { precision: 'legacy', autoSaveEnabled: true, expectMerge: false },
+    { precision: 'beta', autoSaveEnabled: false, expectMerge: true },
+    { precision: 'beta', autoSaveEnabled: true, expectMerge: true },
+    { precision: 'stable', autoSaveEnabled: false, expectMerge: false },
+    { precision: 'stable', autoSaveEnabled: true, expectMerge: true },
+  ] as const
+
+  const originalMerge3 = DEFAULT_MERGE_ENGINE.merge3
+
+  try {
+    for (const combo of combinations) {
+      const phaseStats =
+        combo.precision === 'beta' || combo.precision === 'stable'
+          ? { reviewBandCount: 2, conflictBandCount: 0 }
+          : null
+      const expectedPlan = resolveMergeDockPhasePlan({
+        precision: combo.precision,
+        threshold: null,
+        phaseStats,
+        autoSaveEnabled: combo.autoSaveEnabled,
+      })
+
+      const calls: {
+        readonly input: Record<string, unknown>
+        readonly options?: { readonly profile?: { readonly precision?: string; readonly threshold?: number } }
+      }[] = []
+
+      const stubHunk: MergeHunk = {
+        id: `merge3-${combo.precision}-${combo.autoSaveEnabled ? 'autosave-on' : 'autosave-off'}`,
+        section: `${combo.precision}-section`,
+        decision: 'conflict',
+        similarity: 0.5,
+        locked: false,
+        merged: 'merged stub',
+        manual: 'manual stub',
+        ai: 'ai stub',
+        base: 'base stub',
+        prefer: 'none',
+      }
+
+      DEFAULT_MERGE_ENGINE.merge3 = ((input, options) => {
+        calls.push({ input: input as Record<string, unknown>, options: options as { profile?: { precision?: string; threshold?: number } } })
+        const profileThreshold =
+          (options as { profile?: { threshold?: number } } | undefined)?.profile?.threshold ?? expectedPlan.threshold.request
+        return {
+          hunks: [stubHunk],
+          mergedText: 'merged stub text',
+          stats: {
+            autoDecisions: 0,
+            conflictDecisions: 1,
+            averageSimilarity: stubHunk.similarity,
+            processingMillis: 0,
+            lockedDecisions: 0,
+            aiDecisions: 0,
+          },
+          trace: {
+            sceneId: 'sb-diff-guard-enabled',
+            entries: [],
+            decisions: [
+              {
+                hunkId: stubHunk.id,
+                section: stubHunk.section,
+                decision: stubHunk.decision,
+                similarity: stubHunk.similarity,
+                threshold: profileThreshold,
+              },
+            ],
+            summary: { threshold: profileThreshold, autoAdoptionRate: 0 },
+          },
+        }
+      }) as typeof originalMerge3
+
+      const harness = await renderDiffMergeDock({
+        precision: combo.precision,
+        phaseStats,
+        autoSaveEnabled: combo.autoSaveEnabled,
+        lastTab: combo.expectMerge ? 'diff' : undefined,
+        requireDiff: combo.expectMerge,
+      })
+
+      try {
+        if (combo.expectMerge) {
+          assert.equal(calls.length, 1)
+          const call = calls[0]
+          const sections = (call.input as { sections?: readonly string[] }).sections ?? []
+          assert.deepEqual(sections, ['cut-1'])
+          const profile = call.options?.profile ?? {}
+          assert.equal(profile.precision, combo.precision)
+          assert.equal(profile.threshold, expectedPlan.threshold.request)
+          assert.deepEqual(harness.hunks, [stubHunk])
+        } else {
+          assert.equal(calls.length, 0)
+          assert.deepEqual(harness.hunks, [])
+        }
+      } finally {
+        harness.cleanup()
+      }
+      DEFAULT_MERGE_ENGINE.merge3 = originalMerge3
+    }
+  } finally {
+    DEFAULT_MERGE_ENGINE.merge3 = originalMerge3
+  }
+})
+
+test('stable diff queue command publishes events and telemetry when guard unlocked', async () => {
   const harness = await renderStableDiffMergeDock({ autoSaveEnabled: true })
   const queueEvents = Reflect.get(harness.queue, '__diffMergeEvents__') as
     | {

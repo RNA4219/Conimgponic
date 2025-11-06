@@ -5,6 +5,7 @@ import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
 import type { Storyboard } from '../types'
+import { DEFAULT_MERGE_ENGINE } from '../lib/merge'
 import { isBaseTabId } from '../lib/merge/phasePlan'
 import {
   getDefaultPreference,
@@ -85,33 +86,6 @@ export const resolveMergeDockImportKind = (fileName: string): MergeDockImportKin
 }
 
 
-const tokenizeForSimilarity = (text: string): readonly string[] =>
-  text
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0)
-
-const computeHunkSimilarity = (manual: string, ai: string): number => {
-  const left = tokenizeForSimilarity(manual)
-  const right = tokenizeForSimilarity(ai)
-  if (left.length === 0 && right.length === 0) {
-    return 1
-  }
-  if (left.length === 0 || right.length === 0) {
-    return 0
-  }
-  const leftSet = new Set(left)
-  const rightSet = new Set(right)
-  let intersection = 0
-  leftSet.forEach((token) => {
-    if (rightSet.has(token)) {
-      intersection += 1
-    }
-  })
-  const union = new Set([...leftSet, ...rightSet]).size
-  return union === 0 ? 0 : intersection / union
-}
-
 const resolveStoryboardForDiff = (storyboard: Storyboard): Storyboard => {
   if (storyboard.scenes.length > 0) {
     return storyboard
@@ -169,40 +143,6 @@ const createDiffMergeQueueEvents = (): DiffMergeQueueEvents => {
     },
   }
 }
-
-const buildDiffMergeHunks = (storyboard: Storyboard): readonly MergeHunk[] => {
-  const source = resolveStoryboardForDiff(storyboard)
-  return source.scenes.map((scene, index) => {
-    const manual = scene.manual ?? ''
-    const ai = scene.ai ?? ''
-    const locked = scene.lock === 'manual' || scene.lock === 'ai'
-    const prefer: MergeHunk['prefer'] = scene.lock === 'manual' ? 'manual' : scene.lock === 'ai' ? 'ai' : 'none'
-    const trimmedManual = manual.trim()
-    const trimmedAi = ai.trim()
-    const similarity = computeHunkSimilarity(trimmedManual, trimmedAi)
-    const decision: MergeHunk['decision'] = !locked && trimmedManual === trimmedAi ? 'auto' : 'conflict'
-    const merged =
-      decision === 'auto'
-        ? prefer === 'ai'
-          ? ai
-          : manual
-        : manual || ai
-    const section = scene.shot ?? scene.slate ?? `Cut ${index + 1}`
-    return {
-      id: scene.id,
-      section,
-      decision,
-      similarity,
-      locked,
-      merged,
-      manual,
-      ai,
-      base: manual,
-      prefer,
-    }
-  })
-}
-
 
 function Checks(): JSX.Element {
   const warnings = useSB((state) => computeStoryboardWarnings(state.sb))
@@ -417,8 +357,63 @@ export function MergeDock({
     return lines.join('\n\n')
   }, [sb, preference])
   const compiledDisplay = compiledOverride ?? compiled
+  const diffResult = useMemo(() => {
+    if (!phasePlan.diff.visible) {
+      return null
+    }
+    const source = resolveStoryboardForDiff(sb)
+    if (source.scenes.length === 0) {
+      return null
+    }
+    const manualSegments: string[] = []
+    const aiSegments: string[] = []
+    const sectionIds: string[] = []
+    const labels: string[] = []
+    const locks = new Map<string, MergeHunk['prefer']>()
 
-  const diffHunks: readonly MergeHunk[] = phasePlan.diff.enabled ? buildDiffMergeHunks(sb) : []
+    for (let index = 0; index < source.scenes.length; index += 1) {
+      const scene = source.scenes[index]!
+      const sectionId = scene.id ?? `cut-${index + 1}`
+      sectionIds.push(sectionId)
+      labels.push(scene.shot ?? scene.slate ?? `Cut ${index + 1}`)
+      manualSegments.push(scene.manual ?? '')
+      aiSegments.push(scene.ai ?? '')
+      if (scene.lock === 'manual' || scene.lock === 'ai') {
+        locks.set(sectionId, scene.lock)
+      }
+    }
+
+    const manualText = manualSegments.join('\n\n')
+    const preferOverride: MergeHunk['prefer'] =
+      preference === 'manual-first' ? 'manual' : preference === 'ai-first' ? 'ai' : 'none'
+
+    const mergeResult = DEFAULT_MERGE_ENGINE.merge3(
+      {
+        base: manualText,
+        ours: manualText,
+        theirs: aiSegments.join('\n\n'),
+        sections: sectionIds,
+        locks: locks.size > 0 ? locks : undefined,
+        sceneId: source.id ?? 'storyboard',
+      },
+      { profile: { precision, threshold: phasePlan.threshold.request, prefer: preferOverride } },
+    )
+
+    const labelMap = new Map<string, string>()
+    sectionIds.forEach((id, index) => {
+      labelMap.set(id, labels[index] ?? id)
+    })
+
+    return {
+      ...mergeResult,
+      hunks: mergeResult.hunks.map((hunk) => ({
+        ...hunk,
+        section: labelMap.get(hunk.id) ?? hunk.section,
+      })),
+    }
+  }, [phasePlan.diff.visible, phasePlan.threshold.request, preference, precision, sb])
+
+  const diffHunks: readonly MergeHunk[] = diffResult?.hunks ?? []
   const diffQueueEvents = useMemo(() => createDiffMergeQueueEvents(), [])
   const diffHunkMap = useMemo(() => {
     const map = new Map<string, MergeHunk>()
