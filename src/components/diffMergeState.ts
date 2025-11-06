@@ -165,7 +165,22 @@ export const diffMergeReducer = (state: DiffMergeState, action: DiffMergeAction)
     const ids = retainKnownHunkIds(action.hunkIds, knownIds)
     if (!ids.length) return state
     const updates: Record<string, DiffMergeHunkStatus> = {}
-    const status: DiffMergeHunkStatus = action.result === 'success' ? 'Merged' : action.result === 'conflict' ? 'Conflict' : 'Selected'
+    let status: DiffMergeHunkStatus
+    switch (action.result) {
+      case 'success':
+        status = 'Merged'
+        break
+      case 'conflict':
+        status = 'Conflict'
+        break
+      case 'partial':
+        status = 'Selected' // For partial results, keep them selected for further review
+        break
+      case 'error':
+      default:
+        status = 'Selected'
+        break
+    }
     for (const id of ids) updates[id] = status
     const targeted = new Set(ids)
     const editingHunkId = resolveEditingHunkIdAfterTargeting(state, targeted)
