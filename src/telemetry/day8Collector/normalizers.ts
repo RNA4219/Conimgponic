@@ -5,7 +5,7 @@ import { type RolloutPhase, type SnapshotResultDetailBase, type SnapshotResultFa
 type FlagPhaseToContractPhase = { readonly [Phase in FlagRolloutPhase]: RolloutPhase }
 
 export const FLAG_PHASE_TO_CONTRACT_PHASE = {
-  'phase-a0': 'A-0', 'phase-a1': 'A-1', 'phase-a2': 'A-2', 'phase-b0': 'B-0', 'phase-b1': 'B-1'
+  'phase-a0': 'A-0', 'phase-a1': 'A-1', 'phase-a2': 'A-2', 'phase-b0': 'B-0', 'phase-b1': 'B-1', 'phase-c0': 'C-0'
 } as const satisfies FlagPhaseToContractPhase
 
 export const MERGE_PRECISION_TO_CONTRACT_PHASE: Record<MergePrecision, RolloutPhase> = {

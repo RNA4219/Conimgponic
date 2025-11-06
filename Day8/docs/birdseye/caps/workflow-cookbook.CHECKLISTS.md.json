@@ -8,22 +8,22 @@
     "out::workflow-cookbook/TASK.codex.md"
   ],
   "deps_in": [
-    "docs/ROADMAP_AND_SPECS.md",
-    "docs/Release_Checklist.md",
-    "docs/addenda/M_Versioning_Release.md",
-    "docs/day8/spec/02_spec.md",
-    "workflow-cookbook/EVALUATION.md",
-    "workflow-cookbook/GUARDRAILS.md",
-    "workflow-cookbook/HUB.codex.md",
-    "workflow-cookbook/RUNBOOK.md",
-    "workflow-cookbook/SAFETY.md",
-    "workflow-cookbook/SECURITY.md"
+    "Day8/docs/ROADMAP_AND_SPECS.md",
+    "Day8/docs/Release_Checklist.md",
+    "Day8/docs/addenda/M_Versioning_Release.md",
+    "Day8/docs/day8/spec/02_spec.md",
+    "Day8/workflow-cookbook/EVALUATION.md",
+    "Day8/workflow-cookbook/GUARDRAILS.md",
+    "Day8/workflow-cookbook/HUB.codex.md",
+    "Day8/workflow-cookbook/RUNBOOK.md",
+    "Day8/workflow-cookbook/SAFETY.md",
+    "Day8/workflow-cookbook/SECURITY.md"
   ],
   "deps_out": [
-    "workflow-cookbook/TASK.codex.md"
+    "Day8/workflow-cookbook/TASK.codex.md"
   ],
   "generated_at": "00006",
-  "id": "workflow-cookbook/CHECKLISTS.md",
+  "id": "Day8/workflow-cookbook/CHECKLISTS.md",
   "maintenance": {
     "refresh": "チェック項目変更時は Runbook / Task Seed と Katamari docs/Release_Checklist.md を同期。",
     "tooling": [

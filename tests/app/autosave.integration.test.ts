@@ -5,7 +5,8 @@ import {
   DEFAULT_FLAG_SNAPSHOT,
   FLAG_MIGRATION_PLAN,
   resolveAutoSaveBootstrapPlan,
-  type AutoSaveBootstrapPlan
+  type AutoSaveBootstrapPlan,
+  type ResolveOptions
 } from '../../src/config'
 import { AUTOSAVE_POLICY } from '../../src/lib/autosave'
 import { planAutoSave } from '../../src/App'
@@ -50,4 +51,24 @@ test('resolveAutoSaveBootstrapPlan carries phase-a0 fail-safe metadata', () => {
   const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
 
   assert.equal(plan.failSafePhase, phaseA0?.phase ?? null)
+})
+
+test('planAutoSave returns feature-flag-disabled reason when flag is disabled via env', () => {
+  const env = { VITE_AUTOSAVE_ENABLED: 'false' }
+  const options: ResolveOptions = { env }
+  const plan = resolveAutoSaveBootstrapPlan(options)
+  const decision = planAutoSave(plan)
+
+  assert.equal(decision.mode, 'manual-only')
+  assert.equal(decision.reason, 'feature-flag-disabled')
+})
+
+test('planAutoSave returns feature-flag-disabled reason when flag is disabled via workspace', () => {
+  const workspace = { get: (key: string) => key === 'conimg.autosave.enabled' ? false : undefined }
+  const options: ResolveOptions = { workspace }
+  const plan = resolveAutoSaveBootstrapPlan(options)
+  const decision = planAutoSave(plan)
+
+  assert.equal(decision.mode, 'manual-only')
+  assert.equal(decision.reason, 'feature-flag-disabled')
 })

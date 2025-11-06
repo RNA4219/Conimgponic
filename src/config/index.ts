@@ -1,5 +1,5 @@
-import { resolveAutoSavePolicy } from '../lib/autosave.js'
-import type { AutoSavePhaseGuardSnapshot, AutoSavePolicy } from '../lib/autosave.js'
+import { resolveAutoSavePolicy, type AutoSavePolicy } from '../lib/autosave.js'
+import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
 
 import {
   publishFlagResolution,
@@ -239,7 +239,37 @@ export function resolveAutoSaveBootstrapPlan(
     evaluationMs,
     envelopeOverrides
   )
-  const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
+  
+  // Determine the current phase based on snapshot.autosave.source and Migration Plan
+  let currentPhase: FlagRolloutPhase | null = null
+  
+  // Check if feature flag is disabled, and if so, determine the appropriate phase for failSafe
+  if (!snapshot.autosave.enabled) {
+    // If the flag source is env or workspace, we're past phase-a0
+    if (snapshot.autosave.source === 'env' || snapshot.autosave.source === 'workspace') {
+      const phaseB0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-b0')
+      currentPhase = phaseB0?.phase ?? null
+    } 
+    // If the flag source is localStorage or default, we could be in earlier phases
+    else if (snapshot.autosave.source === 'localStorage') {
+      const phaseA1 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a1')
+      currentPhase = phaseA1?.phase ?? 'phase-a0'
+    } 
+    else {
+      // Default source means we're at the earliest phase
+      const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
+      currentPhase = phaseA0?.phase ?? null
+    }
+  } else {
+    // If feature flag is enabled, we are beyond phase-a0
+    const phaseA1 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a1')
+    currentPhase = phaseA1?.phase ?? null
+  }
+
+  // If options are disabled, return null or the appropriate phase
+  if (config?.optionsDisabled) {
+    currentPhase = null
+  }
 
   const workspaceInput: WorkspaceConfiguration | null | undefined = options?.workspace
   // Phase A: `resolveAutoSavePolicy` は入力に関わらず固定値を返す（docs/AUTOSAVE-DESIGN-IMPL.md §1.1）。
@@ -254,7 +284,7 @@ export function resolveAutoSaveBootstrapPlan(
       },
       optionsDisabled: config?.optionsDisabled ?? false
     },
-    failSafePhase: phaseA0?.phase ?? null,
+    failSafePhase: currentPhase,
     policy: workspacePolicy,
     errors: planErrors
   }

@@ -10,18 +10,18 @@
     "out::workflow-cookbook/TASK.codex.md"
   ],
   "deps_in": [
-    "README.md"
+    "Day8/README.md"
   ],
   "deps_out": [
-    "workflow-cookbook/BLUEPRINT.md",
-    "workflow-cookbook/CHECKLISTS.md",
-    "workflow-cookbook/EVALUATION.md",
-    "workflow-cookbook/GUARDRAILS.md",
-    "workflow-cookbook/RUNBOOK.md",
-    "workflow-cookbook/TASK.codex.md"
+    "Day8/workflow-cookbook/BLUEPRINT.md",
+    "Day8/workflow-cookbook/CHECKLISTS.md",
+    "Day8/workflow-cookbook/EVALUATION.md",
+    "Day8/workflow-cookbook/GUARDRAILS.md",
+    "Day8/workflow-cookbook/RUNBOOK.md",
+    "Day8/workflow-cookbook/TASK.codex.md"
   ],
   "generated_at": "00006",
-  "id": "workflow-cookbook/HUB.codex.md",
+  "id": "Day8/workflow-cookbook/HUB.codex.md",
   "maintenance": {
     "refresh": "入力分類や優先度ルールが変わったら対応資料の該当節を揃える。",
     "tooling": [

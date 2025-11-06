@@ -6,11 +6,11 @@
     "out::workflow-cookbook/docs/birdseye/index.json"
   ],
   "deps_in": [
-    "workflow-cookbook/RUNBOOK.md"
+    "Day8/workflow-cookbook/RUNBOOK.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "workflow-cookbook/tools/codemap/README.md",
+  "id": "Day8/workflow-cookbook/tools/codemap/README.md",
   "maintenance": {
     "refresh": "codemap.update のCLIオプションに変更が入ったら使用例とBirdseye参照先を更新。",
     "tooling": [

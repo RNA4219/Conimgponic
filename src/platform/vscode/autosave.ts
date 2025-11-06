@@ -1,17 +1,16 @@
-import { publishGuardCollectorEvent } from '../../lib/autosave'
+import { publishGuardCollectorEvent, type AutoSavePolicy } from '../../lib/autosave'
 import type {
   AutoSaveBridgeMessage,
   AutoSavePhaseGuardSnapshot,
   AutoSaveSnapshotRequestMessage,
   AutoSaveSnapshotResultPayload,
-  AutoSaveStatusState,
-  AutoSavePolicy
+  AutoSaveStatusState
 } from '../../lib/autosave'
+import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
 import {
-  resolveAutoSaveBootstrapPlan,
-  type FlagSnapshot,
-  type WorkspaceConfiguration
-} from '../../config/index.js'
+  createAutoSaveBootstrapPayload,
+  resolveWorkspaceBootstrapPayload
+} from './flags.js'
 import {
   createDisabledError,
   normalizeAtomicWriteError
@@ -80,7 +79,7 @@ export { statusPhaseForState } from './autosave/state.js'
  */
 export interface AutoSaveHostBridgeOptions {
   readonly policy: AutoSavePolicy
-  readonly initialGuard: AutoSavePhaseGuardSnapshot
+  readonly initialGuard?: AutoSavePhaseGuardSnapshot
   readonly flags?: FlagSnapshot
   readonly workspace?: WorkspaceConfiguration | null
   readonly now: () => Date
@@ -131,20 +130,18 @@ const publishGuardBlockedCollectorEvent = (
   publishGuardCollectorEvent(guard, resolveGuardBlockedReason(guard))
 }
 
-export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): AutoSaveHostBridge => {
-  let bootstrapGuard = options.initialGuard
-  let bootstrapFlags: FlagSnapshot
-
-  if (options.flags) {
-    bootstrapFlags = options.flags
-  } else {
-    const plan = resolveAutoSaveBootstrapPlan(
-      { workspace: options.workspace ?? null, clock: options.now },
-      { optionsDisabled: options.initialGuard.optionsDisabled }
-    )
-    bootstrapFlags = plan.snapshot
-  }
-
+export const createVscodeAutoSaveBridge = (
+  options: AutoSaveHostBridgeOptions
+): AutoSaveHostBridge => {
+  const workspace = options.workspace ?? null
+  const resolvedPayload = options.flags
+    ? createAutoSaveBootstrapPayload(options.flags)
+    : resolveWorkspaceBootstrapPayload({ workspace, clock: options.now })
+  const bootstrapGuard = options.initialGuard ?? resolvedPayload.guard
+  const bootstrapPayload = createAutoSaveBootstrapPayload(
+    resolvedPayload.flags,
+    bootstrapGuard
+  )
   const state: InternalState = createInitialState(bootstrapGuard)
   const bootstrapReqId = nextReqId(state)
   const bootstrapCorrelationId = nextCorrelationId(state)
@@ -155,8 +152,8 @@ export const createVscodeAutoSaveBridge = (options: AutoSaveHostBridgeOptions): 
       bootstrapCorrelationId,
       bootstrapTs,
       options.policy,
-      bootstrapGuard,
-      bootstrapFlags
+      bootstrapPayload.guard,
+      bootstrapPayload.flags
     )
   )
 
