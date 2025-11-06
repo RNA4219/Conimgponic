@@ -16,6 +16,15 @@ import {
 } from '../lib/merge/mergeDockPreference'
 import { useMergeThreshold } from '../lib/merge/threshold'
 import {
+  DEFAULT_MERGE_ENGINE,
+  attachAutoSaveLockEvents,
+  type MergeEventHub,
+  type MergeDecisionEvent,
+  type MergeQueueCommand as MergeEngineQueueCommand,
+  type MergeResult,
+} from '../lib/merge'
+import type { ProjectLockLease } from '../lib/locks'
+import {
   computeStoryboardWarnings,
   diffBackupPolicy,
   mergeMarkdownStoryboard,
@@ -148,6 +157,45 @@ interface DiffMergeQueueEvents {
 }
 
 const DIFF_QUEUE_EVENTS_KEY = '__diffMergeEvents__'
+const MERGE_QUEUE_HUB_KEY = '__mergeQueueHub__'
+
+const createMergeEventHub = (): MergeEventHub => {
+  const listeners = new Set<(event: MergeDecisionEvent) => void>()
+  return {
+    publish(event) {
+      listeners.forEach((listener) => {
+        try {
+          listener(event)
+        } catch (error) {
+          console.error('MergeQueueHub listener failed', error)
+        }
+      })
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }
+}
+
+const createAutoSaveLease = (): ProjectLockLease => {
+  const now = Date.now()
+  return {
+    leaseId: `merge-${crypto.randomUUID()}`,
+    ownerId: 'merge-dock.diff',
+    strategy: 'web-lock',
+    viaFallback: false,
+    resource: 'imgponic:project',
+    acquiredAt: now,
+    expiresAt: now + 25_000,
+    ttlMillis: 25_000,
+    heartbeatIntervalMs: 10_000,
+    nextHeartbeatAt: now + 10_000,
+    renewAttempt: 0,
+  }
+}
 
 const createDiffMergeQueueEvents = (): DiffMergeQueueEvents => {
   const listeners = new Set<(event: DiffMergeQueueEvent) => void>()
@@ -428,31 +476,45 @@ export function MergeDock({
     return map
   }, [diffHunks])
 
+
   const diffQueueMergeCommand = useMemo<QueueMergeCommand>(() => {
+    const mergeHub = createMergeEventHub()
+    const queuedCommands: MergeEngineQueueCommand[] = []
     const queue: QueueMergeCommand = async (payload) => {
       const uniqueIds = Array.from(new Set(payload.hunkIds))
       const collectorSurface = payload.telemetryContext.collectorSurface
       const analyzerSurface = payload.telemetryContext.analyzerSurface
+      const responseCollectorSurface = 'diff-merge.hunk-list' as const
 
       if (!phasePlan.diff.enabled) {
+        const disabledHunks = uniqueIds
+          .map((id) => diffHunkMap.get(id))
+          .filter((hunk): hunk is MergeHunk => Boolean(hunk))
         diffQueueEvents.publish({
           type: 'queue:finished',
           precision: payload.precision,
           status: 'error',
           origin: payload.origin,
           hunkIds: uniqueIds,
-          hunks: uniqueIds.map((id) => diffHunkMap.get(id)).filter((hunk): hunk is MergeHunk => Boolean(hunk)),
+          hunks: disabledHunks,
           retryable: true,
         })
         return {
           status: 'error',
           hunkIds: uniqueIds,
-          telemetry: { collectorSurface, analyzerSurface, retryable: true },
+          telemetry: { collectorSurface: responseCollectorSurface, analyzerSurface, retryable: true },
         }
       }
 
-      const knownIds = uniqueIds.filter((id) => diffHunkMap.has(id))
-      const knownHunks = knownIds.map((id) => diffHunkMap.get(id)!)
+      const knownEntries = uniqueIds
+        .map((id) => {
+          const hunk = diffHunkMap.get(id)
+          return hunk ? { id, hunk } : null
+        })
+        .filter((entry): entry is { id: string; hunk: MergeHunk } => entry !== null)
+
+      const knownIds = knownEntries.map((entry) => entry.id)
+      const knownHunks = knownEntries.map((entry) => entry.hunk)
 
       diffQueueEvents.publish({
         type: 'queue:started',
@@ -463,9 +525,10 @@ export function MergeDock({
         autoSaveRequested: payload.metadata.autoSaveRequested,
       })
 
-      const mergeCollector = mergeWindow?.Day8Collector as
-        | { publish?: (event: Record<string, unknown>) => void }
+      const mergeCollector = (mergeWindow as
+        | { Day8Collector?: { publish?: (event: Record<string, unknown>) => void } }
         | undefined
+      )?.Day8Collector
       mergeCollector?.publish?.({
         feature: 'merge.diff',
         event: 'queue:start',
@@ -502,73 +565,145 @@ export function MergeDock({
         return {
           status: 'success',
           hunkIds: [],
-          telemetry: { collectorSurface, analyzerSurface, retryable: false },
+          telemetry: { collectorSurface: responseCollectorSurface, analyzerSurface, retryable: false },
         }
       }
 
-      if (payload.metadata.autoSaveRequested && typeof autoSave.flushNow === 'function') {
+      queuedCommands.length = 0
+      const detachAutoSave = attachAutoSaveLockEvents(mergeHub)
+      const lease = createAutoSaveLease()
+      let released = false
+      const publishRelease = () => {
+        if (released) return
+        released = true
+        mergeHub.publish({ type: 'merge:autosave:lock', stage: 'released', lease })
+      }
+      mergeHub.publish({ type: 'merge:autosave:lock', stage: 'acquired', lease })
+
+      let responseStatus: 'success' | 'error' = 'success'
+      let retryable = false
+      let finishedHunks: readonly MergeHunk[] = []
+
+      try {
+        const mergeResults = knownEntries.map(({ id, hunk }) => {
+          const sceneEvents: MergeEventHub = {
+            publish(event) {
+              if (event.type === 'merge:auto-applied' || event.type === 'merge:conflict-detected') {
+                mergeHub.publish({ ...event, hunk: { ...event.hunk, id } })
+                return
+              }
+              mergeHub.publish(event)
+            },
+            subscribe(listener) {
+              return mergeHub.subscribe(listener)
+            },
+          }
+          const result = DEFAULT_MERGE_ENGINE.merge3(
+            { base: hunk.base, ours: hunk.manual, theirs: hunk.ai, sceneId: id },
+            {
+              profile: { precision: payload.precision, threshold: phasePlan.threshold.request },
+              events: sceneEvents,
+              queueMergeCommand: (command) => {
+                queuedCommands.push(command)
+              },
+            },
+          )
+          return { sceneId: id, original: hunk, result }
+        })
+        finishedHunks = mergeResults.flatMap((entry) =>
+          entry.result.hunks.map((hunk) => ({ ...hunk, id: entry.sceneId })),
+        )
+        const totalConflicts = mergeResults.reduce(
+          (count, entry) => count + entry.result.stats.conflictDecisions,
+          0,
+        )
+        retryable = totalConflicts > 0
+
+        if (mergeResults.some((entry) => entry.result.hunks.some((hunk) => hunk.decision === 'auto'))) {
+          useSB.setState((state) => {
+            let changed = false
+            const nextScenes = state.sb.scenes.map((scene) => {
+              const match = mergeResults.find((entry) => entry.sceneId === scene.id)
+              if (!match) {
+                return scene
+              }
+              const hasAutoDecision = match.result.hunks.some((hunk) => hunk.decision === 'auto')
+              if (!hasAutoDecision) {
+                return scene
+              }
+              const mergedText = match.result.mergedText
+              const manualChanged = mergedText !== scene.manual
+              const statusChanged = scene.status !== 'dirty'
+              if (!manualChanged && !statusChanged) {
+                return scene
+              }
+              changed = true
+              return {
+                ...scene,
+                ...(manualChanged ? { manual: mergedText } : {}),
+                ...(statusChanged ? { status: 'dirty' as const } : {}),
+              }
+            })
+            if (!changed) {
+              return state
+            }
+            return { sb: { ...state.sb, scenes: nextScenes } }
+          })
+        }
+      } catch (error) {
+        console.error('MergeDock: diff queue merge failed', error)
+        responseStatus = 'error'
+        retryable = true
+      } finally {
+        publishRelease()
+        detachAutoSave?.()
+      }
+
+      if (responseStatus !== 'error' && payload.metadata.autoSaveRequested && typeof autoSave.flushNow === 'function') {
         try {
           await Promise.resolve(autoSave.flushNow())
         } catch (error) {
-          console.warn('MergeDock: AutoSave flush failed after queueMergeCommand', error)
-          diffQueueEvents.publish({
-            type: 'queue:finished',
-            precision: payload.precision,
-            status: 'error',
-            origin: payload.origin,
-            hunkIds: knownIds,
-            hunks: knownHunks,
-            retryable: true,
-          })
-      mergeCollector?.publish?.({
-        feature: 'merge.diff',
-        event: 'queue:finish',
-        precision: payload.precision,
-        origin: payload.origin,
-        hunk_ids: knownIds,
-        status: 'error',
-        retryable: true,
-        phase_guard: phasePlan.phase,
-        diff_exposure: phasePlan.diff.exposure,
-        auto_save_requested: payload.metadata.autoSaveRequested,
-      })
-          return {
-            status: 'error',
-            hunkIds: knownIds,
-            telemetry: { collectorSurface, analyzerSurface, retryable: true },
-          }
+          console.warn('MergeDock: AutoSave flush failed after merge queue', error)
+          responseStatus = 'error'
+          retryable = true
         }
       }
+
+      const finishedEventStatus = responseStatus === 'error' ? 'error' : 'success'
 
       diffQueueEvents.publish({
         type: 'queue:finished',
         precision: payload.precision,
-        status: 'success',
+        status: finishedEventStatus,
         origin: payload.origin,
         hunkIds: knownIds,
-        hunks: knownHunks,
-        retryable: false,
+        hunks: finishedHunks,
+        retryable,
       })
+
       mergeCollector?.publish?.({
         feature: 'merge.diff',
         event: 'queue:finish',
         precision: payload.precision,
         origin: payload.origin,
         hunk_ids: knownIds,
-        status: 'success',
-        retryable: false,
+        status: responseStatus,
+        retryable,
         phase_guard: phasePlan.phase,
         diff_exposure: phasePlan.diff.exposure,
         auto_save_requested: payload.metadata.autoSaveRequested,
       })
+
       return {
-        status: 'success',
+        status: responseStatus,
         hunkIds: knownIds,
-        telemetry: { collectorSurface, analyzerSurface, retryable: false },
+        telemetry: { collectorSurface: responseCollectorSurface, analyzerSurface, retryable },
       }
     }
 
     Reflect.set(queue, DIFF_QUEUE_EVENTS_KEY, diffQueueEvents)
+    Reflect.set(queue, MERGE_QUEUE_HUB_KEY, mergeHub)
+    Reflect.set(queue, '__mergeQueuedCommands__', queuedCommands)
     return queue
   }, [
     autoSave.flushNow,
@@ -578,6 +713,7 @@ export function MergeDock({
     phasePlan.diff.enabled,
     phasePlan.diff.exposure,
     phasePlan.phase,
+    phasePlan.threshold.request,
   ])
 
   const diffInteractionEnabled = shouldEnableDiffInteraction({

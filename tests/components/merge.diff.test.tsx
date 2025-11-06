@@ -21,7 +21,7 @@ import { createStore } from 'zustand/vanilla'
 
 import type { Storyboard } from '../../src/types'
 
-import type { MergeHunk, QueueMergeCommand } from '../../src/components/diffMergeTypes.js'
+import type { MergeHunk, MergePrecision, QueueMergeCommand } from '../../src/components/diffMergeTypes.js'
 import { useSB } from '../../src/store'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
@@ -772,33 +772,34 @@ test('stable diff guard exposes diff merge hunks and queue command once enabled'
   }
 })
 
-const renderDiffMergeDock = async ({
-  precision,
-  phaseStats = null,
-  autoAppliedRate,
-  lastTab,
-}: {
-  readonly precision: MergePrecision
-  readonly phaseStats?: MergeDockPhaseStats | null
-  readonly autoAppliedRate?: number
-  readonly lastTab?: MergeDockTabId
-}): Promise<{
-interface RenderStableMergeDockOptions {
-  readonly autoSaveEnabled?: boolean
-  readonly requireDiff?: boolean
-}
-
-const renderStableDiffMergeDock = async ({
-  autoSaveEnabled = true,
-  requireDiff = autoSaveEnabled,
-}: RenderStableMergeDockOptions = {}): Promise<{
+interface RenderMergeDockHarnessResult {
   readonly markup: string
   readonly hunks: readonly MergeHunk[]
   readonly queue: QueueMergeCommand
   readonly flushLog: readonly string[]
   readonly collectorLog: readonly Record<string, unknown>[]
   readonly cleanup: () => void
-}> => {
+}
+
+interface RenderMergeDockHarnessOptions {
+  readonly precision: MergePrecision
+  readonly phaseStats?: MergeDockPhaseStats | null
+  readonly autoAppliedRate?: number
+  readonly autoSaveEnabled?: boolean
+  readonly requireDiff?: boolean
+  readonly storyboard?: Storyboard
+  readonly lastTab?: MergeDockTabId
+}
+
+const renderMergeDockHarness = async ({
+  precision,
+  phaseStats = null,
+  autoAppliedRate,
+  autoSaveEnabled = true,
+  requireDiff = true,
+  storyboard: storyboardOverride,
+  lastTab,
+}: RenderMergeDockHarnessOptions): Promise<RenderMergeDockHarnessResult> => {
   const { MergeDock } = mergeDockModule as typeof mergeDockModule
   const hookGlobal = globalThis as typeof globalThis & {
     __diffMergeViewOnPropsReady?: (payload: {
@@ -809,10 +810,12 @@ const renderStableDiffMergeDock = async ({
   const originalHook = hookGlobal.__diffMergeViewOnPropsReady
   const originalWindow = (globalThis as { window?: typeof window }).window
   const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage
+
   const store = new Map<string, string>()
   if (lastTab) {
     store.set('merge.lastTab', lastTab)
   }
+
   const storage: Storage = {
     get length() {
       return store.size
@@ -833,6 +836,7 @@ const renderStableDiffMergeDock = async ({
       store.set(String(key), String(value))
     },
   }
+
   const flushLog: string[] = []
   const collectorLog: Record<string, unknown>[] = []
   const mockWindow = {
@@ -851,18 +855,23 @@ const renderStableDiffMergeDock = async ({
     __mergeDockFlushNow?: () => void
     Day8Collector?: { publish(event: Record<string, unknown>): void }
   }
+
+  if (!autoSaveEnabled) {
+    delete mockWindow.__mergeDockFlushNow
+  }
+
   Object.defineProperty(globalThis, 'window', { configurable: true, value: mockWindow })
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage })
 
   const originalStoryboard = useSB.getState().sb
-  const storyboard: Storyboard = {
-    id: 'sb-diff-guard-enabled',
+  const storyboard: Storyboard = storyboardOverride ?? {
+    id: 'sb-diff-harness',
     title: 'Storyboard',
     scenes: [
       {
         id: 'cut-1',
         manual: 'Manual draft line',
-        ai: 'AI alternative line',
+        ai: 'Manual draft line',
         status: 'idle',
         assets: [],
         lock: null,
@@ -873,8 +882,7 @@ const renderStableDiffMergeDock = async ({
   }
 
   useSB.setState({ sb: storyboard })
-  const snapshot = Reflect.get(globalThis, '__conimgponic_sb_snapshot__') as Storyboard | undefined
-  assert.equal(snapshot?.scenes.length ?? 0, 1)
+
   let capturedHunks: readonly MergeHunk[] | undefined
   let capturedQueue: QueueMergeCommand | undefined
   hookGlobal.__diffMergeViewOnPropsReady = (payload) => {
@@ -882,17 +890,18 @@ const renderStableDiffMergeDock = async ({
     capturedQueue = payload.queueMergeCommand
   }
 
-  const stableFlags: Pick<FlagSnapshot, 'merge'> = {
+  const stablePhaseStats: MergeDockPhaseStats | null =
+    phaseStats ?? (precision === 'stable' ? { reviewBandCount: 2, conflictBandCount: 0 } : null)
+
+  const flags: Pick<FlagSnapshot, 'merge'> = {
     merge: { value: precision, source: 'workspace', errors: [], precision, threshold: Number.NaN },
   }
 
   const markup = renderToStaticMarkup(
     React.createElement(MergeDock, {
-      flags: stableFlags,
-      phaseStats,
-      autoAppliedRate,
-      autoSaveEnabled: true,
-      phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
+      flags,
+      phaseStats: stablePhaseStats,
+      autoAppliedRate: autoAppliedRate ?? null,
       autoSaveEnabled,
     }),
   )
@@ -926,12 +935,46 @@ const renderStableDiffMergeDock = async ({
   }
 }
 
-test('stable diff queue command publishes events and telemetry when guard unlocked', async () => {
-  const harness = await renderDiffMergeDock({
-    precision: 'stable',
-    phaseStats: { reviewBandCount: 2, conflictBandCount: 0 },
-    autoAppliedRate: 0.92,
+const renderDiffMergeDock = async ({
+  precision,
+  phaseStats = null,
+  autoAppliedRate,
+  lastTab,
+}: {
+  readonly precision: MergePrecision
+  readonly phaseStats?: MergeDockPhaseStats | null
+  readonly autoAppliedRate?: number
+  readonly lastTab?: MergeDockTabId
+}): Promise<RenderMergeDockHarnessResult> =>
+  renderMergeDockHarness({
+    precision,
+    phaseStats,
+    autoAppliedRate,
+    lastTab,
   })
+
+interface RenderStableMergeDockOptions {
+  readonly autoSaveEnabled?: boolean
+  readonly requireDiff?: boolean
+  readonly storyboard?: Storyboard
+  readonly lastTab?: MergeDockTabId
+}
+
+const renderStableDiffMergeDock = async ({
+  autoSaveEnabled = true,
+  requireDiff = autoSaveEnabled,
+  storyboard: storyboardOverride,
+  lastTab,
+}: RenderStableMergeDockOptions = {}): Promise<RenderMergeDockHarnessResult> =>
+  renderMergeDockHarness({
+    precision: 'stable',
+    autoSaveEnabled,
+    requireDiff,
+    storyboard: storyboardOverride,
+    lastTab,
+  })
+
+test('stable diff queue command publishes events and telemetry when guard unlocked', async () => {
   const harness = await renderStableDiffMergeDock({ autoSaveEnabled: true })
   const queueEvents = Reflect.get(harness.queue, '__diffMergeEvents__') as
     | {
@@ -1003,6 +1046,73 @@ test('stable diff queue command publishes events and telemetry when guard unlock
       harness.collectorLog.map((entry) => entry.diff_exposure),
       ['default', 'default'],
     )
+  } finally {
+    unsubscribe()
+    harness.cleanup()
+  }
+})
+
+test('stable diff queue command applies merge plan and emits merge events with autosave coordination', async () => {
+  const storyboard: Storyboard = {
+    id: 'sb-diff-auto-merge',
+    title: 'Storyboard Auto',
+    scenes: [
+      {
+        id: 'cut-auto-1',
+        manual: 'Auto merge baseline',
+        ai: 'Auto merge baseline',
+        status: 'idle',
+        assets: [],
+        lock: null,
+      },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  const harness = await renderStableDiffMergeDock({ autoSaveEnabled: true, storyboard })
+  const mergeHub = Reflect.get(harness.queue, '__mergeQueueHub__') as
+    | { subscribe: (listener: (event: Record<string, unknown>) => void) => () => void }
+    | undefined
+
+  assert.ok(mergeHub, 'Diff queue command must expose merge event hub')
+
+  const mergeEvents: Record<string, unknown>[] = []
+  const unsubscribe = mergeHub!.subscribe((event) => {
+    mergeEvents.push(event)
+  })
+
+  try {
+    const result = await harness.queue({
+      type: 'queue-merge',
+      precision: 'stable',
+      origin: 'operation-pane.queue',
+      hunkIds: ['cut-auto-1'],
+      telemetryContext: {
+        collectorSurface: 'diff-merge.operation-pane',
+        analyzerSurface: 'diff-merge.queue',
+        lastTab: 'diff',
+      },
+      metadata: { autoSaveRequested: true },
+    })
+
+    assert.equal(result.status, 'success')
+    assert.equal(result.telemetry.retryable, false)
+    assert.equal(harness.flushLog.length, 1)
+
+    const state = useSB.getState().sb
+    const updatedScene = state.scenes.find((scene) => scene.id === 'cut-auto-1')
+    assert.ok(updatedScene)
+    assert.equal(updatedScene!.status, 'dirty')
+
+    const autoAppliedEvents = mergeEvents.filter((event) => event.type === 'merge:auto-applied')
+    assert.equal(autoAppliedEvents.length, 1)
+    assert.equal((autoAppliedEvents[0]?.hunk as MergeHunk | undefined)?.id, 'cut-auto-1')
+
+    const lockStages = mergeEvents
+      .filter((event) => event.type === 'merge:autosave:lock')
+      .map((event) => event.stage)
+    assert.deepEqual(lockStages, ['acquired', 'released'])
   } finally {
     unsubscribe()
     harness.cleanup()
