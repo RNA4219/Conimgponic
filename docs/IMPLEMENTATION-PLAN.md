@@ -75,6 +75,8 @@ sequenceDiagram
 #### 0.2.2 Phase ガード優先度と解除時の挙動整理
 
 `docs/src-1.35_addon/CONFIG.md` で規定された VSCode 設定と、Phase ガード用フラグの突き合わせを以下の優先度で固定する。Collector 連携時は `flag_resolution` テレメトリに `source` を付与し、Day8 パイプラインの責務境界（Collector → Analyzer → Reporter）と矛盾しないイベント系列に整流する。【F:docs/src-1.35_addon/CONFIG.md†L1-L9】【F:Day8/docs/day8/design/03_architecture.md†L1-L39】
+
+各 Phase 区分はテレメトリで判別可能であり、`flag_resolution` イベントの `phase` フィールドから識別できる。【F:src/telemetry/day8Collector.ts†L1-L564】
 - AutoSave / Merge のフェーズガードは 0.75 を共通ベースラインとして扱い、`merge.precision` のしきい値計算と AutoSave の保存ポリシー連動が [docs/MERGE-DESIGN-IMPL.md](./MERGE-DESIGN-IMPL.md)・[docs/AUTOSAVE-DESIGN-IMPL.md](./AUTOSAVE-DESIGN-IMPL.md) の要件と一致することをチェックする。
 
 | Phase ガード | Primary (env / workspace) | Secondary (ローカルストレージ) | Fallback (`DEFAULT_FLAGS` / 設定既定値) | Telemetry & Rollback | 備考 |

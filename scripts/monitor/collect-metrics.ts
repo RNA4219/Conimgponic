@@ -7,7 +7,7 @@
  * 維持すること。
  */
 
-export type RolloutPhase = 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1';
+export type RolloutPhase = 'A-0' | 'A-1' | 'A-2' | 'B-0' | 'B-1' | 'C-0';
 
 export type MetricsKey =
   | 'autosave_p95'
@@ -157,7 +157,8 @@ export type FlagResolutionErrorPhase =
   | 'phase-a1'
   | 'phase-a2'
   | 'phase-b0'
-  | 'phase-b1';
+  | 'phase-b1'
+  | 'phase-c0';
 
 export interface FlagResolutionErrorPayload {
   readonly code: 'invalid-boolean' | 'invalid-precision';
@@ -531,7 +532,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
     window: '15m',
     input: 'reports/canary/phase-*.jsonl',
     output: 'reports/monitoring/<timestamp>.jsonl',
-    phase: 'A-1',
+    phase: 'B-1',
     notify: 'auto',
     dryRun: false,
     simulateLatency: 0,
@@ -540,7 +541,7 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
   inputRecord: {
     window_started_at: '2025-01-18T00:00:00Z',
     window_minutes: 15,
-    phase: 'A-1',
+    phase: 'B-1',
     autosave_p95: 2300,
     ui_saved_rate: 0.962,
     restore_success_rate: 0.999,
@@ -885,6 +886,75 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           ],
           rollbackTo: 'B-0',
           rollbackCommand: 'pnpm run flags:rollback --phase B-0',
+        },
+      ],
+    },
+    {
+      phase: 'C-0',
+      previousPhase: 'B-1',
+      guardrails: [
+        {
+          metric: 'export_success_rate',
+          comparator: 'gte',
+          threshold: 0.995,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#export-ops',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Export Duty',
+              severity: 'critical',
+            },
+          ],
+          rollbackTo: 'B-1',
+          rollbackCommand: 'pnpm run flags:rollback --phase B-1',
+        },
+        {
+          metric: 'merge_auto_success_rate',
+          comparator: 'gte',
+          threshold: 0.9,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#merge-ops',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Merge Duty',
+              severity: 'critical',
+            },
+          ],
+          rollbackTo: 'B-1',
+          rollbackCommand: 'pnpm run flags:rollback --phase B-1',
+        },
+        {
+          metric: 'merge_processing_p95',
+          comparator: 'lte',
+          threshold: 4000,
+          violationWindowMinutes: 15,
+          notifyChannels: ['slack', 'pagerduty'],
+          notifyDestinations: [
+            {
+              channelType: 'slack',
+              destination: '#merge-ops',
+              severity: 'warning',
+            },
+            {
+              channelType: 'pagerduty',
+              destination: 'Merge Duty',
+              severity: 'critical',
+            },
+          ],
+          rollbackTo: 'B-1',
+          rollbackCommand: 'pnpm run flags:rollback --phase B-1',
         },
       ],
     },
