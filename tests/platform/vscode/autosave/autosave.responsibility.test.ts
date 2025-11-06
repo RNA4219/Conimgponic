@@ -22,7 +22,13 @@ import {
   nextReqId
 } from '../../../../src/platform/vscode/autosave/state.js';
 import { createVscodeAutoSaveBridge } from '../../../../src/platform/vscode/autosave.js';
+import * as flagsModule from '../../../../src/platform/vscode/flags.js';
+import { resolveAutoSaveBootstrapPlan, resolveFlags } from '../../../../src/config/index.js';
 import type { Day8CollectorFlagResolutionEvent } from '../../../../src/telemetry/day8Collector.js';
+import type { FlagSnapshot, WorkspaceConfiguration } from '../../../../src/config/index.js';
+import type { AutoSavePhaseGuardSnapshot } from '../../../../src/lib/autosave.js';
+
+const { deriveAutoSavePhaseGuard, resolveWorkspaceFlags } = flagsModule;
 
 class TestDomException extends Error {
   override name = 'NotAllowedError';
@@ -72,6 +78,13 @@ test('createBootstrapMessage preserves guard snapshot and flags', () => {
     source: 'env'
   });
   assert.deepEqual(message.payload.flags, { auto: { enabled: true } });
+});
+
+test('deriveAutoSavePhaseGuard aligns with resolveAutoSaveBootstrapPlan guard', () => {
+  const plan = resolveAutoSaveBootstrapPlan();
+  const guard = deriveAutoSavePhaseGuard(plan.snapshot);
+
+  assert.deepEqual(guard, plan.guard);
 });
 
 test('resolveSnapshotTelemetryPhase escalates local storage guard phase', () => {
@@ -171,6 +184,152 @@ test('publishCollectorSnapshotResult forwards normalized payload', () => {
   );
 });
 
+test(
+  'createVscodeAutoSaveBridge bootstraps guard derived from workspace snapshot',
+  (t) => {
+    const workspace = {
+      get: (key: string) => (key === 'autosave.enabled' ? 'true' : undefined)
+    };
+    const snapshot: FlagSnapshot = {
+      autosave: {
+        value: true,
+        source: 'workspace',
+        errors: [],
+        enabled: true
+      },
+      plugins: {
+        value: false,
+        source: 'default',
+        errors: [],
+        enabled: false
+      },
+      merge: {
+        value: 'stable',
+        source: 'default',
+        errors: [],
+        precision: 'stable',
+        threshold: 0.82
+      },
+      updatedAt: '2024-01-05T00:00:00.000Z'
+    };
+    const guard: AutoSavePhaseGuardSnapshot = {
+      featureFlag: { value: true, source: 'workspace' },
+      optionsDisabled: false
+    };
+    const payload = { guard, flags: snapshot } as const;
+    const resolveMock = t.mock.method(flagsModule, 'resolveWorkspaceFlags', () => snapshot);
+    const deriveMock = t.mock.method(flagsModule, 'deriveAutoSavePhaseGuard', () => guard);
+    const payloadMock = t.mock.method(
+      flagsModule,
+      'createAutoSaveBootstrapPayload',
+      () => payload
+    );
+    const sent: unknown[] = [];
+
+    try {
+      const bridge = createVscodeAutoSaveBridge({
+        policy: {
+          debounceMs: 100,
+          idleMs: 100,
+          maxGenerations: 2,
+          maxBytes: 100,
+          disabled: false
+        },
+        workspace,
+        now: () => new Date('2024-01-05T00:00:00.000Z'),
+        sendMessage: (message) => {
+          sent.push(message);
+        },
+        atomicWrite: async () => {
+          throw new Error('bootstrap should not flush');
+        }
+      });
+
+      assert.equal(resolveMock.mock.callCount(), 1);
+      const resolveArgs = resolveMock.mock.calls[0]?.arguments[0] as
+        | { readonly workspace: unknown }
+        | undefined;
+      assert.equal(resolveArgs?.workspace, workspace);
+      assert.equal(deriveMock.mock.callCount(), 1);
+      assert.strictEqual(deriveMock.mock.calls[0]?.arguments[0], snapshot);
+      assert.equal(payloadMock.mock.callCount(), 1);
+      assert.strictEqual(payloadMock.mock.calls[0]?.arguments[0], snapshot);
+      assert.strictEqual(payloadMock.mock.calls[0]?.arguments[1], guard);
+
+      const bootstrap = sent[0] as {
+        readonly payload: { guard: AutoSavePhaseGuardSnapshot; flags: FlagSnapshot };
+      };
+      assert.strictEqual(bootstrap.payload.guard, guard);
+      assert.strictEqual(bootstrap.payload.flags, snapshot);
+      assert.deepEqual(bridge.inspectState().guard, guard);
+    } finally {
+      t.mock.restoreAll();
+    }
+  }
+);
+
+test('resolveWorkspaceFlags aligns with resolveFlags and bootstrap propagates guard', () => {
+  const workspace = {
+    get: (key: string) => {
+      switch (key) {
+        case 'autosave.enabled':
+          return 'true';
+        case 'plugins.enable':
+          return 'false';
+        case 'merge.precision':
+          return 'stable';
+        default:
+          return undefined;
+      }
+    }
+  };
+  const clock = () => new Date('2024-01-05T00:00:00.000Z');
+  const helperSnapshot = resolveWorkspaceFlags({ workspace, clock });
+  const directSnapshot = resolveFlags({ workspace, clock });
+
+  assert.deepEqual(helperSnapshot, directSnapshot);
+
+  const helperGuard = deriveAutoSavePhaseGuard(helperSnapshot);
+  assert.deepEqual(helperGuard, {
+    featureFlag: {
+      value: directSnapshot.autosave.enabled,
+      source: directSnapshot.autosave.source
+    },
+    optionsDisabled: false
+  });
+
+  const sent: unknown[] = [];
+  const bridge = createVscodeAutoSaveBridge({
+    policy: {
+      debounceMs: 100,
+      idleMs: 100,
+      maxGenerations: 2,
+      maxBytes: 100,
+      disabled: false
+    },
+    workspace,
+    now: clock,
+    sendMessage: (message) => {
+      sent.push(message);
+    },
+    atomicWrite: async () => {
+      throw new Error('bootstrap should not flush');
+    }
+  });
+
+  assert.equal(sent.length, 2);
+  const bootstrap = sent[0] as {
+    type: string;
+    payload: { guard: unknown; flags: unknown };
+  };
+  assert.equal(bootstrap?.type, 'bridge.bootstrap');
+  assert.deepEqual(bootstrap.payload.flags, helperSnapshot);
+  assert.deepEqual(bootstrap.payload.guard, helperGuard);
+
+  const state = bridge.inspectState();
+  assert.deepEqual(state.guard, helperGuard);
+});
+
 test('publishCollectorSnapshotResult flags localStorage guard as QA phase', () => {
   const calls: unknown[] = [];
   const request = {
@@ -249,6 +408,69 @@ test('createVscodeAutoSaveBridge publishes flag resolution telemetry on bootstra
       published.some((event) => event.event === 'flag_resolution'),
       'expected Day8Collector flag_resolution event'
     );
+  } finally {
+    scope.Day8Collector = previous;
+    if (!previous) {
+      delete scope.Day8Collector;
+    }
+  }
+});
+
+test('createVscodeAutoSaveBridge publishes a single flag resolution event when resolving workspace flags', () => {
+  const scope = globalThis as {
+    Day8Collector?: { publish: (event: Day8CollectorFlagResolutionEvent) => void };
+  };
+  const previous = scope.Day8Collector;
+  const published: Day8CollectorFlagResolutionEvent[] = [];
+  scope.Day8Collector = {
+    publish: (event) => {
+      published.push(event);
+    }
+  };
+
+  const workspace = {
+    get: (key: string) => {
+      switch (key) {
+        case 'autosave.enabled':
+          return 'true';
+        case 'merge.precision':
+          return 'stable';
+        case 'merge.precision.threshold':
+          return 0.9;
+        default:
+          return undefined;
+      }
+    }
+  } satisfies WorkspaceConfiguration;
+
+  try {
+    createVscodeAutoSaveBridge({
+      policy: {
+        debounceMs: 100,
+        idleMs: 100,
+        maxGenerations: 1,
+        maxBytes: 1024,
+        disabled: false
+      },
+      flags: undefined,
+      workspace,
+      now: () => new Date('2024-01-01T00:00:00.000Z'),
+      sendMessage: () => {
+        // noop
+      },
+      atomicWrite: async () => ({
+        ok: true,
+        bytes: 0,
+        retainedBytes: 0,
+        generation: 0,
+        lockStrategy: 'web-lock'
+      })
+    });
+
+    const resolutionEvents = published.filter(
+      (event) => event.event === 'flag_resolution'
+    );
+    assert.equal(resolutionEvents.length, 1);
   } finally {
     scope.Day8Collector = previous;
     if (!previous) {

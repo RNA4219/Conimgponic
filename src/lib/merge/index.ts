@@ -3,6 +3,7 @@ export { attachAutoSaveLockEvents } from './events';
 export { buildMergePlan, createQueueMergeCommand, getPrecisionUiState } from './plan';
 export { DEFAULT_MERGE_ENGINE, MergeError } from './engine';
 export { DEFAULT_SCORING_STRATEGY, blendedScore, scoreSection } from './scoring';
+export { getDiffHunksFromEngine } from './diffHunkFacade';
 export {
   DEFAULT_MERGE_PROFILE,
   DEFAULT_MAX_PROCESSING_MILLIS,

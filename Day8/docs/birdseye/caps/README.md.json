@@ -1,17 +1,17 @@
 {
   "deps_in": [],
   "deps_out": [
-    "INSTALL.md",
-    "docs/README.md",
-    "docs/ROADMAP_AND_SPECS.md",
-    "scripts/",
-    "tools/",
-    "workflow-cookbook/GUARDRAILS.md",
-    "workflow-cookbook/HUB.codex.md",
-    "workflow-cookbook/docs/birdseye/index.json"
+    "Day8/INSTALL.md",
+    "Day8/docs/README.md",
+    "Day8/docs/ROADMAP_AND_SPECS.md",
+    "Day8/scripts/",
+    "Day8/tools/",
+    "Day8/workflow-cookbook/GUARDRAILS.md",
+    "Day8/workflow-cookbook/HUB.codex.md",
+    "Day8/workflow-cookbook/docs/birdseye/index.json"
   ],
   "generated_at": "00006",
-  "id": "README.md",
+  "id": "Day8/README.md",
   "maintenance": {
     "refresh": "README.md を更新したら docs/birdseye/index.json とカプセルを同一コミットで再生成する。",
     "tooling": [

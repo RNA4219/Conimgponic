@@ -9,19 +9,19 @@
     "out::docs/birdseye/index.json"
   ],
   "deps_in": [
-    "docs/ROADMAP_AND_SPECS.md",
-    "docs/day8/spec/02_spec.md",
-    "workflow-cookbook/GUARDRAILS.md",
-    "workflow-cookbook/HUB.codex.md",
-    "workflow-cookbook/RUNBOOK.md",
-    "workflow-cookbook/SAFETY.md",
-    "workflow-cookbook/SECURITY.md"
+    "Day8/docs/ROADMAP_AND_SPECS.md",
+    "Day8/docs/day8/spec/02_spec.md",
+    "Day8/workflow-cookbook/GUARDRAILS.md",
+    "Day8/workflow-cookbook/HUB.codex.md",
+    "Day8/workflow-cookbook/RUNBOOK.md",
+    "Day8/workflow-cookbook/SAFETY.md",
+    "Day8/workflow-cookbook/SECURITY.md"
   ],
   "deps_out": [
-    "workflow-cookbook/CHECKLISTS.md"
+    "Day8/workflow-cookbook/CHECKLISTS.md"
   ],
   "generated_at": "00006",
-  "id": "workflow-cookbook/EVALUATION.md",
+  "id": "Day8/workflow-cookbook/EVALUATION.md",
   "maintenance": {
     "refresh": "受け入れ基準やPriority Score運用を更新したら CHECKLISTS/RUNBOOK と governance/policy.yaml の関連節、Birdseye index/caps/hot を同一コミットで再生成。",
     "tooling": [

@@ -1,0 +1,393 @@
+{
+  "kind": "docs",
+  "generated_at": "00007",
+  "nodes": {
+    "Day8/docs/BIRDSEYE.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.BIRDSEYE.md.json",
+      "mtime": "00004",
+      "role": "guide"
+    },
+    "Day8/docs/README.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.README.md.json",
+      "mtime": "00004",
+      "role": "index"
+    },
+    "Day8/docs/ROADMAP_AND_SPECS.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.ROADMAP_AND_SPECS.md.json",
+      "mtime": "00004",
+      "role": "roadmap"
+    },
+    "Day8/docs/Architecture_ASCII.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.Architecture_ASCII.md.json",
+      "mtime": "00004",
+      "role": "architecture"
+    },
+    "Day8/docs/TASKS.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.TASKS.md.json",
+      "mtime": "00004",
+      "role": "tasks"
+    },
+    "Day8/docs/Release_Checklist.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.Release_Checklist.md.json",
+      "mtime": "00004",
+      "role": "checklist"
+    },
+    "Day8/docs/FORK_NOTES.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.FORK_NOTES.md.json",
+      "mtime": "00004",
+      "role": "guide"
+    },
+    "Day8/docs/addenda/A_Glossary.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.A_Glossary.md.json",
+      "mtime": "00004",
+      "role": "glossary"
+    },
+    "Day8/docs/addenda/F_Provider_Matrix.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.F_Provider_Matrix.md.json",
+      "mtime": "00004",
+      "role": "provider"
+    },
+    "Day8/docs/UPSTREAM.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.UPSTREAM.md.json",
+      "mtime": "00004",
+      "role": "operations"
+    },
+    "Day8/docs/UPSTREAM_WEEKLY_LOG.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.UPSTREAM_WEEKLY_LOG.md.json",
+      "mtime": "00004",
+      "role": "log"
+    },
+    "Day8/docs/addenda/H_Deploy_Guide.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.H_Deploy_Guide.md.json",
+      "mtime": "00004",
+      "role": "guide"
+    },
+    "Day8/docs/addenda/L_Config_Reference.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.L_Config_Reference.md.json",
+      "mtime": "00004",
+      "role": "configuration"
+    },
+    "Day8/docs/addenda/M_Versioning_Release.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.M_Versioning_Release.md.json",
+      "mtime": "00004",
+      "role": "release"
+    },
+    "Day8/docs/day8/README.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.day8.README.md.json",
+      "mtime": "00004",
+      "role": "overview"
+    },
+    "Day8/docs/safety.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.safety.md.json",
+      "mtime": "00004",
+      "role": "safety"
+    },
+    "Day8/docs/seeds/README.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.seeds.README.md.json",
+      "mtime": "00004",
+      "role": "seeds"
+    },
+    "Day8/docs/addenda/C_Persona_Schema.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.C_Persona_Schema.md.json",
+      "mtime": "00004",
+      "role": "persona"
+    },
+    "Day8/docs/addenda/I_Test_Cases.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.I_Test_Cases.md.json",
+      "mtime": "00004",
+      "role": "quality"
+    },
+    "Day8/docs/addenda/J_Runbook.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.J_Runbook.md.json",
+      "mtime": "00004",
+      "role": "operations"
+    },
+    "Day8/docs/addenda/G_Security_Privacy.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.G_Security_Privacy.md.json",
+      "mtime": "00004",
+      "role": "security"
+    },
+    "Day8/docs/day8/quality/06_quality.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.day8.quality.06_quality.md.json",
+      "mtime": "00004",
+      "role": "quality"
+    },
+    "Day8/docs/addenda/K_Accessibility_UX.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.K_Accessibility_UX.md.json",
+      "mtime": "00004",
+      "role": "ux"
+    },
+    "Day8/docs/addenda/B_UI_Mock.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.addenda.B_UI_Mock.md.json",
+      "mtime": "00004",
+      "role": "design"
+    },
+    "Day8/docs/day8/spec/02_spec.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.day8.spec.02_spec.md.json",
+      "mtime": "00004",
+      "role": "spec"
+    },
+    "Day8/docs/day8/design/03_architecture.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.day8.design.03_architecture.md.json",
+      "mtime": "00004",
+      "role": "architecture"
+    },
+    "Day8/docs/day8/ops/04_ops.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.day8.ops.04_ops.md.json",
+      "mtime": "00004",
+      "role": "operations"
+    },
+    "Day8/docs/adr/README.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.adr.README.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    },
+    "Day8/docs/adr/0000-template.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.adr.0000-template.md.json",
+      "mtime": "00004",
+      "role": "adr-template"
+    },
+    "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.adr.0001-collector-analyzer-reporter-pipeline.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    },
+    "Day8/docs/adr/0002-jsonl-event-contract.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.adr.0002-jsonl-event-contract.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    },
+    "Day8/docs/adr/0003-propose-only-governance.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.adr.0003-propose-only-governance.md.json",
+      "mtime": "00004",
+      "role": "adr"
+    },
+    "Day8/docs/day8/spec/01_requirements.md": {
+      "caps": "Day8/docs/birdseye/caps/docs.day8.spec.01_requirements.md.json",
+      "mtime": "00004",
+      "role": "requirements"
+    }
+  },
+  "edges": [
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/Release_Checklist.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/TASKS.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/UPSTREAM.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/B_UI_Mock.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/C_Persona_Schema.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/F_Provider_Matrix.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/G_Security_Privacy.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/H_Deploy_Guide.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/J_Runbook.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/K_Accessibility_UX.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/addenda/M_Versioning_Release.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/adr/0002-jsonl-event-contract.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/adr/0003-propose-only-governance.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/adr/README.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/day8/README.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/day8/spec/01_requirements.md"
+    ],
+    [
+      "Day8/docs/README.md",
+      "Day8/docs/safety.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/Architecture_ASCII.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/BIRDSEYE.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/Release_Checklist.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/UPSTREAM.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/addenda/G_Security_Privacy.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/adr/0002-jsonl-event-contract.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/adr/0003-propose-only-governance.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/adr/README.md"
+    ],
+    [
+      "Day8/docs/ROADMAP_AND_SPECS.md",
+      "Day8/docs/day8/spec/01_requirements.md"
+    ],
+    [
+      "Day8/docs/Release_Checklist.md",
+      "Day8/docs/addenda/M_Versioning_Release.md"
+    ],
+    [
+      "Day8/docs/TASKS.md",
+      "Day8/docs/seeds/README.md"
+    ],
+    [
+      "Day8/docs/UPSTREAM.md",
+      "Day8/docs/FORK_NOTES.md"
+    ],
+    [
+      "Day8/docs/UPSTREAM.md",
+      "Day8/docs/UPSTREAM_WEEKLY_LOG.md"
+    ],
+    [
+      "Day8/docs/UPSTREAM_WEEKLY_LOG.md",
+      "Day8/docs/FORK_NOTES.md"
+    ],
+    [
+      "Day8/docs/addenda/C_Persona_Schema.md",
+      "Day8/docs/day8/quality/06_quality.md"
+    ],
+    [
+      "Day8/docs/addenda/C_Persona_Schema.md",
+      "Day8/docs/day8/spec/02_spec.md"
+    ],
+    [
+      "Day8/docs/addenda/H_Deploy_Guide.md",
+      "Day8/docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/Architecture_ASCII.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/addenda/B_UI_Mock.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/adr/0001-collector-analyzer-reporter-pipeline.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/adr/0002-jsonl-event-contract.md"
+    ],
+    [
+      "Day8/docs/day8/design/03_architecture.md",
+      "Day8/docs/adr/0003-propose-only-governance.md"
+    ],
+    [
+      "Day8/docs/day8/ops/04_ops.md",
+      "Day8/docs/addenda/H_Deploy_Guide.md"
+    ],
+    [
+      "Day8/docs/day8/ops/04_ops.md",
+      "Day8/docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "Day8/docs/day8/ops/04_ops.md",
+      "Day8/docs/adr/0002-jsonl-event-contract.md"
+    ],
+    [
+      "Day8/docs/day8/ops/04_ops.md",
+      "Day8/docs/adr/0003-propose-only-governance.md"
+    ],
+    [
+      "Day8/docs/day8/quality/06_quality.md",
+      "Day8/docs/addenda/I_Test_Cases.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/C_Persona_Schema.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/F_Provider_Matrix.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/H_Deploy_Guide.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/I_Test_Cases.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/J_Runbook.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/L_Config_Reference.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/addenda/M_Versioning_Release.md"
+    ],
+    [
+      "Day8/docs/day8/spec/02_spec.md",
+      "Day8/docs/day8/ops/04_ops.md"
+    ]
+  ]
+}

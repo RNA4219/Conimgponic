@@ -2,8 +2,8 @@
   "kind": "scripts",
   "generated_at": "00006",
   "nodes": {
-    "scripts/": {
-      "caps": "docs/birdseye/caps/scripts.DIR.json",
+    "Day8/scripts/": {
+      "caps": "Day8/docs/birdseye/caps/scripts.DIR.json",
       "mtime": "00004",
       "role": "automation"
     }

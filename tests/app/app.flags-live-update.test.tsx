@@ -200,6 +200,11 @@ test('Flag snapshot live refresh guard enables storage and visibility handlers o
     documentMock.dispatchEvent(new Event('visibilitychange'))
     assert.equal(snapshots.length, 3)
 
+    storage.setItem('plugins.enable', '1')
+    windowMock.dispatchEvent(createStorageEvent('plugins.enable'))
+    assert.equal(snapshots.length, 4)
+    assert.equal(snapshots.at(-1)?.plugins.enabled, true)
+
     unsubscribe()
     subscription.dispose()
   } finally {
