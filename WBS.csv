@@ -9,5 +9,5 @@ B2,DiffMergeView（衝突UI）,Dev,0.8,B1,UIタブ,進行中(Diffガード露出
 B3,証跡保存（merge.json/meta）,Dev,0.3,B1,runs/<ts>/merge.json,未着手
 B4,マージ受入テスト,QA,0.5,B1–B3,テストレポート,未着手
 C1,回帰試験（Export/Import/ショートカット）,QA,0.5,"A5,B4",回帰レポート,未着手
-B5,MergeDock Diff ガード更新,Dev,0.2,B2,AutoSave連動Diff制御,完了(autosave=false時stable diff 非表示/data-merge-autosave attr/SSR確認・pnpm test -- --filter merge.diff)
-B6,DiffMerge queue hub/merge3 実装,Dev,0.6,B2,Diffタブ merge3 キュー協調,完了(tests/components/merge.diff.test.tsx 追加・MergeDock diffQueueMergeCommand 改修・pnpm test -- --filter merge.diff GREEN)
+B5,MergeDock Diff ガード更新,Dev,0.2,B2,AutoSave連動Diff制御,完了
+B6,Diff マージハンドラ実装 (merge3 統合),Dev,0.5,"B1,B2",MergeHunk 生成/統計取得,完了

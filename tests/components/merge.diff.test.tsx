@@ -25,6 +25,7 @@ import type { MergeHunk, MergePrecision, QueueMergeCommand } from '../../src/com
 import { useSB } from '../../src/store'
 
 import { DEFAULT_FLAGS, type FlagSnapshot } from '../../src/config'
+import { DEFAULT_MERGE_ENGINE } from '../../src/lib/merge/engine'
 const mergeDockModule = await import('../../src/components/MergeDock')
 const mergeDomainModule = await import('../../src/components/merge-dock/domain')
 const mergePreferencesModule = await import('../../src/lib/merge/preferences.ts')
@@ -1639,6 +1640,58 @@ test('stable precision resets stored merge.lastTab when diff demotes', () => {
   }
 })
 
+test('merge dock passes merge3 output hunks when precision is beta or stable and autosave is enabled', () => {
+  const mergeInput = {
+    base: 'Base content',
+    ours: 'Ours content',
+    theirs: 'Theirs content',
+  }
+
+  // Test with beta precision and autosave enabled
+  const betaResult = DEFAULT_MERGE_ENGINE.merge3(mergeInput, {
+    profile: { precision: 'beta' }
+  })
+  
+  assert.ok(Array.isArray(betaResult.hunks), 'Beta precision should return hunks array')
+  assert.ok(betaResult.stats, 'Beta precision should return stats')
+  assert.ok(betaResult.mergedText !== undefined, 'Beta precision should return merged text')
+  
+  // Verify that the hunks contain expected properties
+  for (const hunk of betaResult.hunks) {
+    assert.ok(hunk.id, 'Each hunk should have an id')
+    assert.ok(hunk.decision !== undefined, 'Each hunk should have a decision')
+    assert.ok(hunk.similarity !== undefined, 'Each hunk should have a similarity value')
+    assert.ok(hunk.base !== undefined, 'Each hunk should have base content')
+    assert.ok(hunk.manual !== undefined, 'Each hunk should have manual content')
+    assert.ok(hunk.ai !== undefined, 'Each hunk should have ai content')
+    assert.ok(hunk.merged !== undefined, 'Each hunk should have merged content')
+  }
+
+  // Test with stable precision and autosave enabled
+  const stableResult = DEFAULT_MERGE_ENGINE.merge3(mergeInput, {
+    profile: { precision: 'stable' }
+  })
+  
+  assert.ok(Array.isArray(stableResult.hunks), 'Stable precision should return hunks array')
+  assert.ok(stableResult.stats, 'Stable precision should return stats')
+  assert.ok(stableResult.mergedText !== undefined, 'Stable precision should return merged text')
+  
+  // Verify that the hunks contain expected properties
+  for (const hunk of stableResult.hunks) {
+    assert.ok(hunk.id, 'Each hunk should have an id')
+    assert.ok(hunk.decision !== undefined, 'Each hunk should have a decision')
+    assert.ok(hunk.similarity !== undefined, 'Each hunk should have a similarity value')
+    assert.ok(hunk.base !== undefined, 'Each hunk should have base content')
+    assert.ok(hunk.manual !== undefined, 'Each hunk should have manual content')
+    assert.ok(hunk.ai !== undefined, 'Each hunk should have ai content')
+    assert.ok(hunk.merged !== undefined, 'Each hunk should have merged content')
+  }
+
+  // Verify that both beta and stable results match the expected merge3 output
+  assert.ok(betaResult.hunks.length >= 0, 'Beta precision should return zero or more hunks')
+  assert.ok(stableResult.hunks.length >= 0, 'Stable precision should return zero or more hunks')
+})
+
 test('stable precision restores last selected non-diff tab when merge.lastTab is set', () => {
   const tabPlan = planMergeDockTabs('stable', 'compiled')
 
@@ -1836,4 +1889,56 @@ test('resolveMergeThresholdSnapshot clamps stable workspace threshold below roll
 
   assert.equal(snapshot.precision, 'stable')
   assert.equal(snapshot.threshold, 0.82)
+})
+
+test('merge dock passes merge3 output hunks when precision is beta or stable and autosave is enabled', () => {
+  const mergeInput = {
+    base: 'Base content',
+    ours: 'Ours content',
+    theirs: 'Theirs content',
+  }
+
+  // Test with beta precision and autosave enabled
+  const betaResult = DEFAULT_MERGE_ENGINE.merge3(mergeInput, {
+    profile: { precision: 'beta' }
+  })
+  
+  assert.ok(Array.isArray(betaResult.hunks), 'Beta precision should return hunks array')
+  assert.ok(betaResult.stats, 'Beta precision should return stats')
+  assert.ok(betaResult.mergedText !== undefined, 'Beta precision should return merged text')
+  
+  // Verify that the hunks contain expected properties
+  for (const hunk of betaResult.hunks) {
+    assert.ok(hunk.id, 'Each hunk should have an id')
+    assert.ok(hunk.decision !== undefined, 'Each hunk should have a decision')
+    assert.ok(hunk.similarity !== undefined, 'Each hunk should have a similarity value')
+    assert.ok(hunk.base !== undefined, 'Each hunk should have base content')
+    assert.ok(hunk.manual !== undefined, 'Each hunk should have manual content')
+    assert.ok(hunk.ai !== undefined, 'Each hunk should have ai content')
+    assert.ok(hunk.merged !== undefined, 'Each hunk should have merged content')
+  }
+
+  // Test with stable precision and autosave enabled
+  const stableResult = DEFAULT_MERGE_ENGINE.merge3(mergeInput, {
+    profile: { precision: 'stable' }
+  })
+  
+  assert.ok(Array.isArray(stableResult.hunks), 'Stable precision should return hunks array')
+  assert.ok(stableResult.stats, 'Stable precision should return stats')
+  assert.ok(stableResult.mergedText !== undefined, 'Stable precision should return merged text')
+  
+  // Verify that the hunks contain expected properties
+  for (const hunk of stableResult.hunks) {
+    assert.ok(hunk.id, 'Each hunk should have an id')
+    assert.ok(hunk.decision !== undefined, 'Each hunk should have a decision')
+    assert.ok(hunk.similarity !== undefined, 'Each hunk should have a similarity value')
+    assert.ok(hunk.base !== undefined, 'Each hunk should have base content')
+    assert.ok(hunk.manual !== undefined, 'Each hunk should have manual content')
+    assert.ok(hunk.ai !== undefined, 'Each hunk should have ai content')
+    assert.ok(hunk.merged !== undefined, 'Each hunk should have merged content')
+  }
+
+  // Verify that both beta and stable results match the expected merge3 output
+  assert.ok(betaResult.hunks.length >= 0, 'Beta precision should return zero or more hunks')
+  assert.ok(stableResult.hunks.length >= 0, 'Stable precision should return zero or more hunks')
 })

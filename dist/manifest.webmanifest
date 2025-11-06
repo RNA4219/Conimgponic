@@ -1,0 +1,9 @@
+{
+  "name": "Imgponic (PWA)",
+  "short_name": "Imgponic",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffee",
+  "theme_color": "#c4fcc4",
+  "icons": []
+}

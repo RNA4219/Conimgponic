@@ -9,8 +9,6 @@ import {
 } from './model'
 
 export type {
-  MergeDockAutoSaveHeartbeatOptions,
-  MergeDockAutoSaveHeartbeatState,
   MergeDockAutoSaveState,
   MergeDockNotice,
   MergeDockWindow,
@@ -23,8 +21,8 @@ export const readAutoSaveState = (target: MergeDockWindow | undefined): MergeDoc
 
 export const startMergeDockAutoSaveHeartbeat = (
   mergeWindow: MergeDockWindow | undefined,
-  listener: (state: MergeDockAutoSaveHeartbeatState) => void,
-  options?: MergeDockAutoSaveHeartbeatOptions,
+  listener: (state: { autoSave: MergeDockAutoSaveState; now: number }) => void,
+  options?: { readonly intervalMs?: number },
 ): (() => void) => {
   let disposed = false
   const intervalMs = options?.intervalMs ?? 5_000
