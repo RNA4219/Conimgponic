@@ -26,8 +26,6 @@ import {
   shouldEnableDiffInteraction,
   shouldRenderDiffBackupCTA,
   startMergeDockAutoSaveHeartbeat,
-  type MergeDockAutoSaveHeartbeatOptions,
-  type MergeDockAutoSaveHeartbeatState,
   type MergeDockAutoSaveState,
   type MergeDockNotice,
   type MergeDockPhaseStats,
@@ -41,6 +39,11 @@ import {
   useMergeDockViewStore,
   type MergeDockViewStore,
 } from './merge-dock/store'
+
+import type {
+  MergeDockAutoSaveHeartbeatOptions,
+  MergeDockAutoSaveHeartbeatState,
+} from './merge-dock/model'
 import {
   loadLatestCompiledSnapshot,
   MergeDockSnapshotError,
