@@ -69,6 +69,8 @@
 - [ ] 配布前に `pnpm run flags:status` でローカル値と既定値の差分を確認する。
 - [ ] Canary 実施中は `reports/canary/` の JSONL を Analyzer に渡し、SLO が満たされていることを QA が確認済みである。
 - [ ] ロールバック時は `pnpm run flags:rollback --phase <prev>` を利用し、対象チームへ Slack テンプレート `templates/alerts/rollback.md` を送付する。
+- [x] `Collector` テレメトリ統合チェックリストの進捗を [docs/IMPLEMENTATION-PLAN.md §5](./IMPLEMENTATION-PLAN.md#5-%E5%9B%9E%E5%B8%B0%E8%A9%A6%E9%A8%93%E8%A8%88%E7%94%BBtdd-%E3%83%81%E3%82%A7%E3%83%83%E3%82%AF%E3%83%AA%E3%82%B9%E3%83%88) に 2024-05-06 時点の完了履歴としてリンクした。
+- [x] `flag_resolution` イベントの検証が [tests/platform/vscode/autosave/autosave.responsibility.test.ts](../tests/platform/vscode/autosave/autosave.responsibility.test.ts#L247-L252) に 2024-06-19 時点で実装された。
 - [x] (Issue #1) `Collector` テレメトリ統合チェックリストの進捗を [docs/IMPLEMENTATION-PLAN.md §5](./IMPLEMENTATION-PLAN.md#5-%E5%9B%9E%E5%B8%B0%E8%A9%A6%E9%A8%93%E8%A8%88%E7%94%BBtdd-%E3%83%81%E3%82%A7%E3%83%83%E3%82%AF%E3%83%AA%E3%82%B9%E3%83%88) に 2024-06-19 時点の完了履歴としてリンクした。
 
 Phase-a1 以降に `plugins.enable` を解放する際は、`src/config/index.ts` が提供する `collectFlagResolutionPayloads()` と `resolvePluginBridgeBootstrapPlan()` を通じて `flag_resolution` テレメトリへ `plugins.enable` / `autosave.enabled` の評価結果を同時送出し、Collector で Phase ガードの整合性を監査する。【F:src/config/index.ts†L164-L223】 AutoSave 側は [docs/AUTOSAVE-DESIGN-IMPL.md](./AUTOSAVE-DESIGN-IMPL.md) が定義する `AutoSaveOptions.disabled` と `autosave.enabled` の二重ガードを維持しており、Plugin Bridge も同じスナップショットを参照して Phase 差し戻し時のロールバック条件を共有する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L13-L56】

@@ -6,6 +6,7 @@ const IMPLEMENTATION_PLAN_PATH = new URL('../../docs/IMPLEMENTATION-PLAN.md', im
 const CONFIG_FLAGS_PATH = new URL('../../docs/CONFIG_FLAGS.md', import.meta.url)
 
 const CHECKLIST_PATTERN =
+  /- \[x\] `Collector` へのテレメトリ送信がフラグ ON\/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 \((?<date>\d{4}-\d{2}-\d{2}), \[検証ログ: tests\/platform\/vscode\/autosave\/autosave\.responsibility\.test\.ts\]\(\.\.\/tests\/platform\/vscode\/autosave\/autosave\.responsibility\.test\.ts\)\)/
   /- \[x\] `Collector` へのテレメトリ送信がフラグ ON\/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 \((?<date>\d{4}-\d{2}-\d{2}), \[検証ログ: tests\/platform\/vscode\/autosave\/autosave\.responsibility\.test\.ts\]\(\.\.\/tests\/platform\/vscode\/autosave\/autosave\.responsibility\.test\.ts\), \[tests\/platform\/vscode\/autosave\/autosave\.collector-export\.test\.ts\]\(\.\.\/tests\/platform\/vscode\/autosave\/autosave\.collector-export\.test\.ts\)\)/
   /- \[x\] \(Issue #1\) `Collector` へのテレメトリ送信がフラグ ON\/OFF 双方で同一スキーマ（JSONL）を維持する統合テスト。 \((?<date>\d{4}-\d{2}-\d{2}), \[検証ログ: tests\/telemetry\/vscode\.contract\.test\.ts\]\(\.\.\/tests\/telemetry\/vscode\.contract\.test\.ts\)\)/
 
