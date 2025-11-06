@@ -1,27 +1,27 @@
 {
   "deps_in": [
-    "docs/addenda/C_Persona_Schema.md"
+    "Day8/docs/addenda/C_Persona_Schema.md"
   ],
   "deps_out": [
-    "docs/addenda/C_Persona_Schema.md",
-    "docs/addenda/D_Trim_Design.md",
-    "docs/addenda/E_Evaluator_Details.md",
-    "docs/addenda/F_Provider_Matrix.md",
-    "docs/addenda/H_Deploy_Guide.md",
-    "docs/addenda/I_Test_Cases.md",
-    "docs/addenda/J_Runbook.md",
-    "docs/addenda/L_Config_Reference.md",
-    "docs/addenda/M1_Metrics_Healthz_ADR.md",
-    "docs/addenda/M_Versioning_Release.md",
-    "docs/day8/ops/04_ops.md",
-    "workflow-cookbook/CHECKLISTS.md",
-    "workflow-cookbook/EVALUATION.md",
-    "workflow-cookbook/RUNBOOK.md",
-    "workflow-cookbook/SAFETY.md",
-    "workflow-cookbook/SECURITY.md"
+    "Day8/docs/addenda/C_Persona_Schema.md",
+    "Day8/docs/addenda/D_Trim_Design.md",
+    "Day8/docs/addenda/E_Evaluator_Details.md",
+    "Day8/docs/addenda/F_Provider_Matrix.md",
+    "Day8/docs/addenda/H_Deploy_Guide.md",
+    "Day8/docs/addenda/I_Test_Cases.md",
+    "Day8/docs/addenda/J_Runbook.md",
+    "Day8/docs/addenda/L_Config_Reference.md",
+    "Day8/docs/addenda/M1_Metrics_Healthz_ADR.md",
+    "Day8/docs/addenda/M_Versioning_Release.md",
+    "Day8/docs/day8/ops/04_ops.md",
+    "Day8/workflow-cookbook/CHECKLISTS.md",
+    "Day8/workflow-cookbook/EVALUATION.md",
+    "Day8/workflow-cookbook/RUNBOOK.md",
+    "Day8/workflow-cookbook/SAFETY.md",
+    "Day8/workflow-cookbook/SECURITY.md"
   ],
   "generated_at": "00006",
-  "id": "docs/day8/spec/02_spec.md",
+  "id": "Day8/docs/day8/spec/02_spec.md",
   "maintenance": {
     "refresh": "ユースケース・チェーン制御・SLOが変わった場合は関連する Addenda / Ops 文書と同時に更新する。",
     "tooling": [

@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.codemap import update
+from tools.codemap import domain_index, update
 
 
 def test_ensure_python_version_exits(monkeypatch, capsys):
@@ -97,6 +97,57 @@ def test_hot_refresh_command_matches_documentation():
     for node in hot_doc.get("nodes", []):
         if "refresh_command" in node:
             assert node["refresh_command"] == _HOT_REFRESH_COMMAND
+
+
+def test_generate_domain_indexes(tmp_path):
+    index_path = tmp_path / "index.json"
+    _write_json(
+        index_path,
+        {
+            "generated_at": "00042",
+            "nodes": {
+                "docs/guide.md": {"role": "doc", "caps": "docs/birdseye/caps/docs.guide.md.json"},
+                "src/app.ts": {"role": "app", "caps": "docs/birdseye/caps/src.app.ts.json"},
+                "README.md": {"role": "root", "caps": "docs/birdseye/caps/README.md.json"},
+            },
+            "edges": [
+                ["docs/guide.md", "src/app.ts"],
+                ["README.md", "docs/guide.md"],
+                ["README.md", "src/app.ts"],
+            ],
+        },
+    )
+
+    options = domain_index.GenerationOptions(index_path=index_path)
+    report = domain_index.generate(options)
+
+    assert report.generated_at == "00042"
+    assert set(report.domain_ids) == {"docs", "src", "root"}
+
+    docs_payload = json.loads((tmp_path / "index.docs.json").read_text(encoding="utf-8"))
+    assert docs_payload["kind"] == "docs"
+    assert docs_payload["generated_at"] == "00042"
+    assert set(docs_payload["nodes"]) == {"docs/guide.md"}
+    assert docs_payload["edges"] == []
+
+    src_payload = json.loads((tmp_path / "index.src.json").read_text(encoding="utf-8"))
+    assert src_payload["kind"] == "src"
+    assert src_payload["generated_at"] == "00042"
+    assert set(src_payload["nodes"]) == {"src/app.ts"}
+    assert src_payload["edges"] == []
+
+    root_payload = json.loads((tmp_path / "index.root.json").read_text(encoding="utf-8"))
+    assert root_payload["kind"] == "root"
+    assert set(root_payload["nodes"]) == {"README.md"}
+
+    aggregate = json.loads(index_path.read_text(encoding="utf-8"))
+    domain_summary = aggregate["summary"]["domains"]
+    assert domain_summary["docs"]["nodes"] == 1
+    assert aggregate["shards"] == [
+        {"id": "docs", "path": "index.docs.json", "generated_at": "00042", "nodes": 1, "edges": 0},
+        {"id": "src", "path": "index.src.json", "generated_at": "00042", "nodes": 1, "edges": 0},
+        {"id": "root", "path": "index.root.json", "generated_at": "00042", "nodes": 1, "edges": 0},
+    ]
 
 
 def _prepare_birdseye(

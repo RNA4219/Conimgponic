@@ -1,4 +1,3 @@
-import type { FlagSnapshot } from '../config/flags.js'
 import type { Storyboard } from '../types'
 import { projectLockApi, ProjectLockError } from './locks'
 import {
@@ -11,10 +10,8 @@ import {
   AUTOSAVE_POLICY,
   AUTOSAVE_DEFAULTS,
   AUTOSAVE_MAX_BYTES,
-  resolveAutoSavePolicy,
-  type AutoSavePolicy
+  resolveAutoSavePolicy
 } from './autosave/policy.js'
-import { resolveCollectorPhase } from './autosave/collector-phase.js'
 import { createAutoSaveScheduler } from './autosave/scheduler.js'
 import {
   resolveAutoSaveGuard,
@@ -26,24 +23,10 @@ import {
   publishScheduleRequestedCollectorEvent,
   publishWriteCompletedCollectorEvent,
   resolveBuildSha,
-  type AutoSaveBridgeBootstrapMessage,
-  type AutoSaveBridgeEnvelope,
-  type AutoSaveBridgeMessage,
-  type AutoSaveBridgePhase,
-  type AutoSaveBridgeReadyMessage,
-  type AutoSaveEnvelopePhase,
-  type AutoSaveScheduleRequestedEventName,
-  type AutoSaveSnapshotRequestMessage,
-  type AutoSaveSnapshotRequestPayload,
-  type AutoSaveSnapshotResultMessage,
-  type AutoSaveSnapshotResultPayload,
-  type AutoSaveStatusMessage,
-  type AutoSaveStatusPayload
+  type AutoSaveScheduleRequestedEventName
 } from './autosave/telemetryBridge.js'
 
 export { AUTOSAVE_POLICY, AUTOSAVE_DEFAULTS, AUTOSAVE_MAX_BYTES, resolveAutoSavePolicy }
-export { resolveCollectorPhase } from './autosave/collector-phase.js'
-export type { AutoSavePolicy, AutoSavePolicyResolutionOptions } from './autosave/policy.js'
 export type { AutoSaveSchedulerContract } from './autosave/scheduler.js'
 export {
   AUTOSAVE_SCHEDULE_REQUESTED_EVENT,
@@ -53,19 +36,7 @@ export {
   resolveBuildSha
 } from './autosave/telemetryBridge.js'
 export type {
-  AutoSaveBridgeBootstrapMessage,
-  AutoSaveBridgeEnvelope,
-  AutoSaveBridgeMessage,
-  AutoSaveBridgePhase,
-  AutoSaveBridgeReadyMessage,
-  AutoSaveEnvelopePhase,
   AutoSaveScheduleRequestedEventName,
-  AutoSaveSnapshotRequestMessage,
-  AutoSaveSnapshotRequestPayload,
-  AutoSaveSnapshotResultMessage,
-  AutoSaveSnapshotResultPayload,
-  AutoSaveStatusMessage,
-  AutoSaveStatusPayload
 } from './autosave/telemetryBridge.js'
 export {
   AUTOSAVE_HISTORY_ROTATION_PLAN

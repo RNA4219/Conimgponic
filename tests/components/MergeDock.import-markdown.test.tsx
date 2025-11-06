@@ -76,9 +76,6 @@ test('MergeDock mergeMarkdownStoryboard imports scenes even when cut headings ar
 
   const base: Storyboard = {
     id: 'sb-merge-leading-space-heading',
-  }
-})
-
     title: 'Storyboard',
     scenes: [
       { id: 'cut-1', manual: 'original manual 1', ai: 'original ai 1', status: 'idle', assets: [] },

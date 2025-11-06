@@ -1,11 +1,11 @@
 {
   "deps_in": [
-    "workflow-cookbook/GUARDRAILS.md",
-    "workflow-cookbook/SECURITY.md"
+    "Day8/workflow-cookbook/GUARDRAILS.md",
+    "Day8/workflow-cookbook/SECURITY.md"
   ],
   "deps_out": [],
   "generated_at": "00006",
-  "id": "workflow-cookbook/scripts/",
+  "id": "Day8/workflow-cookbook/scripts/",
   "maintenance": {
     "refresh": "スクリプト仕様を変更したらガードレールと整合させ、Birdseye カプセルを再生成する。",
     "tooling": [

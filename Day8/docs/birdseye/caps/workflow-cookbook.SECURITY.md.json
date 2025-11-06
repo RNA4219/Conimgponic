@@ -1,19 +1,19 @@
 {
   "deps_in": [
-    "docs/day8/spec/02_spec.md",
-    "workflow-cookbook/GUARDRAILS.md"
+    "Day8/docs/day8/spec/02_spec.md",
+    "Day8/workflow-cookbook/GUARDRAILS.md"
   ],
   "deps_out": [
-    "workflow-cookbook/CHECKLISTS.md",
-    "workflow-cookbook/EVALUATION.md",
-    "workflow-cookbook/RUNBOOK.md",
-    "workflow-cookbook/SAFETY.md",
-    "workflow-cookbook/TASK.codex.md",
-    "workflow-cookbook/scripts/",
-    "workflow-cookbook/tools/"
+    "Day8/workflow-cookbook/CHECKLISTS.md",
+    "Day8/workflow-cookbook/EVALUATION.md",
+    "Day8/workflow-cookbook/RUNBOOK.md",
+    "Day8/workflow-cookbook/SAFETY.md",
+    "Day8/workflow-cookbook/TASK.codex.md",
+    "Day8/workflow-cookbook/scripts/",
+    "Day8/workflow-cookbook/tools/"
   ],
   "generated_at": "00006",
-  "id": "workflow-cookbook/SECURITY.md",
+  "id": "Day8/workflow-cookbook/SECURITY.md",
   "katamari": {
     "dependencies": {
       "inputs": [
