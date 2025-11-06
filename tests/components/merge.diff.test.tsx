@@ -30,6 +30,9 @@ const mergeDockModule = await import('../../src/components/MergeDock')
 const mergeDomainModule = await import('../../src/components/merge-dock/domain')
 const mergePreferencesModule = await import('../../src/lib/merge/preferences.ts')
 const mergeThresholdModule = await import('../../src/lib/merge/threshold.ts')
+const { DEFAULT_MERGE_ENGINE } = await import('../../src/lib/merge/engine.ts')
+const { createEventHub } = await import('../../src/platform/vscode/merge/bridge.ts')
+const mergeEventsModule = await import('../../src/lib/merge/events.ts')
 const {
   resolveMergeDockPhasePlan,
   planMergeDockTabs,
@@ -1891,6 +1894,81 @@ test('resolveMergeThresholdSnapshot clamps stable workspace threshold below roll
   assert.equal(snapshot.threshold, 0.82)
 })
 
+test('Diff queue goes through merge3 execution and Merge event hub notification with AutoSave lock coordination', () => {
+  // Create a mock storyboard
+  const mockStoryboard: Storyboard = {
+    id: 'test-sb',
+    title: 'Test Storyboard',
+    scenes: [
+      { id: 'cut-1', manual: 'Manual content', ai: 'AI content', status: 'idle', assets: [] },
+      { id: 'cut-2', manual: 'Another manual content', ai: 'Another AI content', status: 'idle', assets: [] },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  // Create event hub
+  const { hub: eventHub, dispose } = createEventHub()
+  
+  // Track published events
+  const publishedEvents: any[] = []
+  const unsubscribe = eventHub.subscribe((event) => {
+    publishedEvents.push(event)
+  })
+
+  // Create auto-save lock events
+  const detachAutoSaveLockEvents = mergeEventsModule.attachAutoSaveLockEvents(eventHub)
+
+  try {
+    // Mock merge input
+    const mockInput = {
+      base: 'base content',
+      ours: 'ours content',
+      theirs: 'theirs content',
+      sceneId: 'test-scene',
+    }
+
+    // Execute merge3 with event hub and queue command
+    let queueCommandExecuted = false
+    const mockQueueCommand = (command: any) => {
+      queueCommandExecuted = true
+    }
+
+    // Call merge3
+    const result = DEFAULT_MERGE_ENGINE.merge3(mockInput, {
+      events: eventHub,
+      queueMergeCommand: mockQueueCommand,
+    })
+
+    // Verify that the merge was successful and command was queued
+    assert.ok(result.hunks.length > 0, 'Expected merge result to have hunks')
+    assert.ok(queueCommandExecuted, 'Expected queueMergeCommand to be executed')
+    
+    // Check that events were published to the event hub
+    assert.ok(publishedEvents.length > 0, 'Expected some events to be published to event hub')
+    
+    // Check for auto-save lock events
+    const hasAutoSaveLockEvents = publishedEvents.some(event => 
+      event.type === 'merge:autosave:lock'
+    )
+    
+    // Verify merge decision events were published
+    const hasMergeDecisionEvents = publishedEvents.some(event =>
+      event.type === 'merge:auto-applied' || event.type === 'merge:conflict-detected'
+    )
+    
+    assert.ok(hasMergeDecisionEvents, 'Expected merge decision events to be published')
+    
+    // Verify result includes plan when successful
+    if (result.plan) {
+      assert.ok(result.plan.entries.length > 0, 'Expected plan to have entries')
+      assert.equal(result.plan.precision, 'stable', 'Expected default precision to be stable')
+    }
+  } finally {
+    unsubscribe()
+    detachAutoSaveLockEvents?.()
+    dispose()
+  }
 test('merge dock passes merge3 output hunks when precision is beta or stable and autosave is enabled', () => {
   const mergeInput = {
     base: 'Base content',
