@@ -79,7 +79,7 @@ export interface DiffMergeQueueCommandPayload {
 }
 
 export interface MergeDecisionEvent {
-  readonly status: 'success' | 'conflict' | 'error'
+  readonly status: 'success' | 'conflict' | 'error' | 'partial'  // Added 'partial' to accommodate all possible statuses
   readonly hunkIds: readonly string[]
   readonly telemetry: {
     readonly collectorSurface: 'diff-merge.hunk-list'
