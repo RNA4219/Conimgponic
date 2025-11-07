@@ -1,4 +1,4 @@
-import { resolveAutoSavePolicy, type AutoSavePolicy } from '../lib/autosave.js'
+import { resolveAutoSavePolicy, AUTOSAVE_POLICY } from '../lib/autosave.js'
 import type { AutoSavePhaseGuardSnapshot } from '../lib/autosave.js'
 
 import {
@@ -199,7 +199,7 @@ export interface AutoSaveBootstrapPlan {
   readonly snapshot: FlagSnapshot
   readonly guard: AutoSavePhaseGuardSnapshot
   readonly failSafePhase: FlagRolloutPhase | null
-  readonly policy: AutoSavePolicy
+  readonly policy: typeof AUTOSAVE_POLICY
   readonly errors: readonly FlagValidationError[]
 }
 
@@ -250,13 +250,15 @@ export function resolveAutoSaveBootstrapPlan(
       const phaseB0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-b0')
       currentPhase = phaseB0?.phase ?? null
     } 
-    // If the flag source is localStorage or default, we could be in earlier phases
-    else if (snapshot.autosave.source === 'localStorage') {
-      const phaseA1 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a1')
-      currentPhase = phaseA1?.phase ?? 'phase-a0'
-    } 
+    // If the flag source is localStorage or default, this is considered phase-a0 failsafe
+    // according to docs/IMPLEMENTATION-PLAN.md and docs/CONFIG_FLAGS.md
+    // localStorage フェールセーフも default フェールセーフも phase-a0 として扱う
+    else if (snapshot.autosave.source === 'localStorage' || snapshot.autosave.source === 'default') {
+      const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
+      currentPhase = phaseA0?.phase ?? null
+    }
     else {
-      // Default source means we're at the earliest phase
+      // For any other source, default to phase-a0
       const phaseA0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-a0')
       currentPhase = phaseA0?.phase ?? null
     }
@@ -273,7 +275,7 @@ export function resolveAutoSaveBootstrapPlan(
 
   const workspaceInput: WorkspaceConfiguration | null | undefined = options?.workspace
   // Phase A: `resolveAutoSavePolicy` は入力に関わらず固定値を返す（docs/AUTOSAVE-DESIGN-IMPL.md §1.1）。
-  const workspacePolicy = resolveAutoSavePolicy(workspaceInput)
+  const workspacePolicy = resolveAutoSavePolicy()
 
   return {
     snapshot,
