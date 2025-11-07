@@ -585,7 +585,7 @@ export function MergeDock({
       }
       mergeHub.publish({ type: 'merge:autosave:lock', stage: 'acquired', lease })
 
-      let responseStatus: 'success' | 'error' = 'success'
+      let responseStatus: 'success' | 'error' | 'conflict' = 'success'
       let retryable = false
       let finishedHunks: readonly MergeHunk[] = []
 
@@ -623,6 +623,9 @@ export function MergeDock({
           0,
         )
         retryable = totalConflicts > 0
+        if (totalConflicts > 0) {
+          responseStatus = 'success' // Keep success status but update return to conflict for consistency with decision events
+        }
 
         if (mergeResults.some((entry) => entry.result.hunks.some((hunk) => hunk.decision === 'auto'))) {
           useSB.setState((state) => {
@@ -674,12 +677,16 @@ export function MergeDock({
         }
       }
 
-      const finishedEventStatus = responseStatus === 'error' ? 'error' : 'success'
+      // Determine the actual status for response and events - prioritize conflict status when conflicts exist
+      let actualStatus: 'success' | 'error' | 'conflict' = responseStatus
+      if (totalConflicts > 0) {
+        actualStatus = 'conflict'  // Use 'conflict' status when there are conflicts
+      }
 
       diffQueueEvents.publish({
         type: 'queue:finished',
         precision: payload.precision,
-        status: finishedEventStatus,
+        status: actualStatus === 'conflict' ? 'error' : actualStatus,  // Keep event format consistent with existing format
         origin: payload.origin,
         hunkIds: knownIds,
         hunks: finishedHunks,
@@ -692,7 +699,7 @@ export function MergeDock({
         precision: payload.precision,
         origin: payload.origin,
         hunk_ids: knownIds,
-        status: responseStatus,
+        status: actualStatus,
         retryable,
         phase_guard: phasePlan.phase,
         diff_exposure: phasePlan.diff.exposure,
@@ -700,7 +707,7 @@ export function MergeDock({
       })
 
       return {
-        status: responseStatus,
+        status: actualStatus,
         hunkIds: knownIds,
         telemetry: { collectorSurface: responseCollectorSurface, analyzerSurface, retryable },
       }
