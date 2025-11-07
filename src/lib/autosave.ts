@@ -25,6 +25,9 @@ import {
   resolveBuildSha,
   type AutoSaveScheduleRequestedEventName
 } from './autosave/telemetryBridge.js'
+import {
+  resolveAutoSaveFromFlagSnapshot
+} from './autosave/flags.js'
 
 export { AUTOSAVE_POLICY, AUTOSAVE_DEFAULTS, AUTOSAVE_MAX_BYTES, resolveAutoSavePolicy }
 export type { AutoSaveSchedulerContract } from './autosave/scheduler.js'
@@ -46,6 +49,9 @@ export type {
   AutoSaveHistoryRotationPlan,
   AutoSavePersistenceContract
 } from './autosave/persistence.js'
+export {
+  resolveAutoSaveFromFlagSnapshot
+} from './autosave/flags.js'
 
 export type StoryboardProvider = () => Storyboard
 
