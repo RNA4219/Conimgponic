@@ -19,3 +19,4 @@ export {
   resolvePrecision,
   resolveThreshold,
 } from './profile';
+export { simpleMerge3 } from './simpleMerge';
