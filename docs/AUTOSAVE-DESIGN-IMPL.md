@@ -51,6 +51,15 @@ Phase B 以降で可変化する場合は `AutoSaveOptions` を拡張し、`norm
 | Feature flag `autosave.enabled` | フラグ配信遅延により有効化が遅れる。 | フラグ false のまま 24h 経過した場合はオペレーション通知を行い、ロールバック（AutoSave 完全停止）で整合性を保つ。 | 配信障害時の暫定策。 |
 | 固定ポリシー値 | 将来のしきい値緩和を阻害する。 | GC が `history-overflow` を 2 回連続で検出した場合、最後の成功世代へ復帰して以降の保存を一時停止。 | Phase B でダイナミック設定を導入予定。 |
 
+#### 1.3.1 フェールセーフ判定の二重ガード要件と整合性
+
+Phase A においては `autosave.enabled` フラグと `AutoSaveOptions.disabled` の二重ガードで安全運用することが前提となっています。
+さらに、localStorage 直読をフェールセーフとして残す前提で `resolveAutoSaveBootstrapPlan` が実装されており、
+localStorage や既定値（default）由来の無効化フラグは `phase-a0` として扱われ、
+テレメトリの `phase-a0-failsafe` 理由でオートセーブ無効化が検知されるように設計されています。
+
+この二重ガードとフェールセーフの整合は、`docs/IMPLEMENTATION-PLAN.md` §0.2.1 および `docs/CONFIG_FLAGS.md` §0.2 に記載されている通りです。
+
 ## 2) Runtime Sequencing
 
 ### 2.1 `initAutoSave` I/O / 状態遷移 / 例外

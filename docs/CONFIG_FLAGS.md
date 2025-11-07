@@ -74,6 +74,14 @@
 - [x] (Issue #1) `Collector` テレメトリ統合チェックリストの進捗を [docs/IMPLEMENTATION-PLAN.md §5](./IMPLEMENTATION-PLAN.md#5-%E5%9B%9E%E5%B8%B0%E8%A9%A6%E9%A8%93%E8%A8%88%E7%94%BBtdd-%E3%83%81%E3%82%A7%E3%83%83%E3%82%AF%E3%83%AA%E3%82%B9%E3%83%88) に 2024-06-19 時点の完了履歴としてリンクした。
 
 Phase-a1 以降に `plugins.enable` を解放する際は、`src/config/index.ts` が提供する `collectFlagResolutionPayloads()` と `resolvePluginBridgeBootstrapPlan()` を通じて `flag_resolution` テレメトリへ `plugins.enable` / `autosave.enabled` の評価結果を同時送出し、Collector で Phase ガードの整合性を監査する。【F:src/config/index.ts†L164-L223】 AutoSave 側は [docs/AUTOSAVE-DESIGN-IMPL.md](./AUTOSAVE-DESIGN-IMPL.md) が定義する `AutoSaveOptions.disabled` と `autosave.enabled` の二重ガードを維持しており、Plugin Bridge も同じスナップショットを参照して Phase 差し戻し時のロールバック条件を共有する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L13-L56】
+
+### Phase A フェールセーフ条件と QA 追跡要件
+
+| 入力ソース (`flag_source`) | `autosave.enabled` の値 | 検知されるフェーズ | planAutoSave 理由 | ロールバック条件 |
+| --- | --- | --- | --- | --- |
+| `env` または `workspace` | `false` | `phase-a1` 以上 | `feature-flag-disabled` | フラグが明示的に無効化された状態（環境設定による明示的な制御） |
+| `localStorage` または `default` | `false` | `phase-a0` | `phase-a0-failsafe` | QA はこのケースを `phase-a0-failsafe` 理由で追跡し、テレメトリに `failSafePhase='phase-a0'` が記録されていることを確認すること |
+
 ## フラグ解決順序と入力ソース
 
 ### 優先順位
@@ -128,6 +136,15 @@ flowchart TD
 1. `resolveFlags()` 実行ごとに `flag_resolution` イベントを Collector へ送出し、`{ phaseGuard, autosave: { enabled, source }, merge: { precision, source, threshold? }, updatedAt }` を JSONL append。Day8 Pipeline は Analyzer で Phase 逸脱を集計し、Reporter が `reports/today.md` へ反映する。【F:Day8/docs/day8/design/03_architecture.md†L1-L39】
 2. Phase A フェールセーフにより `source='default' | 'localStorage'` の場合は `autosave.phase='disabled'` を維持し、Collector では `guardFallback=true` を付与する。【F:docs/AUTOSAVE-DESIGN-IMPL.md†L19-L85】
 3. VSCode 設定が env と競合した際は `conflict=true` を付与し、Reporter がロールバック推奨を生成する。追加メタデータは 2 フィールドであり、Collector の処理コストは ±5% 以内。
+
+#### Phase テレメトリとフェールセーフ分類
+
+| ソース | フラグ有効状態 | 期待されるフェーズ | テレメトリ理由 | 備考 |
+| --- | --- | --- | --- | --- |
+| `env` または `workspace` | `false` | `phase-a1` 以上（`phase-b0` など） | `feature-flag-disabled` | 環境設定による明示的な無効化 |
+| `localStorage` または `default` | `false` | `phase-a0` | `phase-a0-failsafe` | フェールセーフとしての無効化（localStorage 直読の代替） |
+| `env` または `workspace` | `true` | `phase-a1` 以上（`phase-a1` など） | `feature-flag-enabled` | 環境設定による有効化 |
+| `localStorage` または `default` | `true` | `phase-a1` 以上（`phase-a1` など） | `feature-flag-enabled` | （ただし、通常は env/workspace による制御を優先） |
 
 #### 更新履歴
 

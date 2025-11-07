@@ -72,3 +72,40 @@ test('planAutoSave returns feature-flag-disabled reason when flag is disabled vi
   assert.equal(decision.mode, 'manual-only')
   assert.equal(decision.reason, 'feature-flag-disabled')
 })
+
+// localStorage と default ソースのフェールセーフ検証テスト
+test('planAutoSave returns phase-a0-failsafe reason when flag is disabled via localStorage', () => {
+  // localStorage から読み込まれた無効化フラグのシミュレーション
+  const storage = {
+    getItem: (key: string) => {
+      if (key === 'autosave.enabled') {
+        return 'false'
+      }
+      return null
+    }
+  }
+  const options: ResolveOptions = { storage }
+  const plan = resolveAutoSaveBootstrapPlan(options)
+  const decision = planAutoSave(plan)
+
+  // localStorage 由来の場合は Phase A0 フェールセーフとして扱われるべき
+  assert.equal(plan.failSafePhase, 'phase-a0')
+  assert.equal(decision.mode, 'manual-only')
+  assert.equal(decision.reason, 'phase-a0-failsafe')
+})
+
+test('planAutoSave returns phase-a0-failsafe reason when flag is using default value', () => {
+  // 既定値（default）を使用する場合（何も設定されていない）
+  const storage = {
+    getItem: (key: string) => null
+  }
+  const env = {}
+  const options: ResolveOptions = { storage, env }
+  const plan = resolveAutoSaveBootstrapPlan(options)
+  const decision = planAutoSave(plan)
+
+  // 既定値由来の場合は Phase A0 フェールセーフとして扱われるべき
+  assert.equal(plan.failSafePhase, 'phase-a0')
+  assert.equal(decision.mode, 'manual-only')
+  assert.equal(decision.reason, 'phase-a0-failsafe')
+})
