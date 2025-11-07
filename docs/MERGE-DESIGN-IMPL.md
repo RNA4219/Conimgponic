@@ -194,11 +194,20 @@ sequenceDiagram
     participant UI as DiffMergeView
     participant Hub as Merge Event Hub (merge.ts)
     participant AutoSave as AutoSave Lock Manager
+    participant Collector as Telemetry Collector
     UI->>Hub: queueMergeCommand(payload)
     Hub->>AutoSave: requestSharedLock('project')
     AutoSave-->>Hub: lockGranted | lockPending
     alt lockGranted
         Hub->>Hub: execute merge3 / legacy pipeline
+        Hub->>Hub: check totalConflicts
+        alt totalConflicts > 0
+            Hub->>Hub: status = 'conflict', retryable = true
+            Hub->>Collector: publish event (status='conflict', retryable=true)
+        else
+            Hub->>Hub: status = 'success', retryable = false
+            Hub->>Collector: publish event (status='success', retryable=false)
+        end
         Hub-->>UI: commandResolved({ status, retryable })
     else lockPending
         UI->>UI: show "保存中…" banner, disable CTA
@@ -214,8 +223,19 @@ sequenceDiagram
 | 1. enqueue | UI から `queueMergeCommand` を発行し、`payload` をストアにバッファ。 | 全 precision | ロック中は enqueue のみ許可。 | `merge.lastTab` に状態保存。 |
 | 2. lock 交渉 | `merge.ts` が AutoSave 共有ロックを取得。 | `legacy` はスキップ。 | `lockPending` 時に UI へローディングバナーを表示。 | 5 秒超過で `retryable` エラー。 |
 | 3. 実行 | ロック取得後に `merge3` または従来処理を呼び出す。 | `beta/stable` で Diff ハンク更新。 | AutoSave ロック解除までは結果適用を遅延。 | 失敗時は `retryable` 判定で UI リトライ。 |
-| 4. 結果通知 | `commandResolved` を発火し UI ステータス更新。 | 全 precision | `retryable=false` で `MergeDock` を `compiled` へ戻す。 | Diff ステート破棄で不整合防止。 |
-| 5. AutoSave flush | 成功時に `flushNow()` を連携。 | `beta/stable` のみ | ロック解除直後に実行。 | Telemetry でロック時間を追跡。 |
+| 4. コンフリクト判定 | `merge3` 実行後の `totalConflicts` が 0 より大きいか判定。 | 全 precision | 並行性無視（同期処理）。 | ハンクごとの決定を検証。 |
+| 5. 結果通知 | `commandResolved` を発火し UI ステータス更新。 | 全 precision | `retryable=false` で `MergeDock` を `compiled` へ戻す。 | Diff ステート破棄で不整合防止。 |
+| 6. Telemetry 送信 | `status` と `retryable` を Collector へ送信。 | 全 precision | 結果完了後に非同期送信。 | エラー時はログのみ出力。 |
+| 7. AutoSave flush | 成功時に `flushNow()` を連携。 | `beta/stable` のみ | ロック解除直後に実行。 | Telemetry でロック時間を追跡。 |
+
+### 5.3.1 テレメトリ検証ログ
+
+| イベント | ペイロード | 検証ポイント |
+| --- | --- | --- |
+| `queue:start` | `{ feature: 'merge.diff', event: 'queue:start', precision, origin, hunk_ids, phase_guard, diff_exposure, auto_save_requested }` | 全フィールドが適切に設定されているか、`hunk_ids` が配列として送信されるか。 |
+| `queue:finish` | `{ feature: 'merge.diff', event: 'queue:finish', precision, origin, hunk_ids, status, retryable, phase_guard, diff_exposure, auto_save_requested }` | `status` が `success`/`error`/`conflict` のいずれかになり、`retryable` が `true`/`false` として適切に設定されるか。 |
+| `merge:auto-applied` | `{ type: 'merge:auto-applied', hunk: { id, decision, similarity, ... } }` | ハンク ID が存在し、決定が `auto` になるか。 |
+| `merge:conflict-detected` | `{ type: 'merge:conflict-detected', hunk: { id, decision, similarity, ... } }` | ハンク ID が存在し、決定が `conflict` になるか、`similarity` が適切な範囲か。 |
 
 ### 5.4 precision 切替とロック協調
 

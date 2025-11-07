@@ -624,6 +624,11 @@ export function MergeDock({
         )
         retryable = totalConflicts > 0
 
+        // totalConflicts > 0 の場合は responseStatus を 'conflict' に更新
+        if (totalConflicts > 0) {
+          responseStatus = 'conflict'
+        }
+
         if (mergeResults.some((entry) => entry.result.hunks.some((hunk) => hunk.decision === 'auto'))) {
           useSB.setState((state) => {
             let changed = false
@@ -674,7 +679,7 @@ export function MergeDock({
         }
       }
 
-      const finishedEventStatus = responseStatus === 'error' ? 'error' : 'success'
+      const finishedEventStatus = responseStatus === 'error' ? 'error' : responseStatus
 
       diffQueueEvents.publish({
         type: 'queue:finished',

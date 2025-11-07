@@ -1489,6 +1489,84 @@ test('stable precision preserves manual preference once diff guard lifts but all
   assert.equal(preference, 'manual-first')
 })
 
+test('diff queue command returns conflict status when conflicts detected', async () => {
+  const storyboard: Storyboard = {
+    id: 'sb-conflict-test',
+    title: 'Conflict Test',
+    scenes: [
+      {
+        id: 'cut-conflict-1',
+        manual: 'Manual change',
+        ai: 'AI change',
+        status: 'idle',
+        assets: [],
+        lock: null,
+      },
+    ],
+    selection: [],
+    version: 1,
+  }
+
+  const harness = await renderStableDiffMergeDock({ autoSaveEnabled: true, storyboard })
+
+  // テスト用にコンフリクトを発生させるモックを設定
+  const originalMerge3 = DEFAULT_MERGE_ENGINE.merge3
+  DEFAULT_MERGE_ENGINE.merge3 = (input, options) => {
+    // コンフリクト状態をシミュレート
+    const mockResult: MergeResult = {
+      mergedText: input.ours, // 両方の変更を保持
+      hunks: [
+        {
+          id: input.sceneId || 'mock-id',
+          section: 'Mock Section',
+          decision: 'conflict', // コンフリクトに設定
+          similarity: 0.2, // 低類似度でコンフリクトをシミュレート
+          locked: false,
+          merged: input.ours,
+          manual: input.ours,
+          ai: input.theirs,
+          base: input.base,
+          prefer: 'none',
+        }
+      ],
+      stats: {
+        totalDecisions: 1,
+        autoDecisions: 0,
+        conflictDecisions: 1, // コンフリクト数を1に設定
+        similarity: 0.2
+      },
+      plan: {
+        entries: [],
+        precision: options.profile?.precision || 'stable',
+        threshold: options.profile?.threshold || 0.82
+      }
+    }
+    return mockResult
+  }
+
+  try {
+    const result = await harness.queue({
+      type: 'queue-merge',
+      precision: 'stable',
+      origin: 'operation-pane.queue',
+      hunkIds: ['cut-conflict-1'],
+      telemetryContext: {
+        collectorSurface: 'diff-merge.operation-pane',
+        analyzerSurface: 'diff-merge.queue',
+        lastTab: 'diff',
+      },
+      metadata: { autoSaveRequested: true },
+    })
+
+    assert.equal(result.status, 'conflict', 'Expected status to be conflict when conflicts are detected')
+    assert.equal(result.telemetry.retryable, true, 'Expected retryable to be true for conflicts')
+  } finally {
+    // 元の実装に戻す
+    DEFAULT_MERGE_ENGINE.merge3 = originalMerge3
+    harness.cleanup()
+  }
+})
+
 test('stable precision preserves manual fallback when guard unlocks before manual override', () => {
   const guardedPlan = resolveMergeDockPhasePlan({
     precision: 'stable',
