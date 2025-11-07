@@ -627,6 +627,11 @@ export function MergeDock({
           responseStatus = 'success' // Keep success status but update return to conflict for consistency with decision events
         }
 
+        // totalConflicts > 0 の場合は responseStatus を 'conflict' に更新
+        if (totalConflicts > 0) {
+          responseStatus = 'conflict'
+        }
+
         if (mergeResults.some((entry) => entry.result.hunks.some((hunk) => hunk.decision === 'auto'))) {
           useSB.setState((state) => {
             let changed = false
@@ -677,11 +682,7 @@ export function MergeDock({
         }
       }
 
-      // Determine the actual status for response and events - prioritize conflict status when conflicts exist
-      let actualStatus: 'success' | 'error' | 'conflict' = responseStatus
-      if (totalConflicts > 0) {
-        actualStatus = 'conflict'  // Use 'conflict' status when there are conflicts
-      }
+      const finishedEventStatus = responseStatus === 'error' ? 'error' : responseStatus
 
       diffQueueEvents.publish({
         type: 'queue:finished',
