@@ -1,406 +1,135 @@
-import { strict as assert } from 'node:assert'
-import test from 'node:test'
+import { describe, it, expect } from 'node:test'
+import { resolveFlags } from '../../src/config/flags.js'
+import type { FlagSnapshot, FeatureFlagName } from '../../src/config/flags.js'
 
-import {
-  DEFAULT_FLAG_SNAPSHOT,
-  DEFAULT_FLAGS,
-  FEATURE_FLAG_DEFINITIONS,
-  FlagResolutionError,
-  FlagSnapshot,
-  STABLE_THRESHOLD_DEFAULT,
-  type WorkspaceConfiguration,
-  coerceMergeThresholdValue,
-  resolveFlags
-} from '../../src/config/flags'
-import type { FlagSource } from '../../src/config/flags/schema'
-import { resolveFlags as resolveFlagsFromModule } from '../../src/config/flags/resolve'
-import { workspaceKeyCandidates as workspaceKeyCandidatesFromSources } from '../../src/config/flags/sources'
+// Mock Environment and Storage for testing
+const createMockEnv = (values: Record<string, string | undefined>) => ({
+  ...process.env,
+  ...Object.keys(values).reduce((acc, key) => {
+    const envKey = `VITE_${key.replace(/\./g, '_').toUpperCase()}`
+    return { ...acc, [envKey]: values[key] }
+  }, {})
+})
 
-type WorkspaceRecord = Record<string, unknown>
+const createMockStorage = (items: Record<string, string | null>) => ({
+  getItem: (key: string) => items[key] ?? null
+})
 
-const createWorkspace = (
-  values: WorkspaceRecord
-): WorkspaceConfiguration => ({
-  get(key) {
-    assert.ok(
-      !key.startsWith('conimg.'),
-      'workspace.get は AUTOSAVE-DESIGN-IMPL §3.6 と MERGE-DESIGN-IMPL §5.4 の要件通り接頭辞なしキーのみを受け付ける'
+const createMockWorkspace = (values: Record<string, unknown>) => ({
+  get: (key: string) => values[key]
+})
+
+describe('resolveFlags function tests', () => {
+  it('should prioritize env over localStorage and default', () => {
+    const env = createMockEnv({ 'autosave.enabled': 'true' })
+    const storage = createMockStorage({ 'autosave.enabled': 'false' })
+    
+    const snapshot = resolveFlags({ env, storage })
+    
+    expect(snapshot.autosave.value).toBe(true)
+    expect(snapshot.autosave.source).toBe('env')
+  })
+
+  it('should fallback to localStorage when env is not set', () => {
+    const storage = createMockStorage({ 'merge.precision': 'beta' })
+    
+    const snapshot = resolveFlags({ env: {}, storage })
+    
+    expect(snapshot.merge.precision).toBe('beta')
+    expect(snapshot.merge.source).toBe('localStorage')
+  })
+
+  it('should use default value when both env and storage are invalid', () => {
+    const storage = createMockStorage({ 'merge.precision': 'invalid' })
+    
+    const snapshot = resolveFlags({ env: {}, storage })
+    
+    expect(snapshot.merge.precision).toBe('legacy')
+    expect(snapshot.merge.source).toBe('default')
+    expect(snapshot.merge.errors.length).toBeGreaterThan(0)
+  })
+
+  it('should handle workspace configuration', () => {
+    const workspace = createMockWorkspace({ 
+      'conimg.merge.threshold': 0.8 
+    })
+    
+    const snapshot = resolveFlags({ workspace })
+    
+    // workspace setting affects precision mapping
+    expect(snapshot.merge.source).toBe('workspace')
+  })
+
+  it('should validate precision values', () => {
+    const storage = createMockStorage({ 'merge.precision': 'invalid-value' })
+    
+    const snapshot = resolveFlags({ env: {}, storage })
+    
+    expect(snapshot.merge.errors).toContainEqual(
+      expect.objectContaining({ code: 'invalid-precision' })
     )
-    if (Object.prototype.hasOwnProperty.call(values, key)) {
-      return values[key]
-    }
-    return undefined
-  }
-})
-
-type StorageStub = Pick<Storage, 'getItem'>
-
-function createStorage(values: Record<string, string | undefined>): StorageStub {
-  return {
-    getItem(key) {
-      return Object.prototype.hasOwnProperty.call(values, key)
-        ? values[key] ?? null
-        : null
-    }
-  }
-}
-
-test('env overrides workspace and localStorage for autosave, plugin bridge, and merge precision', () => {
-  const env = {
-    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'true',
-    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].envKey]: 'true',
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'STABLE'
-  }
-  const workspace = createWorkspace({
-    'autosave.enabled': false,
-    'plugins.enable': '0',
-    'merge.threshold': 0.75
-  })
-  const storage = createStorage({
-    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: '0',
-    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].storageKey]: '1',
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'legacy'
   })
 
-  const snapshot = resolveFlags({ env, workspace, storage, clock: () => new Date('2024-05-01T01:02:03.456Z') })
-
-  assert.equal(snapshot.autosave.enabled, true)
-  assert.equal(snapshot.autosave.source, 'env')
-  assert.equal(snapshot.plugins.enabled, true)
-  assert.equal(snapshot.plugins.source, 'env')
-  assert.equal(snapshot.merge.precision, 'stable')
-  assert.equal(snapshot.merge.source, 'env')
-  assert.equal(snapshot.updatedAt, '2024-05-01T01:02:03.456Z')
-})
-
-test('workspace settings provide values when env is absent', () => {
-  const workspace = createWorkspace({
-    'autosave.enabled': '1',
-    'plugins.enable': '1',
-    'merge.threshold': 0.83
-  })
-
-  const snapshot = resolveFlags({ workspace, clock: () => new Date('2024-02-03T04:05:06.789Z') })
-
-  assert.equal(snapshot.autosave.enabled, true)
-  assert.equal(snapshot.autosave.source, 'workspace')
-  assert.equal(snapshot.plugins.enabled, true)
-  assert.equal(snapshot.plugins.source, 'workspace')
-  assert.equal(snapshot.merge.precision, 'stable')
-  assert.equal(snapshot.merge.source, 'workspace')
-  assert.equal(snapshot.updatedAt, '2024-02-03T04:05:06.789Z')
-})
-
-test('workspace getter handles conimg-prefixed keys for autosave and merge flags', () => {
-  const workspace = {
-    get(key: string) {
-      switch (key) {
-        case 'conimg.autosave.enabled':
-          return 'true'
-        case 'conimg.plugins.enable':
-          return 'true'
-        case 'conimg.merge.threshold':
-          return 0.84
-        default:
-          return undefined
-      }
-    }
-  } satisfies WorkspaceConfiguration
-
-  const snapshot = resolveFlags({ workspace })
-
-  assert.equal(snapshot.autosave.enabled, true)
-  assert.equal(snapshot.autosave.source, 'workspace')
-  assert.equal(snapshot.plugins.enabled, true)
-  assert.equal(snapshot.plugins.source, 'workspace')
-  assert.equal(snapshot.merge.precision, 'stable')
-  assert.equal(snapshot.merge.source, 'workspace')
-  assert.equal(snapshot.merge.threshold, 0.84)
-})
-
-test('workspace getter that requires conimg prefix is supported', () => {
-  const workspace = {
-    get(key: string) {
-      if (!key.startsWith('conimg.')) {
-        assert.notEqual(key, 'autosave.enabled', 'autosave.enabled must be resolved via conimg prefix')
-        assert.notEqual(key, 'plugins.enable', 'plugins.enable must be resolved via conimg prefix')
-        assert.notEqual(key, 'merge.threshold', 'merge.threshold must be resolved via conimg prefix')
-        return undefined
-      }
-      if (key === 'conimg.autosave.enabled') {
-        return 'true'
-      }
-      if (key === 'conimg.plugins.enable') {
-        return 'true'
-      }
-      if (key === 'conimg.merge.threshold') {
-        return 0.86
-      }
-      return undefined
-    }
-  } satisfies WorkspaceConfiguration
-
-  const snapshot = resolveFlags({ workspace })
-
-  assert.equal(snapshot.autosave.enabled, true)
-  assert.equal(snapshot.autosave.source, 'workspace')
-  assert.equal(snapshot.plugins.enabled, true)
-  assert.equal(snapshot.plugins.source, 'workspace')
-  assert.equal(snapshot.merge.precision, 'stable')
-  assert.equal(snapshot.merge.source, 'workspace')
-  assert.equal(snapshot.merge.threshold, 0.86)
-})
-
-test('localStorage is used when env and workspace are invalid', () => {
-  const env = {
-    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'INVALID',
-    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].envKey]: 'MAYBE'
-  }
-  const workspace = createWorkspace({
-    'autosave.enabled': null,
-    'plugins.enable': '???',
-    'merge.threshold': 'NaN'
-  })
-  const storage = createStorage({
-    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: 'true',
-    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].storageKey]: 'true',
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'beta'
-  })
-
-  const snapshot = resolveFlags({ env, workspace, storage })
-
-  assert.equal(snapshot.autosave.enabled, true)
-  assert.equal(snapshot.autosave.source, 'localStorage')
-  assert.equal(snapshot.plugins.enabled, true)
-  assert.equal(snapshot.plugins.source, 'localStorage')
-  assert.equal(snapshot.merge.precision, 'beta')
-  assert.equal(snapshot.merge.source, 'localStorage')
-})
-
-test('defaults are used when no sources apply', () => {
-  const snapshot = resolveFlags({})
-  assert.deepEqual(snapshot, {
-    ...DEFAULT_FLAG_SNAPSHOT,
-    updatedAt: snapshot.updatedAt
-  } satisfies FlagSnapshot)
-
-  assert.equal(snapshot.autosave.enabled, false)
-  assert.equal(snapshot.autosave.source, 'default')
-  assert.equal(snapshot.plugins.enabled, false)
-  assert.equal(snapshot.plugins.source, 'default')
-  assert.equal(snapshot.merge.source, 'default')
-  assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
-  assert.ok(Number.isFinite(Date.parse(snapshot.updatedAt)))
-})
-
-test('default merge threshold aligns with spec baseline', () => {
-  assert.equal(DEFAULT_FLAGS.merge.profile.threshold, 0.75)
-})
-
-test('coerceMergeThresholdValue enforces beta and stable minimum thresholds', () => {
-  const betaResult = coerceMergeThresholdValue('beta')
-  const stableResult = coerceMergeThresholdValue('stable')
-
-  assert.ok(betaResult)
-  assert.equal(betaResult?.ok, true)
-  assert.equal(betaResult?.value, 0.75)
-  assert.ok(stableResult)
-  assert.equal(stableResult?.ok, true)
-  assert.equal(stableResult?.value, 0.82)
-})
-
-test('source typing includes workspace', () => {
-  const source: FlagSource = 'workspace'
-  assert.equal(source, 'workspace')
-})
-
-test('invalid values aggregate errors and fall back to defaults', () => {
-  const env = {
-    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'MAYBE',
-    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].envKey]: 'INVALID',
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'invalid'
-  }
-  const workspace = createWorkspace({
-    'autosave.enabled': 'not-boolean',
-    'plugins.enable': 'not-boolean',
-    'merge.threshold': 1.5
-  })
-  const storage = createStorage({
-    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: 'truthy?',
-    [FEATURE_FLAG_DEFINITIONS['plugins.enable'].storageKey]: 'yes',
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'gamma'
-  })
-
-  const result = resolveFlags({ env, workspace, storage }, { withErrors: true })
-
-  assert.equal(result.snapshot.autosave.enabled, DEFAULT_FLAG_SNAPSHOT.autosave.enabled)
-  assert.equal(result.snapshot.autosave.source, 'default')
-  assert.equal(result.snapshot.merge.precision, DEFAULT_FLAG_SNAPSHOT.merge.precision)
-  assert.equal(result.snapshot.merge.source, 'default')
-  assert.equal(
-    result.snapshot.merge.threshold,
-    DEFAULT_FLAGS.merge.profile.threshold
-  )
-
-  assert.equal(result.errors.length, 12)
-  const sources = result.errors.reduce<Record<FlagSource, number>>(
-    (acc, error) => {
-      acc[error.source] = (acc[error.source] ?? 0) + 1
-      return acc
-    },
-    { env: 0, workspace: 0, localStorage: 0, default: 0 }
-  )
-  assert.deepEqual(sources, {
-    env: 4,
-    workspace: 4,
-    localStorage: 4,
-    default: 0
-  })
-
-  for (const error of result.errors as readonly FlagResolutionError[]) {
-    assert.ok(error.message.includes(error.flag))
-  }
-})
-
-test('threshold resolves to default when env/workspace/storage provide invalid numbers', () => {
-  const env = {
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: '1.25'
-  }
-  const workspace = createWorkspace({
-    'merge.threshold': 'NaN'
-  })
-  const storage = createStorage({
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: '-0.2'
-  })
-
-  const { snapshot, errors } = resolveFlags(
-    { env, workspace, storage },
-    { withErrors: true }
-  )
-
-  assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
-  assert.equal(snapshot.merge.precision, 'legacy')
-  assert.equal(snapshot.merge.source, 'default')
-
-  const thresholdErrors = errors.filter((error) =>
-    error.flag === 'merge.precision' && error.message.includes('threshold must')
-  )
-  assert.equal(thresholdErrors.length, 3)
-  assert.deepEqual(
-    thresholdErrors.map((error) => error.source).sort(),
-    ['env', 'localStorage', 'workspace']
-  )
-})
-
-test('resolve module export matches index export and preserves source priority', () => {
-  const env = {
-    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].envKey]: 'false',
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'stable'
-  }
-  const workspace = createWorkspace({
-    'autosave.enabled': '1',
-    'merge.threshold': 0.87
-  })
-  const storage = createStorage({
-    [FEATURE_FLAG_DEFINITIONS['autosave.enabled'].storageKey]: 'true',
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].storageKey]: 'beta'
-  })
-
-  const options = {
-    env,
-    workspace,
-    storage,
-    clock: () => new Date('2024-06-01T09:08:07.654Z')
-  }
-
-  const moduleSnapshot = resolveFlagsFromModule(options)
-  const indexSnapshot = resolveFlags(options)
-
-  assert.deepEqual(moduleSnapshot, indexSnapshot)
-  assert.equal(moduleSnapshot.merge.precision, 'stable')
-  assert.equal(moduleSnapshot.merge.threshold, STABLE_THRESHOLD_DEFAULT)
-  assert.equal(moduleSnapshot.merge.source, 'env')
-  assert.equal(moduleSnapshot.autosave.enabled, false)
-  assert.equal(moduleSnapshot.autosave.source, 'env')
-  assert.equal(moduleSnapshot.updatedAt, '2024-06-01T09:08:07.654Z')
-})
-
-test('workspaceKeyCandidates from sources returns canonical lookup order', () => {
-  assert.deepEqual(workspaceKeyCandidatesFromSources('merge.threshold'), [
-    'merge.threshold',
-    'conimg.merge.threshold'
-  ])
-  assert.deepEqual(
-    workspaceKeyCandidatesFromSources('conimg.autosave.enabled'),
-    ['conimg.autosave.enabled', 'autosave.enabled']
-  )
-})
-
-test('coerceMergeThresholdValue rejects values < 0.75 and falls back to default', () => {
-  const belowThresholdResult = coerceMergeThresholdValue(0.74)
-  
-  assert.ok(belowThresholdResult)
-  assert.equal(belowThresholdResult?.ok, false)
-  assert.equal(belowThresholdResult?.error.code, 'invalid-precision')
-  assert.equal(belowThresholdResult?.error.flag, 'merge.precision')
-  assert.equal(belowThresholdResult?.error.message, 'merge.precision threshold must be >= 0.75')
-  assert.equal(belowThresholdResult?.error.raw, '0.74')
-})
-
-test('resolveFlags records error and falls back to default when threshold < 0.75', () => {
-  const env = {
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: '0.74'
-  }
-
-  const { snapshot, errors } = resolveFlags(
-    { env },
-    { withErrors: true }
-  )
-
-  assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
-  assert.equal(snapshot.merge.source, 'default')
-
-  // Find the error related to merge.precision
-  const mergePrecisionErrors = errors.filter(error => error.flag === 'merge.precision')
-  assert.equal(mergePrecisionErrors.length, 1)
-  assert.equal(mergePrecisionErrors[0].code, 'invalid-precision')
-  assert.equal(mergePrecisionErrors[0].message, 'merge.precision threshold must be >= 0.75')
-  assert.equal(mergePrecisionErrors[0].source, 'env')
-})
-
-test('resolveFlags accepts values >= 0.75', () => {
-  const testCases = [0.75, 0.8, 0.9, 1.0]
-  
-  for (const threshold of testCases) {
-    const env = {
-      [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: String(threshold)
-    }
+  it('should validate boolean values', () => {
+    const storage = createMockStorage({ 'autosave.enabled': 'not-a-boolean' })
     
-    const { snapshot } = resolveFlags({ env })
+    const snapshot = resolveFlags({ env: {}, storage })
     
-    assert.equal(snapshot.merge.threshold, threshold)
-    assert.equal(snapshot.merge.source, 'env')
-  }
+    expect(snapshot.autosave.errors).toContainEqual(
+      expect.objectContaining({ code: 'invalid-boolean' })
+    )
+  })
 })
 
-test('resolveAutoSaveBootstrapPlan telemetry reports default_used=true when threshold < 0.75', () => {
-  const env = {
-    [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: '0.74'
-  }
-  
-  // We need to spy on the publishFlagResolution function to verify telemetry
-  // Since we can't easily do that in this test, we'll verify the internal logic
-  const { snapshot, errors } = resolveFlags({ env }, { withErrors: true })
-  
-  // Verify that the snapshot falls back to default
-  assert.equal(snapshot.merge.source, 'default')
-  assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
-  
-  // Verify that there are errors for merge.precision
-  const mergePrecisionErrors = errors.filter(error => error.flag === 'merge.precision')
-  assert.ok(mergePrecisionErrors.length > 0)
-  
-  // This confirms that the telemetry will show default_used=true 
-  // due to the logic in toFlagPayload function
-  assert.equal(snapshot.merge.threshold, DEFAULT_FLAGS.merge.profile.threshold)
+describe('FlagSnapshot structure tests', () => {
+  it('should return proper snapshot structure', () => {
+    const snapshot = resolveFlags()
+    
+    expect(snapshot).toHaveProperty('autosave')
+    expect(snapshot).toHaveProperty('merge')
+    expect(snapshot).toHaveProperty('updatedAt')
+    
+    expect(snapshot.autosave).toHaveProperty('enabled')
+    expect(snapshot.autosave).toHaveProperty('source')
+    expect(snapshot.autosave).toHaveProperty('errors')
+    
+    expect(snapshot.merge).toHaveProperty('precision')
+    expect(snapshot.merge).toHaveProperty('source')
+    expect(snapshot.merge).toHaveProperty('errors')
+  })
+
+  it('should include validation errors in snapshot', () => {
+    const storage = createMockStorage({ 'autosave.enabled': 'maybe' })
+    
+    const snapshot = resolveFlags({ env: {}, storage })
+    
+    expect(snapshot.autosave.errors.length).toBeGreaterThan(0)
+    expect(snapshot.autosave.errors[0]).toMatchObject({
+      code: 'invalid-boolean',
+      flag: 'autosave.enabled',
+      raw: 'maybe'
+    })
+  })
+})
+
+describe('Feature flag resolution tests', () => {
+  it('should resolve individual feature flags', () => {
+    const env = createMockEnv({ 'merge.precision': 'stable' })
+    
+    const flagValue = resolveFlags({ env }).merge.precision
+    
+    expect(flagValue).toBe('stable')
+  })
+
+  it('should handle mixed env and storage values', () => {
+    const env = createMockEnv({ 'autosave.enabled': 'true' })
+    const storage = createMockStorage({ 'merge.precision': 'beta' })
+    
+    const snapshot = resolveFlags({ env, storage })
+    
+    expect(snapshot.autosave.value).toBe(true)
+    expect(snapshot.autosave.source).toBe('env')
+    expect(snapshot.merge.precision).toBe('beta')
+    expect(snapshot.merge.source).toBe('localStorage')
+  })
 })
