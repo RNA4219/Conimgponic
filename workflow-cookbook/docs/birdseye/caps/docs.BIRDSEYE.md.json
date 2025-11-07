@@ -1,0 +1,20 @@
+{
+  "id": "docs/BIRDSEYE.md",
+  "role": "fallback",
+  "public_api": [],
+  "summary": "Birdseyeのエッジ・ホットリスト・更新手順をフォールバック参照向けに集約し、JSONが取得できない状況でも運用判断を下せるようにする。",
+  "deps_out": [
+    "README.md",
+    "GUARDRAILS.md",
+    "docs/birdseye/index.json",
+    "tools/codemap/README.md"
+  ],
+  "deps_in": [
+    "README.md",
+    "GUARDRAILS.md",
+    "tools/codemap/README.md"
+  ],
+  "risks": [],
+  "tests": [],
+  "generated_at": "00022"
+}
