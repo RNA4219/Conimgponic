@@ -218,6 +218,12 @@ sequenceDiagram
     UI->>AutoSave: flushNow() (success && precision in {beta,stable})
 ```
 
+#### Telemetry Verification Logs
+- **正常時**: `queueMergeCommand` が成功すると `status: 'success'` で完了し、`retryable: false` が設定される
+- **競合時**: マージ結果に競合が含まれる場合、`status: 'conflict'` が返され、`retryable: true` が設定される
+- **イベント同期**: `merge:conflict-detected` イベントが発生し、UIのハンクバッジとトーストで競合が示される
+- **コレクタ送信**: `status: 'conflict'` の場合、`feature: 'merge.diff'` および `event: 'queue:finish'` で `status: 'conflict'` と `retryable: true` が送信される
+
 | 手順 | 詳細 | precision 影響 | AutoSave 協調 | リスク緩和 |
 | --- | --- | --- | --- | --- |
 | 1. enqueue | UI から `queueMergeCommand` を発行し、`payload` をストアにバッファ。 | 全 precision | ロック中は enqueue のみ許可。 | `merge.lastTab` に状態保存。 |
