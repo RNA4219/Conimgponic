@@ -1,4 +1,4 @@
-import type { FlagSnapshot } from '../../config/flags.js'
+import type { FlagSnapshot, FlagSource } from '../../config/flags.js'
 import type { Storyboard } from '../../types'
 import { resolveCollectorPhase } from './collector-phase.js'
 import type {
@@ -22,7 +22,7 @@ const resolveDay8Collector = (): Day8CollectorLike | undefined => {
     : undefined
 }
 
-const readImportMetaEnv = (): Record<string, unknown> | undefined => {
+export const readImportMetaEnv = (): Record<string, unknown> | undefined => {
   try {
     const meta = import.meta as { env?: unknown }
     const env = meta?.env

@@ -1,12 +1,13 @@
-import { publishGuardCollectorEvent, type AutoSavePolicy } from '../../lib/autosave'
+import { publishGuardCollectorEvent } from '../../lib/autosave'
+import type { AutoSavePolicy } from '../../lib/autosave/policy.js'
 import type {
   AutoSaveBridgeMessage,
   AutoSavePhaseGuardSnapshot,
   AutoSaveSnapshotRequestMessage,
   AutoSaveSnapshotResultPayload,
   AutoSaveStatusState
-} from '../../lib/autosave'
-import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
+} from '../../lib/autosave/telemetryBridge.js'
+import type { FlagSnapshot, WorkspaceConfiguration, FlagSource } from '../../config/index.js'
 import {
   createAutoSaveBootstrapPayload,
   resolveWorkspaceBootstrapPayload

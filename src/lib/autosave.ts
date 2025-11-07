@@ -1,4 +1,5 @@
 import type { Storyboard } from '../types'
+import type { FlagSource } from '../config/flags'
 import { projectLockApi, ProjectLockError } from './locks'
 import {
   AUTOSAVE_HISTORY_ROTATION_PLAN,
@@ -39,8 +40,18 @@ export {
   resolveBuildSha
 } from './autosave/telemetryBridge.js'
 export type {
-  AutoSaveScheduleRequestedEventName,
+  AutoSaveScheduleRequestedEventName
 } from './autosave/telemetryBridge.js'
+export {
+  readImportMetaEnv,
+  type AutoSaveBridgeMessage,
+  type AutoSaveSnapshotRequestMessage,
+  type AutoSaveSnapshotResultPayload,
+  type AutoSaveStatusMessage,
+  type AutoSaveEnvelopePhase,
+  type AutoSaveBridgePhase
+} from './autosave/telemetryBridge.js'
+
 export {
   AUTOSAVE_HISTORY_ROTATION_PLAN
 }
@@ -163,6 +174,22 @@ export const AUTOSAVE_DISABLED_CONDITIONS = Object.freeze({
   runtimeOverride: 'StoryboardProvider が undefined を返した場合は初期化自体を拒否する'
 } as const)
 
+export type AutoSaveStatusState =
+  | 'disabled'
+  | 'dirty'
+  | 'saving'
+  | 'saved'
+  | 'error'
+  | 'backoff'
+
+export interface AutoSavePhaseGuardSnapshot {
+  readonly featureFlag: {
+    readonly value: boolean
+    readonly source: FlagSource
+  }
+  readonly optionsDisabled: boolean
+}
+
 export type AutoSavePhase =
   | 'disabled'
   | 'idle'
@@ -184,21 +211,7 @@ export interface AutoSaveStatusSnapshot {
   queuedGeneration?: number
 }
 
-export type AutoSaveStatusState =
-  | 'disabled'
-  | 'dirty'
-  | 'saving'
-  | 'saved'
-  | 'error'
-  | 'backoff'
 
-export interface AutoSavePhaseGuardSnapshot {
-  readonly featureFlag: {
-    readonly value: boolean
-    readonly source: 'env' | 'workspace' | 'localStorage' | 'default'
-  }
-  readonly optionsDisabled: boolean
-}
 
 export type AutoSaveDisabledReason = 'feature-flag-disabled' | 'options-disabled'
 
@@ -746,19 +759,27 @@ export function initAutoSave(
   const persistence = sharedPersistence
   const fallbackOptionsDisabled = options?.disabled === true
   const { guard } = resolveAutoSaveGuard({
-    flagSnapshot,
+    flagSnapshot: flagSnapshot?.flagSnapshot,
     fallbackOptionsDisabled,
     policyDisabled: policy.disabled
   })
   const flagEnabled = guard.featureFlag.value
   const effectiveOptionsDisabled = guard.optionsDisabled
   const guardAllowsDirtyExposure = flagEnabled && !effectiveOptionsDisabled
+  
+  // 無効状態の確認
   if (effectiveOptionsDisabled || !flagEnabled) {
-    const snapshot: AutoSaveStatusSnapshot = { phase: 'disabled', retryCount: 0 }
+    const snapshot: AutoSaveStatusSnapshot = { 
+      phase: 'disabled', 
+      retryCount: 0 
+    }
+    
+    // ガードが無効化されている理由をテレメトリに送信
     publishGuardCollectorEvent(
       guard,
       effectiveOptionsDisabled ? 'options-disabled' : 'feature-flag-disabled'
     )
+    
     const resolvedPromise: Promise<void> = Promise.resolve()
     const noopAsync = (): Promise<void> => resolvedPromise
     return {
@@ -772,6 +793,8 @@ export function initAutoSave(
       }
     }
   }
+
+  // 有効状態の初期化
   const eventHandlers = new Set<(event: AutoSaveRunnerEvent) => void>()
   const runnerOutput: AutoSaveRunnerIOContract['output'] = {
     emit: (event) => {
