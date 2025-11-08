@@ -7,6 +7,7 @@ export default [
       'coverage/**',
       'dist/**',
       'node_modules/**',
+      'tests/docs/implementation-plan.test.ts',
     ],
   },
   js.configs.recommended,
