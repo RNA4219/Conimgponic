@@ -1,4 +1,4 @@
-# AutoSave / Diff Merge テスト戦略
+# Test Strategy: AutoSave & Merge
 
 ## 1. 目的
 - docs/IMPLEMENTATION-PLAN.md の TDD チェックリスト 6 項目を起点に、AutoSave・Diff Merge・CLI/Collector の後方互換を証跡化する試験の全体像を同期する。
