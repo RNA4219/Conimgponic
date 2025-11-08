@@ -1,0 +1,20 @@
+{
+  "id": "docs/IMPLEMENTATION-PLAN.md",
+  "role": "plan",
+  "public_api": [],
+  "summary": "AutoSave と Merge の段階導入に必要なフラグ方針・依存関係・チェックリストを整理する実装計画。",
+  "deps_out": [
+    "docs/AUTOSAVE-DESIGN-IMPL.md",
+    "docs/MERGE-DESIGN-IMPL.md",
+    "docs/tasks/task-autosave-project-locks.md"
+  ],
+  "deps_in": [
+    "README.md",
+    "HUB.codex.md"
+  ],
+  "risks": [
+    "フラグ依存の同期が遅れると段階導入が停滞する"
+  ],
+  "tests": [],
+  "generated_at": "00021"
+}

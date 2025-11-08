@@ -1,0 +1,21 @@
+name: Security Gate
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  security-ci:
+    uses: ./.github/workflows/reusable/security-ci.yml
+    permissions:
+      contents: read
+      security-events: write
+    secrets: inherit
