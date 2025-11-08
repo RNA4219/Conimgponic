@@ -682,12 +682,10 @@ export function MergeDock({
         }
       }
 
-      const finishedEventStatus = responseStatus === 'error' ? 'error' : responseStatus
-
       diffQueueEvents.publish({
         type: 'queue:finished',
         precision: payload.precision,
-        status: actualStatus === 'conflict' ? 'error' : actualStatus,  // Keep event format consistent with existing format
+        status: responseStatus === 'conflict' ? 'error' : responseStatus,  // Keep event format consistent with existing format
         origin: payload.origin,
         hunkIds: knownIds,
         hunks: finishedHunks,
@@ -700,7 +698,7 @@ export function MergeDock({
         precision: payload.precision,
         origin: payload.origin,
         hunk_ids: knownIds,
-        status: actualStatus,
+        status: responseStatus,
         retryable,
         phase_guard: phasePlan.phase,
         diff_exposure: phasePlan.diff.exposure,
@@ -708,7 +706,7 @@ export function MergeDock({
       })
 
       return {
-        status: actualStatus,
+        status: responseStatus,
         hunkIds: knownIds,
         telemetry: { collectorSurface: responseCollectorSurface, analyzerSurface, retryable },
       }
@@ -837,7 +835,7 @@ export function MergeDock({
           {diffInteractionEnabled ? (
             <DiffMergeViewWithRealHunks
               precision={precision}
-              hunks={emptyDiffHunks}
+              hunks={diffHunks}
               queueMergeCommand={diffQueueMergeCommand}
               threshold={threshold}
               phaseStats={phaseStats}

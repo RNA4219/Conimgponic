@@ -1,26 +1,24 @@
-# Merge Test Plan
+# Diff Merge テスト計画 (雛形 - TDDベース)
 
-## Overview
-This plan outlines tests for the merge precision toggle and IO contracts.
+## 目的
+Diff Merge機能の正確性と安定性を検証するケース定義と実施手順を記述する。
 
-## Test Objectives
-- Validate precision switch behavior.
-- Verify IO contracts between inputs and expected outputs.
-- Establish snapshot guidelines for regressions.
+## 背景
+- 既存のテスト計画に基づく拡張
+- タスク間のI/O契約とスナップショット整合性を主眼
 
-## Test Cases Outline
-- Basic merge precision toggle
-- IO contract adherence with sample data
-- Snapshot-based regression checks
+## ケース一覧（雛形）
+- MD-U-01: legacyモードの挙動検証
+- MD-U-02: betaモードのDiff Merge挙動検証
+- MD-U-03: stableモードのパラメータ検証
+- MD-I-01: 既存シーケンス保持
 
-## Setup/Environment
-- Local dev environment with node and Python tooling
+## 実施手順
+- 前提条件の確認
+- テストケースの実装順序
+- CI実行
 
-## CI Commands
-```bash
-npm test -- tests/merge/
-```
-
-## References
-- TEST_STRATEGY_AUTOSAVE_MERGE.md
-- docs/TEST-PLAN.md
+## CI コマンド
+- pnpm lint
+- pnpm typecheck
+- pnpm test --filter merge

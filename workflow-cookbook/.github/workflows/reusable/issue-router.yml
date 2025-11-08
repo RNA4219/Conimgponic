@@ -1,0 +1,74 @@
+name: Reusable - Issue Router (budget & dedupe)
+on:
+  workflow_call:
+    inputs:
+      title:
+        type: string
+        required: true
+      body:
+        type: string
+        required: true
+      labels_csv:
+        type: string
+        required: false
+        default: ci:improvement
+      topic_key:
+        type: string
+        required: true
+      daily_budget:
+        type: number
+        required: false
+        default: 3
+      aggregate_title:
+        type: string
+        required: false
+        default: CI Aggregated Issues
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        id: route
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const labels = core.getInput('labels_csv').split(',').map((s) => s.trim()).filter(Boolean);
+            const topicKey = core.getInput('topic_key').trim();
+            const title = core.getInput('title').trim();
+            const body = `${core.getInput('body').trim()}\n\n<!-- key:${topicKey} -->`;
+
+            const params = { owner, repo, state: 'open' };
+            if (labels.length) {
+              params.labels = labels.join(',');
+            }
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, params);
+            const dup = openIssues.find((issue) => (issue.body || '').includes(`<!-- key:${topicKey} -->`));
+            if (dup) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: dup.number, body });
+              core.setOutput('action', `append_to_existing_${dup.number}`);
+              return;
+            }
+
+            const today = new Date().toISOString().slice(0, 10);
+            const recent = openIssues.filter((issue) => (issue.created_at || '').startsWith(today));
+            const budget = Number(core.getInput('daily_budget') || '3');
+            if (recent.length >= budget) {
+              const aggregateTitle = core.getInput('aggregate_title');
+              const aggregateBody = `### ${title}\n\n${body}\n`;
+              const aggregate = openIssues.find((issue) => issue.title === aggregateTitle);
+              if (aggregate) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: aggregate.number, body: aggregateBody });
+                core.setOutput('action', `append_to_aggregate_${aggregate.number}`);
+              } else {
+                const created = await github.rest.issues.create({ owner, repo, title: aggregateTitle, body: aggregateBody, labels });
+                core.setOutput('action', `create_aggregate_${created.data.number}`);
+              }
+              return;
+            }
+
+            const created = await github.rest.issues.create({ owner, repo, title, body, labels });
+            core.setOutput('action', `create_new_${created.data.number}`);

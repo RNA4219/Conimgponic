@@ -1,0 +1,15 @@
+name: security-ci
+
+on: [pull_request, push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-ci:
+    uses: ./.github/workflows/reusable/security-ci.yml
+    permissions:
+      contents: read
+      security-events: write
+    secrets: inherit

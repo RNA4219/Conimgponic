@@ -4,6 +4,7 @@ import type {
   AutoSavePolicy,
   AutoSaveStatusState
 } from '../../../lib/autosave.js';
+import type { FlagSource } from '../../../config/index.js';
 
 export interface HistoryEntry {
   readonly generation: number;

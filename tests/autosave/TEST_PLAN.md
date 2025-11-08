@@ -1,29 +1,24 @@
-# AutoSave Test Plan
+# AutoSave テスト計画 (雛形 - TDDベース)
 
-## Overview
-This document outlines the test plan for the AutoSave feature, covering its objectives, test cases, and execution strategy.
+## 目的
+AutoSave機能の安定性を検証するためのケース定義と実施手順を記述する。
 
-## Test Objectives
-- Ensure data integrity and consistency during automatic saving.
-- Verify proper merging behavior for concurrent edits.
-- Confirm performance and responsiveness under various load conditions.
+## 背景
+- 既存のテスト計画に基づく拡張
+- autosaveの状態遷移とデータ整合性を主眼
 
-## Test Cases Outline
-- Basic AutoSave functionality (new file, existing file)
-- Conflict resolution during merge (manual, automatic)
-- Error handling and recovery scenarios
-- Performance testing (large files, frequent saves)
+## ケース一覧（雛形）
+- AS-U-01: AutoSave Off時の手動保存が正しく機能する
+- AS-U-02: AutoSave On時の自動保存間隔でのデータ保存
+- AS-U-03: localStorage上書き優先
+- AS-I-01: 復元/リカバリのパス
 
-## Setup/Environment
-- Local development environment
-- CI/CD pipeline
+## 実施手順
+- 前提条件の確認
+- テストケースの実装順序
+- CI実行
 
-## CI Commands
-```bash
-# Example CI command for AutoSave tests
-npm test -- tests/autosave/
-```
-
-## References
-- [TEST_STRATEGY_AUTOSAVE_MERGE.md](../../TEST_STRATEGY_AUTOSAVE_MERGE.md)
-- [docs/TEST-PLAN.md](../../../docs/TEST-PLAN.md)
+## CI コマンド
+- pnpm lint
+- pnpm typecheck
+- pnpm test --filter autosave
