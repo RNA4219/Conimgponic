@@ -1,4 +1,40 @@
 
+export type AutoSaveErrorCode =
+  | 'lock-unavailable'
+  | 'write-failed'
+  | 'data-corrupted'
+  | 'history-overflow'
+  | 'disabled';
+
+export interface AutoSaveError extends Error {
+  readonly code: AutoSaveErrorCode;
+  readonly retryable: boolean;
+  readonly cause?: Error;
+  readonly context?: Record<string, unknown>;
+}
+
+export class AutoSaveErrorImpl extends Error implements AutoSaveError {
+  readonly code: AutoSaveErrorCode;
+  readonly retryable: boolean;
+  readonly cause?: Error;
+  readonly context?: Record<string, unknown>;
+
+  constructor(
+    code: AutoSaveErrorCode,
+    message?: string,
+    retryable: boolean = true,
+    cause?: Error,
+    context?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'AutoSaveError';
+    this.code = code;
+    this.retryable = retryable;
+    this.cause = cause;
+    this.context = context;
+  }
+}
+
 export interface AutoSaveStorage {
   write(key: string, value: string): Promise<void>;
 }
