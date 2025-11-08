@@ -1,0 +1,19 @@
+# network/allowlist.yaml
+# このファイルはワークスペースから到達可能な外部ドメインと利用目的を記録する。
+# スキーマ:
+#   version: 互換性管理用の整数。
+#   allowlist: 許可するドメインの配列。
+#     - domain: FQDN。ワイルドカード利用時は `*.example.com` の形式を推奨。
+#       owner: 管理主体やサービス名。
+#       purposes: 利用目的の配列。
+#         - id: 短い識別子 (例: ci, docs)。
+#           description: 目的の詳細説明。
+#           runtime: アクセス元の分類 (例: ["ci"], ["developer"])。
+version: 1
+allowlist:
+  - domain: "api.github.com"
+    owner: "GitHub"
+    purposes:
+      - id: "ci"
+        description: "workflow-cookbook のリリース情報および統合テスト用 API 呼び出し"
+        runtime: ["ci"]
