@@ -1,0 +1,21 @@
+{
+  "id": "docs/tasks/task-autosave-project-locks.md",
+  "role": "task",
+  "public_api": [],
+  "summary": "AutoSave と Merge のプロジェクトロック導入に向けた背景・ゴール・TDD・ロールバック手順を示すタスクシード。",
+  "deps_out": [
+    "docs/AUTOSAVE-DESIGN-IMPL.md",
+    "docs/MERGE-DESIGN-IMPL.md",
+    "docs/IMPLEMENTATION-PLAN.md"
+  ],
+  "deps_in": [
+    "README.md",
+    "HUB.codex.md",
+    "docs/TASKS.md"
+  ],
+  "risks": [
+    "テスト整備が遅れると段階導入が延期される"
+  ],
+  "tests": [],
+  "generated_at": "00024"
+}

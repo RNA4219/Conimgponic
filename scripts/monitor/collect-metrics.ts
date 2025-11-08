@@ -28,7 +28,12 @@ export type TelemetryEventName =
   | 'plugins.invoked'
   | 'plugins.completed'
   | 'plugins.failed'
-  | 'error';
+  | 'error'
+  | 'autosave.schedule.requested'
+  | 'autosave.write.completed'
+  | 'autosave.write.failed'
+  | 'merge.precision.suggested'
+  | 'merge.precision.blocked';
 
 export const TELEMETRY_FEATURES = [
   'autosave-diff-merge',
@@ -350,6 +355,37 @@ export type SnapshotResultPayload =
   | SnapshotResultSuccessPayload
   | SnapshotResultFailurePayload;
 
+export interface MergePrecisionSuggestedPayload {
+  readonly precision: MergePrecision;
+  readonly reason: 'heuristic-match' | 'user-override' | 'default';
+}
+
+export interface MergePrecisionBlockedPayload {
+  readonly precision: MergePrecision;
+  readonly reason: 'slo-breach' | 'config-override';
+  readonly metric: MetricsKey;
+  readonly threshold: number;
+  readonly observed_value: number;
+}
+
+export interface AutosaveScheduleRequestedPayload {
+  readonly reason: 'user-action' | 'file-change' | 'idle';
+  readonly delay_ms: number;
+}
+
+export interface AutosaveWriteCompletedPayload {
+  readonly duration_ms: number;
+  readonly bytes_written: number;
+  readonly file_count: number;
+}
+
+export interface AutosaveWriteFailedPayload {
+  readonly duration_ms: number;
+  readonly error_code: string;
+  readonly message: string;
+  readonly retryable: boolean;
+}
+
 export interface TelemetryPayloads {
   readonly 'status.autosave': StatusAutosavePayload;
   readonly 'snapshot.result': SnapshotResultPayload;
@@ -361,6 +397,11 @@ export interface TelemetryPayloads {
   readonly 'plugins.completed': PluginCompletedPayload;
   readonly 'plugins.failed': PluginFailedPayload;
   readonly error: TelemetryErrorPayload;
+  readonly 'autosave.schedule.requested': AutosaveScheduleRequestedPayload;
+  readonly 'autosave.write.completed': AutosaveWriteCompletedPayload;
+  readonly 'autosave.write.failed': AutosaveWriteFailedPayload;
+  readonly 'merge.precision.suggested': MergePrecisionSuggestedPayload;
+  readonly 'merge.precision.blocked': MergePrecisionBlockedPayload;
 }
 
 export interface TelemetryEventSpec<E extends TelemetryEventName = TelemetryEventName> {
@@ -1213,6 +1254,41 @@ export const COLLECT_METRICS_CONTRACT: CollectMetricsContract = {
           metric: 'merge_auto_success_rate',
           rollbackTo: 'B-0',
         },
+      },
+      {
+        event: 'autosave.schedule.requested',
+        description: 'AutoSave スケジュール要求イベントを Collector が集計する。',
+        jsonlFields: ['payload.reason', 'payload.delay_ms'],
+        retryable: false,
+        pipelineStage: 'collector',
+      },
+      {
+        event: 'autosave.write.completed',
+        description: 'AutoSave 書き込み完了イベントを Collector が集計する。',
+        jsonlFields: ['payload.duration_ms', 'payload.bytes_written', 'payload.file_count'],
+        retryable: false,
+        pipelineStage: 'collector',
+      },
+      {
+        event: 'autosave.write.failed',
+        description: 'AutoSave 書き込み失敗イベントを Collector が集計する。',
+        jsonlFields: ['payload.duration_ms', 'payload.error_code', 'payload.message', 'payload.retryable'],
+        retryable: false,
+        pipelineStage: 'collector',
+      },
+      {
+        event: 'merge.precision.suggested',
+        description: 'マージ精度提案イベントを Collector が集計する。',
+        jsonlFields: ['payload.precision', 'payload.reason'],
+        retryable: false,
+        pipelineStage: 'collector',
+      },
+      {
+        event: 'merge.precision.blocked',
+        description: 'マージ精度ブロックイベントを Collector が集計する。',
+        jsonlFields: ['payload.precision', 'payload.reason', 'payload.metric', 'payload.threshold', 'payload.observed_value'],
+        retryable: false,
+        pipelineStage: 'collector',
       },
       {
         event: 'error',
