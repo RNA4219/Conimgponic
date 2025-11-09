@@ -1,12 +1,78 @@
-import { AutoSave, AutoSaveConfig } from '../../lib/autosave'
+import { publishGuardCollectorEvent } from '../../lib/autosave'
+import type { AutoSavePolicy } from '../../lib/autosave/policy.js'
 import type {
   AutoSaveBridgeMessage,
   AutoSavePhaseGuardSnapshot,
   AutoSaveSnapshotRequestMessage,
   AutoSaveSnapshotResultPayload,
   AutoSaveStatusState
-} from '../../lib/autosave'
-import type { FlagSnapshot, WorkspaceConfiguration } from '../../config/index.js'
+} from '../../lib/autosave/telemetryBridge.js'
+import type { FlagSnapshot, WorkspaceConfiguration, FlagSource } from '../../config/index.js'
+import {
+  createAutoSaveBootstrapPayload,
+  resolveWorkspaceBootstrapPayload
+} from './flags.js'
+import {
+  createDisabledError,
+  normalizeAtomicWriteError
+} from './autosave/error.js'
+import type {
+  AutoSaveAtomicWriteInput,
+  AutoSaveAtomicWriteResult,
+  AutoSaveTelemetryEvent,
+  AutoSaveTelemetryEventInput,
+  AutoSaveWarnEvent,
+} from './autosave/collector.js'
+import {
+  createFlushLatencyPerformance,
+  createSnapshotFailureDetail,
+  createSnapshotPayload,
+  createSnapshotSuccessDetail,
+  publishCollectorSnapshotResult,
+  ZERO_FLUSH_LATENCY
+} from './autosave/collector.js'
+import {
+  createBootstrapMessage,
+  createBridgeReadyMessage,
+  createSnapshotResultMessage,
+  createStatusMessage,
+  PHASE_SNAPSHOT,
+  PHASE_STATUS,
+  toIsoTimestamp
+} from './autosave/bootstrap.js'
+import { resolveSnapshotTelemetryPhase } from './autosave/guard.js'
+import { formatTelemetryEvent, type AutoSaveTelemetryContext } from './autosave/telemetry.js'
+import { emitWarn, handleNonRetryableError } from './autosave/errors.js'
+import {
+  clampHistory,
+  computeFlushLatencyMs,
+  computeLagSeconds,
+  createInitialState,
+  InternalState,
+  isGuardEnabled,
+  mergeGuard,
+  nextCorrelationId,
+  nextReqId,
+  resolveGuardBlockedReason,
+  statusPhaseForState
+} from './autosave/state.js'
+
+export type {
+  AutoSaveAtomicWriteInput,
+  AutoSaveAtomicWriteResult,
+  AutoSaveTelemetryEvent,
+  AutoSaveTelemetryEventInput,
+  AutoSaveTelemetryEventProperties,
+  AutoSaveTelemetryGuardProperties,
+  AutoSaveTelemetryLockStrategy,
+  AutoSaveWarnEvent,
+  SnapshotResultCollectorPayload,
+  SnapshotResultDetailPhase,
+  SnapshotResultFailureDetailWithPhase,
+  SnapshotResultSuccessDetailWithPhase
+} from './autosave/collector.js'
+export { resolveCollectorPhase } from '../../lib/autosave/collector-phase.js'
+export { statusPhaseForState } from './autosave/state.js'
 
 export interface AutoSaveHostBridgeOptions {
   readonly policy: AutoSaveConfig

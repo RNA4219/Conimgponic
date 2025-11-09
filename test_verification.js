@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 // Read the content of IMPLEMENTATION-PLAN.md
-const content = readFileSync('docs/IMPLEMENTATION-PLAN.md', 'utf-8');
+const content = readFileSync('C:\\Users\\ryo-n\\AppData\\Local\\Temp\\vibe-kanban\\worktrees\\2b36-\\docs\\IMPLEMENTATION-PLAN.md', 'utf-8');
 
 // Define the updated pattern from the test file
 const CHECKLIST_PATTERN =
