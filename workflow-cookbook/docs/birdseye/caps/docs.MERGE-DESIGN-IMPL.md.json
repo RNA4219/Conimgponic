@@ -1,0 +1,20 @@
+{
+  "id": "docs/MERGE-DESIGN-IMPL.md",
+  "role": "design",
+  "public_api": [],
+  "summary": "Merge の精度モード、ロック協調、テレメトリ要件を規定し、AutoSave との連携を管理する。",
+  "deps_out": [
+    "docs/tasks/task-autosave-project-locks.md",
+    "docs/AUTOSAVE-DESIGN-IMPL.md"
+  ],
+  "deps_in": [
+    "docs/IMPLEMENTATION-PLAN.md",
+    "README.md",
+    "HUB.codex.md"
+  ],
+  "risks": [
+    "ロック協調が失敗するとマージ精度が劣化する"
+  ],
+  "tests": [],
+  "generated_at": "00023"
+}

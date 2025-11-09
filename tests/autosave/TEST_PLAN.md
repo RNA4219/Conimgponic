@@ -1,29 +1,24 @@
-AutoSave/Diff Merge テスト計画
+# AutoSave テスト計画 (雛形 - TDDベース)
 
-目的
-- AutoSave/Diff Merge 全体のテスト戦略と CI コマンドを網羅する。公開 API には影響を与えず、最小差分で検証を行う。
+## 目的
+AutoSave機能の安定性を検証するためのケース定義と実施手順を記述する。
 
-参照ファイル
-- tests/TEST_STRATEGY_AUTOSAVE_MERGE.md
-- docs/TEST-PLAN.md
+## 背景
+- 既存のテスト計画に基づく拡張
+- autosaveの状態遷移とデータ整合性を主眼
 
-範囲
-- AutoSave の diff 検出と適用、Diff Merge の挙動、エッジケースを中心に検証。CI での実行を想定。
+## ケース一覧（雛形）
+- AS-U-01: AutoSave Off時の手動保存が正しく機能する
+- AS-U-02: AutoSave On時の自動保存間隔でのデータ保存
+- AS-U-03: localStorage上書き優先
+- AS-I-01: 復元/リカバリのパス
 
-ケース定義
-- 基本ケース: AutoSave が差分を正しく検出して適用される。
-- 衝突ケース: Diff Merge が衝突を検知して適切なエラーメッセージを返す。
-- 回帰ケース: 変更前後の差分が安定して適用されることを確認。
+## 実施手順
+- 前提条件の確認
+- テストケースの実装順序
+- CI実行
 
-CI/実行手順
-- npm test または node:test に準拠した実行コマンドを準備。
-- lint/型チェックの実行を想定。
-
-評価基準
-- すべてのテストが green、または衝突ケースが正しく検出されること。
-- 公開 API 破壊がないこと。
-
-CI コマンド例
-- npm install
-- npm test
-- ruff check .  (必要に応じて) 
+## CI コマンド
+- pnpm lint
+- pnpm typecheck
+- pnpm test --filter autosave

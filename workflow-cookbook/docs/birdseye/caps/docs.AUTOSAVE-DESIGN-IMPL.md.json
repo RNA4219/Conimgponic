@@ -1,0 +1,20 @@
+{
+  "id": "docs/AUTOSAVE-DESIGN-IMPL.md",
+  "role": "design",
+  "public_api": [],
+  "summary": "AutoSave の不変条件・例外設計・I/O 契約を定義し、Merge とのロック協調を支える。",
+  "deps_out": [
+    "docs/tasks/task-autosave-project-locks.md",
+    "docs/MERGE-DESIGN-IMPL.md"
+  ],
+  "deps_in": [
+    "docs/IMPLEMENTATION-PLAN.md",
+    "README.md",
+    "HUB.codex.md"
+  ],
+  "risks": [
+    "不変条件が破られるとスナップショットの単調性が失われる"
+  ],
+  "tests": [],
+  "generated_at": "00022"
+}

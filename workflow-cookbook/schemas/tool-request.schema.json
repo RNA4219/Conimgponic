@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workflow-cookbook.dev/schemas/tool-request.schema.json",
+  "$comment": "更新手順: (1) 既存ペイロードのフィールド調査 (2) 後方互換ポリシーに沿い diff をレビュー (3) pytest/型/CI を実行し schema 参照箇所を更新の上でマージする。",
+  "title": "Tool Execution Request",
+  "type": "object",
+  "required": ["tool", "args"],
+  "additionalProperties": true,
+  "properties": {
+    "tool": {
+      "type": "string",
+      "minLength": 1,
+      "description": "呼び出すツール識別子"
+    },
+    "args": {
+      "type": "object",
+      "description": "ツールに渡される引数の辞書",
+      "additionalProperties": true
+    },
+    "request_id": {
+      "type": "string",
+      "description": "追跡用のリクエスト識別子"
+    },
+    "session": {
+      "type": "object",
+      "description": "呼び出し元セッションに関するメタデータ",
+      "additionalProperties": true
+    },
+    "issued_by": {
+      "type": "string",
+      "description": "要求を発行した主体"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "任意の追加メタデータ",
+      "additionalProperties": true
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "minimum": 0,
+      "description": "ツール実行に許可される最大秒数"
+    },
+    "stream": {
+      "type": "boolean",
+      "description": "ストリーミングレスポンスが必要かどうか"
+    },
+    "attachments": {
+      "type": "array",
+      "description": "付随する添付リソースの URI",
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "リクエスト生成時刻"
+    }
+  }
+}
