@@ -30,133 +30,44 @@ import {
   resolveAutoSaveFromFlagSnapshot
 } from './autosave/flags.js'
 
-export { AUTOSAVE_POLICY, AUTOSAVE_DEFAULTS, AUTOSAVE_MAX_BYTES, resolveAutoSavePolicy }
-export type { AutoSaveSchedulerContract } from './autosave/scheduler.js'
-export {
-  AUTOSAVE_SCHEDULE_REQUESTED_EVENT,
-  publishGuardCollectorEvent,
-  publishScheduleRequestedCollectorEvent,
-  publishWriteCompletedCollectorEvent,
-  resolveBuildSha
-} from './autosave/telemetryBridge.js'
-export type {
-  AutoSaveScheduleRequestedEventName
-} from './autosave/telemetryBridge.js'
-export {
-  readImportMetaEnv,
-  type AutoSaveBridgeMessage,
-  type AutoSaveSnapshotRequestMessage,
-  type AutoSaveSnapshotResultPayload,
-  type AutoSaveStatusMessage,
-  type AutoSaveEnvelopePhase,
-  type AutoSaveBridgePhase
-} from './autosave/telemetryBridge.js'
-
-export {
-  AUTOSAVE_HISTORY_ROTATION_PLAN
-}
-export type {
-  AutoSaveHistoryEntry,
-  AutoSaveHistoryRotationPlan,
-  AutoSavePersistenceContract
-} from './autosave/persistence.js'
-export {
-  resolveAutoSaveFromFlagSnapshot
-} from './autosave/flags.js'
-
-export type StoryboardProvider = () => Storyboard
-
-export interface AutoSaveOptions {
-  /**
-   * フラグ/ユーザー設定による完全無効化。`true` の場合は initAutoSave が no-op を返し、副作用を発生させない。
-   */
-  readonly disabled?: boolean
-  /**
-   * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
-   */
-  readonly debounceMs?: never
-  /**
-   * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
-   */
-  readonly idleMs?: never
-  /**
-   * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
-   */
-  readonly maxGenerations?: never
-  /**
-   * @deprecated 保存ポリシーは `AUTOSAVE_POLICY` 固定。上書きはサポートしない。
-   */
-  readonly maxBytes?: never
-}
-
-type AssertTrue<T extends true> = T
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _AutoSaveOptionsPolicyInvariant = AssertTrue<
-  AutoSaveOptions extends { readonly policy?: unknown } ? false : true
->
-
 export type AutoSaveErrorCode =
   | 'lock-unavailable'
   | 'write-failed'
   | 'data-corrupted'
   | 'history-overflow'
-  | 'disabled'
+  | 'disabled';
 
 export interface AutoSaveError extends Error {
-  readonly code: AutoSaveErrorCode
-  readonly retryable: boolean
-  readonly cause?: Error
-  readonly context?: Record<string, unknown>
+  readonly code: AutoSaveErrorCode;
+  readonly retryable: boolean;
+  readonly cause?: Error;
+  readonly context?: Record<string, unknown>;
 }
 
-export type AutoSaveFailureAction = 'backoff' | 'stop' | 'noop'
+export class AutoSaveErrorImpl extends Error implements AutoSaveError {
+  readonly code: AutoSaveErrorCode;
+  readonly retryable: boolean;
+  readonly cause?: Error;
+  readonly context?: Record<string, unknown>;
 
-export interface AutoSaveFailurePlanEntry {
-  readonly code: AutoSaveErrorCode
-  readonly retryable: boolean
-  readonly action: AutoSaveFailureAction
-  readonly summary: string
-}
-
-export const AUTOSAVE_FAILURE_PLAN: readonly AutoSaveFailurePlanEntry[] = Object.freeze([
-  {
-    code: 'disabled',
-    retryable: false,
-    action: 'noop',
-    summary: 'フラグ/オプションで無効化された場合はスケジューラを起動せず副作用を抑止する'
-  },
-  {
-    code: 'lock-unavailable',
-    retryable: true,
-    action: 'backoff',
-    summary: 'Web Lock/フォールバック取得失敗時は指数バックオフで再試行し、Collector への通知は 1 行に限定する'
-  },
-  {
-    code: 'write-failed',
-    retryable: true,
-    action: 'backoff',
-    summary: "OPFS 書込エラーは retriable として扱い、連続失敗数に応じて `phase='error'` を露出する"
-  },
-  {
-    code: 'data-corrupted',
-    retryable: false,
-    action: 'stop',
-    summary: '復元時に破損検知した場合は即時停止し UI 通知＋Collector への高優先度ログを送る'
-  },
-  {
-    code: 'history-overflow',
-    retryable: false,
-    action: 'stop',
-    summary: '容量/世代超過は FIFO で解消し、必要に応じて GC 成功後に情報ログのみを残す'
+  constructor(
+    code: AutoSaveErrorCode,
+    message?: string,
+    retryable: boolean = true,
+    cause?: Error,
+    context?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'AutoSaveError';
+    this.code = code;
+    this.retryable = retryable;
+    this.cause = cause;
+    this.context = context;
   }
-])
+}
 
-export interface AutoSaveErrorNotificationFlow {
-  readonly code: AutoSaveErrorCode | 'any'
-  readonly retryable: boolean
-  readonly ui: 'none' | 'toast' | 'modal'
-  readonly collectorLevel: 'debug' | 'info' | 'warn' | 'error'
-  readonly message: string
+export interface AutoSaveStorage {
+  write(key: string, value: string): Promise<void>;
 }
 
 export const AUTOSAVE_ERROR_NOTIFICATION_FLOWS = Object.freeze<readonly AutoSaveErrorNotificationFlow[]>([
