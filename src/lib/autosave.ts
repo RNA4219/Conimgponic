@@ -15,8 +15,7 @@ import {
 } from './autosave/policy.js'
 import { createAutoSaveScheduler } from './autosave/scheduler.js'
 import {
-  resolveAutoSaveGuard,
-  type AutoSaveInitGuardInput
+  resolveAutoSaveGuard
 } from './autosave/guard.js'
 import {
   AUTOSAVE_SCHEDULE_REQUESTED_EVENT,

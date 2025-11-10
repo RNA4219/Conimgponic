@@ -1,9 +1,5 @@
 import type { FlagSource, FlagSnapshot } from '../config/flags'
 
-export interface AutoSaveInitGuardInput {
-  readonly flagSnapshot?: FlagSnapshot
-}
-
 export interface AutoSavePhaseGuardSnapshot {
   readonly featureFlag: {
     readonly value: boolean
