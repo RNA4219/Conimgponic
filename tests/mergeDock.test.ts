@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
+import { togglePrecision, makeHeartbeatCounter } from '../src/components/mergeDockUtils';
 
-describe('MergeDock AutoSave heartbeat and precision switching', () => {
-  it('should handle AutoSave heartbeat correctly', () => {
-    // TODO: AutoSave heartbeat のテストケースを実装
-    expect(true).toBe(true);
+describe('MergeDock Utilities', () => {
+  it('should toggle precision modes correctly', () => {
+    expect(togglePrecision('standard')).toBe('high');
+    expect(togglePrecision('high')).toBe('standard');
   });
 
-  it('should switch precision modes correctly', () => {
-    // TODO: precision 切替のテストケースを実装
-    expect(true).toBe(true);
+  it('should increment heartbeat counter', () => {
+    const counter = makeHeartbeatCounter();
+    expect(counter()).toBe(1);
+    expect(counter()).toBe(2);
+    expect(counter()).toBe(3);
   });
 });
