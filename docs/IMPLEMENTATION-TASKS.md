@@ -1,48 +1,43 @@
-# IMPLEMENTATION TASKS
+# 本体実装タスク一覧
 
-本体実装フェーズのタスク整理ファイル。引用元ファイルを前提に、実装タスクを粒度化します。本文で参照するファイル:
+このファイルは本体実装フェーズで参照すべき全体方針と、実装時のタスク分解を記述します。引用元として次を参照します：
 - docs/IMPLEMENTATION-PLAN.md
 - docs/CONFIG_FLAGS.md
-- src/config/index.ts
-- docs/AUTOSAVE-DESIGN-IMPL.md
+- docs/MERGE-DESIGN-IMPL.md
+- src/components/MergeDock.tsx
 
-## 概要
-- 本体実装タスクを、公開 API 保護と最小差分の方針に沿って計画・実行する。
-- 実装は「テストを先に書く」方針で進め、lint/型チェック・テストのグリーンを最優先にします。
+目的
+- 変更は最小差分を原則とし、Public API 破壊は避ける。
+- テスト駆動開発を優先し、テスト実装を先行させる。
+- 収集した要件は実装と検証の両方を一貫してサポートする。
 
-## 入力/出力
-- 入力: IMPLEMENTATION-PLAN.md / CONFIG_FLAGS.md / index.ts の現状仕様
-- 出力: 実装タスクファイル群・テスト雛形・実装差分
+実装方針（フェーズ分け）
+1) 仕様整合の確定
+   - 参照元: docs/IMPLEMENTATION-PLAN.md, docs/CONFIG_FLAGS.md, docs/MERGE-DESIGN-IMPL.md, src/components/MergeDock.tsx
+   - MERGE-DESIGN-IMPL.md の Diff Merge UI/AutoSave のフローと precision 切替仕様に整合させる。
 
-## 公開APIの影響範囲
-- Public API の破壊は禁止。不可避の場合のみ段階移行フラグを使用する。index.ts の公開範囲に影響を及ぼす変更は、先にミニマムなスコープで検証する。
-- CLI/JSON 出力の互換性を維持。
+2) テスト設計と雛形作成（先行実装）
+   - ユニットテスト雛形を tests/mergeDock.test.ts に追加案
+   - AutoSave heartbeat, precision 切替に関するモックを含む skeleton を用意
+   - 統合テストの最小ケースを1件追加予定
 
-## テスト方針（先行テストを含む）
-- 先にテストを作成（テスト駆動開発）。pytest / node:test の既存方針を踏襲。新規のテストは tests 配下に雛形を追加。
-  - TypeScript テスト雛形: `tests/plan003_skeleton.ts`
-  - Python テスト雛形: `tests/plan003_skeleton.py`
-- TypeScript/ESM の型検査を tsc / bun/ts-node 等の現状方針に従い実施。
+3) 最小差分実装（MergeDock.tsx への適用）
+   - docs/MERGE-DESIGN-IMPL.md の指針に沿って、MergeDock.tsx へ影響範囲の最小差分だけを適用する。
+   - 影響範囲: タブ構成、AutoSave ハートビート、precision 切替、フラグ連携
 
-## 実施手順
-1) docs/IMPLEMENTATION-PLAN.md および docs/CONFIG_FLAGS.md の該当箇所を参照して、依存関係と前提条件を整理する。
-2) 本体実装に向けた入口を、src/config/index.ts の resolveFlags の公開範囲と Collector 連携イベント構造の理解としてブレークダウンする。
-3) docs/AUTOSAVE-DESIGN-IMPL.md のファサード責務と例外設計を参照して、AutoSave の設計方針を実装計画に落とし込む。
-4) IMPLEMENTATION-TASKS.md に具体的な実装タスクを落とし込み、進捗を todo list に同期させる。
-5) 先行テストの雛形を tests/ に追加。既存 test_verification.js の方針を踏襲する。
-6) 最小差分でのコード実装を進め、lint/型チェック/テストを連続で実行してグリーンを狙う。
+4) 変更リストの作成と検証
+   - どのファイル・どの行に変更を加えたかを短く記載
+   - lint / type-check / テストの実行計画を更新
 
-## 進捗管理/更新ルール
-- todo_write でのタスク更新を優先。完了したタスクは即時 completed にする。
-- 実装中は in_progress を常に1タスクに限定。
-- 新規タスクが発生した場合は即座に追加・更新する。
+5) ドキュメント差分の反映
+   - API/CLI 変更時のみ差分ドキュメントを同梱する方針を Docs に追記
 
-## リスクと回避策
-- 実装仕様の不確定要素は、docs/PLAN 参照と index.ts の実装箇所を優先して決定。
-- 互換性維持を優先し、破壊的変更は回避、やむを得ずの場合は段階移行を適用。
+進捗管理
+- 現在の優先タスク: 仕様整合の確定と雛形テストの準備
+- 次のアクション: MergeDock.tsx への差分適用案の具体化と雛形テスト実装
 
-## 引用元
-- docs/IMPLEMENTATION-PLAN.md
-- docs/CONFIG_FLAGS.md
-- src/config/index.ts
-- docs/AUTOSAVE-DESIGN-IMPL.md
+引用
+- IMPLEMENTATION-PLAN.md の Phase/Flag運用関連
+- CONFIG_FLAGS.md の優先順位とガード設計
+- MERGE-DESIGN-IMPL.md の UI/自動保存/精度切替の仕様
+- src/components/MergeDock.tsx の現行実装
