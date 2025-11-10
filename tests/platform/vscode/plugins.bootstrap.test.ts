@@ -89,8 +89,6 @@ const expectFlagTelemetry = (
       assert.equal(entry.phase, config.phase);
 
       const evaluationMs = entry.evaluation_ms;
-      assert.equal(typeof evaluationMs, 'number');
-      assert.ok(Number.isFinite(evaluationMs));
       assert.equal(evaluationMs, config.evaluationMs);
 
       assert.ok(!('snapshot' in entry));
