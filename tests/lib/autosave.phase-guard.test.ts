@@ -55,6 +55,49 @@ const setup = async (t: any, overrides: SetupOverrides = {}) => {
 }
 const scenario = (name: string, overrides: any, fn?: any) => test(name, async (t) => { const handler = typeof overrides === 'function' ? overrides : fn; const ctx = await setup(t, typeof overrides === 'function' ? {} : overrides); await handler(t, ctx) })
 
+scenario('resolveAutoSaveGuard returns allowed: true when flagSnapshot.autosave.enabled is true', async (_t: any, { resolveAutoSaveGuard }: any) => {
+  const flagSnapshot: FlagSnapshot = { autosave: { enabled: true, phase: 'phase-a', source: 'env', errors: [] } };
+  const { allowed, guard } = resolveAutoSaveGuard({ flagSnapshot });
+  assert.equal(allowed, true);
+  assert.equal(guard.featureFlag.value, true);
+  assert.equal(guard.featureFlag.source, 'env');
+  assert.equal(guard.optionsDisabled, false);
+});
+
+scenario('resolveAutoSaveGuard returns allowed: false when flagSnapshot.autosave.enabled is false', async (_t: any, { resolveAutoSaveGuard }: any) => {
+  const flagSnapshot: FlagSnapshot = { autosave: { enabled: false, phase: 'phase-a', source: 'env', errors: [] } };
+  const { allowed, guard } = resolveAutoSaveGuard({ flagSnapshot });
+  assert.equal(allowed, false);
+  assert.equal(guard.featureFlag.value, false);
+  assert.equal(guard.featureFlag.source, 'env');
+  assert.equal(guard.optionsDisabled, false);
+});
+
+scenario('resolveAutoSaveGuard returns allowed: false when flagSnapshot is not provided and fallbackOptionsDisabled is true', async (_t: any, { resolveAutoSaveGuard }: any) => {
+  const { allowed, guard } = resolveAutoSaveGuard({ fallbackOptionsDisabled: true });
+  assert.equal(allowed, false);
+  assert.equal(guard.featureFlag.value, true); // Default to true if not explicitly disabled by policy
+  assert.equal(guard.featureFlag.source, 'default');
+  assert.equal(guard.optionsDisabled, true);
+});
+
+scenario('resolveAutoSaveGuard returns allowed: true when flagSnapshot is not provided and fallbackOptionsDisabled is false', async (_t: any, { resolveAutoSaveGuard }: any) => {
+  const { allowed, guard } = resolveAutoSaveGuard({ fallbackOptionsDisabled: false });
+  assert.equal(allowed, true);
+  assert.equal(guard.featureFlag.value, true);
+  assert.equal(guard.featureFlag.source, 'default');
+  assert.equal(guard.optionsDisabled, false);
+});
+
+scenario('resolveAutoSaveGuard returns allowed: false when flagSnapshot has errors', async (_t: any, { resolveAutoSaveGuard }: any) => {
+  const flagSnapshot: FlagSnapshot = { autosave: { enabled: true, phase: 'phase-a', source: 'env', errors: ['error1'] } };
+  const { allowed, guard } = resolveAutoSaveGuard({ flagSnapshot });
+  assert.equal(allowed, false);
+  assert.equal(guard.featureFlag.value, true);
+  assert.equal(guard.featureFlag.source, 'env');
+  assert.equal(guard.optionsDisabled, true);
+});
+
 scenario('phase guard stops runner when flag disabled', async (_t: any, { initAutoSave }: any) => {
   const flags = createFlags(false)
   const runner = initAutoSave(() => ({ nodes: [] } as any), { disabled: false }, flags)

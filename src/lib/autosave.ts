@@ -1,5 +1,5 @@
 import type { Storyboard } from '../types'
-import type { FlagSource } from '../config/flags'
+import type { FlagSource, FlagSnapshot } from '../config/flags'
 import { projectLockApi, ProjectLockError } from './locks'
 import {
   AUTOSAVE_HISTORY_ROTATION_PLAN,
@@ -15,8 +15,7 @@ import {
 } from './autosave/policy.js'
 import { createAutoSaveScheduler } from './autosave/scheduler.js'
 import {
-  resolveAutoSaveGuard,
-  type AutoSaveInitGuardInput
+  resolveAutoSaveGuard
 } from './autosave/guard.js'
 import {
   AUTOSAVE_SCHEDULE_REQUESTED_EVENT,
@@ -620,7 +619,7 @@ const sharedPersistence = createAutoSavePersistence({
 export function initAutoSave(
   getStoryboard: StoryboardProvider,
   options?: AutoSaveOptions,
-  flagSnapshot?: AutoSaveInitGuardInput
+  flagSnapshot?: FlagSnapshot
 ): AutoSaveInitResult {
   const policy = resolveAutoSavePolicy()
   const makeError = (

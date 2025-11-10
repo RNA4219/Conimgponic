@@ -1,14 +1,4 @@
-export type FlagSource = 'env' | 'workspace' | 'localStorage' | 'default'
-
-export interface AutoSaveInitGuardInput {
-  readonly flagSnapshot?: {
-    readonly featureFlag: {
-      readonly value: boolean
-      readonly source: FlagSource
-    }
-    readonly optionsDisabled: boolean
-  }
-}
+import type { FlagSource, FlagSnapshot } from '../config/flags'
 
 export interface AutoSavePhaseGuardSnapshot {
   readonly featureFlag: {
@@ -25,7 +15,7 @@ export interface AutoSavePhaseGuardSnapshot {
  * @returns 解決されたガード条件とガードスナップショット
  */
 export const resolveAutoSaveGuard = (input: {
-  flagSnapshot?: AutoSaveInitGuardInput['flagSnapshot']
+  flagSnapshot?: FlagSnapshot
   fallbackOptionsDisabled?: boolean
   policyDisabled?: boolean
 }): { 
@@ -36,10 +26,10 @@ export const resolveAutoSaveGuard = (input: {
   if (input.flagSnapshot) {
     const guard = {
       featureFlag: {
-        value: input.flagSnapshot.featureFlag.value,
-        source: input.flagSnapshot.featureFlag.source
+        value: input.flagSnapshot.autosave.enabled,
+        source: input.flagSnapshot.autosave.source
       },
-      optionsDisabled: input.flagSnapshot.optionsDisabled
+      optionsDisabled: input.flagSnapshot.autosave.errors.length > 0 // エラーがある場合は無効とみなす
     }
     
     const allowed = guard.featureFlag.value && !guard.optionsDisabled
