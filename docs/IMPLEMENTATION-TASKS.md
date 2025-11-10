@@ -1,48 +1,42 @@
-# IMPLEMENTATION TASKS
+# 本体実装タスク一覧
 
-本体実装フェーズのタスク整理ファイル。引用元ファイルを前提に、実装タスクを粒度化します。本文で参照するファイル:
-- docs/IMPLEMENTATION-PLAN.md
-- docs/CONFIG_FLAGS.md
-- src/config/index.ts
-- docs/AUTOSAVE-DESIGN-IMPL.md
+参照・引用ファイル
+- IMPLEMENTATION PLAN: docs/IMPLEMENTATION-PLAN.md
+- 設定・配布方針: docs/CONFIG_FLAGS.md
+- MERGE 関連設計: docs/MERGE-DESIGN-IMPL.md
+- 現行実装: src/components/MergeDock.tsx
 
-## 概要
-- 本体実装タスクを、公開 API 保護と最小差分の方針に沿って計画・実行する。
-- 実装は「テストを先に書く」方針で進め、lint/型チェック・テストのグリーンを最優先にします。
+概要
+本体実装フェーズのタスクを、上記参照ファイルを引用して整理します。変更は最小差分・公開API破壊禁止を原則とし、テスト駆動開発を前提とします。
 
-## 入力/出力
-- 入力: IMPLEMENTATION-PLAN.md / CONFIG_FLAGS.md / index.ts の現状仕様
-- 出力: 実装タスクファイル群・テスト雛形・実装差分
+タスク一覧
+1) 設計方針の整理と差分方針の確定
+   - 引用元: docs/IMPLEMENTATION-PLAN.md, docs/CONFIG_FLAGS.md
+   - 目的: AutoSave と精緻マージの段階導入フローの整備、有効なフラグ運用の定義
 
-## 公開APIの影響範囲
-- Public API の破壊は禁止。不可避の場合のみ段階移行フラグを使用する。index.ts の公開範囲に影響を及ぼす変更は、先にミニマムなスコープで検証する。
-- CLI/JSON 出力の互換性を維持。
+2) テスト戦略の設計と雛形作成
+   - 引用元: MERGE-DESIGN-IMPL.md の UI/ロック協調・AutoSave連携要件を踏まえる
+   - 目的: MergeDock の AutoSave ハートビート、precision 切替、フラグ連携を検証するテスト案の作成
 
-## テスト方針（先行テストを含む）
-- 先にテストを作成（テスト駆動開発）。pytest / node:test の既存方針を踏襲。新規のテストは tests 配下に雛形を追加。
-  - TypeScript テスト雛形: `tests/plan003_skeleton.ts`
-  - Python テスト雛形: `tests/plan003_skeleton.py`
-- TypeScript/ESM の型検査を tsc / bun/ts-node 等の現状方針に従い実施。
+3) 実装設計
+   - 引用元: src/components/MergeDock.tsx
+   - 目的: 差分実装方針を策定（AutoSave heartbeat、precision切替、フラグ適用の実装方針）
 
-## 実施手順
-1) docs/IMPLEMENTATION-PLAN.md および docs/CONFIG_FLAGS.md の該当箇所を参照して、依存関係と前提条件を整理する。
-2) 本体実装に向けた入口を、src/config/index.ts の resolveFlags の公開範囲と Collector 連携イベント構造の理解としてブレークダウンする。
-3) docs/AUTOSAVE-DESIGN-IMPL.md のファサード責務と例外設計を参照して、AutoSave の設計方針を実装計画に落とし込む。
-4) IMPLEMENTATION-TASKS.md に具体的な実装タスクを落とし込み、進捗を todo list に同期させる。
-5) 先行テストの雛形を tests/ に追加。既存 test_verification.js の方針を踏襲する。
-6) 最小差分でのコード実装を進め、lint/型チェック/テストを連続で実行してグリーンを狙う。
+4) テスト実装
+   - 引用元: 上記設計
+   - 目的: ユニット/統合テストの雛形を実装、テストコードを追加
 
-## 進捗管理/更新ルール
-- todo_write でのタスク更新を優先。完了したタスクは即時 completed にする。
-- 実装中は in_progress を常に1タスクに限定。
-- 新規タスクが発生した場合は即座に追加・更新する。
+5) 品質保証
+   - 引用元: リポジトリの静的検査基準（ruff/mypy 等）と既存のテスト流儀
+   - 目的: static checks とテスト実行手順を整備、CIと整合
 
-## リスクと回避策
-- 実装仕様の不確定要素は、docs/PLAN 参照と index.ts の実装箇所を優先して決定。
-- 互換性維持を優先し、破壊的変更は回避、やむを得ずの場合は段階移行を適用。
+6) ドキュメント反映
+   - 引用元: docs/CONFIG_FLAGS.md, docs/MERGE-DESIGN-IMPL.md の更新案
+   - 目的: 実装変更を反映したガイドライン更新
 
-## 引用元
-- docs/IMPLEMENTATION-PLAN.md
-- docs/CONFIG_FLAGS.md
-- src/config/index.ts
-- docs/AUTOSAVE-DESIGN-IMPL.md
+7) 変更差分のコミット計画
+   - 目的: 小さな差分での複数コミットを想定し、適切なコミットメッセージを準備
+
+進行ロジック
+- 最初に絶対パスを頂いた後、上記ドラフトを実ファイルとして作成・保存します。
+- 実装は PLAN に基づき、最小差分・非破壊を徹底します。
