@@ -1,10 +1,10 @@
-import type { MergeHunk, MergeResult, MergeInput, MergeProfileOverrides } from './types';
+import type { MergeHunk, MergeResult, MergeInput, MergeProfileOverrides, MergePrecision } from './types';
 import { DEFAULT_MERGE_ENGINE } from './engine';
 import type { MergeDockPhaseStats } from './phasePlan';
 
 export interface DiffHunkFacadeOptions {
-  readonly precision: 'beta' | 'stable';
-  readonly threshold: number;
+  readonly precision: MergePrecision;
+  readonly threshold: number | undefined;
   readonly phaseStats?: MergeDockPhaseStats | null;
   readonly autoSaveEnabled: boolean;
 }

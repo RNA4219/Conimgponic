@@ -11,6 +11,7 @@ import type {
   FlagSource,
   FlagValidationError,
   MergePrecision,
+  ResolveFlagsResult,
   ResolveOptions,
   WorkspaceConfiguration
 } from './flags.js'
@@ -148,7 +149,7 @@ const toFlagPayload = (
     flag,
     variant: String(variant),
     source,
-    phase: FEATURE_FLAG_DEFINITIONS[flag].phase,
+    phase: FEATURE_FLAG_DEFINITIONS[flag].phase as FlagRolloutPhase,
     evaluation_ms: evaluationMs,
     errors,
     precision,
@@ -188,7 +189,7 @@ export const collectFlagResolutionPayloads = (
       snapshot.merge.errors,
       errors,
       evaluation,
-      { threshold: snapshot.merge.threshold, precision: snapshot.merge.precision }
+      { threshold: snapshot.merge.threshold, precision: snapshot.merge.value }
     )
   ]
 }
@@ -223,7 +224,8 @@ export function resolveAutoSaveBootstrapPlan(
   config?: { readonly optionsDisabled?: boolean }
 ): AutoSaveBootstrapPlan {
   const startedAt = readClock()
-  const { snapshot, errors } = resolveFlags(options, { withErrors: true })
+  const result = resolveFlags(options, { withErrors: true }) as ResolveFlagsResult
+  const { snapshot, errors } = result
   const evaluationMs = Math.max(0, Math.round(readClock() - startedAt))
   const planErrors = errors satisfies readonly FlagValidationError[]
 
@@ -244,7 +246,7 @@ export function resolveAutoSaveBootstrapPlan(
   let currentPhase: FlagRolloutPhase | null = null
   
   // Check if feature flag is disabled, and if so, determine the appropriate phase for failSafe
-  if (!snapshot.autosave.enabled) {
+  if (!snapshot.autosave.value) {
     // If the flag source is env or workspace, we're past phase-a0
     if (snapshot.autosave.source === 'env' || snapshot.autosave.source === 'workspace') {
       const phaseB0 = FLAG_MIGRATION_PLAN.find((step) => step.phase === 'phase-b0')
@@ -281,7 +283,7 @@ export function resolveAutoSaveBootstrapPlan(
     snapshot,
     guard: {
       featureFlag: {
-        value: snapshot.autosave.enabled,
+        value: snapshot.autosave.value,
         source: snapshot.autosave.source
       },
       optionsDisabled: config?.optionsDisabled ?? false
@@ -296,7 +298,8 @@ export function resolvePluginBridgeBootstrapPlan(
   options?: ResolveOptions
 ): PluginBridgeBootstrapPlan {
   const startedAt = readClock()
-  const { snapshot, errors } = resolveFlags(options, { withErrors: true })
+  const result = resolveFlags(options, { withErrors: true }) as ResolveFlagsResult
+  const { snapshot, errors } = result
   const evaluationMs = Math.max(0, Math.round(readClock() - startedAt))
 
   const payloads = collectFlagResolutionPayloads(snapshot, errors, evaluationMs)
@@ -313,7 +316,7 @@ export function resolvePluginBridgeBootstrapPlan(
   )
   return {
     snapshot,
-    enableFlag: snapshot.plugins.enabled,
+    enableFlag: snapshot.plugins.value,
     errors,
     evaluationMs
   }

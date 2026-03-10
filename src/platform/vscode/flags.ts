@@ -21,12 +21,17 @@ export const DEFAULT_FLAGS: FlagsShape = {
 export function resolveWorkspaceFlags(): FlagsShape {
   const flags: FlagsShape = { ...DEFAULT_FLAGS }
 
-  const envVal = process.env.VIBE_AUTO_SAVE
+  // Access process.env safely for browser/VSCode compatibility
+  const globalScope = globalThis as Record<string, unknown>
+  const proc = globalScope.process as Record<string, unknown> | undefined
+  const procEnv = proc?.env as Record<string, unknown> | undefined
+
+  const envVal = procEnv?.VIBE_AUTO_SAVE
   if (envVal !== undefined) {
-    flags.enableAutoSave = envVal.toLowerCase() === 'true' || envVal === '1'
+    flags.enableAutoSave = String(envVal).toLowerCase() === 'true' || envVal === '1'
   }
 
-  const prm = process.env.VIBE_MERGE_PRECISION
+  const prm = procEnv?.VIBE_MERGE_PRECISION
   if (prm !== undefined) {
     const n = Number(prm)
     if (!Number.isNaN(n)) {
@@ -54,5 +59,25 @@ export function createAutoSaveBootstrapPayload(): any {
       flags: f,
       time: new Date().toISOString(),
     },
+  }
+}
+
+// Type aliases for compatibility
+export type AutoSaveBootstrapPayload = ReturnType<typeof createAutoSaveBootstrapPayload>
+export type ResolveWorkspaceFlagsOptions = Record<string, unknown>
+
+// Placeholder implementations for compatibility
+export function resolveWorkspaceBootstrapPayload(): AutoSaveBootstrapPayload {
+  return createAutoSaveBootstrapPayload()
+}
+
+export function deriveAutoSavePhaseGuard(): { allowed: boolean; guard: { featureFlag: { value: boolean; source: string }; optionsDisabled: boolean } } {
+  const flags = resolveWorkspaceFlags()
+  return {
+    allowed: flags.enableAutoSave,
+    guard: {
+      featureFlag: { value: flags.enableAutoSave, source: 'default' },
+      optionsDisabled: false
+    }
   }
 }

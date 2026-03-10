@@ -234,3 +234,6 @@ export type AutoSaveBridgeMessage =
   | AutoSaveSnapshotRequestMessage
   | AutoSaveSnapshotResultMessage
   | AutoSaveStatusMessage
+
+// Re-export types needed by platform/vscode
+export type { AutoSavePhaseGuardSnapshot, AutoSaveStatusState } from '../autosave.js'

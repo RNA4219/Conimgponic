@@ -23,7 +23,7 @@ export function resolveAutoSaveFromFlagSnapshot(
 
   return {
     featureFlag: {
-      value: flagSnapshot.autosave.enabled, // autosave.enabledはboolean型として有効
+      value: flagSnapshot.autosave.value, // autosave.valueはboolean型として有効
       source: flagSnapshot.autosave.source
     },
     optionsDisabled: false // FlagSnapshotからoptionsDisabledは取得しない

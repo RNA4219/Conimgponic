@@ -30,17 +30,11 @@ test('HelpModal はダイアログロールと閉じるボタンを提供する'
   assert.ok(dialogElement, 'HelpModal must render a dialog element')
   assert.equal(dialogElement.props['aria-modal'], 'true')
 
-  const closeButton = (function findButton(node: React.ReactNode): React.ReactElement | null {
-    if (!React.isValidElement(node)) {
-      return null
-    }
-    if (node.type === 'button') {
-      return node
-    }
-    return React.Children.toArray(node.props.children).reduce<React.ReactElement | null>((found, child) => {
-      return found ?? findButton(child)
-    }, null)
-  })(dialogElement.props.children)
+  // Find button directly in dialog children
+  const dialogChildren = React.Children.toArray(dialogElement.props.children)
+  const closeButton = dialogChildren.find((child): child is React.ReactElement => {
+    return React.isValidElement(child) && child.type === 'button'
+  })
 
   assert.ok(closeButton, 'HelpModal must include a close button')
   assert.ok(closeButton?.props['aria-label'], 'Close button must provide an aria-label')

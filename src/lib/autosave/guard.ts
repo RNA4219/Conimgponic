@@ -1,4 +1,4 @@
-import type { FlagSource, FlagSnapshot } from '../config/flags'
+import type { FlagSource, FlagSnapshot } from '../../config/flags.js'
 
 export interface AutoSavePhaseGuardSnapshot {
   readonly featureFlag: {
@@ -26,7 +26,7 @@ export const resolveAutoSaveGuard = (input: {
   if (input.flagSnapshot) {
     const guard = {
       featureFlag: {
-        value: input.flagSnapshot.autosave.enabled,
+        value: input.flagSnapshot.autosave.value,
         source: input.flagSnapshot.autosave.source
       },
       optionsDisabled: input.flagSnapshot.autosave.errors.length > 0 // エラーがある場合は無効とみなす

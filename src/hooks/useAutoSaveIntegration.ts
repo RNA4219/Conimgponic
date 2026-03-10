@@ -198,7 +198,7 @@ export interface AutoSaveIntegrationSynchronizationOptions {
   readonly initAutoSaveImpl?: (
     provider: () => Storyboard,
     options: { readonly disabled?: boolean },
-    snapshot: FlagSnapshot['autosave']
+    snapshot?: FlagSnapshot
   ) => AutoSaveInitResult
   readonly installBridge?: (runner: AutoSaveInitResult) => () => void
   readonly watchDiffs?: (
@@ -234,7 +234,7 @@ export function synchronizeAutoSaveIntegration({
   const runner = initAutoSaveImpl(
     () => context.store.getState().sb,
     { disabled: decision.guard.optionsDisabled },
-    plan.snapshot.autosave
+    plan.snapshot
   )
   context.runnerRef.current = runner
 

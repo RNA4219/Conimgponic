@@ -37,7 +37,7 @@ export type DiffMergeAction =
   | { readonly type: 'cancelEdit' }
   | { readonly type: 'syncHunks'; readonly hunks: readonly MergeHunk[] }
   | { readonly type: 'queueMerge'; readonly hunkIds: readonly string[] }
-  | { readonly type: 'queueResult'; readonly hunkIds: readonly string[]; readonly result: 'success' | 'conflict' | 'error' }
+  | { readonly type: 'queueResult'; readonly hunkIds: readonly string[]; readonly result: 'success' | 'conflict' | 'error' | 'partial' }
   | { readonly type: 'override'; readonly hunkId: string }
   | { readonly type: 'reopen'; readonly hunkId: string }
 

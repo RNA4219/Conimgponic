@@ -1,5 +1,6 @@
 import {
   FEATURE_FLAG_DEFINITIONS,
+  FlagSnapshot,
   FlagValidationError,
   resolveFeatureFlag,
   resolveFlags
@@ -90,10 +91,10 @@ test('resolveFlags returns snapshot with injected clock timestamp', () => {
       [FEATURE_FLAG_DEFINITIONS['merge.precision'].envKey]: 'BETA'
     },
     clock: () => new Date('2024-01-02T03:04:05.000Z')
-  })
+  }) as FlagSnapshot
 
-  assertEqual(resolution.autosave.enabled, true)
-  assertEqual(resolution.merge.precision, 'beta')
+  assertEqual(resolution.autosave.value, true)
+  assertEqual(resolution.merge.value, 'beta')
   assertEqual(resolution.updatedAt, '2024-01-02T03:04:05.000Z')
 })
 

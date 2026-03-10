@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-import { resolveFlags, workspaceKeyCandidates, type FlagSnapshot } from '../../config/flags'
+import { resolveFlags, workspaceKeyCandidates, type FlagSnapshot, type ResolveFlagsResult } from '../../config/flags'
 import { resolveMergeThresholdPlan } from './phasePlan'
 import type { MergePrecision } from '../merge'
 
@@ -133,7 +133,7 @@ const readDefaultEnvPrecision = (): string | undefined => {
 }
 
 const defaultEnvironment: MergeThresholdEnvironment = {
-  resolveFlags: ({ workspace, storage }) => resolveFlags({ workspace, storage }),
+  resolveFlags: ({ workspace, storage }) => resolveFlags({ workspace, storage }) as FlagSnapshot,
   readEnvPrecision: readDefaultEnvPrecision,
   logger: console,
 }
@@ -145,9 +145,9 @@ export const resolveMergeThresholdSnapshot = (
   const workspace = options.workspace ?? null
   const storage = options.storage ?? null
   const snapshot: Pick<FlagSnapshot, 'merge'> =
-    options.flags ?? environment.resolveFlags({ workspace, storage })
+    options.flags ?? (environment.resolveFlags({ workspace, storage }) as FlagSnapshot)
   const envPrecision = parseMergePrecision(environment.readEnvPrecision())
-  const precision = options.precision ?? envPrecision ?? snapshot.merge.precision
+  const precision = options.precision ?? envPrecision ?? snapshot.merge.value
   const envOverrides = envPrecision !== undefined && options.precision === undefined && options.threshold === undefined
   const defaultThreshold = resolveMergeThresholdPlan(precision, undefined).request
 
@@ -226,7 +226,7 @@ export const useMergeThreshold = (
       resolveMergeThresholdSnapshot(
         {
           ...options,
-          precision: options.precision ?? snapshot.merge.precision,
+          precision: options.precision ?? snapshot.merge.value,
           workspace,
           storage,
           flags: snapshot,
@@ -239,7 +239,7 @@ export const useMergeThreshold = (
       workspace,
       storage,
       snapshot,
-      snapshot.merge.precision,
+      snapshot.merge.value,
       snapshot.merge.threshold,
       environment,
     ],

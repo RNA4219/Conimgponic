@@ -27,7 +27,7 @@ import { saveJSON } from './lib/opfs'
 import { readWorkspaceSetting } from './lib/merge/threshold'
 import { TemplatesMenu } from './components/TemplatesMenu'
 import { useAutoSaveAppEffects } from './hooks/useAutoSaveIntegration'
-import { readImportMetaEnv } from './lib/autosave/guard'
+import { readImportMetaEnv } from './lib/autosave/telemetryBridge'
 import {
   handleToolbarSaveProject,
   createToolbarActions,
@@ -381,7 +381,7 @@ export function createFlagSnapshotSubscription(
 ): FlagSnapshotSubscription {
   const listeners = new Set<FlagSnapshotListener>()
   let disposed = false
-  let current = resolveFlags(options ?? undefined)
+  let current = resolveFlags(options ?? undefined) as FlagSnapshot
 
   const notify = (snapshot: FlagSnapshot): void => {
     current = snapshot
@@ -394,7 +394,7 @@ export function createFlagSnapshotSubscription(
     if (disposed) {
       return
     }
-    notify(resolveFlags(options ?? undefined))
+    notify(resolveFlags(options ?? undefined) as FlagSnapshot)
   }
 
   const handleStorage = (event: StorageEvent): void => {
@@ -685,9 +685,9 @@ export default function App({ resolveOptions }: AppProps = {}){
     return resolveAutoSaveBootstrapPlan(resolvedOptions ?? undefined)
   }, [
     resolvedOptions,
-    flagSnapshot.autosave.enabled,
+    flagSnapshot.autosave.value,
     flagSnapshot.autosave.source,
-    flagSnapshot.merge.precision,
+    flagSnapshot.merge.value,
     flagSnapshot.merge.source,
     flagSnapshot.merge.threshold
   ])
@@ -765,7 +765,7 @@ export default function App({ resolveOptions }: AppProps = {}){
     return resolveMergeDockIntegration(mergeAlignedPlan, resolvedOptions)
   }, [autoSavePlan, flagSnapshot.merge, resolvedOptions])
   const mergeDockFlags = mergeDockIntegration.flagSnapshot
-  const mergeDockAutoSaveEnabled = mergeDockFlags.autosave.enabled === true
+  const mergeDockAutoSaveEnabled = mergeDockFlags.autosave.value === true
   return (
     <div className="app">
       <div className="toolbar">

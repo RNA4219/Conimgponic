@@ -1,12 +1,12 @@
-import { publishGuardCollectorEvent } from '../../lib/autosave'
-import type { AutoSavePolicy } from '../../lib/autosave/policy.js'
-import type {
-  AutoSaveBridgeMessage,
-  AutoSavePhaseGuardSnapshot,
-  AutoSaveSnapshotRequestMessage,
-  AutoSaveSnapshotResultPayload,
-  AutoSaveStatusState
-} from '../../lib/autosave/telemetryBridge.js'
+import {
+  publishGuardCollectorEvent,
+  type AutoSavePolicy,
+  type AutoSaveSnapshotResultPayload,
+  type AutoSaveSnapshotRequestMessage,
+  type AutoSaveBridgeMessage,
+  type AutoSavePhaseGuardSnapshot,
+  type AutoSaveStatusState
+} from '../../lib/autosave'
 import type { FlagSnapshot, WorkspaceConfiguration, FlagSource } from '../../config/index.js'
 import {
   createAutoSaveBootstrapPayload,
@@ -75,7 +75,7 @@ export { resolveCollectorPhase } from '../../lib/autosave/collector-phase.js'
 export { statusPhaseForState } from './autosave/state.js'
 
 export interface AutoSaveHostBridgeOptions {
-  readonly policy: AutoSaveConfig
+  readonly policy: AutoSavePolicy
   readonly initialGuard?: AutoSavePhaseGuardSnapshot
   readonly flags?: FlagSnapshot
   readonly workspace?: WorkspaceConfiguration | null
@@ -108,7 +108,13 @@ export interface AutoSaveHostBridge {
 export const createVscodeAutoSaveBridge = (
   options: AutoSaveHostBridgeOptions
 ): AutoSaveHostBridge => {
-  const autoSave = new AutoSave(options.policy);
+  // Placeholder implementation - the AutoSave class has been replaced with initAutoSave
+  // This bridge provides a compatibility layer for VSCode integration
+  const state = {
+    lastSuccessAt: undefined as string | undefined,
+    retryCount: 0,
+    status: 'disabled' as AutoSaveStatusState
+  }
   return {
     reportDirty: (_pendingBytes: number, _guard: AutoSavePhaseGuardSnapshot) => {
       // placeholder: bridge can propagate dirty state if needed in future
@@ -126,7 +132,10 @@ export const createVscodeAutoSaveBridge = (
         retainedBytes: 100 // dummy value
       };
       options.sendMessage({
-        type: 'snapshot-result',
+        type: 'snapshot.result',
+        apiVersion: 1,
+        phase: 'A-1',
+        bridgePhase: 'snapshot.result',
         reqId: request.reqId,
         correlationId: request.correlationId,
         ts: new Date().toISOString(),
@@ -134,6 +143,6 @@ export const createVscodeAutoSaveBridge = (
       });
     },
     inspectHistory: () => ({ retainedBytes: 0, generations: 0 }),
-    inspectState: () => ({ lastSuccessAt: undefined, retryCount: 0, status: 'disabled', guard: {} as AutoSavePhaseGuardSnapshot })
+    inspectState: () => ({ lastSuccessAt: state.lastSuccessAt, retryCount: state.retryCount, status: state.status, guard: {} as AutoSavePhaseGuardSnapshot })
   }
 }

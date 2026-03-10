@@ -1,4 +1,4 @@
-import type { WorkspaceConfiguration } from './index.js'
+import type { WorkspaceConfiguration } from './flags/schema.js'
 
 export type FlagSource = 'env' | 'workspace' | 'localStorage' | 'default'
 
@@ -131,7 +131,7 @@ const coerceMergePrecision: FlagCoercer<MergePrecision> = (raw: string) => {
   }
 }
 
-const coerceMergeThresholdValue: FlagCoercer<number> = (raw: string) => {
+export const coerceMergeThresholdValue: FlagCoercer<number> = (raw: string) => {
   const num = Number(raw)
   if (isNaN(num)) {
     return {
@@ -224,8 +224,13 @@ const readFromEnv = (key: string, env?: Record<string, unknown>): string | null 
       // import.meta.envが存在しない場合やアクセスできない場合
     }
     // Node.js環境ではprocess.envを使用
-    if (typeof process !== 'undefined' && process.env && key in process.env) {
-      return String(process.env[key as keyof NodeJS.ProcessEnv] ?? null)
+    if (typeof globalThis !== 'undefined') {
+      const g = globalThis as Record<string, unknown>
+      const proc = g.process as Record<string, unknown> | undefined
+      const procEnv = proc?.env as Record<string, unknown> | undefined
+      if (procEnv && key in procEnv) {
+        return String(procEnv[key] ?? null)
+      }
     }
     return null
   }
@@ -306,7 +311,8 @@ const resolveFlagValue = <T>(
         errors.push({
           ...result.error,
           source: 'env',
-          flag: definition.name
+          flag: definition.name,
+          phase: definition.phase
         })
       }
     } else {
@@ -329,6 +335,7 @@ const resolveFlagValue = <T>(
             raw: String(workspaceValue),
             message: `Threshold value ${workspaceValue} is below minimum 0.75`,
             retryable: false,
+            phase: definition.phase,
             source: 'workspace'
           })
         } else if (workspaceValue >= 0.82) {
@@ -342,6 +349,7 @@ const resolveFlagValue = <T>(
             raw: String(workspaceValue),
             message: `Threshold value ${workspaceValue} is out of range`,
             retryable: false,
+            phase: definition.phase,
             source: 'workspace'
           })
         }
@@ -354,7 +362,8 @@ const resolveFlagValue = <T>(
           errors.push({
             ...result.error,
             source: 'workspace',
-            flag: definition.name
+            flag: definition.name,
+            phase: definition.phase
           })
         }
       } else {
@@ -374,7 +383,8 @@ const resolveFlagValue = <T>(
         errors.push({
           ...result.error,
           source: 'localStorage',
-          flag: definition.name
+          flag: definition.name,
+          phase: definition.phase
         })
       }
     } else {
@@ -438,17 +448,17 @@ export function resolveFlags(
 
   const snapshot: FlagSnapshot = {
     autosave: {
-      value: autosaveResult.value,
+      value: autosaveResult.value as boolean,
       source: autosaveResult.source,
       errors: autosaveResult.errors
     },
     plugins: {
-      value: pluginsResult.value,
+      value: pluginsResult.value as boolean,
       source: pluginsResult.source,
       errors: pluginsResult.errors
     },
     merge: {
-      value: mergeResult.value,
+      value: mergeResult.value as MergePrecision,
       source: mergeResult.source,
       errors: mergeResult.errors,
       threshold: thresholdValue
@@ -470,3 +480,22 @@ export function resolveFlags(
 
   return snapshot
 }
+
+// Default flag snapshot for use when no configuration is available
+export const DEFAULT_FLAG_SNAPSHOT: FlagSnapshot = {
+  autosave: { value: false, source: 'default', errors: [] },
+  plugins: { value: false, source: 'default', errors: [] },
+  merge: { value: 'legacy', source: 'default', errors: [] },
+  updatedAt: new Date().toISOString()
+}
+
+// Re-export WorkspaceConfiguration from schema
+export type { WorkspaceConfiguration } from './flags/schema.js'
+
+// Re-export FlagRolloutPhase from schema
+export type { FlagRolloutPhase } from './flags/schema.js'
+
+// Type aliases for backwards compatibility
+export type AutosaveFlagSnapshot = FlagValueSnapshot<boolean>
+export type FlagMigrationStep = { readonly from: string; readonly to: string }
+export type FlagResolution<T> = FlagValueSnapshot<T>

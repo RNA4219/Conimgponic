@@ -29,6 +29,22 @@ import {
   resolveAutoSaveFromFlagSnapshot
 } from './autosave/flags.js'
 
+// Re-export for config/index.ts
+export { AUTOSAVE_POLICY, resolveAutoSavePolicy }
+// Re-export from telemetryBridge for platform/vscode
+export {
+  publishGuardCollectorEvent,
+  type AutoSaveBridgeBootstrapMessage,
+  type AutoSaveBridgeReadyMessage,
+  type AutoSaveBridgeMessage,
+  type AutoSaveEnvelopePhase,
+  type AutoSaveSnapshotRequestMessage,
+  type AutoSaveSnapshotResultMessage,
+  type AutoSaveSnapshotResultPayload,
+  type AutoSaveStatusMessage
+} from './autosave/telemetryBridge.js'
+export type { AutoSavePolicy } from './autosave/policy.js'
+
 export type AutoSaveErrorCode =
   | 'lock-unavailable'
   | 'write-failed'
@@ -41,6 +57,14 @@ export interface AutoSaveError extends Error {
   readonly retryable: boolean;
   readonly cause?: Error;
   readonly context?: Record<string, unknown>;
+}
+
+export type AutoSaveFailureAction = 'backoff' | 'stop' | 'noop'
+
+export type StoryboardProvider = () => Storyboard
+
+export interface AutoSaveOptions {
+  readonly disabled?: boolean
 }
 
 export class AutoSaveErrorImpl extends Error implements AutoSaveError {
@@ -67,6 +91,14 @@ export class AutoSaveErrorImpl extends Error implements AutoSaveError {
 
 export interface AutoSaveStorage {
   write(key: string, value: string): Promise<void>;
+}
+
+export interface AutoSaveErrorNotificationFlow {
+  readonly code: AutoSaveErrorCode | 'any';
+  readonly retryable: boolean;
+  readonly ui: 'none' | 'toast' | 'modal';
+  readonly collectorLevel: 'debug' | 'info' | 'warn' | 'error';
+  readonly message: string;
 }
 
 export const AUTOSAVE_ERROR_NOTIFICATION_FLOWS = Object.freeze<readonly AutoSaveErrorNotificationFlow[]>([
@@ -600,9 +632,15 @@ const createAutoSaveError = (
   return Object.assign(base, extras) as AutoSaveError
 }
 
-export class AutoSave {
-  private config: AutoSaveConfig;
-  private storage: AutoSaveStorage;
+const isAutoSaveError = (error: unknown): error is AutoSaveError => {
+  if (!error || typeof error !== 'object') return false
+  if (!(error instanceof Error)) return false
+  const candidate = error as unknown as Partial<AutoSaveError>
+  return (
+    typeof candidate.code === 'string' &&
+    typeof candidate.retryable === 'boolean'
+  )
+}
 
 const sharedPersistence = createAutoSavePersistence({
   makeError: (code, message, retryable, cause, context) =>
@@ -653,7 +691,7 @@ export function initAutoSave(
   const persistence = sharedPersistence
   const fallbackOptionsDisabled = options?.disabled === true
   const { guard } = resolveAutoSaveGuard({
-    flagSnapshot: flagSnapshot?.flagSnapshot,
+    flagSnapshot,
     fallbackOptionsDisabled,
     policyDisabled: policy.disabled
   })
@@ -808,19 +846,484 @@ export function initAutoSave(
     return loadGenerationPromise
   }
 
-  async save(key: string, value: string): Promise<void> {
-    let retries = 0;
-    while (retries <= this.config.maxRetries) {
-      try {
-        await this.storage.write(key, value);
-        return;
-      } catch (error) {
-        retries++;
-        if (retries > this.config.maxRetries) {
-          throw error; // Max retries reached, re-throw the error
+  const trimPendingQueue = () => {
+    const overflow = pendingQueue.length - AUTOSAVE_QUEUE_POLICY.maxPending
+    if (overflow > 0) {
+      pendingQueue.splice(inflightQueueCount, overflow)
+    }
+  }
+  const scheduler = createAutoSaveScheduler(
+    {
+      onFlush: (reason) => {
+        if (reason === 'flushNow') {
+          return startFlush('manual')
         }
-        await new Promise(resolve => setTimeout(resolve, this.config.retryBackoffMs));
+        return startFlush('auto')
       }
+    },
+    { debounceMs: policy.debounceMs, idleMs: policy.idleMs }
+  )
+  scheduler.start()
+  const enqueueRetryEntry = (reason: AutoSaveQueueEntry['reason'], retries: number): void => {
+    const entry: AutoSaveQueueEntry = {
+      ts: new Date().toISOString(),
+      reason,
+      estimatedBytes: pendingBytes,
+      retries
+    }
+    if (inflightQueueCount > 0 && pendingQueue.length > 0) {
+      pendingQueue[0] = entry
+    } else {
+      pendingQueue.unshift(entry)
+      trimPendingQueue()
+    }
+    const targetGeneration = inflightGeneration ?? nextGeneration
+    if (targetGeneration != null) {
+      const backlog = Math.max(0, pendingQueue.length - inflightQueueCount)
+      queuedGeneration = backlog > 0 ? targetGeneration + backlog - 1 : targetGeneration
+    }
+  }
+  const runFlush = async (
+    attempt: number,
+    source: 'manual' | 'auto',
+    generation: number,
+    consumedCount: number
+  ): Promise<void> => {
+    if (disposed) {
+      if (consumedCount > 0) {
+        inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)
+      }
+      throw disabledError()
+    }
+    const storyboard = getStoryboard()
+    if (!storyboard) {
+      if (consumedCount > 0) {
+        inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)
+      }
+      throw disabledError()
+    }
+    const payload = JSON.stringify(storyboard, null, 2)
+    pendingBytes = encoder.encode(payload).length
+    phase = 'awaiting-lock'
+    const flushStartedAt = Date.now()
+    try {
+      await projectLockApi.withProjectLock(async (lease) => {
+        if (disposed) throw disabledError()
+        const lockTelemetryAt = new Date().toISOString()
+        emitRunnerEvent('lock-acquired', 'awaiting-lock', {
+          at: lockTelemetryAt,
+          payload: {
+            retryCount,
+            strategy: lease.strategy,
+            viaFallback: lease.viaFallback,
+            leaseMs: lease.ttlMillis,
+            leaseId: lease.leaseId,
+            lease: {
+              leaseId: lease.leaseId,
+              ownerId: lease.ownerId,
+              strategy: lease.strategy,
+              viaFallback: lease.viaFallback,
+              resource: lease.resource,
+              ttlMillis: lease.ttlMillis
+            }
+          }
+        })
+        phase = 'writing-current'
+        const writeResult = await persistence.writeCurrent(payload)
+        pendingBytes = writeResult.bytes
+        phase = 'updating-index'
+        const ts = new Date().toISOString()
+        const flushRetryCount = retryCount
+        emitRunnerEvent(
+          'write-succeeded',
+          'writing-current',
+          { at: ts, payload: { bytes: pendingBytes, retryCount: flushRetryCount, generation } }
+        )
+        const indexResult = await persistence.persistHistory({
+          ts,
+          payload,
+          bytes: pendingBytes,
+          generation,
+          policy
+        })
+        phase = 'gc'
+        lastSuccessAt = ts;
+        const savedBytes = pendingBytes
+        const durationMs = Date.now() - flushStartedAt
+        const historySize = indexResult.history.reduce((sum, entry) => sum + entry.bytes, 0)
+        const gcEvicted = indexResult.evicted
+        publishWriteCompletedCollectorEvent({
+          guard,
+          durationMs,
+          bytes: savedBytes,
+          generation,
+          retryCount: flushRetryCount,
+          source,
+          ts,
+          leaseId: lease.leaseId,
+          historyBytes: historySize,
+          gcEvicted
+        })
+        notifyOutputTelemetry('autosave.write.completed', 'gc', 'p99-success', {
+          duration_ms: durationMs,
+          bytes: savedBytes,
+          history_size: historySize,
+          gc_evicted: gcEvicted,
+          generation,
+          retry_count: flushRetryCount,
+          source,
+          lease_id: lease.leaseId
+        })
+        if (consumedCount > 0) {
+          pendingQueue.splice(0, consumedCount)
+          inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)
+        }
+        const backlog = Math.max(0, pendingQueue.length - inflightQueueCount)
+        emitRunnerEvent('gc-completed', 'gc', {
+          at: ts,
+          payload: {
+            bytes: savedBytes,
+            retryCount: flushRetryCount,
+            backlog,
+            leaseId: lease.leaseId
+          }
+        })
+        inflightGeneration = null
+        nextGeneration = generation + 1
+        queuedGeneration = backlog > 0 ? nextGeneration + backlog - 1 : 0
+        const lastPending = pendingQueue[pendingQueue.length - 1]
+        pendingBytes = lastPending ? lastPending.estimatedBytes : 0
+        retryCount = 0;
+        lastError = undefined;
+        if (disposed) {
+          pendingBytes = 0;
+          phase = 'disabled';
+        } else if (!disposing && backlog > 0) {
+          phase = 'debouncing';
+          void scheduler.scheduleFlush('change')
+        } else {
+          phase = 'idle';
+        }
+      }, { preferredStrategy: 'web-lock' })
+    } catch (error: unknown) {
+      if (consumedCount > 0) {
+        inflightQueueCount = Math.max(0, inflightQueueCount - consumedCount)
+      }
+      if (disposed) throw disabledError()
+      const stage = phase
+      const telemetryAt = new Date().toISOString()
+      const autoError =
+        isAutoSaveError(error)
+          ? error
+          : error instanceof ProjectLockError
+          ? makeError('lock-unavailable', error.message, error.retryable, error, { operation: error.operation })
+          : stage === 'awaiting-lock'
+          ? error instanceof Error
+            ? makeError('lock-unavailable', error.message, true, error)
+            : makeError('lock-unavailable', 'Failed to acquire autosave project lock', true, undefined, {
+                value: error
+              })
+          : error instanceof Error
+          ? makeError('write-failed', error.message, true, error)
+          : makeError('write-failed', 'Unexpected AutoSave failure', true, undefined, { value: error })
+      const failureDurationMs = Math.max(0, Date.now() - flushStartedAt)
+      const failureCauseDetail = toTelemetryCause(autoError.cause ?? autoError)
+      const failureTelemetryBase = {
+        duration_ms: failureDurationMs,
+        error_code: autoError.code,
+        retryable: autoError.retryable,
+        cause: failureCauseDetail ?? null
+      }
+      notifyOutputTelemetry('autosave.write.failed', stage, 'p95-latency', {
+        ...failureTelemetryBase,
+        retry_count: attempt + 1,
+        source,
+        reason: stage === 'awaiting-lock' ? 'lock' : 'write'
+      })
+      if (stage === 'awaiting-lock') {
+        emitRunnerEvent('lock-rejected', 'awaiting-lock', {
+          at: telemetryAt,
+          payload: { code: autoError.code, retryable: autoError.retryable },
+          error: autoError
+        })
+      } else if (stage === 'writing-current' || stage === 'updating-index') {
+        emitRunnerEvent('write-failed', 'writing-current', {
+          at: telemetryAt,
+          payload: { code: autoError.code, retryable: autoError.retryable },
+          error: autoError
+        })
+      }
+      lastError = autoError
+      if (autoError.retryable) {
+        const nextAttempt = attempt + 1
+        retryCount = nextAttempt
+        if (nextAttempt < AUTOSAVE_RETRY_POLICY.maxAttempts) {
+          const delay = Math.min(
+            AUTOSAVE_RETRY_POLICY.initialDelayMs * Math.pow(AUTOSAVE_RETRY_POLICY.multiplier, attempt),
+            AUTOSAVE_RETRY_POLICY.maxDelayMs
+          )
+          emitRunnerEvent('retry-scheduled', 'error', {
+            at: telemetryAt,
+            payload: {
+              retryCount: nextAttempt,
+              bytes: pendingBytes,
+              delayMs: delay,
+              code: autoError.code
+            },
+            error: autoError
+          })
+          phase = 'backoff'
+          notifyOutputTelemetry('autosave.write.failed', 'error', 'p95-latency', {
+            ...failureTelemetryBase,
+            retry_count: nextAttempt,
+            source,
+            reason: 'retry-scheduled',
+            delay_ms: delay
+          })
+          scheduler.enterBackoff({
+            delayMs: delay,
+            reason: source === 'manual' ? 'flushNow' : 'change',
+            attempt: nextAttempt,
+            onReady: () => {
+              if (disposing || disposed) {
+                return
+              }
+              enqueueRetryEntry(source === 'manual' ? 'flushNow' : 'change', nextAttempt)
+              void startFlush('auto').catch(() => undefined)
+            }
+          })
+          if (disposing) {
+            return
+          }
+        } else {
+          emitRunnerEvent('retry-exhausted', stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current', {
+            at: telemetryAt,
+            payload: {
+              retryCount: nextAttempt,
+              bytes: pendingBytes,
+              code: autoError.code,
+              retryable: autoError.retryable
+            },
+            error: autoError
+          })
+          notifyOutputTelemetry(
+            'autosave.write.failed',
+            stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
+            'p95-latency',
+            {
+              ...failureTelemetryBase,
+              retry_count: nextAttempt,
+              source,
+              reason: 'retry-exhausted'
+            }
+          )
+          phase = 'error'
+          pendingBytes = 0
+          pendingQueue.length = 0
+          inflightQueueCount = 0
+          queuedGeneration = 0
+          inflightGeneration = null
+          disposed = true
+          phase = 'disabled'
+        }
+      } else {
+        emitRunnerEvent('retry-exhausted', stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current', {
+          at: telemetryAt,
+          payload: {
+            retryCount: attempt + 1,
+            bytes: pendingBytes,
+            code: autoError.code,
+            retryable: false
+          },
+          error: autoError
+        })
+        notifyOutputTelemetry(
+          'autosave.write.failed',
+          stage === 'awaiting-lock' ? 'awaiting-lock' : 'writing-current',
+          'p95-latency',
+          {
+            ...failureTelemetryBase,
+            retry_count: attempt + 1,
+            source,
+            reason: 'retry-exhausted'
+          }
+        )
+        retryCount = 0
+        phase = 'error'
+        pendingBytes = 0
+        disposed = true
+        phase = 'disabled'
+        inflightQueueCount = 0
+      }
+      throw autoError
+    }
+  }
+  const startFlush = async (source: 'manual' | 'auto'): Promise<void> => {
+    if (disposed) throw disabledError()
+    if (disposing) {
+      if (source === 'auto') {
+        return
+      }
+      throw disabledError()
+    }
+    const queuedCount = Math.max(0, pendingQueue.length - inflightQueueCount)
+    if (source === 'auto' && queuedCount === 0) {
+      return
+    }
+    phase = 'debouncing'
+    const consumedCount = queuedCount > 0 ? 1 : 0
+    if (consumedCount > 0) {
+      inflightQueueCount += consumedCount
+    }
+    const generation =
+      inflightGeneration != null ? inflightGeneration : await ensureNextGeneration()
+    if (inflightGeneration == null) {
+      inflightGeneration = generation
+    }
+    const backlogAfterConsumption = Math.max(0, queuedCount - consumedCount)
+    queuedGeneration = inflightGeneration + backlogAfterConsumption
+    const pending = runFlush(0, source, generation, consumedCount)
+    inFlightFlush = pending
+    try {
+      await pending
+    } finally {
+      if (inFlightFlush === pending) {
+        inFlightFlush = null
+      }
+    }
+  }
+  const resolveSnapshotPhase = (): AutoSavePhase => {
+    if (disposed || disposing) {
+      return 'disabled'
+    }
+    if (phase === 'debouncing' && guardAllowsDirtyExposure && queuedGeneration > 0) {
+      return 'dirty'
+    }
+    return phase
+  }
+  const snapshot = (): AutoSaveStatusSnapshot => ({
+    phase: resolveSnapshotPhase(),
+    lastSuccessAt,
+    pendingBytes,
+    lastError,
+    retryCount,
+    ...(queuedGeneration > 0 ? { queuedGeneration } : {})
+  })
+  return {
+    snapshot,
+    flushNow: async () => {
+      if (disposed || disposing) throw disabledError()
+      await scheduler.scheduleFlush('flushNow')
+    },
+    dispose: async () => {
+      if (disposePromise) {
+        return disposePromise
+      }
+      const cancellationPhase = resolveSnapshotPhase()
+      const pendingBeforeDispose = pendingQueue.length
+      disposing = true
+      const pendingFlush = inFlightFlush
+      disposePromise = (async () => {
+        await scheduler.dispose()
+        if (pendingFlush) {
+          try {
+            await pendingFlush
+          } catch {
+            // ignore flush errors on dispose
+          }
+        }
+        if (cancellationPhase !== 'disabled') {
+          emitRunnerEvent('cancelled', cancellationPhase, {
+            payload: { reason: 'dispose', pending: pendingBeforeDispose }
+          })
+        }
+        disposed = true
+        disposing = false
+        phase = 'disabled'
+        pendingBytes = 0
+        pendingQueue.length = 0
+        queuedGeneration = 0
+        inflightGeneration = null
+        inflightQueueCount = 0
+        eventHandlers.clear()
+        notifyOutputTelemetry('autosave.write.failed', 'disabled', 'p95-latency', {
+          duration_ms: 0,
+          error_code: 'disabled',
+          retryable: false,
+          retry_count: retryCount,
+          cause: null,
+          reason: 'dispose'
+        })
+      })()
+      await disposePromise
+    },
+    onEvent: (handler) => {
+      eventHandlers.add(handler)
+      return () => {
+        eventHandlers.delete(handler)
+      }
+    },
+    markDirty: (meta) => {
+      if (disposed || disposing) return
+      const hasPending = typeof meta?.pendingBytes === 'number' && Number.isFinite(meta.pendingBytes)
+      if (hasPending) {
+        const normalized = Math.max(0, Math.trunc(meta!.pendingBytes!))
+        pendingBytes = normalized
+      }
+      const estimated = pendingBytes
+      const scheduledAt = new Date().toISOString()
+      pendingQueue.push({ ts: scheduledAt, reason: 'change', estimatedBytes: estimated, retries: 0 })
+      trimPendingQueue()
+      const backlog = Math.max(0, pendingQueue.length - inflightQueueCount)
+      if (inflightGeneration != null) {
+        queuedGeneration = inflightGeneration + backlog
+      } else if (nextGeneration != null) {
+        queuedGeneration = backlog > 0 ? nextGeneration + backlog - 1 : nextGeneration
+      } else {
+        queuedGeneration = 0
+        void ensureNextGeneration()
+          .then((value) => {
+            if (disposed || disposing) {
+              return
+            }
+            if (inflightGeneration != null) {
+              return
+            }
+            const pendingBacklog = Math.max(0, pendingQueue.length - inflightQueueCount)
+            if (pendingBacklog === 0) {
+              return
+            }
+            queuedGeneration = value + pendingBacklog - 1
+          })
+          .catch(() => undefined)
+      }
+      const changePhase: AutoSavePhase = phase === 'idle' ? 'idle' : 'debouncing'
+      const changeDetail = {
+        reason: 'change',
+        pendingBytes: estimated,
+        backlog,
+        flag_source: guard.featureFlag.source,
+        retry_count: retryCount
+      }
+      emitRunnerEvent(AUTOSAVE_SCHEDULE_REQUESTED_EVENT, changePhase, {
+        payload: changeDetail,
+        at: scheduledAt
+      })
+      notifyOutputTelemetry(AUTOSAVE_SCHEDULE_REQUESTED_EVENT, 'debouncing', 'p95-latency', changeDetail)
+      const buildSha = resolveBuildSha() ?? 'unknown'
+      publishScheduleRequestedCollectorEvent({
+        guard,
+        ts: scheduledAt,
+        reason: 'change',
+        pendingBytes: estimated,
+        backlog,
+        retryCount,
+        buildSha
+      })
+      if (phase === 'idle' || phase === 'debouncing') {
+        phase = 'debouncing'
+      }
+      void scheduler.scheduleFlush('change')
     }
   }
 }

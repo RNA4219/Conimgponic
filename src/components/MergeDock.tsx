@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { FlagSnapshot } from '../config/flags'
+import type { FlagSnapshot, MergePrecision } from '../config/flags'
 import { useSB } from '../store'
 import { toMarkdown, toCSV, toJSONL, downloadText } from '../lib/exporters'
 import { mergeCSV, mergeJSONL, readFileAsText, ImportMode } from '../lib/importers'
@@ -42,8 +42,6 @@ import {
   type WorkspaceConfiguration,
 } from './merge-dock/domain'
 import { getDiffHunksFromEngine, type MergeHunk } from '../lib/merge'
-import { useSB } from '../store'
-import type { Storyboard } from '../types'
 import {
   createMergeDockViewStore,
   useMergeDockViewStore,
@@ -74,11 +72,9 @@ export {
 } from './merge-dock/domain'
 import { GoldenCompare } from './GoldenCompare'
 import { DiffMergeView } from './DiffMergeView'
-import type { 
-  MergeHunk, 
+import type {
   QueueMergeCommand,
   DiffMergeQueueCommandPayload,
-  MergeDecisionEvent,
 } from './diffMergeTypes.js'
 
 
@@ -970,13 +966,14 @@ export function MergeDock({
 }
 
 interface DiffMergeViewWithRealHunksProps {
-  readonly precision: 'beta' | 'stable';
-  readonly threshold: number;
+  readonly precision: MergePrecision;
+  readonly hunks?: readonly MergeHunk[];
+  readonly threshold: number | undefined;
   readonly phaseStats: MergeDockPhaseStats | null;
   readonly autoSaveEnabled: boolean;
-  readonly autoApplied?: { readonly rate: number; readonly target: number; readonly meetsTarget: boolean | null };
+  readonly autoApplied?: { readonly rate: number | null; readonly target: number; readonly meetsTarget: boolean | null };
   readonly disabled?: boolean;
-  readonly queueMergeCommand: (command: any) => Promise<{ status: 'success' | 'partial' | 'error'; hunkIds: string[]; telemetry: any }>;
+  readonly queueMergeCommand: QueueMergeCommand;
 }
 
 const DiffMergeViewWithRealHunks: React.FC<DiffMergeViewWithRealHunksProps> = ({
