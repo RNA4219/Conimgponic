@@ -186,6 +186,7 @@ export const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlagName, FlagDefinition<un
     name: 'autosave.enabled',
     envKey: 'VITE_AUTOSAVE_ENABLED',
     storageKey: 'autosave.enabled',
+    legacyStorageKeys: ['flag:autoSave.enabled'],
     defaultValue: DEFAULT_FLAGS.autosave.enabled,
     coerce: coerceBoolean,
     workspaceKey: 'conimg.autosave.enabled',
@@ -195,6 +196,7 @@ export const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlagName, FlagDefinition<un
     name: 'merge.precision',
     envKey: 'VITE_MERGE_PRECISION',
     storageKey: 'merge.precision',
+    legacyStorageKeys: ['flag:merge.precision'],
     defaultValue: DEFAULT_FLAGS.merge.precision,
     coerce: coerceMergePrecision,
     workspaceKey: 'conimg.merge.threshold',
@@ -286,9 +288,14 @@ const readFromStorage = (
 ): string | null => {
   if (!storage) {
     // ブラウザ環境でstorageがnullでない場合、localStorageを使用
-    if (typeof window !== 'undefined' && window.localStorage && storage !== null) {
+    // Node.jsテスト環境ではglobalThis.localStorageを使用
+    const localStorageCandidate = typeof window !== 'undefined'
+      ? window.localStorage
+      : (globalThis as { localStorage?: Pick<Storage, 'getItem'> }).localStorage
+
+    if (localStorageCandidate && storage !== null) {
       try {
-        return window.localStorage.getItem(storageKey)
+        return localStorageCandidate.getItem(storageKey)
       } catch {
         // localStorageが利用不可でもエラーとしない
         return null
@@ -382,7 +389,20 @@ const resolveFlagValue = <T>(
   }
 
   // 3. localStorage
-  const storageValue = readFromStorage(options?.storage, definition.storageKey)
+  // まずメインのstorageKeyをチェック
+  let storageValue = readFromStorage(options?.storage, definition.storageKey)
+
+  // メインキーに値がない場合、legacyStorageKeysをチェック
+  if ((storageValue == null || storageValue === '') && definition.legacyStorageKeys) {
+    for (const legacyKey of definition.legacyStorageKeys) {
+      const legacyValue = readFromStorage(options?.storage, legacyKey)
+      if (legacyValue != null && legacyValue !== '') {
+        storageValue = legacyValue
+        break
+      }
+    }
+  }
+
   if (storageValue != null && storageValue !== '') {
     if (definition.coerce) {
       const result = definition.coerce(storageValue)
