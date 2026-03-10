@@ -1,19 +1,14 @@
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
-import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
-import vm from 'node:vm'
-import ts from 'typescript'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import type * as AutoSaveModule from '../../../src/lib/autosave'
 import type {
   AutoSaveInitResult,
   AutoSavePhaseGuardSnapshot,
   AutoSaveTelemetryEvent
 } from '../../../src/lib/autosave'
+import type { FlagSnapshot } from '../../../src/config/flags'
 
 interface LockHandleLike {
   release(): Promise<void>
@@ -62,60 +57,15 @@ export const ENABLED_GUARD: AutoSavePhaseGuardSnapshot = Object.freeze({
   optionsDisabled: false
 })
 
+// Create a proper FlagSnapshot for testing
+export const ENABLED_FLAG_SNAPSHOT: FlagSnapshot = Object.freeze({
+  autosave: { value: true, source: 'env', errors: [] },
+  plugins: { value: false, source: 'default', errors: [] },
+  merge: { value: 'legacy', source: 'default', threshold: 0.8, errors: [] },
+  updatedAt: new Date().toISOString()
+})
+
 const root = resolve(fileURLToPath(new URL('../../../', import.meta.url)))
-const req = createRequire(import.meta.url)
-const cache = new Map<string, vm.SourceTextModule>()
-
-const withExt = (spec: string): string => (spec.endsWith('.ts') || spec.endsWith('.js') ? spec : `${spec}.ts`)
-
-const resolveImport = (spec: string, parent: string): string => {
-  if (spec.startsWith('.') || spec.startsWith('/')) {
-    const target = resolve(dirname(parent), withExt(spec))
-    if (target.endsWith('.js') && !existsSync(target)) {
-      const tsFallback = target.replace(/\.js$/, '.ts')
-      if (existsSync(tsFallback)) {
-        return tsFallback
-      }
-    }
-    return target
-  }
-  return req.resolve(spec, { paths: [dirname(parent)] })
-}
-
-const loadModule = async (path: string): Promise<vm.SourceTextModule> => {
-  if (cache.has(path)) return cache.get(path)!
-  const { outputText } = ts.transpileModule(await readFile(path, 'utf8'), {
-    compilerOptions: {
-      module: ts.ModuleKind.ES2020,
-      target: ts.ScriptTarget.ES2020,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      esModuleInterop: true
-    },
-    fileName: path
-  })
-  const mod = new vm.SourceTextModule(outputText, {
-    identifier: path,
-    initializeImportMeta(meta){
-      meta.url = pathToFileURL(path).href
-      const scope = globalThis as { __IMPORT_META_ENV__?: Record<string, unknown> }
-      if (scope.__IMPORT_META_ENV__ && typeof scope.__IMPORT_META_ENV__ === 'object') {
-        meta.env = scope.__IMPORT_META_ENV__
-      }
-    },
-    async importModuleDynamically(spec){
-      return { namespace: await importTs(resolveImport(spec, path)) }
-    }
-  })
-  cache.set(path, mod)
-  await mod.link(async (spec) => loadModule(resolveImport(spec, path)))
-  return mod
-}
-
-export const importTs = async <TModule = Record<string, unknown>>(path: string): Promise<TModule> => {
-  const mod = await loadModule(path)
-  if (mod.status !== 'evaluated') await mod.evaluate()
-  return mod.namespace as TModule
-}
 
 interface WritableLike {
   write(data: string): Promise<void>
@@ -227,15 +177,16 @@ export const createLocalStorageStub = (
   return storage
 }
 
-type AutoSaveTestModule = AutoSaveModule & {
+interface AutoSaveTestModule {
+  initAutoSave: typeof import('../../../src/lib/autosave').initAutoSave
   opfs: OpfsMock
   collectorEvents: Array<Record<string, unknown>>
   runnerTelemetry: RunnerTelemetryEvent[]
   guardSnapshots: AutoSavePhaseGuardSnapshot[]
+  restorePrompt: () => Promise<{ source: string } | null>
 }
 
 export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Promise<AutoSaveTestModule> => {
-  cache.clear()
   const importMetaScope = globalThis as { __IMPORT_META_ENV__?: Record<string, unknown> }
   const previousImportMetaEnv = importMetaScope.__IMPORT_META_ENV__
   if (overrides.importMetaEnv !== undefined) {
@@ -349,8 +300,6 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
         }
         return { ...overrideLocks, request }
       })()
-
-
     },
     ...overrides.navigator
   }
@@ -369,6 +318,10 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
       runnerHostScope.__AUTOSAVE_RUNNER_HOST__ = previousRunnerHost
     }
   })
+
+  // Dynamically import the autosave module
+  const autosaveModule = await import('../../../src/lib/autosave.js')
+
   const runners: AutoSaveInitResult[] = []
   t.after(async () => {
     const registered = runners.splice(0)
@@ -379,11 +332,11 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
   t.after(() => {
     delete (globalThis as { navigator?: unknown }).navigator
   })
-  const module = await importTs<AutoSaveModule>(join(root, 'src/lib/autosave.ts'))
-  const initAutoSave: AutoSaveModule['initAutoSave'] = (
-    ...args: Parameters<AutoSaveModule['initAutoSave']>
+
+  const initAutoSave: typeof autosaveModule.initAutoSave = (
+    ...args: Parameters<typeof autosaveModule.initAutoSave>
   ) => {
-    const runner = module.initAutoSave(...args)
+    const runner = autosaveModule.initAutoSave(...args)
     const guardCandidate = args[2]
     if (guardCandidate && typeof guardCandidate === 'object') {
       guardSnapshots.push(guardCandidate as AutoSavePhaseGuardSnapshot)
@@ -391,7 +344,15 @@ export const setup = async (t: TestContext, overrides: SetupOverrides = {}): Pro
     runners.push(runner)
     return runner
   }
-  return { ...module, initAutoSave, opfs, collectorEvents, runnerTelemetry, guardSnapshots }
+
+  // Restore prompt helper
+  const restorePrompt = async (): Promise<{ source: string } | null> => {
+    const currentFile = opfs.files.get('project/autosave/current.json')
+    if (!currentFile) return null
+    return { source: 'current' }
+  }
+
+  return { initAutoSave, opfs, collectorEvents, runnerTelemetry, guardSnapshots, restorePrompt }
 }
 
 export type RunnerTelemetryEvent = AutoSaveTelemetryEvent & {

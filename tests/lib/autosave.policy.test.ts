@@ -1,18 +1,19 @@
-import { test } from 'node:test'; import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'; import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'; import { createRequire } from 'node:module'
-import vm from 'node:vm'; import ts from 'typescript'
+import { test } from 'node:test'
+import type { TestContext } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
+import ts from 'typescript'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
-const req = createRequire(import.meta.url)
-const cache = new Map<string, vm.SourceTextModule>()
 
 const createOpfsMock = () => {
   const files = new Map<string, string>()
-  const dirs = new Map<string, any>()
-  const makeDir = (prefix: string): any => {
-    if (dirs.has(prefix)) return dirs.get(prefix)
+  const dirs = new Map<string, unknown>()
+  const makeDir = (prefix: string): unknown => {
+    if (dirs.has(prefix)) return dirs.get(prefix)!
     const dir = {
       async getDirectoryHandle(name: string) {
         return makeDir(join(prefix, name))
@@ -55,45 +56,11 @@ const createOpfsMock = () => {
   }
   return { files, storage: { async getDirectory() { return makeDir('') } } }
 }
-const withExt = (spec: string) => {
-  if (spec.startsWith('node:')) return spec
-  if (spec.endsWith('.ts')) return spec
-  if (spec.endsWith('.js')) return `${spec.slice(0, -3)}.ts`
-  return `${spec}.ts`
-}
-const resolveImport = (spec: string, parent: string) =>
-  spec.startsWith('.') || spec.startsWith('/') ? resolve(dirname(parent), withExt(spec)) : req.resolve(spec, { paths: [dirname(parent)] })
-const loadModule = async (path: string) => {
-  if (cache.has(path)) return cache.get(path)!
-  const { outputText } = ts.transpileModule(await readFile(path, 'utf8'), {
-    compilerOptions: {
-      module: ts.ModuleKind.ES2020,
-      target: ts.ScriptTarget.ES2020,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      esModuleInterop: true
-    },
-    fileName: path
-  })
-  const mod = new vm.SourceTextModule(outputText, {
-    identifier: path,
-    initializeImportMeta(meta){ meta.url = pathToFileURL(path).href },
-    async importModuleDynamically(spec){ return { namespace: await importTs(resolveImport(spec, path)) } }
-  })
-  cache.set(path, mod)
-  await mod.link(async (spec) => loadModule(resolveImport(spec, path)))
-  return mod
-}
-const importTs = async (path: string) => {
-  const mod = await loadModule(path)
-  if (mod.status !== 'evaluated') await mod.evaluate()
-  return mod.namespace as any
-}
 
 test('createVscodeAutoSaveBridge shares AUTOSAVE-DESIGN-IMPL Phase A defaults', async () => {
-  cache.clear()
-  const { resolveAutoSaveBootstrapPlan } = await importTs(join(root, 'src/config/index.ts'))
-  const { createVscodeAutoSaveBridge } = await importTs(join(root, 'src/platform/vscode/autosave.ts'))
-  const { AUTOSAVE_POLICY } = await importTs(join(root, 'src/lib/autosave.ts'))
+  const { resolveAutoSaveBootstrapPlan } = await import('../../src/config/index.js')
+  const { createVscodeAutoSaveBridge } = await import('../../src/platform/vscode/autosave.ts')
+  const { AUTOSAVE_POLICY } = await import('../../src/lib/autosave.ts')
 
   const workspace = {
     get(key: string): unknown {
@@ -115,7 +82,7 @@ test('createVscodeAutoSaveBridge shares AUTOSAVE-DESIGN-IMPL Phase A defaults', 
   assert.equal(plan.policy.maxGenerations, AUTOSAVE_POLICY.maxGenerations)
   assert.equal(plan.policy.maxBytes, AUTOSAVE_POLICY.maxBytes)
 
-  const sent: any[] = []
+  const sent: unknown[] = []
   let tick = 0
   const bridge = createVscodeAutoSaveBridge({
     policy: plan.policy,
@@ -127,9 +94,9 @@ test('createVscodeAutoSaveBridge shares AUTOSAVE-DESIGN-IMPL Phase A defaults', 
       tick += 1
       return base
     },
-    sendMessage: (message: any) => { sent.push(message) },
+    sendMessage: (message: unknown) => { sent.push(message) },
     atomicWrite: async () => {
-      const generation = sent.filter((msg) => msg?.type === 'snapshot.result').length + 1
+      const generation = sent.filter((msg) => msg && typeof msg === 'object' && 'type' in msg && (msg as { type: string }).type === 'snapshot.result').length + 1
       return {
         ok: true as const,
         bytes: 2 * 1024 * 1024,
@@ -169,10 +136,10 @@ test('createVscodeAutoSaveBridge shares AUTOSAVE-DESIGN-IMPL Phase A defaults', 
   assert.ok(history.generations <= AUTOSAVE_POLICY.maxGenerations)
   assert.ok(history.retainedBytes <= AUTOSAVE_POLICY.maxBytes)
 
-  const results = sent.filter((msg) => msg?.type === 'snapshot.result')
+  const results = sent.filter((msg) => msg && typeof msg === 'object' && 'type' in msg && (msg as { type: string }).type === 'snapshot.result')
   assert.equal(results.length, 3)
-  const last = results[results.length - 1]
-  assert.equal(last.payload.retainedBytes, history.retainedBytes)
+  const last = results[results.length - 1] as { payload?: { retainedBytes?: number } }
+  assert.equal(last.payload?.retainedBytes, history.retainedBytes)
 })
 
 test('AutoSaveOptions rejects policy overrides via type checking', async () => {
@@ -215,153 +182,150 @@ test('AutoSaveOptions rejects policy overrides via type checking', async () => {
   }
 })
 
-test('resolveAutoSavePolicy enforces AUTOSAVE-DESIGN-IMPL Phase A defaults shared with MERGE-DESIGN-IMPL §5', async () => {
-  cache.clear()
-  const { resolveAutoSaveBootstrapPlan } = await importTs(join(root, 'src/config/index.ts'))
-  const { initAutoSave, resolveAutoSavePolicy, AUTOSAVE_POLICY } = await importTs(
-    join(root, 'src/lib/autosave.ts')
-  )
+test('resolveAutoSavePolicy enforces AUTOSAVE-DESIGN-IMPL Phase A defaults shared with MERGE-DESIGN-IMPL §5', async (t: TestContext) => {
+  const { resolveAutoSaveBootstrapPlan } = await import('../../src/config/index.js')
+  const { initAutoSave, resolveAutoSavePolicy, AUTOSAVE_POLICY } = await import('../../src/lib/autosave.ts')
 
   const originalHistory = process.env.VITE_AUTOSAVE_HISTORY_LIMIT
   const originalSize = process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB
   const originalEnabled = process.env.VITE_AUTOSAVE_ENABLED
 
-  try {
-    process.env.VITE_AUTOSAVE_HISTORY_LIMIT = '30'
-    process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = '100'
-    process.env.VITE_AUTOSAVE_ENABLED = 'true'
+  t.after(() => {
+    if (originalHistory == null) {
+      delete process.env.VITE_AUTOSAVE_HISTORY_LIMIT
+    } else {
+      process.env.VITE_AUTOSAVE_HISTORY_LIMIT = originalHistory
+    }
+    if (originalSize == null) {
+      delete process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB
+    } else {
+      process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = originalSize
+    }
+    if (originalEnabled == null) {
+      delete process.env.VITE_AUTOSAVE_ENABLED
+    } else {
+      process.env.VITE_AUTOSAVE_ENABLED = originalEnabled
+    }
+    delete (globalThis as { navigator?: unknown }).navigator
+  })
 
-    const plan = resolveAutoSaveBootstrapPlan({ workspace: null })
-    assert.equal(plan.policy, AUTOSAVE_POLICY)
-    assert.equal(plan.policy.maxGenerations, 20)
-    assert.equal(plan.policy.maxBytes, 50 * 1024 * 1024)
+  process.env.VITE_AUTOSAVE_HISTORY_LIMIT = '30'
+  process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = '100'
+  process.env.VITE_AUTOSAVE_ENABLED = 'true'
 
-    const envPolicy = resolveAutoSavePolicy()
-    assert.equal(envPolicy, AUTOSAVE_POLICY)
-    assert.equal(envPolicy.maxGenerations, 20)
-    assert.equal(envPolicy.maxBytes, 50 * 1024 * 1024)
+  const plan = resolveAutoSaveBootstrapPlan({ workspace: null })
+  assert.equal(plan.policy, AUTOSAVE_POLICY)
+  assert.equal(plan.policy.maxGenerations, 20)
+  assert.equal(plan.policy.maxBytes, 50 * 1024 * 1024)
 
-    const workspace = {
-      get(key: string): unknown {
-        switch (key) {
-          case 'conimg.autosave.historyLimit':
-            return 35
-          case 'conimg.autosave.sizeLimitMB':
-            return 120
-          default:
-            return undefined
-        }
+  const envPolicy = resolveAutoSavePolicy()
+  assert.equal(envPolicy, AUTOSAVE_POLICY)
+  assert.equal(envPolicy.maxGenerations, 20)
+  assert.equal(envPolicy.maxBytes, 50 * 1024 * 1024)
+
+  const workspace = {
+    get(key: string): unknown {
+      switch (key) {
+        case 'conimg.autosave.historyLimit':
+          return 35
+        case 'conimg.autosave.sizeLimitMB':
+          return 120
+        default:
+          return undefined
       }
     }
+  }
 
-    const workspacePolicyPlan = resolveAutoSaveBootstrapPlan({ workspace })
-    assert.equal(workspacePolicyPlan.policy, AUTOSAVE_POLICY)
-    assert.equal(workspacePolicyPlan.policy.maxGenerations, 20)
-    assert.equal(workspacePolicyPlan.policy.maxBytes, 50 * 1024 * 1024)
+  const workspacePolicyPlan = resolveAutoSaveBootstrapPlan({ workspace })
+  assert.equal(workspacePolicyPlan.policy, AUTOSAVE_POLICY)
+  assert.equal(workspacePolicyPlan.policy.maxGenerations, 20)
+  assert.equal(workspacePolicyPlan.policy.maxBytes, 50 * 1024 * 1024)
 
-    const workspacePolicy = resolveAutoSavePolicy(workspace)
-    assert.equal(workspacePolicy, AUTOSAVE_POLICY)
-    assert.equal(workspacePolicy.maxGenerations, 20)
-    assert.equal(workspacePolicy.maxBytes, 50 * 1024 * 1024)
+  const workspacePolicy = resolveAutoSavePolicy(workspace)
+  assert.equal(workspacePolicy, AUTOSAVE_POLICY)
+  assert.equal(workspacePolicy.maxGenerations, 20)
+  assert.equal(workspacePolicy.maxBytes, 50 * 1024 * 1024)
 
-    const overridePolicy = {
-      debounceMs: 10,
-      idleMs: 20,
-      maxGenerations: 1,
-      maxBytes: 200_000,
-      disabled: false
-    }
+  const overridePolicy = {
+    debounceMs: 10,
+    idleMs: 20,
+    maxGenerations: 1,
+    maxBytes: 200_000,
+    disabled: false
+  }
 
-    const opfs = createOpfsMock()
-    Object.defineProperty(globalThis, 'navigator', {
-      value: {
-        storage: opfs.storage,
-        locks: {
-          async request(_name: string, cb: (lock: { release(): Promise<void> }) => unknown) {
-            return cb({ async release() {} })
-          }
+  const opfs = createOpfsMock()
+  Object.defineProperty(globalThis, 'navigator', {
+    value: {
+      storage: opfs.storage,
+      locks: {
+        async request(_name: string, cb: (lock: { release(): Promise<void> }) => unknown) {
+          return cb({ async release() {} })
         }
-      },
-      configurable: true
-    })
-
-    const payloads = ['a'.repeat(450_000), 'b'.repeat(450_000), 'c'.repeat(450_000)]
-    let flushCount = 0
-    const runner = initAutoSave(() => {
-      const index = Math.min(flushCount, payloads.length - 1)
-      const manual = payloads[index]
-      flushCount += 1
-      return {
-        id: 'storyboard',
-        title: `Storyboard-${index}`,
-        scenes: [
-          { id: `scene-${index}`, manual, ai: '', status: 'idle', assets: [] }
-        ],
-        selection: [],
-        version: 1
       }
     },
-    // AUTOSAVE-DESIGN-IMPL §3.1 / MERGE-DESIGN-IMPL §5: Phase A では固定ポリシー共有のため、型を回避して policy を差し込んでも無視される。
-    { disabled: false, policy: overridePolicy } as unknown as Record<string, unknown>)
+    configurable: true
+  })
 
-    const originalSetTimeout = globalThis.setTimeout
-    const scheduledDelays: number[] = []
-    let captureDelays = false
-
-    try {
-      globalThis.setTimeout = ((callback: (...args: unknown[]) => unknown, delay?: number, ...args: unknown[]) => {
-        if (captureDelays) {
-          scheduledDelays.push(delay ?? 0)
-        }
-        return originalSetTimeout(callback as (...cbArgs: unknown[]) => unknown, delay, ...args)
-      }) as typeof setTimeout
-
-      const markDirty = (runner as { markDirty?: (meta?: { pendingBytes?: number }) => void }).markDirty
-      assert.equal(typeof markDirty, 'function')
-      captureDelays = true
-      markDirty?.({ pendingBytes: payloads[0]!.length })
-      await new Promise((resolve) => originalSetTimeout(resolve, 2600))
-      captureDelays = false
-    } finally {
-      globalThis.setTimeout = originalSetTimeout
+  const payloads = ['a'.repeat(450_000), 'b'.repeat(450_000), 'c'.repeat(450_000)]
+  let flushCount = 0
+  const runner = initAutoSave(() => {
+    const index = Math.min(flushCount, payloads.length - 1)
+    const manual = payloads[index]
+    flushCount += 1
+    return {
+      id: 'storyboard',
+      title: `Storyboard-${index}`,
+      scenes: [
+        { id: `scene-${index}`, manual: manual!, ai: '', status: 'idle', assets: [] }
+      ],
+      selection: [],
+      version: 1
     }
+  },
+  // AUTOSAVE-DESIGN-IMPL §3.1 / MERGE-DESIGN-IMPL §5: Phase A では固定ポリシー共有のため、型を回避して policy を差し込んでも無視される。
+  { disabled: false, policy: overridePolicy } as unknown as Record<string, unknown>)
 
-    assert.ok(scheduledDelays.includes(500))
-    assert.ok(scheduledDelays.includes(2000))
-    assert.ok(!scheduledDelays.includes(overridePolicy.debounceMs))
-    assert.ok(!scheduledDelays.includes(overridePolicy.idleMs))
+  const originalSetTimeout = globalThis.setTimeout
+  const scheduledDelays: number[] = []
+  let captureDelays = false
 
-    await runner.flushNow()
-    await runner.flushNow()
-    await runner.flushNow()
-
-    const historyKeys = Array.from(opfs.files.keys()).filter((key) =>
-      key.startsWith('project/autosave/history/')
-    )
-    assert.ok(historyKeys.length <= AUTOSAVE_POLICY.maxGenerations)
-    const totalBytes = historyKeys.reduce((sum, key) => {
-      const content = opfs.files.get(key) ?? ''
-      return sum + Buffer.byteLength(content, 'utf8')
-    }, 0)
-    assert.ok(totalBytes <= AUTOSAVE_POLICY.maxBytes)
-
-    await runner.dispose()
-    } finally {
-      if (originalHistory == null) {
-        delete process.env.VITE_AUTOSAVE_HISTORY_LIMIT
-      } else {
-        process.env.VITE_AUTOSAVE_HISTORY_LIMIT = originalHistory
+  try {
+    globalThis.setTimeout = ((callback: (...args: unknown[]) => unknown, delay?: number, ...args: unknown[]) => {
+      if (captureDelays) {
+        scheduledDelays.push(delay ?? 0)
       }
-      if (originalSize == null) {
-        delete process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB
-      } else {
-        process.env.VITE_AUTOSAVE_SIZE_LIMIT_MB = originalSize
-      }
-      if (originalEnabled == null) {
-        delete process.env.VITE_AUTOSAVE_ENABLED
-      } else {
-        process.env.VITE_AUTOSAVE_ENABLED = originalEnabled
-      }
-      delete (globalThis as { navigator?: unknown }).navigator
-    }
+      return originalSetTimeout(callback as (...cbArgs: unknown[]) => unknown, delay, ...args)
+    }) as typeof setTimeout
+
+    const markDirty = (runner as { markDirty?: (meta?: { pendingBytes?: number }) => void }).markDirty
+    assert.equal(typeof markDirty, 'function')
+    captureDelays = true
+    markDirty?.({ pendingBytes: payloads[0]!.length })
+    await new Promise((resolve) => originalSetTimeout(resolve, 2600))
+    captureDelays = false
+  } finally {
+    globalThis.setTimeout = originalSetTimeout
+  }
+
+  assert.ok(scheduledDelays.includes(500))
+  assert.ok(scheduledDelays.includes(2000))
+  assert.ok(!scheduledDelays.includes(overridePolicy.debounceMs))
+  assert.ok(!scheduledDelays.includes(overridePolicy.idleMs))
+
+  await runner.flushNow()
+  await runner.flushNow()
+  await runner.flushNow()
+
+  const historyKeys = Array.from(opfs.files.keys()).filter((key) =>
+    key.startsWith('project/autosave/history/')
+  )
+  assert.ok(historyKeys.length <= AUTOSAVE_POLICY.maxGenerations)
+  const totalBytes = historyKeys.reduce((sum, key) => {
+    const content = opfs.files.get(key) ?? ''
+    return sum + Buffer.byteLength(content, 'utf8')
+  }, 0)
+  assert.ok(totalBytes <= AUTOSAVE_POLICY.maxBytes)
+
+  await runner.dispose()
 })

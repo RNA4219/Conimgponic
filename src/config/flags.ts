@@ -213,6 +213,16 @@ export const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlagName, FlagDefinition<un
 
 const readFromEnv = (key: string, env?: Record<string, unknown>): string | null => {
   if (!env) {
+    // Check for test mock of import.meta.env first
+    const globalScope = globalThis as Record<string, unknown>
+    const importMetaEnv = globalScope.__IMPORT_META_ENV__ as Record<string, unknown> | undefined
+    if (importMetaEnv && key in importMetaEnv) {
+      const value = importMetaEnv[key]
+      if (value !== undefined) {
+        return String(value)
+      }
+    }
+
     // ブラウザ環境ではimport.meta.envを使用
     try {
       // TypeScript構文解析エラーを避けるため、文字列としてアクセス
@@ -225,8 +235,7 @@ const readFromEnv = (key: string, env?: Record<string, unknown>): string | null 
     }
     // Node.js環境ではprocess.envを使用
     if (typeof globalThis !== 'undefined') {
-      const g = globalThis as Record<string, unknown>
-      const proc = g.process as Record<string, unknown> | undefined
+      const proc = globalScope.process as Record<string, unknown> | undefined
       const procEnv = proc?.env as Record<string, unknown> | undefined
       if (procEnv && key in procEnv) {
         return String(procEnv[key] ?? null)

@@ -689,10 +689,11 @@ export function initAutoSave(
   }
   const disabledError = () => makeError('disabled', 'AutoSave is disabled', false)
   const persistence = sharedPersistence
-  const fallbackOptionsDisabled = options?.disabled === true
+  const optionsDisabledValue = options?.disabled === true
   const { guard } = resolveAutoSaveGuard({
     flagSnapshot,
-    fallbackOptionsDisabled,
+    optionsDisabled: optionsDisabledValue,
+    fallbackOptionsDisabled: optionsDisabledValue,
     policyDisabled: policy.disabled
   })
   const flagEnabled = guard.featureFlag.value
