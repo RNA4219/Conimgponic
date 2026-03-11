@@ -39,7 +39,7 @@ export async function executeLeftRightGeneration(options: ExecuteLeftRightGenera
   const controller = new AbortController()
   abortRef.current = controller
   try {
-    for await (const chunk of stream('llama3.1', prompt, { timeoutMs: 60_000, maxChars: 20000, controller })) {
+    for await (const chunk of stream('', prompt, { timeoutMs: 60_000, maxChars: 20000, controller })) {
       if (chunk.message?.content) {
         setRight((prev) => prev + chunk.message!.content)
       }

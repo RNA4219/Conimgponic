@@ -18,6 +18,47 @@ export class OllamaRequestError extends Error {
   }
 }
 
+// LLM Provider configuration
+type LLMProvider = 'openai' | 'alibaba' | 'local' | 'none'
+
+interface LLMConfig {
+  provider: LLMProvider
+  apiKey: string
+  model: string
+  baseUrl: string
+}
+
+function getLLMConfig(): LLMConfig {
+  const env = import.meta.env
+  const provider = (env.VITE_LLM_PROVIDER as LLMProvider) || 'local'
+
+  if (provider === 'alibaba') {
+    return {
+      provider: 'alibaba',
+      apiKey: env.VITE_DASHSCOPE_API_KEY || '',
+      model: env.VITE_ALIBABA_MODEL || 'glm-5',
+      baseUrl: env.VITE_ALIBABA_BASE_URL || 'https://coding-intl.dashscope.aliyuncs.com/v1'
+    }
+  }
+
+  if (provider === 'openai') {
+    return {
+      provider: 'openai',
+      apiKey: env.VITE_OPENAI_API_KEY || '',
+      model: env.VITE_OPENAI_MODEL || 'gpt-4o-mini',
+      baseUrl: env.VITE_OPENAI_BASE_URL || 'https://api.openai.com/v1'
+    }
+  }
+
+  // Local (Ollama)
+  return {
+    provider: 'local',
+    apiKey: '',
+    model: 'llama3',
+    baseUrl: OLLAMA_BASE
+  }
+}
+
 async function readErrorDetail(res: Response): Promise<string>{
   const limit = 200
   let detail = ''
@@ -55,7 +96,12 @@ async function readErrorDetail(res: Response): Promise<string>{
   return truncated ? `${detail.trimEnd()}…` : detail
 }
 
-export async function* chatStream(model: string, prompt: string, opts: ChatStreamOptions = {}){
+// OpenAI-compatible API stream (for Alibaba, OpenAI, OpenRouter)
+async function* openAICompatibleStream(
+  config: LLMConfig,
+  prompt: string,
+  opts: ChatStreamOptions
+): AsyncGenerator<Chunk> {
   const controller = opts.controller ?? (opts.signal ? null : new AbortController())
   const signal = opts.signal ?? controller?.signal
   if (!signal) throw new Error('chatStream requires an AbortSignal')
@@ -63,6 +109,79 @@ export async function* chatStream(model: string, prompt: string, opts: ChatStrea
   const timeoutHandle: ReturnType<typeof setTimeout> | null =
     opts.timeoutMs && controller ? setTimeout(() => abort(), opts.timeoutMs) : null
   let stop = false
+
+  try {
+    const res = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify({
+        model: config.model,
+        stream: true,
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      signal
+    })
+
+    if (!res.ok) {
+      const detail = await readErrorDetail(res)
+      throw new OllamaRequestError(res.status, res.statusText, detail)
+    }
+
+    if (!res.body) throw new Error('chatStream requires a response body')
+    const reader = res.body.getReader()
+    const td = new TextDecoder()
+    let buf = ''
+    let total = 0
+    const max = opts.maxChars ?? 20000
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += td.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() || ''
+
+      for (const line of lines) {
+        if (!line.trim() || !line.startsWith('data:')) continue
+        const data = line.slice(5).trim()
+        if (data === '[DONE]') continue
+
+        try {
+          const parsed = JSON.parse(data)
+          const content = parsed.choices?.[0]?.delta?.content
+          if (content) {
+            total += content.length
+            if (total > max) { abort(); stop = true; break }
+            yield { message: { role: 'assistant', content } }
+          }
+        } catch { /* ignore broken chunk */ }
+      }
+      if (stop) break
+    }
+  } finally {
+    if (opts.timeoutMs && timeoutHandle) {
+      clearTimeout(timeoutHandle)
+    }
+  }
+}
+
+// Ollama local API stream
+async function* ollamaStream(
+  model: string,
+  prompt: string,
+  opts: ChatStreamOptions
+): AsyncGenerator<Chunk> {
+  const controller = opts.controller ?? (opts.signal ? null : new AbortController())
+  const signal = opts.signal ?? controller?.signal
+  if (!signal) throw new Error('chatStream requires an AbortSignal')
+  const abort = () => { if (controller) controller.abort() }
+  const timeoutHandle: ReturnType<typeof setTimeout> | null =
+    opts.timeoutMs && controller ? setTimeout(() => abort(), opts.timeoutMs) : null
+  let stop = false
+
   try {
     const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
       method: 'POST',
@@ -112,4 +231,17 @@ export async function* chatStream(model: string, prompt: string, opts: ChatStrea
       clearTimeout(timeoutHandle)
     }
   }
+}
+
+export async function* chatStream(model: string, prompt: string, opts: ChatStreamOptions = {}): AsyncGenerator<Chunk> {
+  const config = getLLMConfig()
+
+  // Use OpenAI-compatible API for cloud providers
+  if (config.provider === 'alibaba' || config.provider === 'openai') {
+    yield* openAICompatibleStream(config, prompt, opts)
+    return
+  }
+
+  // Use Ollama for local
+  yield* ollamaStream(model || config.model, prompt, opts)
 }
