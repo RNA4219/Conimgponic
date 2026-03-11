@@ -70,7 +70,7 @@ export const resolveAutoSaveGuard = (input: {
 
   const guard: AutoSavePhaseGuardSnapshot = {
     featureFlag: {
-      value: resolvedFlag.value,
+      value: resolvedFlag.value as boolean,
       source: resolvedFlag.source
     },
     optionsDisabled

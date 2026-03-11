@@ -28,8 +28,23 @@ interface LLMConfig {
   baseUrl: string
 }
 
+interface ImportMetaEnv {
+  readonly VITE_LLM_PROVIDER?: string
+  readonly VITE_DASHSCOPE_API_KEY?: string
+  readonly VITE_ALIBABA_MODEL?: string
+  readonly VITE_ALIBABA_BASE_URL?: string
+  readonly VITE_OPENAI_API_KEY?: string
+  readonly VITE_OPENAI_MODEL?: string
+  readonly VITE_OPENAI_BASE_URL?: string
+}
+
+interface ImportMetaWithEnv extends ImportMeta {
+  readonly env: ImportMetaEnv
+}
+
 function getLLMConfig(): LLMConfig {
-  const env = import.meta.env
+  const meta = import.meta as ImportMetaWithEnv
+  const env = meta.env
   const provider = (env.VITE_LLM_PROVIDER as LLMProvider) || 'local'
 
   if (provider === 'alibaba') {
