@@ -43,8 +43,10 @@ interface ImportMetaWithEnv extends ImportMeta {
 }
 
 function getLLMConfig(): LLMConfig {
+  // Access import.meta.env safely
   const meta = import.meta as ImportMetaWithEnv
-  const env = meta.env
+  const env = meta.env || {}
+
   const provider = (env.VITE_LLM_PROVIDER as LLMProvider) || 'local'
 
   if (provider === 'alibaba') {
