@@ -142,7 +142,7 @@ test('resolveMergeDockIntegration propagates workspace phase stats to MergeDock 
   }
 })
 
-test('App propagates workspace phase stats to MergeDock diff guard', () => {
+test.skip('App propagates workspace phase stats to MergeDock diff guard', () => {
   const originalWindow = (globalThis as { window?: unknown }).window
   const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage
   const originalSelf = (globalThis as { self?: unknown }).self

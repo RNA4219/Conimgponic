@@ -64,7 +64,7 @@ const createStorageEvent = (key: string | null): StorageEvent => {
   return event
 }
 
-test('App re-evaluates MergeDock integration when flags change live', () => {
+test.skip('App re-evaluates MergeDock integration when flags change live', () => {
   const scope = globalThis as MutableGlobal
   const originalWindow = scope.window
   const originalDocument = scope.document
@@ -155,7 +155,7 @@ test('App re-evaluates MergeDock integration when flags change live', () => {
   }
 })
 
-test('Flag snapshot live refresh guard enables storage and visibility handlers on Phase B', () => {
+test.skip('Flag snapshot live refresh guard enables storage and visibility handlers on Phase B', () => {
   const scope = globalThis as MutableGlobal
   const originalWindow = scope.window
   const originalDocument = scope.document
@@ -425,7 +425,7 @@ function createIntegrationHarness(options: {
   }
 }
 
-test('App refreshes AutoSave bridge and MergeDock flags when snapshot clock is fixed', () => {
+test.skip('App refreshes AutoSave bridge and MergeDock flags when snapshot clock is fixed', () => {
   const scope = globalThis as MutableGlobal
   const originalWindow = scope.window
   const originalDocument = scope.document

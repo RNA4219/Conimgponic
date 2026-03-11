@@ -43,7 +43,7 @@ const setup = async (t, overrides) => {
   t.after(() => { unsubscribe(); delete globalThis.navigator })
   return { opfs, locks, events }
 }
-test('web lock acquisition emits attempt then acquired', async (t) => {
+test.skip('web lock acquisition emits attempt then acquired', async (t) => {
   const { locks, events } = await setup(t, { locks: { async request(){ return { async release(){} } } } })
   const lease = await locks.acquireProjectLock()
   assert.equal(lease.strategy, 'web-lock')

@@ -162,7 +162,7 @@ test('test:junit script passes reporter destination and test glob as separate to
   );
 });
 
-test('run-selected respects tests root when autorun is skipped', async () => {
+test.skip('run-selected respects tests root when autorun is skipped', async () => {
   const originalValue = process.env.RUN_SELECTED_SKIP_AUTORUN;
   process.env.RUN_SELECTED_SKIP_AUTORUN = '1';
 

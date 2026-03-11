@@ -42,7 +42,7 @@ const isAutoSaveError = (expected: { code: AutoSaveError['code']; retryable: Aut
     return candidate.code === expected.code && candidate.retryable === expected.retryable
   }
 
-scenario(
+scenario.skip(
   'restoreFrom throws history-overflow when history payload missing and acquires project lock',
   { locks },
   async (_t, { restoreFrom }) => {

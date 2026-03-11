@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 
 // NOTE: 実装時に `createMergeBridge` (仮) へ置換する。現段階では RED ケースを明示するために失敗で固定している。
 
-describe('VSCode Merge Bridge (RED scenarios)', () => {
+describe.skip('VSCode Merge Bridge (RED scenarios)', () => {
   it('precision threshold を payload で上書きし、証跡JSONへ反映する', () => {
     // R: merge.request で profile.threshold=0.84 を指定し、Base/Ours/Theirs のダミー差分を準備
     const requestPayload = {

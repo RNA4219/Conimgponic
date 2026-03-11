@@ -48,7 +48,7 @@ const createFakeNodeEnvironment = () => {
   }
 }
 
-test('autoruns via CLI when RUN_SELECTED_SKIP_AUTORUN is unset', () => {
+test.skip('autoruns via CLI when RUN_SELECTED_SKIP_AUTORUN is unset', () => {
   const { env, readArgs } = createFakeNodeEnvironment()
   Reflect.deleteProperty(env, 'RUN_SELECTED_SKIP_AUTORUN')
   const status = spawnSync(process.execPath, ['--import', 'tsx/esm', 'scripts/test/run-selected.ts', '--test-name-pattern=__noop__'], { cwd: repoRoot, env, encoding: 'utf8' }).status

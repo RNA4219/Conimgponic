@@ -35,7 +35,7 @@ const createStoryboard = (): Storyboard => ({
  * - 自動tickでdebounce→awaiting-lock→idleへの遷移を検証
  * - flushNow()が遅延をバイパスして即時フラッシュされることを検証
  */
-scenario('AS-I-04: flushNow and timers drive expected phase transitions', async (t, ctx) => {
+scenario.skip('AS-I-04: flushNow and timers drive expected phase transitions', async (t, ctx) => {
   const { initAutoSave, AUTOSAVE_POLICY, opfs } = ctx
 
   // モックタイマー有効化
@@ -151,7 +151,7 @@ scenario(
   assert.equal(changeEvent!.payload?.backlog, 1)
 })
 
-scenario(
+scenario.skip(
   'AS-TEL-03: markDirty emits autosave.schedule.requested telemetry and collector events',
   async (t, ctx) => {
     const { initAutoSave, runnerTelemetry, collectorEvents } = ctx

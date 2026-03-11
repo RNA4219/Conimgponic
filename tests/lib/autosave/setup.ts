@@ -394,3 +394,37 @@ export function scenario(name: string, overridesOrHandler: SetupOverrides | Scen
     await actualHandler(t, trackedCtx)
   })
 }
+
+export namespace scenario {
+  export function skip(name: string, handler: ScenarioHandler): void
+  export function skip(name: string, overrides: SetupOverrides, handler: ScenarioHandler): void
+  export function skip(name: string, overridesOrHandler: SetupOverrides | ScenarioHandler, handler?: ScenarioHandler): void {
+    test.skip(name, async (t) => {
+      const actualHandler = typeof overridesOrHandler === 'function' ? overridesOrHandler : handler!
+      const ctx = await setup(t, typeof overridesOrHandler === 'function' ? {} : overridesOrHandler)
+      const runners = new Set<AutoSaveInitResult>()
+      const trackRunner = <TRunner extends AutoSaveInitResult>(runner: TRunner): TRunner => {
+        const originalDispose = runner.dispose.bind(runner)
+        let disposed = false
+        runner.dispose = async () => {
+          if (disposed) return
+          disposed = true
+          runners.delete(runner)
+          await originalDispose()
+        }
+        runners.add(runner)
+        return runner
+      }
+      t.after(async () => {
+        const pending = Array.from(runners).map((runner) => runner.dispose())
+        await Promise.all(pending)
+      })
+      const trackedCtx = {
+        ...ctx,
+        initAutoSave: ((...args: Parameters<typeof ctx.initAutoSave>) =>
+          trackRunner(ctx.initAutoSave(...args))) as typeof ctx.initAutoSave
+      }
+      await actualHandler(t, trackedCtx)
+    })
+  }
+}

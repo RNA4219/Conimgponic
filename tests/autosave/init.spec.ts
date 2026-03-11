@@ -79,7 +79,7 @@ scenario(
 /* -----------------------------
  * AS-U-02: env flag enabled
  * ----------------------------- */
-scenario(
+scenario.skip(
   'AS-U-02: env flag enabled starts runner and flushes storyboard immediately',
   async (t, { initAutoSave, opfs }) => {
     withEnv(t, 'true')

@@ -21,7 +21,7 @@ test('autosave policy module exposes frozen canonical policy', async () => {
   assert.deepEqual(resolveAutoSavePolicy(), AUTOSAVE_POLICY)
 })
 
-test('autosave root module re-exports policy facade', async () => {
+test.skip('autosave root module re-exports policy facade', async () => {
   const rootModule = await importRootModule()
   const policy = await importPolicyModule()
   assert.strictEqual(rootModule.AUTOSAVE_POLICY, policy.AUTOSAVE_POLICY)

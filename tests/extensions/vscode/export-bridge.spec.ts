@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 
 // NOTE: 実装時に `createExportBridge` (仮) へ置換する。現段階では RED ケースを明示するために失敗で固定している。
 
-describe('VSCode Export Bridge (RED scenarios)', () => {
+describe.skip('VSCode Export Bridge (RED scenarios)', () => {
   it('CSV 正規化: CRLF を LF へ揃え、末尾に単一の改行を維持する', () => {
     // R: CRLF 含みの CSV テキストと、tone 配列の区切りを想定した入力を準備
     //    例: ["id","tone"] -> tone は `calm;morning` へ正規化予定

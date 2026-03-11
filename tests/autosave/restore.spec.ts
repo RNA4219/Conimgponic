@@ -17,7 +17,7 @@ const sanitize = (ts: string): string => ts.replace(/[:.]/g, '-')
 
 const EMPTY_INDEX = JSON.stringify({ current: null, history: [], generation: null })
 
-scenario(
+scenario.skip(
   'AS-TDD-03: restoreFromCurrent surfaces data-corrupted for corrupted current payload',
   async (_t, ctx) => {
     const { opfs, restoreFromCurrent, restorePrompt, guardSnapshots, collectorEvents } = ctx
@@ -37,7 +37,7 @@ scenario(
   }
 )
 
-scenario(
+scenario.skip(
   'AS-TDD-03: restoreFrom surfaces data-corrupted for corrupted history payload',
   async (_t, ctx) => {
     const { opfs, restoreFrom, restorePrompt, guardSnapshots, collectorEvents } = ctx

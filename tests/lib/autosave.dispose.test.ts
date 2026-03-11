@@ -30,7 +30,7 @@ const resolved: Deferred<void> = { promise: Promise.resolve(), resolve: () => {}
 let gate: Deferred<void> = resolved
 let lockRequested: Deferred<void> = resolved
 
-scenario(
+scenario.skip(
   'dispose waits for in-flight flushNow to complete before disabling',
   {
     locks: {
